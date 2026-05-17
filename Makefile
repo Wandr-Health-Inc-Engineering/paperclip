@@ -7,7 +7,7 @@ PORT=3100
 COMPOSE_FILE=docker/docker-compose.yml
 COMPOSE_PROJECT=scout
 
-.PHONY: help dev test build docker-build docker-build-local docker-run docker-stop docker-rm docker-logs docker-restart docker-clean compose-up compose-down compose-logs compose-ps compose-restart service create start destroy stop restart prune push-prod push-dev status shell clean ensure-env
+.PHONY: help dev test build ensure-pnpm ensure-deps docker-build docker-build-local docker-run docker-stop docker-rm docker-logs docker-restart docker-clean compose-up compose-down compose-logs compose-ps compose-restart service create start destroy stop restart prune push-prod push-dev status shell clean ensure-env
 
 help: ## Show available targets
 	@echo 'Usage: make [target]'
@@ -21,13 +21,20 @@ ensure-env: ## Create .env from .env.example when missing
 		echo "Created .env from .env.example — set BETTER_AUTH_SECRET before compose-up"; \
 	fi
 
-dev: ## Run Scout locally with pnpm (no Docker)
+ensure-pnpm: ## Ensure pnpm is on PATH (activates via corepack when missing)
+	@chmod +x scripts/ensure-pnpm.sh
+	@./scripts/ensure-pnpm.sh
+
+ensure-deps: ensure-pnpm ## Ensure pnpm and node_modules are ready for local dev
+	@./scripts/ensure-pnpm.sh --install
+
+dev: ensure-deps ## Run Scout locally with pnpm (no Docker)
 	pnpm dev
 
-test: ## Run the test suite
+test: ensure-deps ## Run the test suite
 	pnpm test
 
-build: ## Build workspace packages
+build: ensure-deps ## Build workspace packages
 	pnpm build
 
 docker-build: ## Build production Docker image (linux/amd64)
