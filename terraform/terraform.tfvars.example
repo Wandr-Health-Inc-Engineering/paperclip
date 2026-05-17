@@ -1,0 +1,22 @@
+# Copy to terraform.tfvars (gitignored) and adjust before apply.
+environment = "dev"
+
+# Create a Container Apps environment in the target resource group first, then set the name:
+# dev_container_env  = "dev-scout-env"
+# prod_container_env = "prod-scout-env"
+
+# Optional custom domain (otherwise uses https://<env>-scout.<container-apps-default-domain>)
+# scout_public_url = "https://scout.example.com"
+
+# Restrict ingress to office/home IPs (CIDR). Leave empty to allow all clients.
+# allowed_ingress_ips = ["68.225.218.10/32"]
+
+# Optional Key Vault secret names (wandrhealth-admin-keys). When omitted, BETTER_AUTH_SECRET is generated.
+# better_auth_secret_kv_name = "ScoutDevBetterAuthSecret"
+# anthropic_api_key_kv_name  = "AnthropicAPIKey"
+# openai_api_key_kv_name     = "OpenAIAPIKey"
+# github_token_kv_name       = "GitHubPAT"
+
+# Image tag pushed to wandrapps.azurecr.io/scout
+dev_tag  = "dev"
+prod_tag = "latest"

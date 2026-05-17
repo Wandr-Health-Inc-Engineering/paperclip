@@ -2,6 +2,7 @@ services:
   db:
     image: postgres:17-alpine
     environment:
+      # Upstream Paperclip defaults; only credentials — not the Scout deployment name.
       POSTGRES_USER: paperclip
       POSTGRES_PASSWORD: paperclip
       POSTGRES_DB: paperclip
@@ -18,23 +19,29 @@ services:
   server:
     build:
       context: ..
-      dockerfile: Dockerfile
+      dockerfile: ${SCOUT_DOCKERFILE:-Dockerfile.local}
+    env_file:
+      - ../.env
     ports:
       - "3100:3100"
     environment:
       DATABASE_URL: postgres://paperclip:paperclip@db:5432/paperclip
       PORT: "3100"
       SERVE_UI: "true"
-      PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
-      PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
+      PAPERCLIP_HOME: /paperclip
+      PAPERCLIP_INSTANCE_ID: default
+      PAPERCLIP_CONFIG: /paperclip/instances/default/config.json
+      PAPERCLIP_DEPLOYMENT_MODE: authenticated
+      PAPERCLIP_DEPLOYMENT_EXPOSURE: private
       PAPERCLIP_PUBLIC_URL: "${PAPERCLIP_PUBLIC_URL:-http://localhost:3100}"
-      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set}"
+      PAPERCLIP_MIGRATION_AUTO_APPLY: "true"
+      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:-paperclip-dev-secret}"
     volumes:
-      - paperclip-data:/paperclip
+      - scout-data:/paperclip
     depends_on:
       db:
         condition: service_healthy
 
 volumes:
   pgdata:
-  paperclip-data:
+  scout-data:
