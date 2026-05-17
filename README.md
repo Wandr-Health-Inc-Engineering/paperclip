@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="#quickstart"><strong>Quickstart</strong></a> &middot;
+  <a href="#scout-infrastructure"><strong>Deploy</strong></a> &middot;
   <a href="https://paperclip.ing/docs"><strong>Docs</strong></a> &middot;
   <a href="https://github.com/paperclipai/paperclip"><strong>GitHub</strong></a> &middot;
   <a href="https://discord.gg/m4HZY7xNG3"><strong>Discord</strong></a> &middot;
@@ -309,6 +310,70 @@ pnpm dev
 This starts the API server at `http://localhost:3100`. An embedded PostgreSQL database is created automatically — no setup required.
 
 > **Requirements:** Node.js 20+, pnpm 9.15+
+
+<br/>
+
+## Scout infrastructure
+
+This fork deploys Paperclip under the **Scout** name in Azure and Docker, while keeping the **Paperclip** runtime settings the application expects (`PAPERCLIP_*` environment variables, data directory `/paperclip`, and upstream Postgres credentials in local compose).
+
+| Layer | Scout (deployment) | Paperclip (application) |
+| ----- | ------------------ | ----------------------- |
+| ACR image / Container App | `scout`, `dev-scout`, `prod-scout` | — |
+| Azure Postgres / storage | `scout-db-*`, `scout-data` share | — |
+| Container data path | — | `/paperclip` (`PAPERCLIP_HOME`, `PAPERCLIP_CONFIG`) |
+| Local compose DB | — | user/db `paperclip` (upstream default) |
+
+### Local Docker
+
+Run Postgres and the server together:
+
+```bash
+cp .env.example .env   # set BETTER_AUTH_SECRET
+make service           # build + start compose stack → http://localhost:3100
+make compose-logs
+make compose-down
+```
+
+App-only container (supply `DATABASE_URL` in `.env`):
+
+```bash
+make docker-run
+```
+
+See `make help` for all targets. Compose uses `docker/docker-compose.yml` and `Dockerfile.local`; production image uses `Dockerfile`.
+
+### Azure (Terraform)
+
+Terraform in `terraform/` provisions:
+
+- **Azure Container App** — image from `wandrapps.azurecr.io/scout`
+- **PostgreSQL Flexible Server** (v17) with `pg_trgm`
+- **Azure Files** — instance data mounted at `/paperclip` in the container
+- **Managed identity** — ACR pull and Key Vault Secrets User
+
+**Prerequisites:** Azure CLI logged in, a Container Apps environment in the target resource group (e.g. `dev-scout-env` in `dev-wandrbackend`).
+
+```bash
+cp terraform/terraform.tfvars.example terraform/terraform.tfvars
+# edit environment, container env name, optional scout_public_url / ingress IPs / KV secret names
+
+cd terraform
+terraform init
+terraform plan -var="environment=dev"
+terraform apply -var="environment=dev"
+```
+
+Useful outputs: `app_url`, `database_url` (sensitive), `container_app_fqdn`.
+
+### Build and push to ACR
+
+```bash
+make push-dev    # wandrapps.azurecr.io/scout:dev
+make push-prod   # wandrapps.azurecr.io/scout:latest
+```
+
+After pushing, re-apply Terraform or update the Container App revision to pick up the new tag.
 
 <br/>
 
