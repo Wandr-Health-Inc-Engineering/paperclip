@@ -256,3 +256,113 @@ a[role="button"]:active {
     transition: none !important;
   }
 }
+
+/* ===== Brand accent — remap the upstream cyan "live / running" colour to
+   a wandr blue (deep navy on light surfaces, near-white blue on dark).
+   The upstream theme uses tailwind cyan-* utilities scattered across many
+   components; remapping the utility classes is more merge-safe than
+   editing each component. ===== */
+
+:root {
+  --tethr-accent: #1e3a8a;          /* wandr blue (deep) */
+  --tethr-accent-strong: #1d4ed8;
+  --tethr-accent-soft: rgba(30, 58, 138, 0.10);
+  --tethr-accent-edge: rgba(30, 58, 138, 0.32);
+}
+
+.dark {
+  --tethr-accent: #dbeafe;          /* near-white blue */
+  --tethr-accent-strong: #bfdbfe;
+  --tethr-accent-soft: rgba(219, 234, 254, 0.16);
+  --tethr-accent-edge: rgba(219, 234, 254, 0.40);
+}
+
+/* Solid fills */
+.bg-cyan-400,
+.bg-cyan-500,
+.bg-cyan-600,
+.bg-cyan-700 {
+  background-color: var(--tethr-accent) !important;
+}
+
+/* Soft tints with explicit alpha — match the look of bg-cyan-500/10 etc. */
+.bg-cyan-50,
+.bg-cyan-100,
+[class*="bg-cyan-400\\/"],
+[class*="bg-cyan-500\\/"],
+[class*="bg-cyan-600\\/"] {
+  background-color: var(--tethr-accent-soft) !important;
+}
+
+/* Text colours */
+.text-cyan-200,
+.text-cyan-300,
+.text-cyan-400,
+.text-cyan-500,
+.text-cyan-600,
+.text-cyan-700,
+.text-cyan-800 {
+  color: var(--tethr-accent) !important;
+}
+
+/* Borders */
+.border-cyan-300,
+.border-cyan-400,
+.border-cyan-500,
+.border-cyan-600,
+[class*="border-cyan-300\\/"],
+[class*="border-cyan-400\\/"],
+[class*="border-cyan-500\\/"],
+[class*="border-cyan-600\\/"] {
+  border-color: var(--tethr-accent-edge) !important;
+}
+
+/* Hover variants */
+.hover\:border-cyan-500\/30:hover,
+.hover\:border-cyan-400\/40:hover {
+  border-color: var(--tethr-accent-edge) !important;
+}
+
+/* The "live now" ping uses bg-cyan-400; the animation is fine, just the
+   colour needs remapping (already covered above). */
+
+/* ===== Chart bars (Dashboard cards). The bars are plain divs marked
+   with data-tethr-chart-bar; round the top, animate on first paint. ===== */
+
+@keyframes tethr-bar-rise {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+[data-tethr-chart-bar] {
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+  transform-origin: bottom;
+  animation: tethr-bar-rise 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Stagger the day columns left → right so the chart "draws in". */
+.flex.items-end > div:nth-child(1)  [data-tethr-chart-bar] { animation-delay: 20ms; }
+.flex.items-end > div:nth-child(2)  [data-tethr-chart-bar] { animation-delay: 60ms; }
+.flex.items-end > div:nth-child(3)  [data-tethr-chart-bar] { animation-delay: 100ms; }
+.flex.items-end > div:nth-child(4)  [data-tethr-chart-bar] { animation-delay: 140ms; }
+.flex.items-end > div:nth-child(5)  [data-tethr-chart-bar] { animation-delay: 180ms; }
+.flex.items-end > div:nth-child(6)  [data-tethr-chart-bar] { animation-delay: 220ms; }
+.flex.items-end > div:nth-child(7)  [data-tethr-chart-bar] { animation-delay: 260ms; }
+.flex.items-end > div:nth-child(8)  [data-tethr-chart-bar] { animation-delay: 300ms; }
+.flex.items-end > div:nth-child(9)  [data-tethr-chart-bar] { animation-delay: 340ms; }
+.flex.items-end > div:nth-child(10) [data-tethr-chart-bar] { animation-delay: 380ms; }
+.flex.items-end > div:nth-child(11) [data-tethr-chart-bar] { animation-delay: 420ms; }
+.flex.items-end > div:nth-child(12) [data-tethr-chart-bar] { animation-delay: 460ms; }
+.flex.items-end > div:nth-child(13) [data-tethr-chart-bar] { animation-delay: 500ms; }
+.flex.items-end > div:nth-child(14) [data-tethr-chart-bar] { animation-delay: 540ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-tethr-chart-bar] {
+    animation: none !important;
+  }
+}
