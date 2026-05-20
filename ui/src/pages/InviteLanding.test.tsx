@@ -587,7 +587,7 @@ describe("InviteLandingPage", () => {
     await flushReact();
 
     expect(container.querySelector('img[alt="Acme Robotics logo"]')).toBeNull();
-    expect(container.querySelector('img[aria-hidden="true"]')).not.toBeNull();
+    expect(container.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
 
     await act(async () => {
       root.unmount();
