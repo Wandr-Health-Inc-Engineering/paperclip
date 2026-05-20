@@ -5,8 +5,10 @@ import {
   LayoutDashboard,
   DollarSign,
   History,
+  Moon,
   Search,
   SquarePen,
+  Sun,
   Network,
   Boxes,
   Repeat,
@@ -28,10 +30,12 @@ import { useInboxBadge } from "../hooks/useInboxBadge";
 import { Button } from "@/components/ui/button";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
+import { useTheme } from "../context/ThemeContext";
 
 export function Sidebar() {
   const { openNewIssue } = useDialogActions();
   const { selectedCompanyId, selectedCompany } = useCompany();
+  const { theme, toggleTheme } = useTheme();
   const inboxBadge = useInboxBadge(selectedCompanyId);
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
@@ -67,6 +71,16 @@ export function Sidebar() {
           <NavLink to="/search">
             <Search className="h-4 w-4" />
           </NavLink>
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="text-muted-foreground shrink-0"
+          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          onClick={toggleTheme}
+        >
+          {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </Button>
       </div>
 
