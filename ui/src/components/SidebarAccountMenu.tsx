@@ -33,7 +33,6 @@ interface SidebarAccountMenuProps {
 
 interface MenuActionProps {
   label: string;
-  description: string;
   icon: LucideIcon;
   onClick?: () => void;
   href?: string;
@@ -62,19 +61,14 @@ function deriveUserSlug(name: string | null | undefined, email: string | null | 
   return "me";
 }
 
-function MenuAction({ label, description, icon: Icon, onClick, href, external = false }: MenuActionProps) {
+function MenuAction({ label, icon: Icon, onClick, href, external = false }: MenuActionProps) {
   const className =
-    "flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-accent/60";
+    "flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm font-medium text-foreground transition-colors hover:bg-accent/60";
 
   const content = (
     <>
-      <span className="mt-0.5 rounded-lg border border-border bg-background/70 p-2 text-muted-foreground">
-        <Icon className="size-4" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium text-foreground">{label}</span>
-        <span className="block text-xs text-muted-foreground">{description}</span>
-      </span>
+      <Icon className="size-4 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
     </>
   );
 
@@ -159,95 +153,78 @@ export function SidebarAccountMenu({
         <PopoverContent
           side="top"
           align="start"
-          sideOffset={10}
-          className="w-[var(--radix-popover-trigger-width)] max-w-[calc(100vw-1rem)] overflow-hidden rounded-t-2xl rounded-b-none border-border p-0 shadow-2xl"
+          sideOffset={8}
+          className="w-64 max-w-[calc(100vw-1rem)] overflow-hidden border-border p-0 shadow-2xl"
         >
-          <div className="h-24 bg-[linear-gradient(135deg,hsl(var(--primary))_0%,hsl(var(--accent))_55%,hsl(var(--muted))_100%)]" />
-          <div className="-mt-8 px-4 pb-4">
-            <div className="flex items-start gap-3">
-              <div className="rounded-2xl border-4 border-popover bg-popover p-0.5 shadow-sm">
-                <Avatar size="lg">
-                  {session?.user.image ? <AvatarImage src={session.user.image} alt={displayName} /> : null}
-                  <AvatarFallback>{initials}</AvatarFallback>
-                </Avatar>
+          <div className="flex items-center gap-3 border-b border-border px-3 py-3">
+            <Avatar size="sm">
+              {session?.user.image ? <AvatarImage src={session.user.image} alt={displayName} /> : null}
+              <AvatarFallback>{initials}</AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
+                <span className="shrink-0 rounded-sm bg-accent px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {accountBadge}
+                </span>
               </div>
-              <div className="min-w-0 flex-1 pt-1">
-                <div className="flex items-center gap-2">
-                  <h2 className="truncate text-base font-semibold text-foreground">{displayName}</h2>
-                  <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    {accountBadge}
-                  </span>
-                </div>
-                <p className="truncate text-sm text-muted-foreground">{secondaryLabel}</p>
-                {version ? (
-                  <p className="mt-1 text-xs text-muted-foreground">tethr v{version}</p>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="mt-4 space-y-1">
-              <MenuAction
-                label="View profile"
-                description="Open your activity, task, and usage ledger."
-                icon={UserRound}
-                href={profileHref}
-                onClick={closeNavigationChrome}
-              />
-              <MenuAction
-                label="Edit profile"
-                description="Update your display name and avatar."
-                icon={UserRoundPen}
-                href={PROFILE_SETTINGS_PATH}
-                onClick={closeNavigationChrome}
-              />
-              <MenuAction
-                label="Instance settings"
-                description="Jump back to the last settings page you opened."
-                icon={Settings}
-                href={instanceSettingsTarget}
-                onClick={closeNavigationChrome}
-              />
-              <MenuAction
-                label="Documentation"
-                description="Open tethr docs in a new tab."
-                icon={BookOpen}
-                href={DOCS_URL}
-                external
-                onClick={() => setOpen(false)}
-              />
-              <MenuAction
-                label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-                description="Toggle the app appearance."
-                icon={theme === "dark" ? Sun : Moon}
-                onClick={() => {
-                  toggleTheme();
-                  setOpen(false);
-                }}
-              />
-              {deploymentMode === "authenticated" ? (
-                <button
-                  type="button"
-                  className={cn(
-                    "flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-destructive/10",
-                    signOutMutation.isPending && "cursor-not-allowed opacity-60",
-                  )}
-                  onClick={() => signOutMutation.mutate()}
-                  disabled={signOutMutation.isPending}
-                >
-                  <span className="mt-0.5 rounded-lg border border-border bg-background/70 p-2 text-muted-foreground">
-                    <LogOut className="size-4" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium text-foreground">
-                      {signOutMutation.isPending ? "Signing out..." : "Sign out"}
-                    </span>
-                    <span className="block text-xs text-muted-foreground">
-                      End this browser session.
-                    </span>
-                  </span>
-                </button>
+              <p className="truncate text-xs text-muted-foreground">{secondaryLabel}</p>
+              {version ? (
+                <p className="mt-0.5 text-[10px] text-muted-foreground/80">tethr v{version}</p>
               ) : null}
             </div>
+          </div>
+
+          <div className="p-1.5">
+            <MenuAction
+              label="View profile"
+              icon={UserRound}
+              href={profileHref}
+              onClick={closeNavigationChrome}
+            />
+            <MenuAction
+              label="Edit profile"
+              icon={UserRoundPen}
+              href={PROFILE_SETTINGS_PATH}
+              onClick={closeNavigationChrome}
+            />
+            <MenuAction
+              label="Instance settings"
+              icon={Settings}
+              href={instanceSettingsTarget}
+              onClick={closeNavigationChrome}
+            />
+            <MenuAction
+              label="Documentation"
+              icon={BookOpen}
+              href={DOCS_URL}
+              external
+              onClick={() => setOpen(false)}
+            />
+            <MenuAction
+              label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              icon={theme === "dark" ? Sun : Moon}
+              onClick={() => {
+                toggleTheme();
+                setOpen(false);
+              }}
+            />
+            {deploymentMode === "authenticated" ? (
+              <button
+                type="button"
+                className={cn(
+                  "flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm font-medium text-foreground transition-colors hover:bg-destructive/10 hover:text-destructive",
+                  signOutMutation.isPending && "cursor-not-allowed opacity-60",
+                )}
+                onClick={() => signOutMutation.mutate()}
+                disabled={signOutMutation.isPending}
+              >
+                <LogOut className="size-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">
+                  {signOutMutation.isPending ? "Signing out…" : "Sign out"}
+                </span>
+              </button>
+            ) : null}
           </div>
         </PopoverContent>
       </Popover>
