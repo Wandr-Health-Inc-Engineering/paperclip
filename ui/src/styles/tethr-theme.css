@@ -14,3 +14,122 @@
  *
  * See BRANDING.md at the repo root for the post-upstream-merge checklist.
  */
+
+@import url("https://fonts.googleapis.com/css2?family=Urbanist:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+
+/* Wire brand fonts into Tailwind v4's theme namespace so utility classes
+   (font-sans, font-mono) resolve to Urbanist / JetBrains Mono. */
+@theme inline {
+  --font-sans:
+    "Urbanist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* ===== Light mode: pure black + white, hairline grey only for dividers ===== */
+:root {
+  /* Brand palette — direct hex, not oklch, so the values match the kit
+     exactly when sampled. */
+  --background: #ffffff;
+  --foreground: #000000;
+
+  --card: #ffffff;
+  --card-foreground: #000000;
+  --popover: #ffffff;
+  --popover-foreground: #000000;
+
+  --primary: #000000;
+  --primary-foreground: #ffffff;
+
+  --secondary: #f2f2f2;
+  --secondary-foreground: #000000;
+
+  --muted: #f2f2f2;
+  --muted-foreground: #5c5c5c;
+
+  --accent: #f2f2f2;
+  --accent-foreground: #000000;
+
+  --border: #c9c9c9;
+  --input: #c9c9c9;
+  --ring: #000000;
+
+  /* Sidebar mirrors the page — same restraint. */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #000000;
+  --sidebar-primary: #000000;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f2f2f2;
+  --sidebar-accent-foreground: #000000;
+  --sidebar-border: #c9c9c9;
+  --sidebar-ring: #000000;
+
+  /*
+   * --destructive and --chart-* are intentionally NOT overridden here.
+   * The brand kit allows a single accent for charts / destructive states
+   * because they carry meaning. We rely on upstream's existing semantic
+   * mapping so feature behavior doesn't shift.
+   */
+}
+
+/* ===== Dark mode: pure black + white, inverted ===== */
+.dark {
+  --background: #000000;
+  --foreground: #ffffff;
+
+  --card: #1a1a1a;
+  --card-foreground: #ffffff;
+  --popover: #1a1a1a;
+  --popover-foreground: #ffffff;
+
+  /* Primary in dark mode stays white-on-black for buttons — matches the
+     reverse wordmark in the brand kit. */
+  --primary: #ffffff;
+  --primary-foreground: #000000;
+
+  --secondary: #1a1a1a;
+  --secondary-foreground: #ffffff;
+
+  --muted: #1a1a1a;
+  --muted-foreground: #c9c9c9;
+
+  --accent: #1a1a1a;
+  --accent-foreground: #ffffff;
+
+  --border: #5c5c5c;
+  --input: #5c5c5c;
+  --ring: #ffffff;
+
+  --sidebar: #000000;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: #1a1a1a;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #5c5c5c;
+  --sidebar-ring: #ffffff;
+}
+
+/* ===== Typography — anchor the brand voice on body, lock tracking on
+   display headings. Matches the brand kit's H1 / H2 letter-spacing. ===== */
+body {
+  font-family: var(--font-sans);
+  font-weight: 500;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-sans);
+  letter-spacing: -0.02em;
+}
+
+h1 {
+  letter-spacing: -0.025em;
+}
+
+/* Anything tagged as monospace (data-tags, code, IDs, timestamps) should
+   pick up JetBrains Mono via the theme token above — no extra rule needed
+   since shadcn / Tailwind utilities (font-mono, .mono) resolve through
+   --font-mono. */
