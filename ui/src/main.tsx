@@ -19,6 +19,7 @@ import { initPluginBridge } from "./plugins/bridge-init";
 import { PluginLauncherProvider } from "./plugins/launchers";
 import "@mdxeditor/editor/style.css";
 import "./index.css";
+import "./styles/tethr-theme.css";
 
 initPluginBridge(React, ReactDOM);
 

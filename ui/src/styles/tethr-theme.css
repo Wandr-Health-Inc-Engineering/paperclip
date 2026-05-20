@@ -1,0 +1,16 @@
+/*
+ * tethr brand theme — overrides layered on top of index.css.
+ *
+ * This file is imported AFTER index.css in main.tsx so it wins the cascade
+ * for any tokens it redefines. Upstream changes to index.css merge cleanly
+ * because we never edit it directly.
+ *
+ * Scope:
+ *   - Font imports (Urbanist, JetBrains Mono)
+ *   - CSS variable overrides for color, type, borders
+ *
+ * Anything that can't be done by overriding tokens belongs in a
+ * separate file or a shadcn variant — not here.
+ *
+ * See BRANDING.md at the repo root for the post-upstream-merge checklist.
+ */
