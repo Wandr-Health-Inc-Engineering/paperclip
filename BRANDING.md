@@ -30,6 +30,8 @@ These are intentionally left as "paperclip":
 - Error class names, internal IDs, log labels, telemetry events
 - The lucide `Paperclip` icon (it's an attachment icon, not branding)
 - Server-side HTML comment markers (`<!-- PAPERCLIP_FAVICON_START -->`) — they're contracts the server's `ui-branding.ts` injector reads
+- **Cross-system string constants** that the frontend compares against backend-produced text. Specifically: `SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY` and `SUCCESSFUL_RUN_HANDOFF_EXHAUSTED_NOTICE_BODY` in [ui/src/lib/successful-run-handoff.ts](ui/src/lib/successful-run-handoff.ts). The backend (`server/src/services/recovery/`) emits the same literal text; rebranding requires a coordinated server change. Same applies to the `/^Paperclip exhausted/i` regex check.
+- [ui/src/pages/CompanyExport.tsx](ui/src/pages/CompanyExport.tsx) export-markdown footer links — those credit the origin tool (paperclip.ing) and are part of the exported artifact's audit trail.
 
 ## Post-upstream-merge checklist
 
