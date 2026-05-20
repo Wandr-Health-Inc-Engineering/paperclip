@@ -1,29 +1,25 @@
+@import url("https://fonts.googleapis.com/css2?family=Urbanist:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+
 /*
  * tethr brand theme — overrides layered on top of index.css.
  *
- * This file is imported AFTER index.css in main.tsx so it wins the cascade
- * for any tokens it redefines. Upstream changes to index.css merge cleanly
+ * Imported AFTER index.css in main.tsx so it wins the cascade for any
+ * tokens it redefines. Upstream changes to index.css merge cleanly
  * because we never edit it directly.
- *
- * Scope:
- *   - Font imports (Urbanist, JetBrains Mono)
- *   - CSS variable overrides for color, type, borders
- *
- * Anything that can't be done by overriding tokens belongs in a
- * separate file or a shadcn variant — not here.
  *
  * See BRANDING.md at the repo root for the post-upstream-merge checklist.
  */
 
-@import url("https://fonts.googleapis.com/css2?family=Urbanist:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
-
-/* Wire brand fonts into Tailwind v4's theme namespace so utility classes
-   (font-sans, font-mono) resolve to Urbanist / JetBrains Mono. */
-@theme inline {
+/* Fonts and radius as plain CSS variables — not @theme inline — so the
+   cascade applies at runtime regardless of build pipeline. */
+:root {
   --font-sans:
     "Urbanist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono:
     "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /* Slight softening — sharp enough to feel deliberate, not harsh. */
+  --radius: 0.5rem;
 }
 
 /* ===== Light mode: pure black + white, hairline grey only for dividers ===== */
@@ -50,7 +46,7 @@
   --accent: #f2f2f2;
   --accent-foreground: #000000;
 
-  --border: #c9c9c9;
+  --border: #1a1a1a;
   --input: #c9c9c9;
   --ring: #000000;
 
@@ -61,15 +57,8 @@
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #f2f2f2;
   --sidebar-accent-foreground: #000000;
-  --sidebar-border: #c9c9c9;
+  --sidebar-border: #1a1a1a;
   --sidebar-ring: #000000;
-
-  /*
-   * --destructive and --chart-* are intentionally NOT overridden here.
-   * The brand kit allows a single accent for charts / destructive states
-   * because they carry meaning. We rely on upstream's existing semantic
-   * mapping so feature behavior doesn't shift.
-   */
 }
 
 /* ===== Dark mode: pure black + white, inverted ===== */
@@ -82,8 +71,6 @@
   --popover: #1a1a1a;
   --popover-foreground: #ffffff;
 
-  /* Primary in dark mode stays white-on-black for buttons — matches the
-     reverse wordmark in the brand kit. */
   --primary: #ffffff;
   --primary-foreground: #000000;
 
@@ -96,7 +83,7 @@
   --accent: #1a1a1a;
   --accent-foreground: #ffffff;
 
-  --border: #5c5c5c;
+  --border: #d4d4d4;
   --input: #5c5c5c;
   --ring: #ffffff;
 
@@ -106,15 +93,20 @@
   --sidebar-primary-foreground: #000000;
   --sidebar-accent: #1a1a1a;
   --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: #5c5c5c;
+  --sidebar-border: #d4d4d4;
   --sidebar-ring: #ffffff;
 }
 
-/* ===== Typography — anchor the brand voice on body, lock tracking on
-   display headings. Matches the brand kit's H1 / H2 letter-spacing. ===== */
+/* ===== Typography — apply the brand font everywhere via inheritance.
+   Weight 600 gives body text enough presence in Urbanist; weight 500
+   was too thin against the geometric letterforms. ===== */
+html,
 body {
   font-family: var(--font-sans);
-  font-weight: 500;
+}
+
+body {
+  font-weight: 600;
 }
 
 h1,
@@ -122,6 +114,7 @@ h2,
 h3,
 h4 {
   font-family: var(--font-sans);
+  font-weight: 800;
   letter-spacing: -0.02em;
 }
 
@@ -129,25 +122,33 @@ h1 {
   letter-spacing: -0.025em;
 }
 
-/* Anything tagged as monospace (data-tags, code, IDs, timestamps) should
-   pick up JetBrains Mono via the theme token above — no extra rule needed
-   since shadcn / Tailwind utilities (font-mono, .mono) resolve through
-   --font-mono. */
+code,
+pre,
+kbd,
+samp,
+[class*="font-mono"] {
+  font-family: var(--font-mono);
+}
 
-/* ===== Component overrides — targeted by shadcn data-slot attributes
-   so we never edit the upstream component files. ===== */
+/* Override Tailwind's font-medium / font-normal where they fight Urbanist's
+   weight choices. Keeps the brand voice at body weight unless something
+   explicitly asks for bolder. */
+.font-normal {
+  font-weight: 500 !important;
+}
+.font-medium {
+  font-weight: 600 !important;
+}
 
-/* Cards: brand kit wants 2px black borders and no drop shadow. The
-   --border token stays hairline grey because it's also used for dividers;
-   instead we target the slot directly. */
+/* ===== Borders — beef up the slot frames so cards and panels read like
+   intentional containers, not afterthoughts. ===== */
+
 [data-slot="card"] {
   border-width: 2px;
   border-color: var(--foreground);
   box-shadow: none;
 }
 
-/* Popover, dialog, and dropdown surfaces follow the same rule so floating
-   panels match cards. */
 [data-slot="popover-content"],
 [data-slot="dialog-content"],
 [data-slot="dropdown-menu-content"],
@@ -156,11 +157,102 @@ h1 {
   border-color: var(--foreground);
 }
 
-/* Tags / badges: the brand kit calls for square corners (Urbanist 800
-   tracking), but shadcn's <Badge/> hardcodes rounded-full. Override the
-   shape; preserve everything else. The default-variant black-on-white
-   look already falls out of the new --primary token. */
 [data-slot="badge"] {
-  border-radius: 0;
+  border-radius: calc(var(--radius) - 4px);
 }
 
+/* Sidebar divider — bumped from 1px to 2px so the shell columns feel
+   architected. */
+aside.border-r {
+  border-right-width: 2px;
+  border-color: var(--border);
+}
+
+/* ===== Motion — framer-style entrance for the app shell on first load.
+   No JS dep needed; pure CSS keyframes with reduced-motion respect.
+   Animations target the major regions independently so the eye picks up
+   layered movement instead of one block sliding. ===== */
+
+@keyframes tethr-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(6px);
+  }
+  60% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes tethr-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes tethr-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+aside {
+  animation: tethr-slide-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+main,
+[role="main"] {
+  animation: tethr-rise 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 80ms;
+}
+
+[data-slot="card"],
+[data-slot="dialog-content"],
+[data-slot="popover-content"] {
+  animation: tethr-rise 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Stagger card entries when a list of them mounts together. */
+[data-slot="card"]:nth-child(1) { animation-delay: 60ms; }
+[data-slot="card"]:nth-child(2) { animation-delay: 120ms; }
+[data-slot="card"]:nth-child(3) { animation-delay: 180ms; }
+[data-slot="card"]:nth-child(4) { animation-delay: 240ms; }
+[data-slot="card"]:nth-child(5) { animation-delay: 300ms; }
+
+button,
+a[role="button"] {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    transform 120ms ease;
+}
+
+button:active,
+a[role="button"]:active {
+  transform: translateY(1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  aside,
+  main,
+  [role="main"],
+  [data-slot="card"],
+  [data-slot="dialog-content"],
+  [data-slot="popover-content"],
+  button,
+  a[role="button"] {
+    animation: none !important;
+    transition: none !important;
+  }
+}

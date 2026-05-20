@@ -54,14 +54,6 @@ vi.mock("../context/SidebarContext", () => ({
   }),
 }));
 
-vi.mock("../context/ThemeContext", () => ({
-  useTheme: () => ({
-    theme: "dark",
-    setTheme: vi.fn(),
-    toggleTheme: vi.fn(),
-  }),
-}));
-
 vi.mock("../api/heartbeats", () => ({
   heartbeatsApi: mockHeartbeatsApi,
 }));
