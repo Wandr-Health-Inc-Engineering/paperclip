@@ -93,7 +93,7 @@ describe("IssueLinkQuicklook", () => {
     vi.clearAllMocks();
   });
 
-  it("keeps portaled quicklook links mounted until after blur click handling", () => {
+  it("opens the quicklook on the first click and suppresses navigation", () => {
     const issue = createIssue();
 
     act(() => {
@@ -115,22 +115,27 @@ describe("IssueLinkQuicklook", () => {
     const trigger = container.querySelector("a") as HTMLAnchorElement | null;
     expect(trigger).not.toBeNull();
 
+    // Hover should NOT open the popover anymore.
     act(() => {
-      trigger?.focus();
+      trigger?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
     });
+    expect(document.body.textContent).not.toContain("Quicklook title");
 
+    // First click opens the popover and suppresses the link navigation.
+    const clickEvent = new MouseEvent("click", { bubbles: true, cancelable: true });
+    act(() => {
+      trigger?.dispatchEvent(clickEvent);
+    });
+    expect(clickEvent.defaultPrevented).toBe(true);
     expect(document.body.textContent).toContain("Quicklook title");
 
+    // Click again closes it.
     act(() => {
-      trigger?.blur();
+      trigger?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
-
-    expect(document.body.textContent).toContain("Quicklook title");
-
     act(() => {
       vi.runOnlyPendingTimers();
     });
-
     expect(document.body.textContent).not.toContain("Quicklook title");
   });
 });
