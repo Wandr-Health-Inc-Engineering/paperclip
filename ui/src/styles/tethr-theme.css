@@ -133,3 +133,34 @@ h1 {
    pick up JetBrains Mono via the theme token above — no extra rule needed
    since shadcn / Tailwind utilities (font-mono, .mono) resolve through
    --font-mono. */
+
+/* ===== Component overrides — targeted by shadcn data-slot attributes
+   so we never edit the upstream component files. ===== */
+
+/* Cards: brand kit wants 2px black borders and no drop shadow. The
+   --border token stays hairline grey because it's also used for dividers;
+   instead we target the slot directly. */
+[data-slot="card"] {
+  border-width: 2px;
+  border-color: var(--foreground);
+  box-shadow: none;
+}
+
+/* Popover, dialog, and dropdown surfaces follow the same rule so floating
+   panels match cards. */
+[data-slot="popover-content"],
+[data-slot="dialog-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="alert-dialog-content"] {
+  border-width: 2px;
+  border-color: var(--foreground);
+}
+
+/* Tags / badges: the brand kit calls for square corners (Urbanist 800
+   tracking), but shadcn's <Badge/> hardcodes rounded-full. Override the
+   shape; preserve everything else. The default-variant black-on-white
+   look already falls out of the new --primary token. */
+[data-slot="badge"] {
+  border-radius: 0;
+}
+
