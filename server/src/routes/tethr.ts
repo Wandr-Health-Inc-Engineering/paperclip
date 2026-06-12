@@ -17,6 +17,7 @@ import {
   tethrSubagents,
 } from "@paperclipai/db";
 import { loadConfig } from "../config.js";
+import { logger } from "../middleware/logger.js";
 import { logActivity } from "../services/activity-log.js";
 import { getTethrLLMProvider } from "../tethr/llm/index.js";
 import { driveService } from "../tethr/drive.js";
@@ -25,6 +26,7 @@ import { memoryService } from "../tethr/memory.js";
 import { notificationService } from "../tethr/notify.js";
 import { orgService } from "../tethr/org.js";
 import { routingService } from "../tethr/routing.js";
+import { workerService } from "../tethr/worker.js";
 import { seedWandrGrowth } from "../tethr/seed/seed.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -52,6 +54,7 @@ export function tethrRoutes(db: Db) {
   const drive = driveService(db);
   const memory = memoryService(db);
   const notify = notificationService(db);
+  const worker = workerService(db);
 
   // ---- Company overview (org view) ----------------------------------------
   router.get("/tethr/:companyId/overview", async (req, res) => {
@@ -269,7 +272,50 @@ export function tethrRoutes(db: Db) {
         .limit(1);
       subagent = row ?? null;
     }
-    res.json({ output, approval, subagent });
+    // Revision lineage: ancestors and descendants of this draft.
+    const revisions = await db
+      .select({
+        id: tethrOutputs.id,
+        title: tethrOutputs.title,
+        status: tethrOutputs.status,
+        revisionNumber: tethrOutputs.revisionNumber,
+        revisionOfId: tethrOutputs.revisionOfId,
+        createdAt: tethrOutputs.createdAt,
+      })
+      .from(tethrOutputs)
+      .where(
+        and(
+          eq(tethrOutputs.companyId, companyId),
+          or(
+            eq(tethrOutputs.id, output.id),
+            eq(tethrOutputs.revisionOfId, output.id),
+            output.revisionOfId
+              ? or(
+                  eq(tethrOutputs.id, output.revisionOfId),
+                  eq(tethrOutputs.revisionOfId, output.revisionOfId),
+                )!
+              : eq(tethrOutputs.id, output.id),
+          )!,
+        ),
+      )
+      .orderBy(tethrOutputs.revisionNumber);
+    res.json({ output, approval, subagent, revisions });
+  });
+
+  // Send a draft back to its producing subagent for a revision.
+  router.post("/tethr/:companyId/outputs/:id/revise", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    try {
+      const result = await worker.reviseOutput({
+        companyId,
+        outputId: req.params.id as string,
+        note: req.body?.note ? String(req.body.note) : undefined,
+      });
+      res.json(result);
+    } catch (err) {
+      res.status(409).json({ error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   router.post("/tethr/:companyId/outputs/:id/decide", async (req, res) => {
@@ -293,6 +339,13 @@ export function tethrRoutes(db: Db) {
         reviewer: actor.actorId,
         note: req.body?.note ? String(req.body.note) : undefined,
       });
+      // Auto-revise: the agent picks the note up and produces v(n+1)
+      // (TETHR_AUTO_REVISE=false disables; the Queue also has a manual button).
+      if (decision === "request_changes" && process.env.TETHR_AUTO_REVISE !== "false") {
+        void worker
+          .reviseOutput({ companyId, outputId: req.params.id as string })
+          .catch((err) => logger.warn({ err }, "tethr auto-revise failed"));
+      }
       res.json(updated);
     } catch (err) {
       res.status(409).json({ error: err instanceof Error ? err.message : String(err) });

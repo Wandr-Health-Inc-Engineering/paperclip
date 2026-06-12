@@ -46,6 +46,8 @@ export interface CreateOutputInput {
   body: string;
   sensitivity: TethrSensitivity;
   meta?: Record<string, unknown>;
+  revisionOfId?: string | null;
+  revisionNumber?: number;
 }
 
 export function isGatedSensitivity(sensitivity: TethrSensitivity): boolean {
@@ -83,6 +85,8 @@ export function gatingService(db: Db) {
         sensitivity: input.sensitivity,
         status: gated ? "gated" : "draft",
         meta: { ...(input.meta ?? {}), agentTag: input.agentTag },
+        revisionOfId: input.revisionOfId ?? null,
+        revisionNumber: input.revisionNumber ?? 1,
       })
       .returning();
 

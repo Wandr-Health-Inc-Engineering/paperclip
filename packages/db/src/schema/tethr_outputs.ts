@@ -1,7 +1,9 @@
 import {
+  type AnyPgColumn,
   pgTable,
   uuid,
   text,
+  integer,
   timestamp,
   jsonb,
   index,
@@ -41,6 +43,12 @@ export const tethrOutputs = pgTable(
     approvalId: uuid("approval_id").references(() => approvals.id, {
       onDelete: "set null",
     }),
+    // Revision lineage: v2 produced after "request changes" points at v1.
+    revisionOfId: uuid("revision_of_id").references(
+      (): AnyPgColumn => tethrOutputs.id,
+      { onDelete: "set null" },
+    ),
+    revisionNumber: integer("revision_number").notNull().default(1),
     driveNodeId: uuid("drive_node_id").references(() => tethrDriveNodes.id, {
       onDelete: "set null",
     }),

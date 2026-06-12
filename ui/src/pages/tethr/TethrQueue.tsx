@@ -18,6 +18,7 @@ import { PageSkeleton } from "@/components/PageSkeleton";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import {
   MonoTag,
+  OUTPUT_STATUS_LABEL,
   OutputStatusBadge,
   SensitivityBadge,
   formatRelative,
@@ -187,6 +188,7 @@ function QueueDetail({
   onBack: () => void;
 }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [note, setNote] = useState("");
 
   const { data, isLoading, error } = useQuery({
@@ -205,6 +207,16 @@ function QueueDetail({
     },
   });
 
+  const reviseMutation = useMutation({
+    mutationFn: () => tethrApi.revise(companyId, outputId, note.trim() || undefined),
+    onSuccess: (result) => {
+      setNote("");
+      queryClient.invalidateQueries({ queryKey: tethrKeys.outputs(companyId) });
+      queryClient.invalidateQueries({ queryKey: tethrKeys.output(companyId, outputId) });
+      if (result?.outputId) navigate(`/queue/${result.outputId}`);
+    },
+  });
+
   if (isLoading) return <PageSkeleton variant="detail" />;
   if (error || !data) {
     return (
@@ -213,8 +225,11 @@ function QueueDetail({
       </p>
     );
   }
-  const { output, approval, subagent } = data;
+  const { output, approval, subagent, revisions } = data;
   const decidable = ["gated", "changes_requested"].includes(output.status);
+  const hasNewerRevision = revisions.some(
+    (r) => r.revisionNumber > (revisions.find((x) => x.id === output.id)?.revisionNumber ?? 1),
+  );
 
   return (
     <div className="space-y-4">
@@ -242,6 +257,27 @@ function QueueDetail({
               Produced by <span className="font-mono font-semibold">{subagent.tag}</span> —{" "}
               {subagent.job}
             </p>
+          ) : null}
+          {revisions.length > 1 ? (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <MonoTag>lineage</MonoTag>
+              {revisions.map((rev, i) => (
+                <span key={rev.id} className="flex items-center gap-1.5">
+                  {i > 0 ? <span className="text-muted-foreground">→</span> : null}
+                  <button
+                    onClick={() => navigate(`/queue/${rev.id}`)}
+                    className={cn(
+                      "border px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.12em]",
+                      rev.id === output.id
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-border text-muted-foreground hover:border-foreground hover:text-foreground",
+                    )}
+                  >
+                    v{rev.revisionNumber} · {OUTPUT_STATUS_LABEL[rev.status] ?? rev.status}
+                  </button>
+                </span>
+              ))}
+            </div>
           ) : null}
         </header>
 
@@ -333,6 +369,27 @@ function QueueDetail({
               <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
                 published to the drive · {formatRelative(output.publishedAt)}
               </p>
+            ) : null}
+            {["changes_requested", "rejected"].includes(output.status) &&
+            !hasNewerRevision ? (
+              <div className="mt-3 border-t border-border pt-3">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => reviseMutation.mutate()}
+                  disabled={reviseMutation.isPending}
+                >
+                  <Undo2 className="mr-1.5 h-3.5 w-3.5" />
+                  {reviseMutation.isPending
+                    ? "Agent is revising…"
+                    : "Send back to the agent for a revision"}
+                </Button>
+                {reviseMutation.isError ? (
+                  <p className="mt-1.5 text-xs text-destructive">
+                    {(reviseMutation.error as Error).message}
+                  </p>
+                ) : null}
+              </div>
             ) : null}
           </div>
         ) : null}

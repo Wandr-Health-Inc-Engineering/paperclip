@@ -332,6 +332,49 @@ describeEmbeddedPostgres("tethr engine end-to-end", () => {
     await expect(gating.publishToDrive(outputId, companyId, "mark")).rejects.toThrow();
   });
 
+  it("revises a sent-back draft: v2 links to v1 and re-enters the gate", async () => {
+    const routing = routingService(db);
+    const gating = gatingService(db);
+    const { workerService } = await import("../tethr/worker.ts");
+    const worker = workerService(db);
+
+    const result = await routing.routeRequest({
+      companyId,
+      requestText: "Press release: Wandr partners with Andean Trails",
+      invocationSource: "console",
+    });
+    expect(result.status).toBe("gated");
+    const v1Id = result.outputs[0].outputId;
+
+    await gating.decide({
+      companyId,
+      outputId: v1Id,
+      decision: "request_changes",
+      reviewer: "mark",
+      note: "Lead with the traveler benefit, not the partnership mechanics.",
+    });
+
+    const revised = await worker.reviseOutput({ companyId, outputId: v1Id });
+    expect(revised.gated).toBe(true);
+
+    const v2 = await gating.getOutput(companyId, revised.outputId);
+    expect(v2?.revisionOfId).toBe(v1Id);
+    expect(v2?.revisionNumber).toBe(2);
+    expect(v2?.status).toBe("gated");
+
+    // v1 stays changes_requested; v2 is independently decidable.
+    const v1 = await gating.getOutput(companyId, v1Id);
+    expect(v1?.status).toBe("changes_requested");
+    const published = await gating.decide({
+      companyId,
+      outputId: revised.outputId,
+      decision: "approve",
+      reviewer: "mark",
+      note: "Better.",
+    });
+    expect(published.status).toBe("published");
+  });
+
   it("escalates ambiguous requests to the closest match instead of stalling", async () => {
     const routing = routingService(db);
     const result = await routing.routeRequest({

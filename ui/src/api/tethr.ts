@@ -159,6 +159,14 @@ export interface TethrOutputDetail {
     createdAt: string;
   } | null;
   subagent: TethrSubagent | null;
+  revisions: Array<{
+    id: string;
+    title: string;
+    status: string;
+    revisionNumber: number;
+    revisionOfId: string | null;
+    createdAt: string;
+  }>;
 }
 
 export interface TethrDriveNode {
@@ -358,6 +366,8 @@ export const tethrApi = {
   output: (c: string, id: string) => api.get<TethrOutputDetail>(`/tethr/${c}/outputs/${id}`),
   decide: (c: string, id: string, decision: string, note?: string) =>
     api.post(`/tethr/${c}/outputs/${id}/decide`, { decision, note }),
+  revise: (c: string, id: string, note?: string) =>
+    api.post<{ outputId: string }>(`/tethr/${c}/outputs/${id}/revise`, { note }),
   drive: (c: string, parentId: string | null) =>
     api.get<TethrDriveNode[]>(
       `/tethr/${c}/drive${parentId ? `?parentId=${parentId}` : ""}`,

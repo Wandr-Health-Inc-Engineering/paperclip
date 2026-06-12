@@ -50,6 +50,9 @@ export interface SubagentJobInput {
   onHop?: (hop: TethrRouteHop) => Promise<void>;
   /** Extra system-prompt context (revision notes, prior sequence results). */
   extraContext?: string;
+  /** Revision lineage when re-running after "request changes". */
+  revisionOfId?: string | null;
+  revisionNumber?: number;
 }
 
 export interface SubagentJobResult {
@@ -61,6 +64,13 @@ export interface SubagentJobResult {
   gated: boolean;
   summary: string;
   usage: LLMUsage;
+}
+
+export interface ReviseOutputInput {
+  companyId: string;
+  outputId: string;
+  /** Reviewer note; falls back to the approval's decision note. */
+  note?: string;
 }
 
 export function buildSubagentSystemPrompt(
@@ -157,7 +167,13 @@ export function workerService(db: Db) {
       title: generated.title,
       body: generated.body,
       sensitivity,
-      meta: { request: input.request.slice(0, 500), provider: provider.id },
+      meta: {
+        request: input.request.slice(0, 500),
+        provider: provider.id,
+        toolCalls: generated.toolCalls.map((t) => t.summary),
+      },
+      revisionOfId: input.revisionOfId ?? null,
+      revisionNumber: input.revisionNumber ?? 1,
     });
     if (!output) throw new Error("Output creation failed");
 
@@ -197,7 +213,54 @@ export function workerService(db: Db) {
     };
   }
 
-  return { runSubagentJob };
+  /**
+   * The revision loop: after "request changes", re-run the producing
+   * subagent with the original draft + the reviewer's note, producing v(n+1)
+   * linked to the original through the same gate.
+   */
+  async function reviseOutput(input: ReviseOutputInput): Promise<SubagentJobResult> {
+    const original = await gating.getOutput(input.companyId, input.outputId);
+    if (!original) throw new Error("Output not found");
+    if (!original.subagentId) throw new Error("Output has no producing subagent");
+    const [subagent] = await db
+      .select()
+      .from(tethrSubagents)
+      .where(eq(tethrSubagents.id, original.subagentId));
+    if (!subagent) throw new Error("Producing subagent not found");
+
+    let note = input.note ?? null;
+    if (!note && original.approvalId) {
+      const { approvals } = await import("@paperclipai/db");
+      const [approval] = await db
+        .select()
+        .from(approvals)
+        .where(eq(approvals.id, original.approvalId));
+      note = approval?.decisionNote ?? null;
+    }
+
+    const meta = original.meta as Record<string, unknown>;
+    const agentTag = String(meta.agentTag ?? subagent.tag.split(".")[0]);
+    const originalRequest = String(meta.request ?? original.title);
+
+    return runSubagentJob({
+      companyId: input.companyId,
+      agentId: original.agentId,
+      agentTag,
+      subagent,
+      request: `Revise your previous draft per the reviewer's note. Original request: ${originalRequest}`,
+      standingRules: [],
+      revisionOfId: original.id,
+      revisionNumber: (original.revisionNumber ?? 1) + 1,
+      extraContext: [
+        `You are revising a draft a human reviewer sent back.`,
+        `Reviewer's note: ${note ?? "(no note recorded — tighten and improve the draft)"}`,
+        `Your previous draft (v${original.revisionNumber ?? 1}):\n---\n${original.body.slice(0, 4000)}\n---`,
+        `Address the note directly. Keep what was right.`,
+      ].join("\n\n"),
+    });
+  }
+
+  return { runSubagentJob, reviseOutput };
 }
 
 export type WorkerService = ReturnType<typeof workerService>;
