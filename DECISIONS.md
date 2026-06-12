@@ -79,8 +79,13 @@ Every core file touched, with reason. Everything else Tethr lives in new files.
 | `ui/src/components/Sidebar.tsx` | + "Operate" nav section | nav registration point |
 | `ui/src/components/CommandPalette.tsx` | + page entries | palette registration point |
 | `ui/src/lib/company-routes.ts` | + Tethr route roots in `BOARD_ROUTE_ROOTS` | prefix resolver allowlist |
+| `packages/db/src/migrations/meta/_journal.json` | + entries 0086/0087 | inherent to adding migrations |
+| `ui/src/styles/tethr-theme.css` | + routing-flow / stagger animation section | the brand layer is designed to be extended here |
 | `.gitignore` | + `.tethr-data/` | local data dir |
 | `.env.example` | + Tethr vars (commented, blank) | 12-factor |
+
+Verified with `git diff --diff-filter=M --stat 436dc2b7..HEAD`: 12 modified files,
+230 insertions / 1 deletion — everything else is new files.
 
 (Reskin-era copy edits across pages predate this build and are documented in BRANDING.md.)
 
