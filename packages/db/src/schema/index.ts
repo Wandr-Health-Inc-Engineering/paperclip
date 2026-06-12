@@ -76,3 +76,13 @@ export { pluginDatabaseNamespaces, pluginMigrations } from "./plugin_database.js
 export { pluginJobs, pluginJobRuns } from "./plugin_jobs.js";
 export { pluginWebhookDeliveries } from "./plugin_webhooks.js";
 export { pluginLogs } from "./plugin_logs.js";
+
+// Tethr add-on tables (see DECISIONS.md "Core changes")
+export { tethrDivisions } from "./tethr_divisions.js";
+export { tethrAgentProfiles } from "./tethr_agent_profiles.js";
+export { tethrSubagents } from "./tethr_subagents.js";
+export { tethrRouteRuns } from "./tethr_route_runs.js";
+export { tethrDriveNodes, tethrDriveVersions } from "./tethr_drive.js";
+export { tethrOutputs } from "./tethr_outputs.js";
+export { tethrMemories } from "./tethr_memories.js";
+export { tethrNotifications } from "./tethr_notifications.js";

@@ -1122,3 +1122,5 @@ export type {
   EnvironmentProviderCapability,
   EnvironmentSupportStatus,
 } from "./environment-support.js";
+
+export * from "./tethr.js";
