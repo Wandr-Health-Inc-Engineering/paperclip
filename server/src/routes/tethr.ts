@@ -916,6 +916,28 @@ export function tethrRoutes(db: Db) {
     res.json({ agentId: agent.id, tag });
   });
 
+  // ---- Export / import ------------------------------------------------------------
+  router.get("/tethr/:companyId/export", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { exportService } = await import("../tethr/export.js");
+    const bundle = await exportService(db).exportCompany(companyId);
+    res.setHeader("content-disposition", 'attachment; filename="tethr-export.json"');
+    res.json(bundle);
+  });
+
+  router.post("/tethr/:companyId/import", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const bundle = req.body;
+    if (!bundle || bundle.version !== 1 || !Array.isArray(bundle.driveFiles)) {
+      res.status(400).json({ error: "Expected a v1 tethr export bundle" });
+      return;
+    }
+    const { exportService } = await import("../tethr/export.js");
+    res.json(await exportService(db).importDriveAndMemories(companyId, bundle));
+  });
+
   // ---- Status / settings --------------------------------------------------------
   router.get("/tethr/:companyId/status", async (req, res) => {
     const companyId = req.params.companyId as string;

@@ -64,6 +64,49 @@ Branch: `mark-sandbox` (local only). Date started: 2026-06-11.
 12. **No live integrations touched**: no Google Drive, no Slack, no Google Ads, no GA4.
     Tailwind (ads) + spend paths are execution-gated and mock-only.
 
+## V2 decisions (operating-grade build, 2026-06-12)
+
+13. **Tool registry with per-subagent allowlists** (`server/src/tethr/tools/`): every
+    subagent gets `drive_list`/`drive_read`/`recall_memory`; web reach (web_fetch,
+    reddit_scan, cdc_scan) and tracker writes only where the spec's `reads` call for
+    them. `drive_write` is restricted to `/state/` + `/scratch/` — publishing still
+    only happens through the gating service, so tools cannot bypass the hard gates.
+14. **Live fetch is flag-gated** (`TETHR_LIVE_FETCH=true`, on for Mark's instance) with
+    deterministic fixtures otherwise. Live CDC RSS works; **Reddit returns 403 to
+    unauthenticated clients** — reddit_scan degrades to fixtures gracefully; cloud team
+    can add read-only OAuth creds later. Rate limit ~1 req/s, honest User-Agent, GET only.
+15. **Agentic loop on both providers**: ClaudeProvider runs the real tools API loop
+    (8-turn cap, forced final answer at cap); MockProvider runs a deterministic scripted
+    loop so tests/offline demos behave identically run-to-run. Every tool call is a
+    `tool` hop on the route run.
+16. **Trackers are versioned JSON in `/state/`**, not markdown tables: a single
+    atomic `putFile` per advance = the locked-tracker problem from the bundle resolved
+    by version history instead of lock files. Approve-publish appends the dedup log and
+    flips the claimed row to published (topic/slug heuristic match, noted).
+17. **Revisions**: `request_changes` auto-triggers a revision (`TETHR_AUTO_REVISE=false`
+    disables; manual button exists). v(n+1) links to v(n) via `revision_of_id`
+    (migration 0088) and re-enters the same gate.
+18. **Plans**: Helm asks the provider for a multi-agent sequence before single-agent
+    classification; the three worked examples from ROUTING-MODEL.md are the mock's
+    canned plans. Steps share results forward; spend/clinical steps still gate.
+19. **Live console = async route + poll** (650ms) rather than new websocket event types
+    in shared — keeps the core LiveEventType union untouched. Console paces hops at
+    350ms so the chain is watchable; heartbeat/run-now paths stay synchronous.
+20. **Digest** is a heartbeatMode on Helm's adapter config (5 PM routine), not a fake
+    subagent — Helm is a router and a reporter, never a producer.
+21. **Export carries state, not history**: org + specs + memories + outputs + drive
+    files (≤256KB each, base64). Import restores drive + company-wide memories into an
+    existing company; full org remapping stays a cloud-importer task (documented).
+22. **Core company remove() fixed** (the V1-documented bug): cost_events before
+    heartbeat_runs, routines/budget-policies added, tethr tables cleared first (their
+    CASCADE + SET NULL mix trips Postgres RI checks when agents delete mid-transaction).
+    Regression-tested in tethr.test.ts. This is the one substantive core change; it is
+    upstreamable as written.
+23. **Upstream merge drill** (2026-06-12, vs upstream/master `d9ea1bf9`): 24 conflicted
+    files, zero in `tethr` files. Conflicts are reskin-era styling + the logged
+    registration points (.gitignore, shared/index.ts, Sidebar, companies.ts,
+    migrations journal) — all one-liner shape, as designed. Drill aborted cleanly.
+
 ## Core changes (keep merge-safe)
 
 Every core file touched, with reason. Everything else Tethr lives in new files.
@@ -79,7 +122,9 @@ Every core file touched, with reason. Everything else Tethr lives in new files.
 | `ui/src/components/Sidebar.tsx` | + "Operate" nav section | nav registration point |
 | `ui/src/components/CommandPalette.tsx` | + page entries | palette registration point |
 | `ui/src/lib/company-routes.ts` | + Tethr route roots in `BOARD_ROUTE_ROOTS` | prefix resolver allowlist |
-| `packages/db/src/migrations/meta/_journal.json` | + entries 0086/0087 | inherent to adding migrations |
+| `packages/db/src/migrations/meta/_journal.json` | + entries 0086–0089 | inherent to adding migrations |
+| `server/src/services/companies.ts` | remove(): FK-order fix + routine/budget/tethr tables | pre-existing core bug (V1 log), now fixed + tested |
+| `ui/src/components/BreadcrumbBar.tsx` | + `<TethrBell />` next to the theme toggle | global toolbar is the only bell mount point |
 | `ui/src/styles/tethr-theme.css` | + routing-flow / stagger animation section | the brand layer is designed to be extended here |
 | `.gitignore` | + `.tethr-data/` | local data dir |
 | `.env.example` | + Tethr vars (commented, blank) | 12-factor |

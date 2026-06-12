@@ -492,4 +492,54 @@ describeEmbeddedPostgres("tethr engine end-to-end", () => {
       );
     expect(news.lastRunAt).toBeTruthy();
   });
+
+  it("company remove clears tethr + cost-linked runs + routines (core FK fix)", async () => {
+    // Reproduce the FK shape that used to break remove(): a heartbeat run
+    // with a linked cost event, plus a routine assigned to an agent.
+    const { companyService } = await import("../services/companies.ts");
+    const { routineService } = await import("../services/routines.ts");
+    const { agents, costEvents, heartbeatRuns, companies } = await import("@paperclipai/db");
+    const org = orgService(db);
+    const sonar = await org.getProfileByTag(companyId, "@sonar");
+
+    const [run] = await db
+      .insert(heartbeatRuns)
+      .values({ companyId, agentId: sonar!.agent.id, status: "succeeded" })
+      .returning();
+    await db.insert(costEvents).values({
+      companyId,
+      agentId: sonar!.agent.id,
+      heartbeatRunId: run.id,
+      provider: "tethr-mock",
+      biller: "tethr",
+      billingType: "fixed",
+      model: "tethr-mock-1",
+      costCents: 1,
+      occurredAt: new Date(),
+    });
+    await routineService(db).create(
+      companyId,
+      {
+        title: "Removable routine",
+        description: null,
+        assigneeAgentId: sonar!.agent.id,
+        priority: "medium",
+        status: "paused",
+        concurrencyPolicy: "coalesce_if_active",
+        catchUpPolicy: "skip_missed",
+        variables: [],
+      },
+      { userId: "test" },
+    );
+
+    const removed = await companyService(db).remove(companyId);
+    expect(removed).toBeTruthy();
+    const [gone] = await db.select().from(companies).where(eq(companies.id, companyId));
+    expect(gone).toBeUndefined();
+    const orphanAgents = await db
+      .select()
+      .from(agents)
+      .where(eq(agents.companyId, companyId));
+    expect(orphanAgents).toHaveLength(0);
+  });
 });

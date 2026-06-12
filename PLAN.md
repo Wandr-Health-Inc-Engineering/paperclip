@@ -61,3 +61,13 @@ existing tethr brand system. Core file touches are one-liners, logged in DECISIO
 - DB/storage/LLM/notifications behind interfaces; MIGRATION-NOTES.md explains swaps
 - .env.example present, no secrets, .tethr-data gitignored
 - Screenshot folder complete with index
+
+## V2 — operating-grade build (BUILD-PROMPT-V2, completed 2026-06-12)
+
+- [x] Phase 1 — tool registry + agentic loop (allowlists, fixtures, live CDC fetch, tool hops)
+- [x] Phase 2 — revision loop (request-changes round trip, lineage in Queue, migration 0088)
+- [x] Phase 3 — working state (/state trackers, claim/advance tools, publish → dedup log)
+- [x] Phase 4 — Helm plans (3 worked sequences), console threads, live streaming hops (0089)
+- [x] Phase 5 — notification bell, add-division/agent wizard, Memory page, Helm daily digest
+- [x] Phase 6 — browser e2e (scripts/tethr-e2e.mjs, passing), tethr export/import, core
+      company-remove fix + regression test, upstream merge drill (0 tethr conflicts)
