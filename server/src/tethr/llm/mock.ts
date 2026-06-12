@@ -6,6 +6,8 @@ import type {
   GenerateResult,
   LLMProvider,
   LLMUsage,
+  PlanInput,
+  PlanResult,
   RunAgenticInput,
   RunAgenticResult,
 } from "./types.js";
@@ -79,6 +81,53 @@ export class MockProvider implements LLMProvider {
     const build = TEMPLATES[input.kind] ?? TEMPLATES.document;
     const { title, body } = build(topic, input.prompt);
     return { title, body, usage: approxUsage(input.system + input.prompt, body) };
+  }
+
+  /**
+   * Deterministic plans for the three cross-domain sequences the routing
+   * model documents (ROUTING-MODEL.md "Multi-Agent Sequences"). Anything
+   * else falls back to single-agent routing.
+   */
+  async plan(input: PlanInput): Promise<PlanResult | null> {
+    const text = input.request.toLowerCase();
+    const usage = approxUsage(input.request, "plan");
+    const subject = extractTopic(input.request, "document");
+
+    if (/launch|kick off/.test(text) && /campaign/.test(text)) {
+      return {
+        steps: [
+          { agentTag: "@beacon", request: `Define the ICP and lead messaging for: ${subject}` },
+          { agentTag: "@ledger", request: `What can we afford for ${subject}? Max CAC, ideal CPC/ROAS, budget recommendation.` },
+          { agentTag: "@tailwind", request: `Propose the campaign structure and bid plan for ${subject} within Ledger's guardrails (recommendation only).` },
+          { agentTag: "@atlas", request: `Plan supporting content for ${subject} from the calendar.` },
+        ],
+        reason:
+          "Campaign launch is cross-domain: strategy defines the audience, economics sets the limits, ads builds inside them (gated), content supports.",
+        usage,
+      };
+    }
+    if (/profitable|afford/.test(text) && /(scale|more on).*(ads|campaign)|ads.*scale/.test(text)) {
+      return {
+        steps: [
+          { agentTag: "@ledger", request: `Are the unit economics strong enough to scale spend? ${input.request}` },
+          { agentTag: "@tailwind", request: `If Ledger's guardrails allow, propose the scaled bid/budget change set (human-gated).` },
+        ],
+        reason: "Economics first, then the gated spend recommendation.",
+        usage,
+      };
+    }
+    if (/partnership|partnered/.test(text) && /(closed|signed|announce)/.test(text)) {
+      return {
+        steps: [
+          { agentTag: "@herald", request: `Draft the announcement: ${input.request}` },
+          { agentTag: "@atlas", request: `Plan a supporting blog post for the partnership: ${subject}` },
+          { agentTag: "@sonar", request: `Scan for community threads where this partnership is relevant: ${subject}` },
+        ],
+        reason: "News goes out through Herald, content amplifies, Sonar finds where it lands.",
+        usage,
+      };
+    }
+    return null;
   }
 
   /**

@@ -71,6 +71,22 @@ export interface RunAgenticResult extends GenerateResult {
   toolCalls: AgenticToolEvent[];
 }
 
+export interface PlanStep {
+  agentTag: string;
+  request: string;
+}
+
+export interface PlanInput {
+  request: string;
+  agents: ClassifyOption[];
+}
+
+export interface PlanResult {
+  steps: PlanStep[];
+  reason: string;
+  usage: LLMUsage;
+}
+
 export interface LLMProvider {
   readonly id: "mock" | "claude";
   readonly model: string;
@@ -78,4 +94,9 @@ export interface LLMProvider {
   generate(input: GenerateInput): Promise<GenerateResult>;
   /** Multi-turn tool-use loop. The subagent's hands. */
   runAgentic(input: RunAgenticInput): Promise<RunAgenticResult>;
+  /**
+   * Cross-domain orchestration: return an ordered multi-agent sequence for
+   * requests that span agents, or null to fall back to single-agent routing.
+   */
+  plan(input: PlanInput): Promise<PlanResult | null>;
 }

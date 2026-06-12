@@ -6,6 +6,8 @@ import type {
   GenerateResult,
   LLMProvider,
   LLMUsage,
+  PlanInput,
+  PlanResult,
   RunAgenticInput,
   RunAgenticResult,
 } from "./types.js";
@@ -115,6 +117,44 @@ export class ClaudeProvider implements LLMProvider {
       body = lines.slice(titleLine + 1).join("\n").trim();
     }
     return { title, body, usage };
+  }
+
+  /** Ask the model whether the request needs a multi-agent sequence. */
+  async plan(input: PlanInput): Promise<PlanResult | null> {
+    const system = [
+      "You are @helm, the Chief Growth Officer routing layer of an agent company.",
+      "If the request genuinely spans multiple agents, return an ordered plan;",
+      "if one agent can own it, return null steps.",
+      'Respond with JSON only: {"steps": [{"agentTag": "@x", "request": "..."}] | null, "reason": "..."}',
+      "Plans have 2-4 steps. Spend and clinical steps stay gated downstream regardless.",
+    ].join("\n");
+    const agentLines = input.agents
+      .map((a) => `- ${a.tag}: ${a.description}`)
+      .join("\n");
+    const { text, usage } = await this.call(
+      system,
+      `Request: ${input.request}\n\nAgents:\n${agentLines}`,
+      500,
+    );
+    const parsed = safeJson(text);
+    const steps = parsed?.steps;
+    if (!Array.isArray(steps) || steps.length < 2) return null;
+    const valid = steps
+      .filter(
+        (s): s is { agentTag: string; request: string } =>
+          typeof s === "object" &&
+          s !== null &&
+          typeof (s as Record<string, unknown>).agentTag === "string" &&
+          typeof (s as Record<string, unknown>).request === "string" &&
+          input.agents.some((a) => a.tag === (s as Record<string, unknown>).agentTag),
+      )
+      .slice(0, 4);
+    if (valid.length < 2) return null;
+    return {
+      steps: valid,
+      reason: typeof parsed?.reason === "string" ? parsed.reason : "Cross-domain plan.",
+      usage,
+    };
   }
 
   /** Real Claude tool-use loop: call tools until end_turn or the turn cap. */

@@ -375,6 +375,42 @@ describeEmbeddedPostgres("tethr engine end-to-end", () => {
     expect(published.status).toBe("published");
   });
 
+  it("plans a multi-agent sequence for a campaign launch", async () => {
+    const routing = routingService(db);
+    const result = await routing.routeRequest({
+      companyId,
+      requestText: "Launch a Peru campaign for the spring season",
+      invocationSource: "console",
+    });
+    const planHop = result.hops.find((h) => h.decision.startsWith("plan →"));
+    expect(planHop).toBeTruthy();
+    expect(planHop!.decision).toContain("@beacon");
+    expect(planHop!.decision).toContain("@tailwind");
+    // Multiple agents produced work; at least one step (medical content) gated.
+    expect(result.outputs.length).toBeGreaterThanOrEqual(3);
+    expect(result.status).toBe("gated");
+    const stepHops = result.hops.filter((h) => h.decision.startsWith("step "));
+    expect(stepHops.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("threads follow-up requests through the same conversation", async () => {
+    const routing = routingService(db);
+    const first = await routing.routeRequest({
+      companyId,
+      requestText: "Any travel health news today?",
+      invocationSource: "console",
+    });
+    expect(first.threadId).toBe(first.routeRunId);
+    const followUp = await routing.routeRequest({
+      companyId,
+      requestText: "What should we write about first from that?",
+      invocationSource: "console",
+      threadId: first.threadId,
+    });
+    expect(followUp.threadId).toBe(first.threadId);
+    expect(followUp.routeRunId).not.toBe(first.routeRunId);
+  });
+
   it("escalates ambiguous requests to the closest match instead of stalling", async () => {
     const routing = routingService(db);
     const result = await routing.routeRequest({

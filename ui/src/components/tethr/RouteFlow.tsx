@@ -25,16 +25,19 @@ export function RouteFlow({
   hops,
   pending,
   animate = true,
+  live = false,
   className,
 }: {
   request: string;
   hops: TethrRouteHop[];
   pending?: boolean;
   animate?: boolean;
+  /** Live mode: hops arrive on their own schedule, so no stagger delays. */
+  live?: boolean;
   className?: string;
 }) {
-  const baseDelay = 120;
-  const step = 240;
+  const baseDelay = live ? 0 : 120;
+  const step = live ? 0 : 240;
 
   return (
     <div className={cn("flex flex-col", className)}>

@@ -1,0 +1,1 @@
+ALTER TABLE "tethr_route_runs" ADD COLUMN "thread_id" uuid;

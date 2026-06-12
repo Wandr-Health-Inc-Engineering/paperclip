@@ -90,6 +90,7 @@ export interface TethrRouteHop {
 
 export interface TethrRouteResult {
   routeRunId: string;
+  threadId: string;
   status: string;
   hops: TethrRouteHop[];
   resultText: string;
@@ -109,6 +110,7 @@ export interface TethrRouteRun {
   requestText: string;
   requestedByUserId: string | null;
   invocationSource: string;
+  threadId: string | null;
   status: string;
   hops: TethrRouteHop[];
   resultText: string | null;
@@ -116,6 +118,16 @@ export interface TethrRouteRun {
   llmProvider: string | null;
   durationMs: number | null;
   createdAt: string;
+}
+
+export interface TethrRouteRunDetail extends TethrRouteRun {
+  outputs: Array<{
+    id: string;
+    title: string;
+    status: string;
+    sensitivity: string;
+    kind: string;
+  }>;
 }
 
 export interface TethrOutputListItem {
@@ -351,14 +363,15 @@ export const tethrApi = {
   overview: (c: string) => api.get<TethrOverview>(`/tethr/${c}/overview`),
   agent: (c: string, agentId: string) =>
     api.get<TethrAgentDetail>(`/tethr/${c}/agents/${agentId}`),
-  route: (c: string, request: string) =>
-    api.post<TethrRouteResult>(`/tethr/${c}/route`, { request }),
+  route: (c: string, request: string, threadId?: string | null) =>
+    api.post<{ routeRunId: string; threadId: string }>(`/tethr/${c}/route`, {
+      request,
+      threadId: threadId ?? null,
+    }),
   routeRuns: (c: string, limit = 30) =>
     api.get<TethrRouteRun[]>(`/tethr/${c}/route-runs?limit=${limit}`),
   routeRun: (c: string, id: string) =>
-    api.get<TethrRouteRun & { outputs: TethrOutputDetail["output"][] }>(
-      `/tethr/${c}/route-runs/${id}`,
-    ),
+    api.get<TethrRouteRunDetail>(`/tethr/${c}/route-runs/${id}`),
   outputs: (c: string, status?: string) =>
     api.get<TethrOutputListItem[]>(
       `/tethr/${c}/outputs${status ? `?status=${status}` : ""}`,

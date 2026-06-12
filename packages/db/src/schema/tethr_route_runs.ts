@@ -30,6 +30,8 @@ export const tethrRouteRuns = pgTable(
     requestText: text("request_text").notNull(),
     requestedByUserId: text("requested_by_user_id"),
     invocationSource: text("invocation_source").notNull().default("console"),
+    // Console conversations: follow-ups share the first run's id as threadId.
+    threadId: uuid("thread_id"),
     status: text("status").notNull().default("routing"),
     hops: jsonb("hops").$type<TethrRouteHop[]>().notNull().default([]),
     agentId: uuid("agent_id").references(() => agents.id, {

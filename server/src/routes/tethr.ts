@@ -190,6 +190,8 @@ export function tethrRoutes(db: Db) {
   });
 
   // ---- Helm console: route a request ----------------------------------------
+  // Returns immediately with the run id; the engine works in the background
+  // and the Console polls the run, so hops stream live as they happen.
   router.post("/tethr/:companyId/route", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
@@ -199,13 +201,26 @@ export function tethrRoutes(db: Db) {
       res.status(400).json({ error: "request is required" });
       return;
     }
-    const result = await routing.routeRequest({
-      companyId,
-      requestText,
-      invocationSource: "console",
-      requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
-    });
-    res.json(result);
+    const threadId = req.body?.threadId ? String(req.body.threadId) : null;
+    const ids = await new Promise<{ routeRunId: string; threadId: string }>(
+      (resolve, reject) => {
+        routing
+          .routeRequest({
+            companyId,
+            requestText,
+            invocationSource: "console",
+            requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
+            threadId,
+            hopDelayMs: 350,
+            onStarted: resolve,
+          })
+          .catch((err) => {
+            logger.warn({ err }, "tethr console route failed");
+            reject(err instanceof Error ? err : new Error(String(err)));
+          });
+      },
+    );
+    res.json(ids);
   });
 
   router.get("/tethr/:companyId/route-runs", async (req, res) => {
