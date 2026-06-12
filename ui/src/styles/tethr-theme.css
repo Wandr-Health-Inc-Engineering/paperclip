@@ -452,3 +452,9 @@ a[role="button"]:active {
     filter: none !important;
   }
 }
+
+/* Branded selection: ink-on-paper inversion in both themes. */
+::selection {
+  background: var(--foreground);
+  color: var(--background);
+}
