@@ -107,3 +107,7 @@ Verified with `git diff --diff-filter=M --stat 436dc2b7..HEAD`: 12 modified file
   `heartbeat_runs` before `cost_events` and predates routines/budget-policy tables, so
   deleting a company with cost-linked runs fails on FK order. Tethr tables all cascade
   on company delete (migration 0087) so they never add to the problem.
+- Pre-existing test failure (verified on baseline 436dc2b7 in a clean worktree):
+  `server/src/__tests__/heartbeat-comment-wake-batching.test.ts` — two 90s-timeout
+  cases fail before and after this build identically. Final state: server suite
+  1814 passed / 2 pre-existing failures; Tethr suite 10/10; UI 987/987; shared+db green.
