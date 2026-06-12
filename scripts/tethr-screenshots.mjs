@@ -156,6 +156,14 @@ async function run() {
       "Settings — provider seams (LLM / storage / DB / notifications) + engine SHA",
     );
 
+    // 12b — Memory
+    await go("/memory");
+    await shoot(
+      page,
+      `18-memory-${t}.png`,
+      "Memory — company rules + per-agent recall that feeds every run",
+    );
+
     // 13 — Task board (core issues, reskinned)
     await go("/issues");
     await shoot(page, `13-task-board-${t}.png`, "Task board — hierarchical issues tracing to the goal");

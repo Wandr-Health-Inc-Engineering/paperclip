@@ -78,7 +78,7 @@ export function exportService(db: Db) {
         path: node.path,
         contentType: node.contentType,
         tags: node.tags,
-        permissions: node.permissions as Record<string, unknown>,
+        permissions: node.permissions as unknown as Record<string, unknown>,
         content: read.content.toString("base64"),
       });
     }
