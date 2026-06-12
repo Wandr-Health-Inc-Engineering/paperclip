@@ -27,7 +27,6 @@ import { notificationService } from "../tethr/notify.js";
 import { orgService } from "../tethr/org.js";
 import { routingService } from "../tethr/routing.js";
 import { workerService } from "../tethr/worker.js";
-import { seedWandrGrowth } from "../tethr/seed/seed.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 const execFileAsync = promisify(execFile);
@@ -970,6 +969,7 @@ export function tethrRoutes(db: Db) {
 
   // ---- Seed ----------------------------------------------------------------------
   router.post("/tethr/seed", async (req, res) => {
+    const { seedWandrGrowth } = await import("../tethr/seed/seed.js");
     const result = await seedWandrGrowth(db, {
       force: req.body?.force === true,
       demo: req.body?.demo !== false,
