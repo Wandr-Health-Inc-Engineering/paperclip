@@ -46,13 +46,34 @@ async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionRe
   await ctx.onLog("stdout", `[tethr] ${tag} heartbeat — provider: ${provider.id}\n`);
   await ctx.onLog("stdout", `[tethr] request: ${heartbeatRequest}\n`);
 
+  // Division heads (Helm) have a routing table but no subagents of their own:
+  // their heartbeat routes across the whole org instead of within one agent.
+  const ownSubagents = await org.listSubagents(companyId, ctx.agent.id);
+  const isRouterOnly =
+    ownSubagents.length === 0 && profileRow.profile.routingTable.length > 0;
+
+  // Placeholder slots (the CEO) have neither subagents nor a routing table:
+  // their heartbeat is a graceful no-op, never an error.
+  if (ownSubagents.length === 0 && profileRow.profile.routingTable.length === 0) {
+    await ctx.onLog("stdout", `[tethr] ${tag} is a placeholder slot — nothing to run.\n`);
+    return {
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      provider: provider.id,
+      model: provider.model,
+      billingType: "fixed",
+      usage: { inputTokens: 0, outputTokens: 0 },
+      summary: `${tag} is a placeholder slot — no standing work.`,
+    };
+  }
+
   const result = await routing.routeRequest({
     companyId,
     requestText: heartbeatRequest,
     invocationSource: "heartbeat",
     heartbeatRunId: ctx.runId,
-    startAtAgentTag: tag,
-    subagentChain,
+    ...(isRouterOnly ? {} : { startAtAgentTag: tag, subagentChain }),
   });
 
   for (const hop of result.hops) {

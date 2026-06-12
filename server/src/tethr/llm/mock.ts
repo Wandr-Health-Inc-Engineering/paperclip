@@ -90,12 +90,13 @@ const TOPIC_FALLBACKS: Record<string, string> = {
 
 function extractTopic(prompt: string, kind: string): string {
   let cleaned = prompt
+    .replace(/^\s*(helm|@[a-z.]+)[,:]?\s+/i, "")
     .replace(/^[^:]*:\s*/, "")
     .replace(/[.?!].*$/s, "")
     .trim();
   // Strip instruction-style lead-ins so titles read like topics, not orders.
   const instruction =
-    /^(please\s+)?(write|draft|run|create|make|generate|produce|review|check|scan|refresh|adjust|advance|pull)\b/i;
+    /^(please\s+)?(write|draft|run|create|make|generate|produce|review|check|scan|refresh|adjust|advance|pull|who|what|when|where|how|can|could|should|would|do|does|is|are)\b/i;
   if (instruction.test(cleaned)) {
     const aboutMatch = cleaned.match(/\b(?:on|about|for|covering)\s+(.{6,80})/i);
     if (aboutMatch) {
