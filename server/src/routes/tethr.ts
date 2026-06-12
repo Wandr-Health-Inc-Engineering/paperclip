@@ -755,6 +755,167 @@ export function tethrRoutes(db: Db) {
     res.json(await memory.list(companyId, { agentId }));
   });
 
+  // ---- Digest -------------------------------------------------------------------
+  router.post("/tethr/:companyId/digest", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { digestService } = await import("../tethr/digest.js");
+    res.json(await digestService(db).generateDigest(companyId));
+  });
+
+  // ---- Org building: divisions + agents (the "ready to fill" promise) ------------
+  router.post("/tethr/:companyId/divisions", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const name = String(req.body?.name ?? "").trim();
+    if (!name) {
+      res.status(400).json({ error: "name is required" });
+      return;
+    }
+    const key = (String(req.body?.key ?? "") || name)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    const { tethrDivisions } = await import("@paperclipai/db");
+    const [maxRow] = await db
+      .select({ max: sql<number>`coalesce(max(${tethrDivisions.sortOrder}), 0)` })
+      .from(tethrDivisions)
+      .where(eq(tethrDivisions.companyId, companyId));
+    const [division] = await db
+      .insert(tethrDivisions)
+      .values({
+        companyId,
+        key,
+        name,
+        description: req.body?.description ? String(req.body.description) : null,
+        status: "shell",
+        icon: req.body?.icon ? String(req.body.icon) : "puzzle",
+        sortOrder: (maxRow?.max ?? 0) + 1,
+      })
+      .returning();
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: getActorInfo(req).actorId,
+      action: "tethr_division_created",
+      entityType: "tethr_division",
+      entityId: division.id,
+      details: { name, key },
+    });
+    res.json(division);
+  });
+
+  router.post("/tethr/:companyId/agents", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    const codename = String(req.body?.codename ?? "").trim();
+    const title = String(req.body?.title ?? "").trim();
+    const mission = String(req.body?.mission ?? "").trim();
+    const divisionId = req.body?.divisionId ? String(req.body.divisionId) : null;
+    const isHead = req.body?.isHead === true;
+    const approvalGate = ["medical", "public", "spend", "pr", "internal", "none"].includes(
+      String(req.body?.approvalGate),
+    )
+      ? String(req.body?.approvalGate)
+      : "internal";
+    if (!codename || !title) {
+      res.status(400).json({ error: "codename and title are required" });
+      return;
+    }
+    const tag = `@${codename.toLowerCase().replace(/[^a-z0-9]+/g, "")}`;
+
+    const existing = await org.getProfileByTag(companyId, tag);
+    if (existing) {
+      res.status(409).json({ error: `${tag} already exists` });
+      return;
+    }
+
+    const { agents: agentsTable, tethrAgentProfiles, tethrDivisions, tethrSubagents } =
+      await import("@paperclipai/db");
+    // New agents report to the division head when one exists, else to Helm.
+    const helm = await org.getProfileByTag(companyId, "@helm");
+    let reportsTo = helm?.agent.id ?? null;
+    let division = null;
+    if (divisionId) {
+      const [row] = await db
+        .select()
+        .from(tethrDivisions)
+        .where(
+          and(eq(tethrDivisions.companyId, companyId), eq(tethrDivisions.id, divisionId)),
+        );
+      division = row ?? null;
+      if (division?.headAgentId && !isHead) reportsTo = division.headAgentId;
+    }
+
+    const [agent] = await db
+      .insert(agentsTable)
+      .values({
+        companyId,
+        name: codename,
+        role: isHead ? "executive" : "general",
+        title,
+        icon: "bot",
+        status: "idle",
+        reportsTo,
+        capabilities: mission || title,
+        adapterType: "tethr_llm",
+        adapterConfig: { agentTag: tag },
+        budgetMonthlyCents: Number(req.body?.budgetMonthlyCents ?? 5000),
+      })
+      .returning();
+
+    await db.insert(tethrAgentProfiles).values({
+      companyId,
+      agentId: agent.id,
+      divisionId,
+      tag,
+      codename,
+      mission: mission || title,
+      approvalGate,
+      routingTable: [],
+      standingRules: helm?.profile.standingRules ?? [],
+    });
+
+    const subagentSpecs = Array.isArray(req.body?.subagents) ? req.body.subagents : [];
+    let order = 0;
+    for (const spec of subagentSpecs.slice(0, 6)) {
+      const key = String(spec?.key ?? "").trim();
+      const job = String(spec?.job ?? "").trim();
+      if (!key || !job) continue;
+      await db.insert(tethrSubagents).values({
+        companyId,
+        agentId: agent.id,
+        key,
+        tag: `${tag}.${key}`,
+        name: String(spec?.name ?? key),
+        job,
+        routeWhen: [key],
+        sensitivity: approvalGate === "none" ? "internal" : approvalGate,
+        sortOrder: order++,
+      });
+    }
+
+    if (isHead && division) {
+      await db
+        .update(tethrDivisions)
+        .set({ headAgentId: agent.id, status: "active", updatedAt: new Date() })
+        .where(eq(tethrDivisions.id, division.id));
+    }
+
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: actor.actorId,
+      action: "tethr_agent_created",
+      entityType: "agent",
+      entityId: agent.id,
+      agentId: agent.id,
+      details: { tag, title, divisionId, isHead },
+    });
+    res.json({ agentId: agent.id, tag });
+  });
+
   // ---- Status / settings --------------------------------------------------------
   router.get("/tethr/:companyId/status", async (req, res) => {
     const companyId = req.params.companyId as string;

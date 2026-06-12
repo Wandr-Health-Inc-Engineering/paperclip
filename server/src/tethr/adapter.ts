@@ -46,6 +46,23 @@ async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionRe
   await ctx.onLog("stdout", `[tethr] ${tag} heartbeat — provider: ${provider.id}\n`);
   await ctx.onLog("stdout", `[tethr] request: ${heartbeatRequest}\n`);
 
+  // Digest mode: Helm's scheduled "what needs you" summary.
+  if (config.heartbeatMode === "digest") {
+    const { digestService } = await import("./digest.js");
+    const digest = await digestService(db).generateDigest(companyId);
+    await ctx.onLog("stdout", `[tethr] digest produced: ${digest.title}\n`);
+    return {
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      provider: provider.id,
+      model: provider.model,
+      billingType: "fixed",
+      usage: { inputTokens: 0, outputTokens: 0 },
+      summary: `${digest.title} — ${digest.pendingCount} queue item(s).`,
+    };
+  }
+
   // Division heads (Helm) have a routing table but no subagents of their own:
   // their heartbeat routes across the whole org instead of within one agent.
   const ownSubagents = await org.listSubagents(companyId, ctx.agent.id);

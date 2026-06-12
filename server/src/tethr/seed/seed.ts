@@ -217,7 +217,7 @@ export async function seedWandrGrowth(
     reportsTo: ceo.id,
     status: "idle",
     budgetMonthlyCents: COMPANY.budgetMonthlyCents,
-    adapterConfig: { agentTag: HELM.tag },
+    adapterConfig: { agentTag: HELM.tag, heartbeatMode: "digest" },
   });
   await db.insert(tethrAgentProfiles).values({
     companyId,
@@ -331,6 +331,36 @@ export async function seedWandrGrowth(
   }
 
   // --- Routines (heartbeat cadences from the manifest crons) -----------------
+  // Helm's daily digest: "what needs you" at 5 PM.
+  {
+    const digestRoutine = await routines.create(
+      companyId,
+      {
+        title: "Helm daily digest",
+        description:
+          "Summarize what needs Mark: queue items awaiting review, budget pressure, failed runs.",
+        assigneeAgentId: helm.id,
+        priority: "medium",
+        status: "active",
+        concurrencyPolicy: "coalesce_if_active",
+        catchUpPolicy: "skip_missed",
+        variables: [],
+      },
+      { userId: "tethr-seed" },
+    );
+    await routines.createTrigger(
+      digestRoutine.id,
+      {
+        kind: "schedule",
+        cronExpression: "0 17 * * *",
+        timezone: "America/New_York",
+        enabled: true,
+        label: "Daily 5:00 PM digest",
+      } as never,
+      { userId: "tethr-seed" },
+    );
+  }
+
   for (const spec of AGENTS) {
     if (!spec.heartbeatCron) continue;
     const agent = agentRowByKey.get(spec.key);

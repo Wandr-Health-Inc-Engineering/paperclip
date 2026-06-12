@@ -419,6 +419,24 @@ export const tethrApi = {
     api.post(`/tethr/${c}/notifications/${id}/read`, {}),
   markAllNotificationsRead: (c: string) =>
     api.post(`/tethr/${c}/notifications/read-all`, {}),
+  digest: (c: string) =>
+    api.post<{ outputId: string; title: string; pendingCount: number }>(
+      `/tethr/${c}/digest`,
+      {},
+    ),
+  createDivision: (c: string, body: { name: string; description?: string; icon?: string }) =>
+    api.post<TethrDivision>(`/tethr/${c}/divisions`, body),
+  createAgent: (
+    c: string,
+    body: {
+      codename: string;
+      title: string;
+      mission?: string;
+      divisionId?: string | null;
+      isHead?: boolean;
+      approvalGate?: string;
+    },
+  ) => api.post<{ agentId: string; tag: string }>(`/tethr/${c}/agents`, body),
   memories: (c: string, agentId?: string) =>
     api.get<TethrMemory[]>(
       `/tethr/${c}/memories${agentId ? `?agentId=${agentId}` : ""}`,

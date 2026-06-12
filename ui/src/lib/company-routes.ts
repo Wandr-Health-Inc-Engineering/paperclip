@@ -29,6 +29,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "audit",
   "crew",
   "tethr-settings",
+  "memory",
 ]);
 
 const GLOBAL_ROUTE_ROOTS = new Set(["auth", "invite", "board-claim", "cli-auth", "docs", "instance"]);
