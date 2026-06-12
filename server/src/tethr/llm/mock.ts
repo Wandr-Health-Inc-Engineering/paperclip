@@ -72,20 +72,40 @@ export class MockProvider implements LLMProvider {
   }
 
   async generate(input: GenerateInput): Promise<GenerateResult> {
-    const topic = extractTopic(input.prompt);
+    const topic = extractTopic(input.prompt, input.kind);
     const build = TEMPLATES[input.kind] ?? TEMPLATES.document;
     const { title, body } = build(topic, input.prompt);
     return { title, body, usage: approxUsage(input.system + input.prompt, body) };
   }
 }
 
-function extractTopic(prompt: string): string {
-  const cleaned = prompt
+const TOPIC_FALLBACKS: Record<string, string> = {
+  blog_draft: "altitude sickness prevention for Cusco travelers",
+  brief: "Zanzibar",
+  itinerary: "7 days in Peru — Cusco and the Sacred Valley",
+  press_release: "Wandr Health expands travel-medicine coverage",
+  reply_draft: "r/travel typhoid + malaria prep thread",
+  ads_recommendation: "Travel Consult — Search campaign",
+};
+
+function extractTopic(prompt: string, kind: string): string {
+  let cleaned = prompt
     .replace(/^[^:]*:\s*/, "")
     .replace(/[.?!].*$/s, "")
     .trim();
-  const words = cleaned.split(/\s+/).slice(0, 8).join(" ");
-  return words.length > 4 ? words : "travel health";
+  // Strip instruction-style lead-ins so titles read like topics, not orders.
+  const instruction =
+    /^(please\s+)?(write|draft|run|create|make|generate|produce|review|check|scan|refresh|adjust|advance|pull)\b/i;
+  if (instruction.test(cleaned)) {
+    const aboutMatch = cleaned.match(/\b(?:on|about|for|covering)\s+(.{6,80})/i);
+    if (aboutMatch) {
+      cleaned = aboutMatch[1];
+    } else {
+      return TOPIC_FALLBACKS[kind] ?? "travel health prep";
+    }
+  }
+  const words = cleaned.split(/\s+/).slice(0, 9).join(" ");
+  return words.length > 4 ? words : (TOPIC_FALLBACKS[kind] ?? "travel health");
 }
 
 type Template = (topic: string, prompt: string) => { title: string; body: string };

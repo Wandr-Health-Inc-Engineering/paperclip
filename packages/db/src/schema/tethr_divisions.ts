@@ -16,7 +16,7 @@ export const tethrDivisions = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id")
       .notNull()
-      .references(() => companies.id),
+      .references(() => companies.id, { onDelete: "cascade" }),
     key: text("key").notNull(),
     name: text("name").notNull(),
     description: text("description"),

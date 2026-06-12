@@ -26,7 +26,7 @@ export const tethrRouteRuns = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id")
       .notNull()
-      .references(() => companies.id),
+      .references(() => companies.id, { onDelete: "cascade" }),
     requestText: text("request_text").notNull(),
     requestedByUserId: text("requested_by_user_id"),
     invocationSource: text("invocation_source").notNull().default("console"),

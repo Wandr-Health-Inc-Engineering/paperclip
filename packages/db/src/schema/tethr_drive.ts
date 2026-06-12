@@ -23,7 +23,7 @@ export const tethrDriveNodes = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id")
       .notNull()
-      .references(() => companies.id),
+      .references(() => companies.id, { onDelete: "cascade" }),
     parentId: uuid("parent_id").references(
       (): AnyPgColumn => tethrDriveNodes.id,
       { onDelete: "cascade" },
@@ -67,7 +67,7 @@ export const tethrDriveVersions = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id")
       .notNull()
-      .references(() => companies.id),
+      .references(() => companies.id, { onDelete: "cascade" }),
     nodeId: uuid("node_id")
       .notNull()
       .references(() => tethrDriveNodes.id, { onDelete: "cascade" }),

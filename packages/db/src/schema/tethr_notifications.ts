@@ -13,7 +13,7 @@ export const tethrNotifications = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id")
       .notNull()
-      .references(() => companies.id),
+      .references(() => companies.id, { onDelete: "cascade" }),
     kind: text("kind").notNull().default("system"),
     title: text("title").notNull(),
     body: text("body"),

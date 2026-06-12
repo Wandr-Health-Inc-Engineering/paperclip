@@ -14,7 +14,7 @@ export const tethrMemories = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id")
       .notNull()
-      .references(() => companies.id),
+      .references(() => companies.id, { onDelete: "cascade" }),
     agentId: uuid("agent_id").references(() => agents.id, {
       onDelete: "cascade",
     }),
