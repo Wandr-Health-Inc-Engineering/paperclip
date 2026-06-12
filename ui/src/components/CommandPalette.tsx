@@ -29,6 +29,13 @@ import {
   SquarePen,
   Plus,
   Search,
+  Send,
+  Network,
+  ShieldCheck,
+  HardDrive,
+  Timer,
+  Wallet,
+  ScrollText,
 } from "lucide-react";
 import { Identity } from "./Identity";
 import { agentUrl, projectUrl } from "../lib/utils";
@@ -198,6 +205,34 @@ export function CommandPalette() {
           <CommandItem onSelect={() => go("/dashboard")}>
             <LayoutDashboard className="mr-2 h-4 w-4" />
             Dashboard
+          </CommandItem>
+          <CommandItem onSelect={() => go("/console")}>
+            <Send className="mr-2 h-4 w-4" />
+            Console
+          </CommandItem>
+          <CommandItem onSelect={() => go("/company-view")}>
+            <Network className="mr-2 h-4 w-4" />
+            Company
+          </CommandItem>
+          <CommandItem onSelect={() => go("/queue")}>
+            <ShieldCheck className="mr-2 h-4 w-4" />
+            Queue
+          </CommandItem>
+          <CommandItem onSelect={() => go("/drive")}>
+            <HardDrive className="mr-2 h-4 w-4" />
+            Drive
+          </CommandItem>
+          <CommandItem onSelect={() => go("/runs")}>
+            <Timer className="mr-2 h-4 w-4" />
+            Runs
+          </CommandItem>
+          <CommandItem onSelect={() => go("/budgets")}>
+            <Wallet className="mr-2 h-4 w-4" />
+            Budgets
+          </CommandItem>
+          <CommandItem onSelect={() => go("/audit")}>
+            <ScrollText className="mr-2 h-4 w-4" />
+            Audit
           </CommandItem>
           <CommandItem onSelect={() => go("/inbox")}>
             <Inbox className="mr-2 h-4 w-4" />

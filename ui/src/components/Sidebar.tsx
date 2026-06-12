@@ -12,6 +12,12 @@ import {
   Repeat,
   GitBranch,
   Settings,
+  Send,
+  ShieldCheck,
+  HardDrive,
+  Timer,
+  Wallet,
+  ScrollText,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { NavLink } from "@/lib/router";
@@ -97,6 +103,17 @@ export function Sidebar() {
             missingBehavior="placeholder"
           />
         </div>
+
+        {/* Tethr operate surfaces (see DECISIONS.md "Core changes") */}
+        <SidebarSection label="Operate">
+          <SidebarNavItem to="/console" label="Console" icon={Send} />
+          <SidebarNavItem to="/company-view" label="Company" icon={Network} />
+          <SidebarNavItem to="/queue" label="Queue" icon={ShieldCheck} />
+          <SidebarNavItem to="/drive" label="Drive" icon={HardDrive} />
+          <SidebarNavItem to="/runs" label="Runs" icon={Timer} />
+          <SidebarNavItem to="/budgets" label="Budgets" icon={Wallet} />
+          <SidebarNavItem to="/audit" label="Audit" icon={ScrollText} />
+        </SidebarSection>
 
         <SidebarSection label="Work">
           <SidebarNavItem to="/issues" label="Issues" icon={CircleDot} />

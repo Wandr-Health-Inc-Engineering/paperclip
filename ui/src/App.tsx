@@ -54,6 +54,15 @@ import { CliAuthPage } from "./pages/CliAuth";
 import { InviteLandingPage } from "./pages/InviteLanding";
 import { JoinRequestQueue } from "./pages/JoinRequestQueue";
 import { NotFoundPage } from "./pages/NotFound";
+import { TethrConsole } from "./pages/tethr/TethrConsole";
+import { TethrCompany } from "./pages/tethr/TethrCompany";
+import { TethrQueue } from "./pages/tethr/TethrQueue";
+import { TethrDrive } from "./pages/tethr/TethrDrive";
+import { TethrRuns } from "./pages/tethr/TethrRuns";
+import { TethrBudgets } from "./pages/tethr/TethrBudgets";
+import { TethrAudit } from "./pages/tethr/TethrAudit";
+import { TethrAgentPage } from "./pages/tethr/TethrAgentPage";
+import { TethrSettings } from "./pages/tethr/TethrSettings";
 import { useCompany } from "./context/CompanyContext";
 import { useDialogActions } from "./context/DialogContext";
 import { loadLastInboxTab } from "./lib/inbox";
@@ -65,6 +74,17 @@ function boardRoutes() {
       <Route index element={<Navigate to="dashboard" replace />} />
       <Route path="dashboard" element={<Dashboard />} />
       <Route path="dashboard/live" element={<DashboardLive />} />
+      {/* Tethr operate screens (see DECISIONS.md "Core changes") */}
+      <Route path="console" element={<TethrConsole />} />
+      <Route path="company-view" element={<TethrCompany />} />
+      <Route path="queue" element={<TethrQueue />} />
+      <Route path="queue/:outputId" element={<TethrQueue />} />
+      <Route path="drive" element={<TethrDrive />} />
+      <Route path="runs" element={<TethrRuns />} />
+      <Route path="budgets" element={<TethrBudgets />} />
+      <Route path="audit" element={<TethrAudit />} />
+      <Route path="crew/:agentId" element={<TethrAgentPage />} />
+      <Route path="tethr-settings" element={<TethrSettings />} />
       <Route path="onboarding" element={<OnboardingRoutePage />} />
       <Route path="companies" element={<Companies />} />
       <Route path="company/settings" element={<CompanySettings />} />

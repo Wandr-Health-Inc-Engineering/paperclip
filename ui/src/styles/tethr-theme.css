@@ -359,3 +359,96 @@ a[role="button"]:active {
     animation: none !important;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Tethr operate screens: routing flow + console choreography          */
+/* ------------------------------------------------------------------ */
+
+@keyframes tethr-hop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.tethr-hop-animate {
+  opacity: 0;
+  animation: tethr-hop-in 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes tethr-connector-grow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+.tethr-connector-animate {
+  transform-origin: top;
+  animation: tethr-connector-grow 260ms cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+
+/* Result panel lands after the chain finishes drawing. */
+@keyframes tethr-result-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+.tethr-result-animate {
+  opacity: 0;
+  animation: tethr-result-in 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Division / stat cards: rise in with a subtle stagger on operate pages. */
+@keyframes tethr-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+[data-tethr-stagger] > * {
+  opacity: 0;
+  animation: tethr-card-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+[data-tethr-stagger] > *:nth-child(1) { animation-delay: 40ms; }
+[data-tethr-stagger] > *:nth-child(2) { animation-delay: 100ms; }
+[data-tethr-stagger] > *:nth-child(3) { animation-delay: 160ms; }
+[data-tethr-stagger] > *:nth-child(4) { animation-delay: 220ms; }
+[data-tethr-stagger] > *:nth-child(5) { animation-delay: 280ms; }
+[data-tethr-stagger] > *:nth-child(6) { animation-delay: 340ms; }
+[data-tethr-stagger] > *:nth-child(7) { animation-delay: 400ms; }
+[data-tethr-stagger] > *:nth-child(8) { animation-delay: 460ms; }
+[data-tethr-stagger] > *:nth-child(9) { animation-delay: 520ms; }
+[data-tethr-stagger] > *:nth-child(n + 10) { animation-delay: 580ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tethr-hop-animate,
+  .tethr-connector-animate,
+  .tethr-result-animate,
+  [data-tethr-stagger] > * {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+}
