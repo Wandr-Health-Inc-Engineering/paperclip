@@ -36,6 +36,7 @@ import {
   Timer,
   Wallet,
   ScrollText,
+  Plug,
 } from "lucide-react";
 import { Identity } from "./Identity";
 import { agentUrl, projectUrl } from "../lib/utils";
@@ -233,6 +234,10 @@ export function CommandPalette() {
           <CommandItem onSelect={() => go("/audit")}>
             <ScrollText className="mr-2 h-4 w-4" />
             Audit
+          </CommandItem>
+          <CommandItem onSelect={() => go("/tethr-settings")}>
+            <Plug className="mr-2 h-4 w-4" />
+            Providers
           </CommandItem>
           <CommandItem onSelect={() => go("/inbox")}>
             <Inbox className="mr-2 h-4 w-4" />
