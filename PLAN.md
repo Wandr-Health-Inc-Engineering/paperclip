@@ -47,7 +47,7 @@ existing tethr brand system. Core file touches are one-liners, logged in DECISIO
 - [x] 9. Tests — routing, gating, drive versioning, sonar loop integration
 - [x] 10. Docs — RUN.md, ARCHITECTURE-LOCAL.md, MIGRATION-NOTES.md
 - [x] 11. Screenshots — `~/Desktop/tethr-screenshots/` with 00-INDEX.md, light + dark
-- [ ] 12. Final DoD self-review (BUILD-PROMPT §8)
+- [x] 12. Final DoD self-review (BUILD-PROMPT §8)
 
 ## Definition of done (mirror of BUILD-PROMPT §8)
 
