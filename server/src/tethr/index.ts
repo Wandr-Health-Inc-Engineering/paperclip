@@ -16,10 +16,10 @@ export { getTethrLLMProvider, setTethrLLMProvider } from "./llm/index.js";
 
 /**
  * One-call Tethr bootstrap, invoked from createApp (the only core touchpoint
- * besides the route mount). Registers the tethr_llm adapter and kicks the
- * auto-seed check in the background.
+ * besides the route mount). Registers the tethr_llm adapter. Auto-seeding is
+ * a server-startup concern (index.ts), kept out of createApp so API tests
+ * that build an app never seed a company as a side effect.
  */
 export function initTethr(db: Db): void {
   initTethrAdapter(db);
-  void maybeAutoSeed(db);
 }

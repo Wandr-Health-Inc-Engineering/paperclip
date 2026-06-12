@@ -774,6 +774,7 @@ export async function seedWandrGrowth(
 /** Auto-seed hook used at server startup (TETHR_AUTOSEED=false disables). */
 export async function maybeAutoSeed(db: Db): Promise<void> {
   if (process.env.TETHR_AUTOSEED === "false") return;
+  if (process.env.VITEST || process.env.NODE_ENV === "test") return;
   try {
     const result = await seedWandrGrowth(db);
     if (result.created) {

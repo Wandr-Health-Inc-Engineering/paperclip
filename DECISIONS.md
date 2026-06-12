@@ -72,7 +72,8 @@ Every core file touched, with reason. Everything else Tethr lives in new files.
 |------|--------|-----|
 | `packages/db/src/schema/index.ts` | + exports for `tethr_*` schema files | barrel is the only registration point |
 | `packages/shared/src/constants.ts` (or new `tethr.ts` + index export) | + Tethr status constants | match core enum convention |
-| `server/src/app.ts` | + 1 mount line for `tethrRoutes` | route registration point |
+| `server/src/app.ts` | + mount line for `tethrRoutes` + `initTethr(db)` (adapter registration) | route registration point |
+| `server/src/index.ts` | + 1 line `maybeAutoSeed(db)` at startup | seeding is a boot concern, not an app-construction concern (keeps API tests clean) |
 | `server/src/adapters/index.ts` | + 1 registry entry for `tethr-llm` | documented adapter seam |
 | `ui/src/App.tsx` | + route entries for Tethr pages | route table |
 | `ui/src/components/Sidebar.tsx` | + "Operate" nav section | nav registration point |
