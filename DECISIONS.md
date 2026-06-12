@@ -77,6 +77,7 @@ Every core file touched, with reason. Everything else Tethr lives in new files.
 | `ui/src/App.tsx` | + route entries for Tethr pages | route table |
 | `ui/src/components/Sidebar.tsx` | + "Operate" nav section | nav registration point |
 | `ui/src/components/CommandPalette.tsx` | + page entries | palette registration point |
+| `ui/src/lib/company-routes.ts` | + Tethr route roots in `BOARD_ROUTE_ROOTS` | prefix resolver allowlist |
 | `.gitignore` | + `.tethr-data/` | local data dir |
 | `.env.example` | + Tethr vars (commented, blank) | 12-factor |
 
@@ -92,5 +93,11 @@ Every core file touched, with reason. Everything else Tethr lives in new files.
   Compass runs against a mock brief generator in the LLM provider — noted, not a blocker.
 - Google Ads MCP / Chrome action layer are laptop-bound per handoff.md → Tailwind stays
   recommendation-only with hard spend gates in this build.
-- Heartbeat cadences map 1:1 from manifest cron strings into core routines; all seeded
-  routines start `paused` except Sonar's demo cadence, so nothing runs surprise work.
+- Heartbeat cadences map 1:1 from manifest cron strings into core routines. They seed
+  `active` (matching production-enabled workflows) except Sonar, which seeds `paused`
+  exactly as in production since 2026-03-25. Active routines run the mock provider on
+  their schedule — a live company, with gated work stopping in the Queue.
+- Upstream bug observed (not fixed, to stay merge-safe): core company `remove()` deletes
+  `heartbeat_runs` before `cost_events` and predates routines/budget-policy tables, so
+  deleting a company with cost-linked runs fails on FK order. Tethr tables all cascade
+  on company delete (migration 0087) so they never add to the problem.

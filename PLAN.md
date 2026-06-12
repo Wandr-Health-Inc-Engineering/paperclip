@@ -18,34 +18,34 @@ existing tethr brand system. Core file touches are one-liners, logged in DECISIO
 ## Phases
 
 - [x] 0. Recon — repo, brand system, bundle, server/db/ui internals
-- [ ] 1. PLAN.md + DECISIONS.md committed
-- [ ] 2. Data layer — `tethr_*` schema files + shared constants + generated migration
-- [ ] 3. Tethr server core — `server/src/tethr/`
-  - [ ] LLMProvider interface; ClaudeProvider (if `ANTHROPIC_API_KEY`), MockProvider (deterministic)
-  - [ ] Routing engine — classify/route/do over seeded routing tables; every hop audited
-  - [ ] Drive service — folders/files/versions/tags/permissions over `StorageService`
-  - [ ] Gating service — gated outputs hard-blocked behind approvals; publish only after approve
-  - [ ] Memory + notifications services
-- [ ] 4. `tethr-llm` adapter registered (heartbeats execute the routing loop)
-- [ ] 5. Seed importer — Wandr Growth company from the bundle manifest
+- [x] 1. PLAN.md + DECISIONS.md committed
+- [x] 2. Data layer — `tethr_*` schema files + shared constants + generated migration
+- [x] 3. Tethr server core — `server/src/tethr/`
+  - [x] LLMProvider interface; ClaudeProvider (if `ANTHROPIC_API_KEY`), MockProvider (deterministic)
+  - [x] Routing engine — classify/route/do over seeded routing tables; every hop audited
+  - [x] Drive service — folders/files/versions/tags/permissions over `StorageService`
+  - [x] Gating service — gated outputs hard-blocked behind approvals; publish only after approve
+  - [x] Memory + notifications services
+- [x] 4. `tethr-llm` adapter registered (heartbeats execute the routing loop)
+- [x] 5. Seed importer — Wandr Growth company from the bundle manifest
   - CEO → Helm → 8 agents → 22 subagents; Growth division active, Engineering / Reliability /
     Customer Feedback divisions as ready-to-fill shells; routines from cron cadences; budget
     policies; rich demo data (runs, gated outputs, notifications, memories, drive files)
-- [ ] 6. API routes — `server/src/routes/tethr.ts` mounted in `app.ts`
-- [ ] 7. UI screens (all wired, premium, light+dark, mobile)
-  - [ ] Company — CEO → divisions → agents → subagents (status, last run, budget, approvals)
-  - [ ] Console — Helm chat with visible routing hops (hero screen)
-  - [ ] Queue — gated outputs: preview, approve / reject / request changes, reviewer + reason
-  - [ ] Drive — folders, versions, tags, permissions, markdown preview
-  - [ ] Runs — schedule view from cron + history + run now
-  - [ ] Budgets — per-agent caps, combined growth line, spend over time
-  - [ ] Audit — filterable: routes, runs, outputs, approval decisions
-  - [ ] Tethr agent detail — role, routing table, subagents, recent runs, outputs, budget
-  - [ ] Settings — provider statuses, env summary, vendored Paperclip SHA
-  - [ ] Sidebar section, command palette entries, motion polish, mobile pass
-- [ ] 8. Sonar end-to-end proven (heartbeat → leads → reply → gate → approve → publish → audit)
-- [ ] 9. Tests — routing, gating, drive versioning, sonar loop integration
-- [ ] 10. Docs — RUN.md, ARCHITECTURE-LOCAL.md, MIGRATION-NOTES.md
+- [x] 6. API routes — `server/src/routes/tethr.ts` mounted in `app.ts`
+- [x] 7. UI screens (all wired, premium, light+dark, mobile)
+  - [x] Company — CEO → divisions → agents → subagents (status, last run, budget, approvals)
+  - [x] Console — Helm chat with visible routing hops (hero screen)
+  - [x] Queue — gated outputs: preview, approve / reject / request changes, reviewer + reason
+  - [x] Drive — folders, versions, tags, permissions, markdown preview
+  - [x] Runs — schedule view from cron + history + run now
+  - [x] Budgets — per-agent caps, combined growth line, spend over time
+  - [x] Audit — filterable: routes, runs, outputs, approval decisions
+  - [x] Tethr agent detail — role, routing table, subagents, recent runs, outputs, budget
+  - [x] Settings — provider statuses, env summary, vendored Paperclip SHA
+  - [x] Sidebar section, command palette entries, motion polish, mobile pass
+- [x] 8. Sonar end-to-end proven (heartbeat → leads → reply → gate → approve → publish → audit)
+- [x] 9. Tests — routing, gating, drive versioning, sonar loop integration
+- [x] 10. Docs — RUN.md, ARCHITECTURE-LOCAL.md, MIGRATION-NOTES.md
 - [ ] 11. Screenshots — `~/Desktop/tethr-screenshots/` with 00-INDEX.md, light + dark
 - [ ] 12. Final DoD self-review (BUILD-PROMPT §8)
 
