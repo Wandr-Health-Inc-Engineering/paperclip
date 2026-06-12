@@ -10,6 +10,7 @@ import {
 import { logActivity } from "../services/activity-log.js";
 import { driveService } from "./drive.js";
 import { notificationService } from "./notify.js";
+import { trackerService, type TrackerName } from "./state.js";
 
 // The compliance layer. Anything medical / public-facing / spend / PR is
 // created as a *gated* output with a linked core approval. The ONLY way an
@@ -216,6 +217,39 @@ export function gatingService(db: Db) {
       agentId: output.agentId,
       details: { title: output.title, drivePath: path, kind: output.kind },
     });
+
+    // Working state: published content lands in the dedup log and advances
+    // its tracker row (claimed at draft time) to published.
+    const trackerByKind: Partial<Record<TethrOutputKind, TrackerName>> = {
+      blog_draft: "content-calendar",
+      brief: "destination-tracker",
+      itinerary: "itinerary-calendar",
+    };
+    const trackerName = trackerByKind[output.kind as TethrOutputKind];
+    const trackers = trackerService(db);
+    const publishedSlug = slugify(output.title);
+    await trackers.appendPublished(
+      companyId,
+      {
+        slug: publishedSlug,
+        title: output.title,
+        kind: output.kind,
+        publishedAt: new Date().toISOString(),
+      },
+      publishedBy,
+    );
+    if (trackerName) {
+      const tracker = await trackers.readTracker(companyId, trackerName);
+      const row = tracker.rows.find(
+        (r) =>
+          r.status === "review" &&
+          (output.title.toLowerCase().includes(r.topic.toLowerCase()) ||
+            publishedSlug.includes(r.slug)),
+      );
+      if (row) {
+        await trackers.markRowPublished(companyId, trackerName, row.slug, publishedBy);
+      }
+    }
     return updated;
   }
 

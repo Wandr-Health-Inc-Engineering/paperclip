@@ -1,4 +1,4 @@
-import { ArrowDown, CircleUser, Lock, Radio } from "lucide-react";
+import { ArrowDown, CircleUser, Lock, Radio, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { TethrRouteHop } from "@/api/tethr";
 import { MonoTag } from "./primitives";
@@ -13,6 +13,7 @@ const LAYER_LABEL: Record<TethrRouteHop["layer"], string> = {
   helm: "TIER · 01 — CLASSIFY",
   agent: "TIER · 02 — ROUTE",
   subagent: "TIER · 03 — DO",
+  tool: "TOOL",
 };
 
 function hopKey(hop: TethrRouteHop, index: number): string {
@@ -70,20 +71,29 @@ export function RouteFlow({
           >
             <div
               className={cn(
-                "flex h-9 w-9 shrink-0 items-center justify-center border-2 border-foreground",
+                "flex shrink-0 items-center justify-center border-2 border-foreground",
+                hop.layer === "tool" ? "ml-1 h-7 w-7 border-dashed" : "h-9 w-9",
                 hop.layer === "subagent"
                   ? "bg-foreground text-background"
                   : "bg-background text-foreground",
               )}
             >
-              <Radio className="h-4 w-4" />
+              {hop.layer === "tool" ? (
+                <Wrench className="h-3.5 w-3.5" />
+              ) : (
+                <Radio className="h-4 w-4" />
+              )}
             </div>
             <div className="min-w-0 pt-0.5">
               <MonoTag>{LAYER_LABEL[hop.layer]}</MonoTag>
               <p className="mt-0.5 text-sm font-bold">
                 <span className="font-mono text-[13px]">{hop.actorTag}</span>
                 <span className="text-muted-foreground"> · </span>
-                {hop.decision}
+                {hop.layer === "tool" ? (
+                  <span className="font-mono text-[13px]">{hop.decision}</span>
+                ) : (
+                  hop.decision
+                )}
               </p>
               <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
                 {hop.reason}

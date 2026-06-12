@@ -149,12 +149,96 @@ describeEmbeddedPostgres("tethr engine end-to-end", () => {
       invocationSource: "console",
     });
     expect(result.status).toBe("done");
-    expect(result.hops.map((h) => h.layer)).toEqual(["helm", "agent", "subagent"]);
+    expect(result.hops.slice(0, 3).map((h) => h.layer)).toEqual(["helm", "agent", "subagent"]);
     expect(result.hops[0].decision).toContain("@sonar");
     expect(result.hops[1].decision).toContain("@sonar.news");
+    // The subagent used its tools, and the calls are recorded as hops.
+    expect(result.hops.some((h) => h.layer === "tool")).toBe(true);
     expect(result.outputs).toHaveLength(1);
     expect(result.outputs[0].gated).toBe(false);
     expect(result.outputs[0].status).toBe("published");
+  });
+
+  it("enforces tool allowlists per subagent", async () => {
+    const { toolsetForSubagent } = await import("../tethr/tools/index.ts");
+    const names = (tag: string) => toolsetForSubagent({ tag }).map((t) => t.name);
+    expect(names("@sonar.leads")).toContain("reddit_scan");
+    expect(names("@sonar.leads")).not.toContain("drive_write");
+    expect(names("@atlas.blog")).toContain("advance_tracker");
+    expect(names("@beacon.brand")).not.toContain("web_fetch");
+    // Everyone can read the Drive and recall memory.
+    expect(names("@ledger.modeler")).toEqual(
+      expect.arrayContaining(["drive_list", "drive_read", "recall_memory"]),
+    );
+  });
+
+  it("drive_write refuses paths outside the working areas", async () => {
+    const { getToolByName } = await import("../tethr/tools/index.ts");
+    const org = orgService(db);
+    const sonar = await org.getProfileByTag(companyId, "@sonar");
+    const tool = getToolByName("drive_write")!;
+    const ctx = {
+      db,
+      companyId,
+      agentId: sonar!.agent.id,
+      agentTag: "@sonar",
+      subagentTag: "@sonar.leads",
+    };
+    const refused = await tool.execute(ctx, {
+      path: "/content/blog/sneaky.md",
+      content: "should not land",
+    });
+    expect(refused.output).toContain("Refused");
+    const allowed = await tool.execute(ctx, {
+      path: "/scratch/notes.md",
+      content: "working notes",
+    });
+    expect(allowed.output).toContain("Saved");
+  });
+
+  it("atlas heartbeat claims a calendar row; approval publishes + advances it", async () => {
+    const routing = routingService(db);
+    const gating = gatingService(db);
+    const { trackerService } = await import("../tethr/state.ts");
+    const trackers = trackerService(db);
+
+    const before = await trackers.readTracker(companyId, "content-calendar");
+    const ideasBefore = before.rows.filter((r) => r.status === "idea").length;
+    expect(ideasBefore).toBeGreaterThan(0);
+
+    const result = await routing.routeRequest({
+      companyId,
+      requestText:
+        "Write today's post: draft the next GEO/SEO blog article from the content calendar and stage it for review.",
+      invocationSource: "heartbeat",
+      startAtAgentTag: "@atlas",
+      subagentChain: ["blog"],
+    });
+    expect(result.status).toBe("gated");
+    const claimHop = result.hops.find(
+      (h) => h.layer === "tool" && h.decision === "advance_tracker",
+    );
+    expect(claimHop).toBeTruthy();
+
+    const after = await trackers.readTracker(companyId, "content-calendar");
+    const claimed = after.rows.find((r) => r.status === "review");
+    expect(claimed).toBeTruthy();
+    // The mock drafts the claimed topic, not an invented one.
+    expect(result.outputs[0].title.toLowerCase()).toContain(
+      claimed!.topic.split(" ")[0].toLowerCase(),
+    );
+
+    await gating.decide({
+      companyId,
+      outputId: result.outputs[0].outputId,
+      decision: "approve",
+      reviewer: "mark",
+      note: "Clinically fine.",
+    });
+    const published = await trackers.readTracker(companyId, "content-calendar");
+    expect(published.rows.find((r) => r.slug === claimed!.slug)?.status).toBe("published");
+    const log = await trackers.listPublished(companyId);
+    expect(log.some((e) => e.kind === "blog_draft")).toBe(true);
   });
 
   it("hard-gates the Sonar reply and only publishes after approval", async () => {

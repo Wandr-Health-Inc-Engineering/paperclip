@@ -43,9 +43,39 @@ export interface GenerateResult {
   usage: LLMUsage;
 }
 
+export interface AgenticToolSpec {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export interface AgenticToolEvent {
+  name: string;
+  input: Record<string, unknown>;
+  summary: string;
+}
+
+export interface RunAgenticInput extends GenerateInput {
+  tools: AgenticToolSpec[];
+  /** Executes a tool; returns the text for the model + a hop summary. */
+  callTool(
+    name: string,
+    input: Record<string, unknown>,
+  ): Promise<{ output: string; summary: string }>;
+  /** Fired after each tool call (drives the live hop trail). */
+  onToolEvent?(event: AgenticToolEvent): Promise<void> | void;
+  maxTurns?: number;
+}
+
+export interface RunAgenticResult extends GenerateResult {
+  toolCalls: AgenticToolEvent[];
+}
+
 export interface LLMProvider {
   readonly id: "mock" | "claude";
   readonly model: string;
   classify(input: ClassifyInput): Promise<ClassifyResult>;
   generate(input: GenerateInput): Promise<GenerateResult>;
+  /** Multi-turn tool-use loop. The subagent's hands. */
+  runAgentic(input: RunAgenticInput): Promise<RunAgenticResult>;
 }

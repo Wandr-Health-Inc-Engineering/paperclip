@@ -1,10 +1,13 @@
 import type {
+  AgenticToolEvent,
   ClassifyInput,
   ClassifyResult,
   GenerateInput,
   GenerateResult,
   LLMProvider,
   LLMUsage,
+  RunAgenticInput,
+  RunAgenticResult,
 } from "./types.js";
 
 // Live provider. Uses the Claude API directly over fetch so the server gains
@@ -13,8 +16,17 @@ import type {
 const API_URL = "https://api.anthropic.com/v1/messages";
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 
+interface ClaudeContentBlock {
+  type: string;
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+}
+
 interface ClaudeResponse {
-  content: Array<{ type: string; text?: string }>;
+  content: ClaudeContentBlock[];
+  stop_reason?: string;
   usage?: { input_tokens?: number; output_tokens?: number };
 }
 
@@ -104,6 +116,105 @@ export class ClaudeProvider implements LLMProvider {
     }
     return { title, body, usage };
   }
+
+  /** Real Claude tool-use loop: call tools until end_turn or the turn cap. */
+  async runAgentic(input: RunAgenticInput): Promise<RunAgenticResult> {
+    const maxTurns = input.maxTurns ?? 8;
+    const toolCalls: AgenticToolEvent[] = [];
+    let usage: LLMUsage = { inputTokens: 0, outputTokens: 0 };
+
+    const tools = input.tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      input_schema: t.inputSchema,
+    }));
+    const messages: Array<{ role: "user" | "assistant"; content: unknown }> = [
+      {
+        role: "user",
+        content: `${input.prompt}\n\nUse your tools to ground the work before producing it. Return the final work product as markdown. First line: a short title prefixed with "TITLE: ".`,
+      },
+    ];
+
+    for (let turn = 0; turn < maxTurns; turn++) {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": this.apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: this.model,
+          max_tokens: 3000,
+          system: input.system,
+          tools,
+          messages,
+        }),
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        throw new Error(`Claude API ${res.status}: ${detail.slice(0, 300)}`);
+      }
+      const data = (await res.json()) as ClaudeResponse;
+      usage = {
+        inputTokens: usage.inputTokens + (data.usage?.input_tokens ?? 0),
+        outputTokens: usage.outputTokens + (data.usage?.output_tokens ?? 0),
+      };
+
+      const toolUses = data.content.filter((b) => b.type === "tool_use");
+      if (data.stop_reason !== "tool_use" || toolUses.length === 0) {
+        const text = data.content
+          .filter((b) => b.type === "text" && typeof b.text === "string")
+          .map((b) => b.text)
+          .join("\n");
+        const { title, body } = extractTitle(text, `Output — ${input.kind}`);
+        return { title, body, usage, toolCalls };
+      }
+
+      messages.push({ role: "assistant", content: data.content });
+      const results = [];
+      for (const use of toolUses) {
+        const args = (use.input ?? {}) as Record<string, unknown>;
+        const result = await input.callTool(use.name ?? "", args);
+        const event = { name: use.name ?? "", input: args, summary: result.summary };
+        toolCalls.push(event);
+        await input.onToolEvent?.(event);
+        results.push({
+          type: "tool_result",
+          tool_use_id: use.id,
+          content: result.output.slice(0, 8000),
+        });
+      }
+      messages.push({ role: "user", content: results });
+    }
+
+    // Turn cap reached: force a final answer without tools.
+    const { text, usage: lastUsage } = await this.call(
+      input.system,
+      `Tool budget exhausted. Based on the work so far (${toolCalls
+        .map((t) => t.summary)
+        .join("; ")}), produce the final work product now as markdown, first line TITLE: ...\n\nOriginal request: ${input.prompt}`,
+      2000,
+    );
+    usage = {
+      inputTokens: usage.inputTokens + lastUsage.inputTokens,
+      outputTokens: usage.outputTokens + lastUsage.outputTokens,
+    };
+    const { title, body } = extractTitle(text, `Output — ${input.kind}`);
+    return { title, body, usage, toolCalls };
+  }
+}
+
+function extractTitle(text: string, fallback: string): { title: string; body: string } {
+  const lines = text.split("\n");
+  const titleLine = lines.findIndex((l) => l.startsWith("TITLE:"));
+  if (titleLine >= 0) {
+    return {
+      title: lines[titleLine].replace(/^TITLE:\s*/, "").trim() || fallback,
+      body: lines.slice(titleLine + 1).join("\n").trim(),
+    };
+  }
+  return { title: fallback, body: text };
 }
 
 function safeJson(text: string): Record<string, unknown> | null {

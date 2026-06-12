@@ -1,10 +1,13 @@
 import type {
+  AgenticToolEvent,
   ClassifyInput,
   ClassifyResult,
   GenerateInput,
   GenerateResult,
   LLMProvider,
   LLMUsage,
+  RunAgenticInput,
+  RunAgenticResult,
 } from "./types.js";
 
 // Deterministic local provider. Classification is keyword scoring over each
@@ -76,6 +79,81 @@ export class MockProvider implements LLMProvider {
     const build = TEMPLATES[input.kind] ?? TEMPLATES.document;
     const { title, body } = build(topic, input.prompt);
     return { title, body, usage: approxUsage(input.system + input.prompt, body) };
+  }
+
+  /**
+   * Deterministic scripted tool loop: recall memory, then use the subagent's
+   * most characteristic tool (tracker claim → reddit/cdc scan → web fetch),
+   * then produce the shaped template incorporating what the tools returned.
+   * Same inputs always produce the same calls in the same order.
+   */
+  async runAgentic(input: RunAgenticInput): Promise<RunAgenticResult> {
+    const available = new Set(input.tools.map((t) => t.name));
+    const toolCalls: AgenticToolEvent[] = [];
+    let usage: LLMUsage = { inputTokens: 0, outputTokens: 0 };
+    let claimedTopic: string | null = null;
+    let toolContext = "";
+
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const result = await input.callTool(name, args);
+      const event = { name, input: args, summary: result.summary };
+      toolCalls.push(event);
+      await input.onToolEvent?.(event);
+      usage = {
+        inputTokens: usage.inputTokens + Math.ceil(result.output.length / 4),
+        outputTokens: usage.outputTokens + 20,
+      };
+      return result;
+    };
+
+    if (available.has("recall_memory")) {
+      const memory = await call("recall_memory", { query: extractTopic(input.prompt, input.kind).split(" ")[0] });
+      toolContext += `\nRecall:\n${memory.output.slice(0, 400)}`;
+    }
+
+    const trackerByAgent: Record<string, string> = {
+      "@atlas": "content-calendar",
+      "@compass": "destination-tracker",
+      "@voyager": "itinerary-calendar",
+    };
+    const agentTag = String(input.context?.agentTag ?? "");
+    const trackerName = trackerByAgent[agentTag];
+
+    if (available.has("advance_tracker") && trackerName) {
+      await call("read_tracker", { name: "published-log" });
+      const claimed = await call("advance_tracker", { name: trackerName, action: "claim_next" });
+      const match = claimed.output.match(/Claimed: "([^"]+)"/);
+      if (match) claimedTopic = match[1];
+      toolContext += `\nTracker:\n${claimed.output.slice(0, 200)}`;
+    } else if (available.has("reddit_scan")) {
+      const scan = await call("reddit_scan", { subreddit: "travel", query: "" });
+      toolContext += `\nScan:\n${scan.output.slice(0, 600)}`;
+    } else if (available.has("cdc_scan")) {
+      const scan = await call("cdc_scan", {});
+      toolContext += `\nNotices:\n${scan.output.slice(0, 600)}`;
+    } else if (available.has("web_fetch")) {
+      const fetched = await call("web_fetch", {
+        url: "https://wwwnc.cdc.gov/travel/notices",
+      });
+      toolContext += `\nFetched:\n${fetched.output.slice(0, 400)}`;
+    }
+
+    const topic = claimedTopic ?? extractTopic(input.prompt, input.kind);
+    const build = TEMPLATES[input.kind] ?? TEMPLATES.document;
+    const { title, body } = build(topic, input.prompt);
+    const bodyWithTrail = toolCalls.length
+      ? `${body}\n\n---\n*Worked with: ${toolCalls.map((t) => t.summary).join(" · ")}*`
+      : body;
+    const generated = approxUsage(input.system + input.prompt + toolContext, bodyWithTrail);
+    return {
+      title,
+      body: bodyWithTrail,
+      usage: {
+        inputTokens: usage.inputTokens + generated.inputTokens,
+        outputTokens: usage.outputTokens + generated.outputTokens,
+      },
+      toolCalls,
+    };
   }
 }
 

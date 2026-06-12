@@ -13,7 +13,7 @@ import { tethrSubagents } from "./tethr_subagents.js";
 import { heartbeatRuns } from "./heartbeat_runs.js";
 
 export interface TethrRouteHop {
-  layer: "helm" | "agent" | "subagent";
+  layer: "helm" | "agent" | "subagent" | "tool";
   actorTag: string;
   decision: string;
   reason: string;

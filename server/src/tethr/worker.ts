@@ -1,11 +1,12 @@
 import { eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, tethrSubagents } from "@paperclipai/db";
+import { agents, tethrSubagents, type TethrRouteHop } from "@paperclipai/db";
 import type { TethrOutputKind, TethrSensitivity } from "@paperclipai/shared";
 import { getTethrLLMProvider } from "./llm/index.js";
 import type { LLMUsage } from "./llm/types.js";
 import { gatingService } from "./gating.js";
 import { memoryService } from "./memory.js";
+import { toolsetForSubagent, type TethrToolContext } from "./tools/index.js";
 
 // The "do" step of classify → route → do. Renders the subagent's fine-tuned
 // spec as the system prompt, generates the work product, and hands it to the
@@ -45,6 +46,10 @@ export interface SubagentJobInput {
   standingRules: string[];
   routeRunId?: string | null;
   heartbeatRunId?: string | null;
+  /** Records tool hops on the route run as they happen. */
+  onHop?: (hop: TethrRouteHop) => Promise<void>;
+  /** Extra system-prompt context (revision notes, prior sequence results). */
+  extraContext?: string;
 }
 
 export interface SubagentJobResult {
@@ -87,17 +92,57 @@ export function workerService(db: Db) {
   async function runSubagentJob(input: SubagentJobInput): Promise<SubagentJobResult> {
     const provider = getTethrLLMProvider();
     const recalled = await memory.recall(input.companyId, input.agentId, undefined, 6);
-    const system = buildSubagentSystemPrompt(
+    let system = buildSubagentSystemPrompt(
       input.subagent,
       input.standingRules,
       recalled.map((m) => m.content),
     );
+    if (input.extraContext) {
+      system += `\n\nAdditional context for this run:\n${input.extraContext}`;
+    }
     const kind = KIND_BY_SUBAGENT_KEY[input.subagent.key] ?? "document";
-    const generated = await provider.generate({
+
+    // The subagent's hands: its allowlisted tools, every call recorded as a
+    // hop so the Console shows the work, not just the result.
+    const toolCtx: TethrToolContext = {
+      db,
+      companyId: input.companyId,
+      agentId: input.agentId,
+      agentTag: input.agentTag,
+      subagentTag: input.subagent.tag,
+    };
+    const tools = toolsetForSubagent(input.subagent);
+    const toolByName = new Map(tools.map((t) => [t.name, t]));
+
+    const generated = await provider.runAgentic({
       system,
       prompt: input.request,
       kind,
       context: { agentTag: input.agentTag, subagentTag: input.subagent.tag },
+      tools: tools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+      })),
+      callTool: async (name, args) => {
+        const tool = toolByName.get(name);
+        if (!tool) {
+          return {
+            output: `Unknown or disallowed tool: ${name}. Available: ${tools.map((t) => t.name).join(", ")}`,
+            summary: `blocked: ${name}`,
+          };
+        }
+        return tool.execute(toolCtx, args);
+      },
+      onToolEvent: async (event) => {
+        await input.onHop?.({
+          layer: "tool",
+          actorTag: input.subagent.tag,
+          decision: event.name,
+          reason: event.summary,
+          at: new Date().toISOString(),
+        });
+      },
     });
 
     const sensitivity = input.subagent.sensitivity as TethrSensitivity;

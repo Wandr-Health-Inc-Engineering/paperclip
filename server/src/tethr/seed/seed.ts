@@ -23,6 +23,7 @@ import { gatingService } from "../gating.js";
 import { memoryService } from "../memory.js";
 import { notificationService } from "../notify.js";
 import { routingService } from "../routing.js";
+import { trackerService } from "../state.js";
 import {
   AGENTS,
   COMPANY,
@@ -30,6 +31,7 @@ import {
   DIVISIONS,
   HELM,
   STANDING_RULES,
+  STATE_SEEDS,
   type SpecAgent,
 } from "./wandr-growth.js";
 
@@ -478,6 +480,21 @@ export async function seedWandrGrowth(
       `# Wandr Growth — company memory\n\n${COMPANY.goal}\n\n## Standing rules\n${STANDING_RULES.map((r) => `- ${r}`).join("\n")}\n`,
       ["spec", "generated"],
     );
+  }
+
+  // --- Working state: trackers in /state ---------------------------------------
+  const trackers = trackerService(db);
+  for (const [name, rows] of Object.entries(STATE_SEEDS)) {
+    await trackers.writeTracker(
+      companyId,
+      {
+        name: name as keyof typeof STATE_SEEDS,
+        rows: rows.map((r) => ({ ...r, status: "idea" as const })),
+      },
+      "tethr-seed",
+      "Seeded from the bundle calendars",
+    );
+    driveFiles++;
   }
 
   // --- Memories ---------------------------------------------------------------

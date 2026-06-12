@@ -81,7 +81,7 @@ export interface TethrOverview {
 }
 
 export interface TethrRouteHop {
-  layer: "helm" | "agent" | "subagent";
+  layer: "helm" | "agent" | "subagent" | "tool";
   actorTag: string;
   decision: string;
   reason: string;

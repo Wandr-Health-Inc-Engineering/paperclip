@@ -1041,6 +1041,33 @@ export const AGENTS: SpecAgent[] = [
   },
 ];
 
+// Working-state seeds, condensed from the bundle's content calendars
+// (atlas/_content-calendar.md, voyager/_content-calendar.md, the destination
+// tracker described in compass specs).
+export const STATE_SEEDS = {
+  "content-calendar": [
+    { topic: "Altitude sickness prevention for Cusco travelers", slug: "altitude-sickness-cusco", pillar: "trip-prep" },
+    { topic: "Malaria prophylaxis timing: when to start each option", slug: "malaria-prophylaxis-timing", pillar: "medications" },
+    { topic: "Typhoid vaccine vs oral Vivotif for last-minute trips", slug: "typhoid-vaccine-vs-vivotif", pillar: "vaccines" },
+    { topic: "Traveler's diarrhea kit: what actually belongs in it", slug: "travelers-diarrhea-kit", pillar: "medications" },
+    { topic: "Dengue season in the Caribbean: what travelers should know", slug: "dengue-season-caribbean", pillar: "destinations" },
+    { topic: "Rabies pre-exposure: who actually needs it", slug: "rabies-pre-exposure", pillar: "vaccines" },
+  ],
+  "destination-tracker": [
+    { topic: "Zanzibar", slug: "zanzibar" },
+    { topic: "Cusco and the Sacred Valley", slug: "cusco-sacred-valley" },
+    { topic: "Bali", slug: "bali" },
+    { topic: "Kilimanjaro trek", slug: "kilimanjaro" },
+    { topic: "Vietnam north loop", slug: "vietnam-north" },
+  ],
+  "itinerary-calendar": [
+    { topic: "7 days in Peru: Cusco, Sacred Valley, Machu Picchu", slug: "peru-7-days" },
+    { topic: "10 days Tanzania: safari + Zanzibar", slug: "tanzania-10-days" },
+    { topic: "5 days Mexico City + Oaxaca food trip", slug: "mexico-city-oaxaca" },
+    { topic: "14 days Southeast Asia first-timer loop", slug: "sea-14-days" },
+  ],
+} as const;
+
 export const COMPANY_MEMORIES = [
   {
     kind: "rule" as const,

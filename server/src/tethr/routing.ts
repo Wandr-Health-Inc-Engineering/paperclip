@@ -232,6 +232,7 @@ export function routingService(db: Db) {
           standingRules: profile.standingRules,
           routeRunId: run.id,
           heartbeatRunId: input.heartbeatRunId ?? null,
+          onHop: recordHop,
         });
         usage = sumUsage(usage, result.usage);
         outputs.push({
