@@ -65,3 +65,6 @@ terraform/.terraform/
 terraform/.terraform.lock.hcl
 terraform/*.tfvars
 !terraform/terraform.tfvars.example
+
+# Tethr local data
+.tethr-data/

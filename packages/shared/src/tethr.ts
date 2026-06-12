@@ -98,4 +98,4 @@ export type TethrNotificationChannel =
 export const TETHR_OUTPUT_APPROVAL_TYPE = "tethr_output" as const;
 
 /** Agent adapter type for Tethr LLM-routed agents. */
-export const TETHR_ADAPTER_TYPE = "tethr-llm" as const;
+export const TETHR_ADAPTER_TYPE = "tethr_llm" as const;
