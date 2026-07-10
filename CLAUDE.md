@@ -114,6 +114,25 @@ runbook: `tasks/phase-1.md`; the account-linked steps are gate **A1** in `MANUAL
   first visit creates the admin login (better-auth, stored in Postgres). Fallback for the
   shakedown: `PAPERCLIP_DEPLOYMENT_MODE=local_trusted`. Real multi-user logins land in Phase 9.
 
+## Slack (#scout)
+
+Both directions run through `server/src/tethr/`, gated on env so local dev stays offline.
+
+- **Outbound:** the `Notifier` `slack` channel (`notify.ts`) posts real `chat.postMessage`
+  when `SLACK_BOT_TOKEN` is set, else logs. Default channel `C0AE02FJR5Y` (override
+  `SLACK_SCOUT_CHANNEL`). Attach Block Kit via a notification's `slackBlocks`.
+- **Recommendation format** (`recommendation.ts`): `buildRecommendation()` → `{ text, body,
+  blocks }`. The standard agent post — what's wrong / why it matters / affected
+  URL·page·**file path (plain text, copy-safe for @Cursor)** / codename / severity, footer
+  "Reply in-thread and tag @Cursor to fix." Black/white, no emoji. Reused by Phases 4 & 8.
+- **Inbound:** `POST /api/tethr/slack/events` (`routes/tethr.ts` + `slack.ts`). Signature-
+  verified (`SLACK_SIGNING_SECRET`), answers the url_verification challenge, acks in <3s, and
+  turns a tagged link/photo into a routed Helm task (`invocationSource:"api"`). Not behind
+  `assertCompanyAccess` by design (signature is the auth). `../scout` was absent → built fresh.
+- **Env:** `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, optional `SLACK_SCOUT_CHANNEL`,
+  `TETHR_SLACK_COMPANY_ID`. Slack app scopes + event URL: gate **A2** in `MANUAL-STEPS.md`.
+- **Manual outbound test:** `SLACK_BOT_TOKEN=… node scripts/tethr-slack-send.mjs` (gate A3).
+
 ## Brand lock (any UI work)
 
 Urbanist + JetBrains Mono · pure black/white · 2px borders · **no gradients, no color, no
@@ -153,7 +172,7 @@ At a gate: print the exact commands / dashboard steps, add them to
 |---|---|---|
 | 0 | Repo ground truth & Scout audit | **built** (this commit) |
 | 1 | Deploy Tethr to Railway | code-ready; blocked on Railway account |
-| 2 | Slack: real senders + inbound surface | pending; `../scout` absent → build inbound fresh |
+| 2 | Slack: real senders + inbound surface | **code built** (sender + recommendation format + inbound events, 14 tests); blocked on Slack app **A2** |
 | 3 | Go live with Claude (supervised) | pending; blocked on `ANTHROPIC_API_KEY` |
 | 4 | V1 recommendation loop (Sentry → #scout → @Cursor → PR) | pending |
 | 5 | Migrate laptop workflows | pending; parity/cron gates are Mark's |

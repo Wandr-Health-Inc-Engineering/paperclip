@@ -26,6 +26,12 @@ import { memoryService } from "../tethr/memory.js";
 import { notificationService } from "../tethr/notify.js";
 import { orgService } from "../tethr/org.js";
 import { routingService } from "../tethr/routing.js";
+import {
+  interpretSlackEvent,
+  postSlackMessage,
+  resolveTethrCompanyId,
+  verifySlackSignature,
+} from "../tethr/slack.js";
 import { workerService } from "../tethr/worker.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -54,6 +60,63 @@ export function tethrRoutes(db: Db) {
   const memory = memoryService(db);
   const notify = notificationService(db);
   const worker = workerService(db);
+
+  // ---- Slack inbound events (Phase 2) -------------------------------------
+  // Public webhook — authenticated by Slack's request signature, not a
+  // Paperclip session (so it is deliberately NOT behind assertCompanyAccess).
+  // `../scout` was absent at build time, so this is a fresh intake surface on
+  // the notify seam: a tagged link/photo becomes a routed Helm task.
+  router.post("/tethr/slack/events", async (req, res) => {
+    const rawBody =
+      (req as unknown as { rawBody?: Buffer }).rawBody?.toString("utf8") ??
+      JSON.stringify(req.body ?? {});
+    const verified = verifySlackSignature({
+      timestamp: req.header("x-slack-request-timestamp"),
+      signature: req.header("x-slack-signature"),
+      rawBody,
+    });
+    if (!verified) {
+      res.status(401).json({ error: "invalid signature" });
+      return;
+    }
+    const interp = interpretSlackEvent(req.body);
+    if (interp.type === "challenge") {
+      res.json({ challenge: interp.challenge });
+      return;
+    }
+    // Ack within Slack's 3s window; do the routing asynchronously.
+    res.status(200).json({ ok: true });
+    if (interp.type !== "kickoff") return;
+    void (async () => {
+      try {
+        const companyId = await resolveTethrCompanyId(db);
+        if (!companyId) {
+          logger.warn("tethr slack inbound: no Tethr company resolved");
+          return;
+        }
+        const ids = await new Promise<{ routeRunId: string; threadId: string }>(
+          (resolve, reject) => {
+            routing
+              .routeRequest({
+                companyId,
+                requestText: interp.requestText,
+                invocationSource: "api",
+                hopDelayMs: 0,
+                onStarted: resolve,
+              })
+              .catch(reject);
+          },
+        );
+        await postSlackMessage({
+          channel: interp.channel,
+          threadTs: interp.threadTs,
+          text: `Routing to Helm — tracking as ${ids.routeRunId}. I'll follow up here.`,
+        });
+      } catch (err) {
+        logger.warn({ err }, "tethr slack inbound routing failed");
+      }
+    })();
+  });
 
   // ---- Company overview (org view) ----------------------------------------
   router.get("/tethr/:companyId/overview", async (req, res) => {

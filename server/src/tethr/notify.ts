@@ -6,10 +6,11 @@ import type {
   TethrNotificationKind,
 } from "@paperclipai/shared";
 import { logger } from "../middleware/logger.js";
+import { postSlackMessage, slackConfigured } from "./slack.js";
 
 // Notifications adapter. The in-app center is the working local
-// implementation; Slack / SMS / email implement the same Notifier interface
-// later (cloud) — see MIGRATION-NOTES.md. Locally those channels log only.
+// implementation; Slack is real once SLACK_BOT_TOKEN is set (Phase 2), else it
+// logs. SMS / email remain log-only stubs — see MIGRATION-NOTES.md.
 
 export interface TethrNotification {
   companyId: string;
@@ -18,6 +19,12 @@ export interface TethrNotification {
   body?: string;
   href?: string;
   agentTag?: string;
+  /** Optional Slack Block Kit blocks (slack channel only; not persisted). */
+  slackBlocks?: Array<Record<string, unknown>>;
+  /** Optional Slack channel override (defaults to #scout). */
+  channelId?: string;
+  /** Optional Slack thread to reply into (slack channel only). */
+  threadTs?: string;
 }
 
 export interface Notifier {
@@ -46,7 +53,26 @@ export function notificationService(db: Db) {
   const slack: Notifier = {
     channel: "slack",
     async send(n) {
-      logger.info({ title: n.title, channel: "slack" }, "tethr notifier (mock): would post to #scout");
+      if (!slackConfigured()) {
+        logger.info(
+          { title: n.title, channel: "slack" },
+          "tethr notifier (mock): would post to #scout",
+        );
+        return;
+      }
+      const text = n.href ? `${n.title}\n${n.href}` : n.title;
+      const result = await postSlackMessage({
+        channel: n.channelId,
+        threadTs: n.threadTs,
+        text,
+        blocks: n.slackBlocks,
+      });
+      if (!result.ok) {
+        logger.warn(
+          { title: n.title, error: result.error },
+          "tethr notifier: slack post failed",
+        );
+      }
     },
   };
   const sms: Notifier = {

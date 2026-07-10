@@ -1,6 +1,6 @@
 # Tethr buildout — manual steps for Mark
 
-**Regenerated: 2026-07-09 (after Phase 1 code-side).** This is the running list of every action that
+**Regenerated: 2026-07-09 (after Phase 2 code-side).** This is the running list of every action that
 needs *you* (an account, a card, a dashboard click, a "go") — everything else Claude Code
 builds without you. Groups are priority-ordered: **(A)** gets your agents talking in Slack
 fastest, **(B)** unlocks money / live runs, **(C)** everything else.
@@ -16,7 +16,7 @@ fastest, **(B)** unlocks money / live runs, **(C)** everything else.
 |---|---|---|---|---|
 | 0 | Repo ground truth & Scout audit | ✅ yes | ✅ (tests green, committed) | — |
 | 1 | Deploy Tethr to Railway | ✅ code (`railway.toml`, server build verified) | ❌ (deploy) | **A1** Railway account/CLI |
-| 2 | Slack: real senders + inbound surface | ⏳ pending | ❌ | **A2** Slack app + token; needs P1 URL |
+| 2 | Slack: real senders + inbound surface | ✅ code (sender, recommendation builder, inbound events, 14 tests) | ❌ (token/post) | **A2** Slack app + token; needs P1 URL |
 | 3 | Go live with Claude (supervised) | ⏳ pending | ❌ | **B1** Anthropic key; **B2** "go" for spend |
 | 4 | V1 loop (Sentry → #scout → @Cursor → PR) | ⏳ pending | ❌ | **B3** Cursor Slack integration; needs P2+P3 |
 | 5 | Migrate laptop workflows | ⏳ pending | ❌ | **C-parity** your parity judgment + cron pause |
@@ -66,29 +66,33 @@ prerequisite for A2.
 
 ### A2 · Create the Slack app + bot token (unblocks Phase 2) — ~15 min
 
-Claude Code will have built the real Slack sender + inbound handler behind env vars first,
-then give you the exact scopes/URLs. You do the dashboard part at **api.slack.com/apps**:
+**Built & ready:** real `chat.postMessage` sender (log fallback offline), the standard
+recommendation format, and a signature-verified inbound events endpoint at
+`POST /api/tethr/slack/events` — 14 unit tests green. You do the dashboard part at
+**api.slack.com/apps** (uses the Events API against the Railway URL — no Socket Mode needed):
 
 1. **Create New App** → *From scratch* → workspace = your Wandr workspace.
-2. **OAuth & Permissions** → Bot Token Scopes: `chat:write`, `channels:read`,
-   `channels:history`, `files:read`, `app_mentions:read` (Claude will confirm the final set).
-3. **Install to Workspace** → copy the **Bot User OAuth Token** (`xoxb-…`).
-4. Invite the bot to `#scout`: in Slack, `/invite @<app name>` in the channel
-   (`C0AE02FJR5Y`).
-5. Set the token on Railway: `railway variables --set SLACK_BOT_TOKEN=xoxb-…`
-   (**secret — never commit it**).
-6. Inbound: Claude will tell you whether to use **Socket Mode** (needs an app-level
-   `xapp-…` token, no public URL) or **Events API** (needs the Request URL
-   `<railway-url>/api/tethr/slack/events` + signing secret). Set whichever it specifies.
+2. **OAuth & Permissions → Bot Token Scopes:** `chat:write`, `channels:read`,
+   `channels:history`, `files:read`, `app_mentions:read`. **Install to Workspace** → copy the
+   **Bot User OAuth Token** (`xoxb-…`).
+3. **Basic Information → App Credentials:** copy the **Signing Secret**.
+4. **Event Subscriptions:** toggle on → **Request URL** =
+   `https://<railway-url>/api/tethr/slack/events` (it auto-answers Slack's verification
+   challenge). Under **Subscribe to bot events** add `app_mention` and `message.channels`. Save.
+5. **Invite the bot to #scout:** `/invite @<app name>` in the channel (`C0AE02FJR5Y`).
+6. **Set the secrets on Railway** (never commit):
+   `railway variables --set SLACK_BOT_TOKEN=xoxb-… --set SLACK_SIGNING_SECRET=…`
+   (optional `--set SLACK_SCOUT_CHANNEL=C0AE02FJR5Y` if you ever change channels).
 
-**Where:** api.slack.com/apps + Railway. **Unblocks:** Phase 2 (agents post to #scout;
-your tagged posts route into Tethr).
+**Where:** api.slack.com/apps + Railway. **Unblocks:** Phase 2 (agents post to #scout; your
+tagged links route into Tethr as Helm tasks).
 
 ### A3 · Say "go" for the first real #scout post — ~1 min
 
-The first live Slack post is a hard gate. When Claude Code pauses and shows you the test
-recommendation it's about to send, reply **"go"**. (Rollback is instant: unset
-`SLACK_BOT_TOKEN`.)
+The first live Slack post is a hard gate. Once `SLACK_BOT_TOKEN` is set, the test post is a
+single command — `SLACK_BOT_TOKEN=xoxb-… node scripts/tethr-slack-send.mjs` — which drops one
+standard-format recommendation into #scout. Run it yourself, or reply **"go"** and I'll run it
+in a session where the token is available. (Rollback is instant: unset `SLACK_BOT_TOKEN`.)
 
 ---
 
