@@ -1,6 +1,6 @@
 # Tethr buildout — manual steps for Mark
 
-**Regenerated: 2026-07-09 (after Phase 2 code-side).** This is the running list of every action that
+**Regenerated: 2026-07-09 (after Phase 3 code-side).** This is the running list of every action that
 needs *you* (an account, a card, a dashboard click, a "go") — everything else Claude Code
 builds without you. Groups are priority-ordered: **(A)** gets your agents talking in Slack
 fastest, **(B)** unlocks money / live runs, **(C)** everything else.
@@ -17,7 +17,7 @@ fastest, **(B)** unlocks money / live runs, **(C)** everything else.
 | 0 | Repo ground truth & Scout audit | ✅ yes | ✅ (tests green, committed) | — |
 | 1 | Deploy Tethr to Railway | ✅ code (`railway.toml`, server build verified) | ❌ (deploy) | **A1** Railway account/CLI |
 | 2 | Slack: real senders + inbound surface | ✅ code (sender, recommendation builder, inbound events, 14 tests) | ❌ (token/post) | **A2** Slack app + token; needs P1 URL |
-| 3 | Go live with Claude (supervised) | ⏳ pending | ❌ | **B1** Anthropic key; **B2** "go" for spend |
+| 3 | Go live with Claude (supervised) | ✅ code + safety (budget cap now enforces; 8 tests) | ❌ (spend) | **B1** Anthropic key; **B2** "go" for spend |
 | 4 | V1 loop (Sentry → #scout → @Cursor → PR) | ⏳ pending | ❌ | **B3** Cursor Slack integration; needs P2+P3 |
 | 5 | Migrate laptop workflows | ⏳ pending | ❌ | **C-parity** your parity judgment + cron pause |
 | 6 | Memory upgrade (dedupe) | ⏳ pending | ❌ | none (buildable) |
@@ -100,15 +100,22 @@ in a session where the token is available. (Rollback is instant: unset `SLACK_BO
 
 ### B1 · Anthropic API key with a low spend cap (unblocks Phase 3) — ~10 min
 
-1. **console.anthropic.com** → **Settings → Limits** → set an **org spend limit of
-   $25/mo** for the shakedown (keep this permanently).
-2. **API Keys** → create a key; label it `tethr-railway`.
-3. Set it on Railway when Claude Code prompts:
-   `railway variables --set ANTHROPIC_API_KEY=sk-ant-…` and
-   `railway variables --set TETHR_LIVE_FETCH=true` (secrets — never commit).
+**Built & ready:** Phase 3 fixed two real bugs so the budget cap actually enforces (before,
+every agent's cost recorded as $0 and only Tailwind hard-stopped — the caps did nothing). The
+live-run safety envelope (no writes outside the Drive; no external publish except the
+`SLACK_BOT_TOKEN`-gated Slack notify) is locked by 8 passing tests. So this is genuinely just
+the key + a "go".
 
-**Where:** console.anthropic.com + Railway. **Unblocks:** Phase 3 (one real Sonar run,
-capped).
+1. **console.anthropic.com** → **Settings → Limits** → set an **org spend limit of
+   $25/mo** for the shakedown (keep this permanently — it's the real backstop).
+2. **API Keys** → create a key; label it `tethr-railway`.
+3. Set it on Railway:
+   `railway variables --set ANTHROPIC_API_KEY=sk-ant-… --set TETHR_LIVE_FETCH=true`
+   (secrets — never commit). Leave `SLACK_BOT_TOKEN` unset for the tightest first run, or keep
+   it for a #scout digest. Restart the service (the provider is chosen at boot).
+
+**Where:** console.anthropic.com + Railway. **Unblocks:** Phase 3 — a $0.01-cap stop test
+(proves the hard-stop), then one real $5-capped Sonar news-scan.
 
 ### B2 · Say "go" for the first live-LLM spend — ~1 min
 

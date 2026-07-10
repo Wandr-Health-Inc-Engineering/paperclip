@@ -324,8 +324,12 @@ export async function seedWandrGrowth(
       windowKind: "calendar_month_utc",
       amount: spec.budgetMonthlyCents,
       warnPercent: 80,
-      // Tailwind moves real money: hard stop on. Content agents warn only.
-      hardStopEnabled: spec.key === "tailwind",
+      // Every autonomous agent keeps its stated cap as a real hard stop (Phase 3):
+      // at 80% it warns, at 100% core pauses the agent and cancels in-flight work.
+      // (Previously only Tailwind hard-stopped and the rest warned only — that left
+      // the per-agent caps unenforced, which the buildout forbids. Cost only accrues
+      // on live runs, so mock/dev never trips this.)
+      hardStopEnabled: true,
       createdByUserId: "tethr-seed",
     });
   }

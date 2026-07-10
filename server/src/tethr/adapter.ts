@@ -7,6 +7,7 @@ import type {
 } from "../adapters/index.js";
 import { registerServerAdapter } from "../adapters/index.js";
 import { getTethrLLMProvider } from "./llm/index.js";
+import { priceUsd } from "./llm/pricing.js";
 import { orgService } from "./org.js";
 import { routingService } from "./routing.js";
 
@@ -106,6 +107,12 @@ async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionRe
     );
   }
 
+  // Price the run so real spend accrues into core cost_events / budget_policies.
+  // Only live (Claude) runs cost money; the mock provider stays $0. Core reads
+  // `resultJson.costUsd` and converts to cents (heartbeat.normalizeBilledCostCents).
+  const costUsd =
+    provider.id === "claude" ? priceUsd(provider.model, result.usage) : 0;
+
   if (result.status === "failed") {
     return {
       exitCode: 1,
@@ -116,6 +123,7 @@ async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionRe
       model: provider.model,
       billingType: provider.id === "claude" ? "api" : "fixed",
       usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
+      resultJson: { status: result.status, costUsd },
       summary: `Heartbeat failed: ${result.resultText.slice(0, 200)}`,
     };
   }
@@ -133,6 +141,7 @@ async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionRe
       status: result.status,
       hops: result.hops,
       outputs: result.outputs,
+      costUsd,
     },
     summary: result.resultText.slice(0, 500),
   };

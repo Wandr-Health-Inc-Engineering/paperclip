@@ -133,6 +133,26 @@ Both directions run through `server/src/tethr/`, gated on env so local dev stays
   `TETHR_SLACK_COMPANY_ID`. Slack app scopes + event URL: gate **A2** in `MANUAL-STEPS.md`.
 - **Manual outbound test:** `SLACK_BOT_TOKEN=… node scripts/tethr-slack-send.mjs` (gate A3).
 
+## Live mode (Claude) & budgets
+
+- **Flip live:** set `ANTHROPIC_API_KEY` (+ optional `TETHR_CLAUDE_MODEL`, default
+  `claude-sonnet-4-6`) and restart — `getTethrLLMProvider()` (`llm/index.ts`) swaps mock →
+  `ClaudeProvider` at boot. `TETHR_LIVE_FETCH=true` turns the three web tools from fixtures to
+  real read-only GETs. **Flip back:** unset `ANTHROPIC_API_KEY`.
+- **Budgets are real now (Phase 3 fix).** Two seams were broken: the adapter reported no cost
+  and only Tailwind's cap hard-stopped. Fixed additively — `llm/pricing.ts` prices token usage
+  (`claude-sonnet-4-6` = $3/$15 per MTok, override with `TETHR_PRICE_INPUT_PER_MTOK` /
+  `TETHR_PRICE_OUTPUT_PER_MTOK`), `adapter.ts` emits `resultJson.costUsd` for **live runs only**
+  (mock stays $0), and `seed.ts` sets `hardStopEnabled: true` for every agent policy. Cost flows
+  into core `cost_events`; the hard-stop fires in core `services/budgets.ts`. Re-seed a fresh DB
+  for the seed change to apply. Read spend on the TethrBudgets page.
+- **Safety envelope (locked by `__tests__/tethr-live-safety.test.ts`):** a live Sonar run cannot
+  write outside the DB-backed Tethr Drive (no `fs`/`exec`; Sonar lacks `drive_write`) and cannot
+  publish externally except the `notify`→Slack tool, which is granted to `@sonar.leads` only and
+  gated by `SLACK_BOT_TOKEN`. Allowlists are hard-enforced in `worker.ts`; gating blocks
+  `medical`/`public`/`spend`/`pr` publishes without an approval. Keep the org-level Anthropic
+  spend limit ($25/mo) on permanently.
+
 ## Brand lock (any UI work)
 
 Urbanist + JetBrains Mono · pure black/white · 2px borders · **no gradients, no color, no
@@ -173,7 +193,7 @@ At a gate: print the exact commands / dashboard steps, add them to
 | 0 | Repo ground truth & Scout audit | **built** (this commit) |
 | 1 | Deploy Tethr to Railway | code-ready; blocked on Railway account |
 | 2 | Slack: real senders + inbound surface | **code built** (sender + recommendation format + inbound events, 14 tests); blocked on Slack app **A2** |
-| 3 | Go live with Claude (supervised) | pending; blocked on `ANTHROPIC_API_KEY` |
+| 3 | Go live with Claude (supervised) | **code + safety built** (budget cap now enforces; 8 safety/pricing tests); blocked on `ANTHROPIC_API_KEY` **B1/B2** |
 | 4 | V1 recommendation loop (Sentry → #scout → @Cursor → PR) | pending |
 | 5 | Migrate laptop workflows | pending; parity/cron gates are Mark's |
 | 6 | Memory upgrade (dedupe) | pending |
