@@ -161,6 +161,13 @@ async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionRe
     provider.id === "claude" ? priceUsd(provider.model, result.usage) : 0;
 
   if (result.status === "failed") {
+    // Phase 9: surface heartbeat failures to #scout within minutes (throttled).
+    const { reportServerError } = await import("./observability.js");
+    await reportServerError(db, companyId, {
+      errorClass: `heartbeat:${tag}`,
+      message: `${tag} heartbeat failed: ${result.resultText.slice(0, 300)}`,
+      agentTag: tag,
+    });
     return {
       exitCode: 1,
       signal: null,

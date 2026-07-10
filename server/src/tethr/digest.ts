@@ -113,7 +113,56 @@ export function digestService(db: Db) {
     return { outputId: output.id, title: output.title, pendingCount: pending.length };
   }
 
-  return { generateDigest };
+  // Phase 9: weekly spend summary — total + per-agent spend vs cap, to #scout.
+  async function generateWeeklySummary(
+    companyId: string,
+  ): Promise<{ totalSpentCents: number; agents: number }> {
+    const profiles = await org.listProfiles(companyId);
+    const spenders = profiles
+      .filter((p) => p.agent.budgetMonthlyCents > 0)
+      .sort((a, b) => b.agent.spentMonthlyCents - a.agent.spentMonthlyCents);
+    const totalSpentCents = spenders.reduce((s, p) => s + p.agent.spentMonthlyCents, 0);
+    const date = new Date().toISOString().slice(0, 10);
+    const dollars = (c: number) => `$${(c / 100).toFixed(2)}`;
+    const lines: string[] = [
+      `## Weekly spend summary — ${date}`,
+      "",
+      `**Total this month: ${dollars(totalSpentCents)}**`,
+      "",
+      "**Per agent (spend / cap):**",
+      ...spenders.map((p) => {
+        const pct =
+          p.agent.budgetMonthlyCents > 0
+            ? Math.round((p.agent.spentMonthlyCents / p.agent.budgetMonthlyCents) * 100)
+            : 0;
+        return `- ${p.profile.tag}: ${dollars(p.agent.spentMonthlyCents)} / ${dollars(p.agent.budgetMonthlyCents)} (${pct}%)${pct >= 80 ? " — over 80% cap" : ""}`;
+      }),
+    ];
+    const helm = await org.getProfileByTag(companyId, "@helm");
+    if (helm) {
+      await gating.createOutput({
+        companyId,
+        agentId: helm.agent.id,
+        agentTag: "@helm",
+        kind: "document",
+        title: `Weekly spend summary — ${date}`,
+        body: lines.join("\n"),
+        sensitivity: "internal",
+        meta: { weeklySummary: true },
+      });
+    }
+    await notify.send({
+      companyId,
+      kind: "budget",
+      title: `Weekly spend: ${dollars(totalSpentCents)} across ${spenders.length} agents`,
+      body: lines.slice(4).join("\n"),
+      href: `/budgets`,
+      agentTag: "@helm",
+    });
+    return { totalSpentCents, agents: spenders.length };
+  }
+
+  return { generateDigest, generateWeeklySummary };
 }
 
 export type DigestService = ReturnType<typeof digestService>;

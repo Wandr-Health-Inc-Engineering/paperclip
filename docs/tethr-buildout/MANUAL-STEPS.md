@@ -23,7 +23,7 @@ fastest, **(B)** unlocks money / live runs, **(C)** everything else.
 | 6 | Memory upgrade (dedupe) | ✅ built + tested (dedup module, hooks, seed endpoint, ADR-0002) | ⚠️ backfill | **C6** corpus backfill (1 command, optional) |
 | 7 | Command Center → cloud | ⏳ pending | ❌ | **C1** CC source + `data.db` + `CC_PASSWORD` |
 | 8 | Error-patching agent (Pulse/PostHog) | ✅ code + tests (3 rules, PHI denylist, seeded paused) | ❌ (run) | **C2** PostHog key + fill config |
-| 9 | Observability, budgets, access control | ⏳ pending | ❌ | **C3** Frank/Alec logins; needs P3+P5+P7 |
+| 9 | Observability, budgets, access control | ✅ built + tested (alerts, deep health, weekly digest, RUNBOOK) | ⚠️ logins | **C3** Frank/Alec accounts + uptime pinger |
 | 10 | Scale review vs $1M-no-hiring | ⛔ excluded | — | needs a month of steady-state data |
 
 ---

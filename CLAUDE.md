@@ -185,6 +185,14 @@ corpus once via `POST /api/tethr/:companyId/seed-memory` (or `scripts/tethr-seed
 `TETHR_MEMORY_SEED_PATH`) — idempotent. Embeddings/graph decision deferred with triggers in
 `docs/adr/0002-memory-architecture.md`.
 
+## Observability & ops (Phase 9)
+
+`observability.ts`: `reportServerError` → #scout, throttled 1/error-class/hour; `deepHealthCheck`
+→ `GET /api/tethr/health/deep` (200/503, for an uptime pinger). `adapter.ts` reports heartbeat
+failures through it. `digest.ts` `generateWeeklySummary` posts total + per-agent spend vs cap.
+Ops guide (restart, kill switches, rollback, uptime, access) = **`RUNBOOK.md`**. Access control
+uses core **better-auth** (authenticated mode) — a 3-user setup, not a build.
+
 ## Brand lock (any UI work)
 
 Urbanist + JetBrains Mono · pure black/white · 2px borders · **no gradients, no color, no
@@ -231,7 +239,7 @@ At a gate: print the exact commands / dashboard steps, add them to
 | 6 | Memory upgrade (dedupe) | **built + tested** (`published-memory.ts`, publish-record hook, routing warning, seed endpoint, ADR-0002); corpus backfill is 1 manual step |
 | 7 | Command Center → cloud | pending; source in Drive, not repo |
 | 8 | Error-patching agent (Pulse / PostHog) | **code + tests built** (3 rules, PHI denylist, seeded paused); blocked on `POSTHOG_API_KEY` **C2** + fill config |
-| 9 | Observability, budgets, access control | pending |
+| 9 | Observability, budgets, access control | **built** (error→#scout throttled, deep health route, weekly spend digest, RUNBOOK; auth = core better-auth, 3-user setup) |
 | 10 | Scale review vs $1M-no-hiring | excluded (needs steady-state data) |
 
 Full run instructions: `docs/tethr-buildout/RUN-ALL-PROMPT.md`. Remaining human actions

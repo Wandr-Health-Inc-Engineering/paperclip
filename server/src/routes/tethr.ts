@@ -854,6 +854,14 @@ export function tethrRoutes(db: Db) {
     res.json({ parsed: items.length, created, existing });
   });
 
+  // ---- Deep health check (Phase 9) — for an external uptime pinger -----------
+  // Public (like /api/health): reports only DB reachability + heartbeat age.
+  router.get("/tethr/health/deep", async (_req, res) => {
+    const { deepHealthCheck } = await import("../tethr/observability.js");
+    const h = await deepHealthCheck(db);
+    res.status(h.ok ? 200 : 503).json(h);
+  });
+
   // ---- Digest -------------------------------------------------------------------
   router.post("/tethr/:companyId/digest", async (req, res) => {
     const companyId = req.params.companyId as string;
