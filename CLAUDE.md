@@ -125,12 +125,16 @@ Both directions run through `server/src/tethr/`, gated on env so local dev stays
   blocks }`. The standard agent post — what's wrong / why it matters / affected
   URL·page·**file path (plain text, copy-safe for @Cursor)** / codename / severity, footer
   "Reply in-thread and tag @Cursor to fix." Black/white, no emoji. Reused by Phases 4 & 8.
-- **Inbound:** `POST /api/tethr/slack/events` (`routes/tethr.ts` + `slack.ts`). Signature-
-  verified (`SLACK_SIGNING_SECRET`), answers the url_verification challenge, acks in <3s, and
-  turns a tagged link/photo into a routed Helm task (`invocationSource:"api"`). Not behind
-  `assertCompanyAccess` by design (signature is the auth). `../scout` was absent → built fresh.
-- **Env:** `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, optional `SLACK_SCOUT_CHANNEL`,
-  `TETHR_SLACK_COMPANY_ID`. Slack app scopes + event URL: gate **A2** in `MANUAL-STEPS.md`.
+- **Inbound (two transports, one handler):** a tagged/DM'd/link message → `interpretSlackEvent`
+  → `routeInboundKickoff` → **Helm** (the router) — same entry point as the Console chat. A **DM**
+  (`channel_type:"im"`) treats any text as a request; a channel needs a mention/link. Transports:
+  (1) **Events API** `POST /api/tethr/slack/events` (signature-verified, for cloud/public URL);
+  (2) **Socket Mode** (`startSlackSocketMode`, boot via `initTethr`→`maybeAutoSeed`) — outbound
+  WebSocket via `SLACK_APP_TOKEN`, **no public URL**, the local-first path. Node ≥ 22 (global
+  WebSocket). `../scout` was absent → built fresh. **Local run guide: `LOCAL.md`.**
+- **Env:** `SLACK_BOT_TOKEN` (send/recv), `SLACK_APP_TOKEN` (Socket Mode/local),
+  `SLACK_SIGNING_SECRET` (Events API only), optional `SLACK_SCOUT_CHANNEL`, `TETHR_SLACK_COMPANY_ID`.
+  Cloud Slack app: gate **A2** in `MANUAL-STEPS.md`; local: `LOCAL.md`.
 - **Manual outbound test:** `SLACK_BOT_TOKEN=… node scripts/tethr-slack-send.mjs` (gate A3).
 
 ## Live mode (Claude) & budgets

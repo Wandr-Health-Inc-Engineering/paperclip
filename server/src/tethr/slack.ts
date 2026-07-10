@@ -14,6 +14,7 @@ import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { companies } from "@paperclipai/db";
+import { logger } from "../middleware/logger.js";
 
 const SLACK_API = "https://slack.com/api";
 
@@ -182,9 +183,15 @@ export function interpretSlackEvent(
   const links = extractLinks(rawText);
   const hasFiles = Array.isArray(ev.files) && ev.files.length > 0;
 
-  // Only act on a mention, or a link/photo drop in the channel.
-  if (!isMention && links.length === 0 && !hasFiles) {
-    return { type: "ignore", reason: "no mention/link/photo" };
+  // In a DM (`channel_type: "im"`) the bot is 1:1 with the user, so ANY message
+  // is a request to route — like typing in the Console chat. In a channel we
+  // require a mention or a link/photo so we don't react to unrelated chatter.
+  const isDM = ev.channel_type === "im";
+  if (!isMention && !isDM && links.length === 0 && !hasFiles) {
+    return { type: "ignore", reason: "no mention/DM/link/photo" };
+  }
+  if (!rawText.trim() && links.length === 0 && !hasFiles) {
+    return { type: "ignore", reason: "empty message" };
   }
 
   const cleaned = rawText.replace(/<@[^>]+>/g, "").trim();
@@ -223,4 +230,145 @@ export async function resolveTethrCompanyId(db: Db): Promise<string | null> {
     .where(eq(companies.name, TETHR_COMPANY_NAME))
     .limit(1);
   return row?.id ?? null;
+}
+
+// ---- Inbound routing + Socket Mode (local-friendly, no public URL) ---------
+
+/**
+ * Turn an interpreted kickoff into a routed Helm task + threaded ack. Shared by
+ * the HTTP events endpoint (cloud) and the Socket Mode client (local). Helm is
+ * the router that absorbs any request and routes it — same entry point as the
+ * Console chat, so a Slack DM/tag and a Console message behave identically.
+ */
+export async function routeInboundKickoff(
+  db: Db,
+  interp: { requestText: string; channel?: string; threadTs?: string },
+): Promise<{ routeRunId: string; threadId: string } | null> {
+  const companyId = await resolveTethrCompanyId(db);
+  if (!companyId) {
+    logger.warn("tethr slack: no Tethr company resolved for inbound kickoff");
+    return null;
+  }
+  // Dynamic import breaks the notify → slack → routing → notify module cycle.
+  const { routingService } = await import("./routing.js");
+  const routing = routingService(db);
+  const ids = await new Promise<{ routeRunId: string; threadId: string }>((resolve, reject) => {
+    routing
+      .routeRequest({
+        companyId,
+        requestText: interp.requestText,
+        invocationSource: "api",
+        hopDelayMs: 0,
+        onStarted: resolve,
+      })
+      .catch(reject);
+  });
+  await postSlackMessage({
+    channel: interp.channel,
+    threadTs: interp.threadTs,
+    text: `On it — routing to Helm (task ${ids.routeRunId}). I'll follow up here.`,
+  });
+  return ids;
+}
+
+/** Minimal WebSocket surface we use (avoids a DOM lib dependency in tsconfig). */
+interface SlackWs {
+  onmessage: (ev: { data: unknown }) => void;
+  onclose: () => void;
+  onerror: () => void;
+  send(data: string): void;
+  close(): void;
+}
+
+/**
+ * Slack Socket Mode: receive events over an outbound WebSocket — no public URL,
+ * no tunnel — so tag/DM works with the whole stack on a laptop. Enabled by
+ * `SLACK_APP_TOKEN` (xapp-…, scope `connections:write`). Needs a global
+ * WebSocket (Node ≥ 22); logs + no-ops otherwise. Fire-and-forget; reconnects.
+ */
+export async function startSlackSocketMode(db: Db): Promise<void> {
+  const appToken = process.env.SLACK_APP_TOKEN?.trim();
+  if (!appToken) return;
+  const WS = (globalThis as { WebSocket?: new (url: string) => SlackWs }).WebSocket;
+  if (!WS) {
+    logger.warn("SLACK_APP_TOKEN set but no global WebSocket (need Node ≥ 22); Socket Mode disabled");
+    return;
+  }
+  let stopped = false;
+  const scheduleReconnect = () => {
+    if (!stopped) setTimeout(() => void connect(), 5000);
+  };
+  const connect = async (): Promise<void> => {
+    if (stopped) return;
+    let url: string | undefined;
+    try {
+      const res = await fetch("https://slack.com/api/apps.connections.open", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${appToken}`,
+          "content-type": "application/x-www-form-urlencoded",
+        },
+      });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string; error?: string };
+      if (!data.ok || !data.url) {
+        logger.warn({ error: data.error }, "slack socket: apps.connections.open failed");
+        scheduleReconnect();
+        return;
+      }
+      url = data.url;
+    } catch (err) {
+      logger.warn({ err }, "slack socket: open error");
+      scheduleReconnect();
+      return;
+    }
+    if (!url) {
+      scheduleReconnect();
+      return;
+    }
+    const ws = new WS(url);
+    ws.onmessage = (ev: { data: unknown }) => {
+      let msg: Record<string, unknown>;
+      try {
+        msg = JSON.parse(String(ev.data)) as Record<string, unknown>;
+      } catch {
+        return;
+      }
+      if (msg.type === "hello") {
+        logger.info("tethr slack: Socket Mode connected");
+        return;
+      }
+      if (typeof msg.envelope_id === "string") {
+        try {
+          ws.send(JSON.stringify({ envelope_id: msg.envelope_id }));
+        } catch {
+          /* ack is best-effort */
+        }
+      }
+      if (msg.type === "disconnect") {
+        try {
+          ws.close();
+        } catch {
+          /* onclose schedules reconnect */
+        }
+        return;
+      }
+      if (msg.type === "events_api" && msg.payload) {
+        const interp = interpretSlackEvent(msg.payload);
+        if (interp.type === "kickoff") {
+          void routeInboundKickoff(db, interp).catch((err) =>
+            logger.warn({ err }, "tethr slack: Socket Mode route failed"),
+          );
+        }
+      }
+    };
+    ws.onclose = () => scheduleReconnect();
+    ws.onerror = () => {
+      try {
+        ws.close();
+      } catch {
+        /* onclose schedules reconnect */
+      }
+    };
+  };
+  void connect();
 }

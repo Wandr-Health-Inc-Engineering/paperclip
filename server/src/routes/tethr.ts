@@ -28,8 +28,7 @@ import { orgService } from "../tethr/org.js";
 import { routingService } from "../tethr/routing.js";
 import {
   interpretSlackEvent,
-  postSlackMessage,
-  resolveTethrCompanyId,
+  routeInboundKickoff,
   verifySlackSignature,
 } from "../tethr/slack.js";
 import { workerService } from "../tethr/worker.js";
@@ -84,38 +83,12 @@ export function tethrRoutes(db: Db) {
       res.json({ challenge: interp.challenge });
       return;
     }
-    // Ack within Slack's 3s window; do the routing asynchronously.
+    // Ack within Slack's 3s window; route asynchronously (shared with Socket Mode).
     res.status(200).json({ ok: true });
     if (interp.type !== "kickoff") return;
-    void (async () => {
-      try {
-        const companyId = await resolveTethrCompanyId(db);
-        if (!companyId) {
-          logger.warn("tethr slack inbound: no Tethr company resolved");
-          return;
-        }
-        const ids = await new Promise<{ routeRunId: string; threadId: string }>(
-          (resolve, reject) => {
-            routing
-              .routeRequest({
-                companyId,
-                requestText: interp.requestText,
-                invocationSource: "api",
-                hopDelayMs: 0,
-                onStarted: resolve,
-              })
-              .catch(reject);
-          },
-        );
-        await postSlackMessage({
-          channel: interp.channel,
-          threadTs: interp.threadTs,
-          text: `Routing to Helm — tracking as ${ids.routeRunId}. I'll follow up here.`,
-        });
-      } catch (err) {
-        logger.warn({ err }, "tethr slack inbound routing failed");
-      }
-    })();
+    void routeInboundKickoff(db, interp).catch((err) =>
+      logger.warn({ err }, "tethr slack inbound routing failed"),
+    );
   });
 
   // ---- Company overview (org view) ----------------------------------------

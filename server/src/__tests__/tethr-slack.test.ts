@@ -102,6 +102,17 @@ describe("interpretSlackEvent", () => {
     expect(r.type).toBe("ignore");
   });
 
+  it("treats any DM to the bot as a kickoff (like the Console chat)", () => {
+    const r = interpretSlackEvent({
+      type: "event_callback",
+      event: { type: "message", channel_type: "im", text: "what's our Peru ad budget?", channel: "D123", ts: "3.0" },
+    });
+    expect(r.type).toBe("kickoff");
+    if (r.type !== "kickoff") return;
+    expect(r.requestText).toBe("what's our Peru ad budget?");
+    expect(r.channel).toBe("D123");
+  });
+
   it("ignores bot messages (loop guard)", () => {
     const r = interpretSlackEvent({
       type: "event_callback",

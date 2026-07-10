@@ -31,4 +31,8 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
   if (process.env.VITEST || process.env.NODE_ENV === "test") return;
   const seed = await import("./seed/seed.js");
   await seed.maybeAutoSeed(db);
+  // Start Slack Socket Mode if configured (SLACK_APP_TOKEN) — lets tag/DM reach
+  // a local server with no public URL. No-op when the token is unset.
+  const { startSlackSocketMode } = await import("./slack.js");
+  void startSlackSocketMode(db);
 }
