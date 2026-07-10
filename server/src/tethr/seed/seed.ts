@@ -476,6 +476,78 @@ export async function seedWandrGrowth(
     );
   }
 
+  // --- Reliability division: Pulse, the PostHog analytics auditor (Phase 8) --
+  // Second Reliability agent, same #scout loop as Sentry. Seeded PAUSED and
+  // inert until Mark sets POSTHOG_API_KEY and fills tools/pulse-events.json.
+  {
+    const reliabilityId = divisionByKey.get("reliability") ?? null;
+    const pulse = await createAgent({
+      key: "pulse",
+      name: "Pulse",
+      role: "general",
+      title: "Analytics Auditor",
+      capabilities:
+        "Watch PostHog (project 361561, read-only) for error spikes, dead tracking events, and funnel-conversion drops; recommend fixes to #scout. Marketing analytics only — never person-level or clinical data.",
+      reportsTo: ceo.id,
+      status: "paused",
+      pausedReason:
+        "Heartbeat off until Mark sets POSTHOG_API_KEY and fills pulse-events.json (Phase 8).",
+      budgetMonthlyCents: 2000,
+      adapterConfig: { agentTag: "@pulse", heartbeatMode: "pulse_audit" },
+    });
+    await db.insert(tethrAgentProfiles).values({
+      companyId,
+      agentId: pulse.id,
+      divisionId: reliabilityId,
+      tag: "@pulse",
+      codename: "Pulse",
+      mission:
+        "Flag application-level regressions from analytics: an error type >3× its 7-day baseline, a critical event at 0 for 24h, or a funnel step conversion down >30% day-over-day. Post ≤3 findings/day to #scout for a human to route to @Cursor.",
+      approvalGate: "internal",
+      heartbeatCron: "0 10 * * *",
+      heartbeatNote: "Daily 10:00 AM analytics audit (paused until enabled)",
+      portPriority: null,
+      routingTable: [],
+      standingRules: STANDING_RULES,
+    });
+    await db.insert(budgetPolicies).values({
+      companyId,
+      scopeType: "agent",
+      scopeId: pulse.id,
+      metric: "billed_cents",
+      windowKind: "calendar_month_utc",
+      amount: 2000,
+      warnPercent: 80,
+      hardStopEnabled: true,
+      createdByUserId: "tethr-seed",
+    });
+    const pulseRoutine = await routines.create(
+      companyId,
+      {
+        title: "Pulse heartbeat",
+        description: "Daily PostHog analytics audit; posts ≤3 findings/day to #scout.",
+        assigneeAgentId: pulse.id,
+        priority: "medium",
+        status: "paused",
+        concurrencyPolicy: "coalesce_if_active",
+        catchUpPolicy: "skip_missed",
+        variables: [],
+      },
+      { userId: "tethr-seed" },
+    );
+    await routines.createTrigger(
+      pulseRoutine.id,
+      {
+        kind: "schedule",
+        cronExpression: "0 10 * * *",
+        timezone: "America/New_York",
+        enabled: false,
+        label: "Daily 10:00 AM analytics audit (disabled until enabled)",
+      } as never,
+      { userId: "tethr-seed" },
+    );
+  }
+
   // --- Drive: folders + spec files -------------------------------------------
   const baseFolders = [
     "/agents/helm",

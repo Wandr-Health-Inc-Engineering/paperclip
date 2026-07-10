@@ -170,7 +170,11 @@ to #scout in the standard recommendation format; a human tags `@Cursor` in-threa
 - **Config env:** `TETHR_SENTRY_SITE` (default `https://travelwithwandr.com`),
   `TETHR_SENTRY_GA4_ID`, `TETHR_SENTRY_GTM_ID`, `TETHR_SENTRY_DRY_RUN`.
 - The fix loop is **Cursor's native Slack integration** — nothing is built for it (gate B3).
-  Phase 8 adds a second Reliability agent (Pulse, PostHog) on the same loop.
+- **Pulse** (Phase 8) is the second Reliability agent, same #scout loop: `checks/pulse.ts` +
+  `tools/posthog.ts` run 3 read-only PostHog queries (error spike / dead event / funnel drop)
+  with a **PHI denylist** on event names. Seeded paused, $20/mo cap, inert until `POSTHOG_API_KEY`
+  is set and `tools/pulse-events.json` is filled. Heartbeat mode `pulse_audit`; preview with
+  `TETHR_PULSE_DRY_RUN=true`.
 
 ## Memory & published-content dedupe (Phase 6)
 
@@ -226,7 +230,7 @@ At a gate: print the exact commands / dashboard steps, add them to
 | 5 | Migrate laptop workflows | pending; parity/cron gates are Mark's |
 | 6 | Memory upgrade (dedupe) | **built + tested** (`published-memory.ts`, publish-record hook, routing warning, seed endpoint, ADR-0002); corpus backfill is 1 manual step |
 | 7 | Command Center → cloud | pending; source in Drive, not repo |
-| 8 | Error-patching agent (Pulse / PostHog) | pending; blocked on `POSTHOG_API_KEY` |
+| 8 | Error-patching agent (Pulse / PostHog) | **code + tests built** (3 rules, PHI denylist, seeded paused); blocked on `POSTHOG_API_KEY` **C2** + fill config |
 | 9 | Observability, budgets, access control | pending |
 | 10 | Scale review vs $1M-no-hiring | excluded (needs steady-state data) |
 

@@ -88,6 +88,29 @@ async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionRe
     };
   }
 
+  // Pulse mode: the PostHog analytics auditor (Phase 8) — same #scout loop as
+  // Sentry. Inert until POSTHOG_API_KEY is set and pulse-events.json is filled.
+  if (config.heartbeatMode === "pulse_audit") {
+    const { runPulseAudit } = await import("./checks/pulse.js");
+    const dryRun = process.env.TETHR_PULSE_DRY_RUN === "true";
+    const audit = await runPulseAudit(db, companyId, ctx.agent.id, { dryRun });
+    await ctx.onLog(
+      "stdout",
+      `[tethr] pulse: ${audit.configured ? "" : "no POSTHOG_API_KEY; "}${audit.ready ? "" : "config not filled; "}${audit.findings} findings, ${audit.posted} posted${dryRun ? " (dry run)" : ""}\n`,
+    );
+    return {
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      provider: provider.id,
+      model: provider.model,
+      billingType: "fixed",
+      usage: { inputTokens: 0, outputTokens: 0 },
+      resultJson: { pulse: audit },
+      summary: `Pulse: ${audit.posted}/${audit.findings} finding(s) posted${dryRun ? " (dry run)" : ""}.`,
+    };
+  }
+
   // Division heads (Helm) have a routing table but no subagents of their own:
   // their heartbeat routes across the whole org instead of within one agent.
   const ownSubagents = await org.listSubagents(companyId, ctx.agent.id);

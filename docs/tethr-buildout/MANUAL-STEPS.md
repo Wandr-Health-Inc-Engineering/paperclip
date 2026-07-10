@@ -1,6 +1,6 @@
 # Tethr buildout — manual steps for Mark
 
-**Regenerated: 2026-07-09 (after Phase 6 code-side).** This is the running list of every action that
+**Regenerated: 2026-07-09 (after Phase 8 code-side).** This is the running list of every action that
 needs *you* (an account, a card, a dashboard click, a "go") — everything else Claude Code
 builds without you. Groups are priority-ordered: **(A)** gets your agents talking in Slack
 fastest, **(B)** unlocks money / live runs, **(C)** everything else.
@@ -22,7 +22,7 @@ fastest, **(B)** unlocks money / live runs, **(C)** everything else.
 | 5 | Migrate laptop workflows | ⏳ pending | ❌ | **C-parity** your parity judgment + cron pause |
 | 6 | Memory upgrade (dedupe) | ✅ built + tested (dedup module, hooks, seed endpoint, ADR-0002) | ⚠️ backfill | **C6** corpus backfill (1 command, optional) |
 | 7 | Command Center → cloud | ⏳ pending | ❌ | **C1** CC source + `data.db` + `CC_PASSWORD` |
-| 8 | Error-patching agent (Pulse/PostHog) | ⏳ pending | ❌ | **C2** PostHog key; needs P4 |
+| 8 | Error-patching agent (Pulse/PostHog) | ✅ code + tests (3 rules, PHI denylist, seeded paused) | ❌ (run) | **C2** PostHog key + fill config |
 | 9 | Observability, budgets, access control | ⏳ pending | ❌ | **C3** Frank/Alec logins; needs P3+P5+P7 |
 | 10 | Scale review vs $1M-no-hiring | ⛔ excluded | — | needs a month of steady-state data |
 
@@ -160,15 +160,21 @@ in this repo. To migrate it Claude needs:
 
 **Where:** your machine + Railway. **Unblocks:** Phase 7 (Command Center at a URL with login).
 
-### C2 · PostHog read-only API key (unblocks Phase 8) — ~5 min
+### C2 · PostHog key + fill Pulse config (unblocks Phase 8) — ~10 min
+
+**Built & ready:** Pulse (the analytics agent) is coded and tested — 3 detection rules (error
+spike / dead tracking event / funnel drop), a PHI denylist on event names, seeded paused with a
+$20/mo cap. It stays inert until both of these are done:
 
 1. **us.posthog.com → Settings → Personal API Keys** → create a key scoped **read-only** to
-   project **361561**.
-2. Set on Railway: `railway variables --set POSTHOG_API_KEY=phx_…` (secret).
-3. Fill `server/src/tethr/tools/pulse-events.json` with your real critical event names when
-   Claude asks (it ships a placeholder + a PHI denylist).
+   project **361561**; `railway variables --set POSTHOG_API_KEY=phx_…` (secret).
+2. **Fill `server/src/tethr/tools/pulse-events.json`** — replace each `FILL_ME` with real
+   PostHog event names (a couple of critical events + one funnel pair). **Marketing events
+   only** — clinical-looking names are auto-rejected. Commit it (config, not a secret).
+3. **Preview:** `TETHR_PULSE_DRY_RUN=true`, Run-now on Pulse → `resultJson.pulse.postedFindings`.
+   Review, then unset it and **enable Pulse's heartbeat** for the daily run.
 
-**Where:** us.posthog.com + Railway. **Unblocks:** Phase 8 (Pulse analytics agent).
+**Where:** us.posthog.com + Railway + the repo. **Unblocks:** Phase 8 (Pulse on the #scout loop).
 
 ### C3 · Frank/Alec logins (unblocks Phase 9) — depends on the auth approach
 

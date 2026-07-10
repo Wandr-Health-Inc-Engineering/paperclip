@@ -124,7 +124,7 @@ describeEmbeddedPostgres("tethr engine end-to-end", () => {
     fs.rmSync(storageDir, { recursive: true, force: true });
   });
 
-  it("seeds the full org: divisions, CEO→Helm→8 growth agents + Sentry, 22 subagents", async () => {
+  it("seeds the full org: divisions, CEO→Helm→8 growth agents + Sentry + Pulse, 22 subagents", async () => {
     const org = orgService(db);
     const divisions = await org.listDivisions(companyId);
     expect(divisions).toHaveLength(4);
@@ -134,7 +134,7 @@ describeEmbeddedPostgres("tethr engine end-to-end", () => {
     expect(divisions.filter((d) => d.status === "shell")).toHaveLength(2);
 
     const profiles = await org.listProfiles(companyId);
-    expect(profiles).toHaveLength(11); // ceo + helm + 8 growth + sentry
+    expect(profiles).toHaveLength(12); // ceo + helm + 8 growth + sentry + pulse
 
     const subagents = await org.listSubagents(companyId);
     expect(subagents).toHaveLength(22);
