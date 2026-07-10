@@ -95,6 +95,25 @@ node scripts/tethr-screenshots.mjs                          # 32-capture screens
 **Known pre-existing failure (NOT ours, do not "fix"):** `heartbeat-comment-wake-batching`
 ×2 fails on the fork baseline. Everything in the Tethr suite must stay green.
 
+## Deploy (Railway)
+
+Config-as-code: **`railway.toml`** (repo root) builds the root `Dockerfile` (multi-stage;
+`production` stage serves UI + API on :3100), healthcheck `/api/health`. One managed
+Postgres, mock LLM. Deploy = `railway up` after the one-time `railway login/init/add` (full
+runbook: `tasks/phase-1.md`; the account-linked steps are gate **A1** in `MANUAL-STEPS.md`).
+
+- **Env vars live as Railway service variables** (never in git): `DATABASE_URL`
+  (`${{Postgres.DATABASE_URL}}`, internal → no sslmode), `PAPERCLIP_MIGRATION_AUTO_APPLY=true`,
+  `BETTER_AUTH_SECRET`, `PAPERCLIP_PUBLIC_URL`. Live LLM (`ANTHROPIC_API_KEY`) is added only
+  in Phase 3.
+- **Railway URL:** _(set after first deploy — update here)_.
+- **Ephemeral FS caveat:** Railway wipes the container FS on redeploy. All durable data is in
+  managed Postgres and survives; only uploaded Drive file *bytes* (local_disk) are lost on
+  redeploy until the S3/R2 swap. Attach a Railway Volume at `/paperclip` to persist them now.
+- **First-run auth:** deploy defaults to `authenticated`/`private` (org not world-readable) —
+  first visit creates the admin login (better-auth, stored in Postgres). Fallback for the
+  shakedown: `PAPERCLIP_DEPLOYMENT_MODE=local_trusted`. Real multi-user logins land in Phase 9.
+
 ## Brand lock (any UI work)
 
 Urbanist + JetBrains Mono · pure black/white · 2px borders · **no gradients, no color, no

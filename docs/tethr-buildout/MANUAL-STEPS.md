@@ -1,6 +1,6 @@
 # Tethr buildout — manual steps for Mark
 
-**Regenerated: 2026-07-09 (after Phase 0).** This is the running list of every action that
+**Regenerated: 2026-07-09 (after Phase 1 code-side).** This is the running list of every action that
 needs *you* (an account, a card, a dashboard click, a "go") — everything else Claude Code
 builds without you. Groups are priority-ordered: **(A)** gets your agents talking in Slack
 fastest, **(B)** unlocks money / live runs, **(C)** everything else.
@@ -15,7 +15,7 @@ fastest, **(B)** unlocks money / live runs, **(C)** everything else.
 | Phase | Name | Built | Verified | Blocked on |
 |---|---|---|---|---|
 | 0 | Repo ground truth & Scout audit | ✅ yes | ✅ (tests green, committed) | — |
-| 1 | Deploy Tethr to Railway | ⏳ code in progress | ❌ | **A1** Railway account/CLI |
+| 1 | Deploy Tethr to Railway | ✅ code (`railway.toml`, server build verified) | ❌ (deploy) | **A1** Railway account/CLI |
 | 2 | Slack: real senders + inbound surface | ⏳ pending | ❌ | **A2** Slack app + token; needs P1 URL |
 | 3 | Go live with Claude (supervised) | ⏳ pending | ❌ | **B1** Anthropic key; **B2** "go" for spend |
 | 4 | V1 loop (Sentry → #scout → @Cursor → PR) | ⏳ pending | ❌ | **B3** Cursor Slack integration; needs P2+P3 |
@@ -35,22 +35,34 @@ time, most of it waiting on Railway/Slack UI.*
 
 ### A1 · Create the Railway project and deploy (unblocks Phase 1) — ~15 min
 
-Claude Code will have committed `railway.toml` + a verified local Docker build first, then
-hand you the exact commands. The account-linked part you run yourself:
+**Built & ready:** `railway.toml` is committed and the server build is verified green
+(exit 0 — the heaviest Docker build step is pre-proven). Full runbook: `tasks/phase-1.md`.
+The account-linked part you run yourself, in the repo root:
 
-1. Install the CLI: `brew install railway` (or `npm i -g @railway/cli`).
-2. `railway login` — opens the browser, log into your Railway account.
-3. In the repo root: `railway init` — create a new project (name it e.g. `tethr`).
-4. Add managed Postgres: `railway add` → choose **PostgreSQL** (gives you `DATABASE_URL`).
-5. Deploy: `railway up` (builds the root `Dockerfile`).
-6. Set service variables (Claude will give the final list; at minimum):
-   `railway variables --set SERVE_UI=true --set PAPERCLIP_MIGRATION_AUTO_APPLY=true`
-   (`DATABASE_URL` is auto-injected by the Postgres plugin; **do NOT** set
-   `ANTHROPIC_API_KEY` yet — mock LLM this phase.)
-7. Paste the deploy URL back into Claude Code so it can verify `/health` and the seeded org.
+```
+brew install railway                # or: npm i -g @railway/cli
+railway login                       # browser auth into your Railway account
+railway init                        # new project, name it "tethr"
+railway add                         # choose PostgreSQL (provisions DATABASE_URL)
+railway variables --set PAPERCLIP_MIGRATION_AUTO_APPLY=true \
+                  --set SERVE_UI=true \
+                  --set BETTER_AUTH_SECRET=$(openssl rand -hex 32) \
+                  --set DATABASE_URL='${{Postgres.DATABASE_URL}}'
+railway up                          # builds the root Dockerfile, deploys
+# once it prints a URL:
+railway variables --set PAPERCLIP_PUBLIC_URL='https://<railway-domain>'
+```
 
-**Where:** railway.app dashboard + your terminal. **Unblocks:** Phase 1 (Tethr live on a
-URL) → prerequisite for A2.
+**Do NOT set `ANTHROPIC_API_KEY` yet** — mock LLM this phase (Phase 3 flips it live).
+Then paste the URL into Claude Code to verify `/api/health` + the seeded org renders.
+
+**First visit = create an admin login** (the deploy defaults to authenticated/private so the
+org isn't world-readable; accounts persist in Postgres). If that flow misbehaves headless,
+the shakedown fallback is `railway variables --set PAPERCLIP_DEPLOYMENT_MODE=local_trusted`
+(restore `authenticated` before Phase 9's real logins).
+
+**Where:** railway.app + your terminal. **Unblocks:** Phase 1 (Tethr live on a URL) →
+prerequisite for A2.
 
 ### A2 · Create the Slack app + bot token (unblocks Phase 2) — ~15 min
 

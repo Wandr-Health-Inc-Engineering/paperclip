@@ -1,0 +1,42 @@
+# Railway config-as-code for the Tethr server (Phase 1).
+#
+# One service, built from the root multi-stage Dockerfile. The `production` stage
+# serves the built UI + API on :3100 (SERVE_UI=true) and, with
+# PAPERCLIP_MIGRATION_AUTO_APPLY=true, runs Drizzle migrations on boot against the
+# managed Postgres referenced by DATABASE_URL.
+#
+# What is NOT here (set as service *variables* in the Railway dashboard / CLI, so
+# secrets never land in git — see docs/tethr-buildout/MANUAL-STEPS.md step A1):
+#   DATABASE_URL                    -> reference the Postgres plugin: ${{Postgres.DATABASE_URL}}
+#                                      (internal URL needs no sslmode; a public proxy URL needs ?sslmode=require)
+#   PAPERCLIP_MIGRATION_AUTO_APPLY  -> "true"  (run migrations on first boot)
+#   BETTER_AUTH_SECRET              -> a strong random value (openssl rand -hex 32)
+#   PAPERCLIP_PUBLIC_URL            -> the Railway public URL (or ${{RAILWAY_PUBLIC_DOMAIN}})
+#   # Do NOT set ANTHROPIC_API_KEY in this phase — mock LLM only (Phase 3 flips it live).
+#
+# Optional build slimming: the Dockerfile installs agent CLIs (claude-code/codex/opencode)
+# via ARG INSTALL_AGENT_CLIS=true. Tethr uses the `tethr_llm` adapter (plain fetch to the
+# Claude API), not those CLIs, so a Railway build variable INSTALL_AGENT_CLIS=false yields
+# a smaller/faster image. Left at the default here to avoid assuming Railway's build-arg
+# injection; flip it only if the build is too slow.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Health endpoint already ships in core (server/src/routes/health.ts); the Dockerfile's
+# HEALTHCHECK also hits it. No new route needed.
+healthcheckPath = "/api/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+numReplicas = 1
+
+# NOTE (ephemeral filesystem): Railway's container FS is wiped on every redeploy. All
+# durable Tethr data (org, routes, outputs, Drive *metadata*, memories, notifications)
+# lives in managed Postgres and survives. Only uploaded Drive file *bytes* default to
+# local_disk under /paperclip and would be lost on redeploy. Acceptable this phase.
+# To persist them, either attach a Railway Volume mounted at /paperclip (single replica,
+# which matches numReplicas=1), or do the S3/R2 swap in a later phase
+# (PAPERCLIP_STORAGE_PROVIDER=s3 + PAPERCLIP_STORAGE_S3_* — provider already ships in core).
