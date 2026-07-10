@@ -1,12 +1,17 @@
 # Tethr buildout — manual steps for Mark
 
-**Regenerated: 2026-07-09 (after Phase 8 code-side).** This is the running list of every action that
-needs *you* (an account, a card, a dashboard click, a "go") — everything else Claude Code
-builds without you. Groups are priority-ordered: **(A)** gets your agents talking in Slack
-fastest, **(B)** unlocks money / live runs, **(C)** everything else.
+**Regenerated: 2026-07-09 · everything buildable-without-your-accounts is built.**
 
-> Nothing here has been pushed to GitHub. All work is local commits on branch
-> `tethr-buildout`. You push/merge when you're ready.
+This is the one list of everything that needs *you* — an account, a card, a dashboard click, a
+"go", or a file only you can reach. Everything else is done: **8 of 10 phases are code-complete
+and committed locally on branch `tethr-buildout`** (Phases 0,1,2,3,4,6,8,9), with the full Tethr
+test suite green and **zero Paperclip-core files modified** (merge-safe). Phases 5 and 7 need
+inputs only you can provide (below). **Nothing has been pushed to GitHub — you push/merge when
+ready.**
+
+Groups are priority-ordered: **(A)** gets your agents talking in Slack fastest, **(B)** unlocks
+money / live runs, **(C)** everything else. Clearing **Group A** in one evening puts live agents
+in your #scout.
 
 ---
 
@@ -14,217 +19,186 @@ fastest, **(B)** unlocks money / live runs, **(C)** everything else.
 
 | Phase | Name | Built | Verified | Blocked on |
 |---|---|---|---|---|
-| 0 | Repo ground truth & Scout audit | ✅ yes | ✅ (tests green, committed) | — |
-| 1 | Deploy Tethr to Railway | ✅ code (`railway.toml`, server build verified) | ❌ (deploy) | **A1** Railway account/CLI |
-| 2 | Slack: real senders + inbound surface | ✅ code (sender, recommendation builder, inbound events, 14 tests) | ❌ (token/post) | **A2** Slack app + token; needs P1 URL |
-| 3 | Go live with Claude (supervised) | ✅ code + safety (budget cap now enforces; 8 tests) | ❌ (spend) | **B1** Anthropic key; **B2** "go" for spend |
-| 4 | V1 loop (Sentry → #scout → @Cursor → PR) | ✅ code + tests (auditor, 4 checks, dedupe, seeded paused) | ❌ (run) | **B3** Cursor; needs P2+P3 live |
-| 5 | Migrate laptop workflows | ⏳ pending | ❌ | **C-parity** your parity judgment + cron pause |
-| 6 | Memory upgrade (dedupe) | ✅ built + tested (dedup module, hooks, seed endpoint, ADR-0002) | ⚠️ backfill | **C6** corpus backfill (1 command, optional) |
-| 7 | Command Center → cloud | ⏳ pending | ❌ | **C1** CC source + `data.db` + `CC_PASSWORD` |
-| 8 | Error-patching agent (Pulse/PostHog) | ✅ code + tests (3 rules, PHI denylist, seeded paused) | ❌ (run) | **C2** PostHog key + fill config |
-| 9 | Observability, budgets, access control | ✅ built + tested (alerts, deep health, weekly digest, RUNBOOK) | ⚠️ logins | **C3** Frank/Alec accounts + uptime pinger |
-| 10 | Scale review vs $1M-no-hiring | ⛔ excluded | — | needs a month of steady-state data |
+| 0 | Repo ground truth & Scout audit | ✅ yes | ✅ tests green, committed | — |
+| 1 | Deploy Tethr to Railway | ✅ code (`railway.toml`, build verified) | ❌ deploy | **A1** Railway account |
+| 2 | Slack: senders + inbound surface | ✅ code + 14 tests | ❌ token/post | **A2** Slack app · **A3** "go" |
+| 3 | Go live with Claude (supervised) | ✅ code + safety + **budget-bug fixes**, 8 tests | ❌ spend | **B1** Anthropic key · **B2** "go" |
+| 4 | V1 loop (Sentry → #scout → @Cursor → PR) | ✅ code + 16 tests | ❌ run | **B3** Cursor + enable Sentry |
+| 5 | Migrate laptop workflows | ⛔ not built (needs Drive) | ❌ | **C4** Drive access + your parity + cron pause |
+| 6 | Memory upgrade (dedupe) | ✅ built + tested, ADR-0002 | ⚠️ backfill | **C5** corpus backfill (1 cmd, optional) |
+| 7 | Command Center → cloud | ⛔ not built (source in Drive) | ❌ | **C6** provide source + `data.db` + `CC_PASSWORD` |
+| 8 | Error-patching agent (Pulse/PostHog) | ✅ code + 10 tests, PHI denylist | ❌ run | **C1** PostHog key + fill config |
+| 9 | Observability, budgets, access control | ✅ built + tested, `RUNBOOK.md` | ⚠️ logins | **C2** Frank/Alec accounts + uptime |
+| 10 | Scale review vs $1M-no-hiring | ⛔ excluded | — | needs ~1 month of steady-state data |
+
+Reference: `CLAUDE.md` (how it all works), `RUNBOOK.md` (ops/kill-switches), `tasks/phase-N.md`
+(what each phase did), `docs/adr/000{1,2}-*.md` (decisions).
 
 ---
 
-## GROUP A — unlocks Slack-with-your-employees fastest
+## GROUP A — agents in your Slack, fastest (~45 min, one evening)
 
-*Do these in order; A1 must be done before A2's request-URL step. Total ≈ 45 min of your
-time, most of it waiting on Railway/Slack UI.*
+### A1 · Deploy to Railway (unblocks Phase 1) — ~15 min
 
-### A1 · Create the Railway project and deploy (unblocks Phase 1) — ~15 min
-
-**Built & ready:** `railway.toml` is committed and the server build is verified green
-(exit 0 — the heaviest Docker build step is pre-proven). Full runbook: `tasks/phase-1.md`.
-The account-linked part you run yourself, in the repo root:
+`railway.toml` is committed and the server build is verified green. In the repo root:
 
 ```
-brew install railway                # or: npm i -g @railway/cli
-railway login                       # browser auth into your Railway account
-railway init                        # new project, name it "tethr"
-railway add                         # choose PostgreSQL (provisions DATABASE_URL)
+brew install railway                       # or: npm i -g @railway/cli
+railway login                              # browser auth
+railway init                               # new project, name it "tethr"
+railway add                                # choose PostgreSQL
 railway variables --set PAPERCLIP_MIGRATION_AUTO_APPLY=true \
                   --set SERVE_UI=true \
                   --set BETTER_AUTH_SECRET=$(openssl rand -hex 32) \
                   --set DATABASE_URL='${{Postgres.DATABASE_URL}}'
-railway up                          # builds the root Dockerfile, deploys
-# once it prints a URL:
-railway variables --set PAPERCLIP_PUBLIC_URL='https://<railway-domain>'
+railway up                                 # builds the Dockerfile, deploys
+railway variables --set PAPERCLIP_PUBLIC_URL='https://<railway-domain>'   # after it prints a URL
 ```
 
-**Do NOT set `ANTHROPIC_API_KEY` yet** — mock LLM this phase (Phase 3 flips it live).
-Then paste the URL into Claude Code to verify `/api/health` + the seeded org renders.
-
-**First visit = create an admin login** (the deploy defaults to authenticated/private so the
-org isn't world-readable; accounts persist in Postgres). If that flow misbehaves headless,
-the shakedown fallback is `railway variables --set PAPERCLIP_DEPLOYMENT_MODE=local_trusted`
-(restore `authenticated` before Phase 9's real logins).
-
-**Where:** railway.app + your terminal. **Unblocks:** Phase 1 (Tethr live on a URL) →
-prerequisite for A2.
+**Do NOT set `ANTHROPIC_API_KEY` yet** (mock LLM this phase). First visit creates your admin
+login (authenticated/private by default; accounts persist in Postgres). Fallback if that flow
+misbehaves headless: `--set PAPERCLIP_DEPLOYMENT_MODE=local_trusted` (restore to `authenticated`
+before Group C's real logins). **Where:** railway.app + terminal. Full runbook: `tasks/phase-1.md`.
 
 ### A2 · Create the Slack app + bot token (unblocks Phase 2) — ~15 min
 
-**Built & ready:** real `chat.postMessage` sender (log fallback offline), the standard
-recommendation format, and a signature-verified inbound events endpoint at
-`POST /api/tethr/slack/events` — 14 unit tests green. You do the dashboard part at
-**api.slack.com/apps** (uses the Events API against the Railway URL — no Socket Mode needed):
+At **api.slack.com/apps** (uses the Events API against your Railway URL — no Socket Mode):
 
-1. **Create New App** → *From scratch* → workspace = your Wandr workspace.
+1. **Create New App** → *From scratch* → your Wandr workspace.
 2. **OAuth & Permissions → Bot Token Scopes:** `chat:write`, `channels:read`,
    `channels:history`, `files:read`, `app_mentions:read`. **Install to Workspace** → copy the
    **Bot User OAuth Token** (`xoxb-…`).
 3. **Basic Information → App Credentials:** copy the **Signing Secret**.
-4. **Event Subscriptions:** toggle on → **Request URL** =
-   `https://<railway-url>/api/tethr/slack/events` (it auto-answers Slack's verification
-   challenge). Under **Subscribe to bot events** add `app_mention` and `message.channels`. Save.
-5. **Invite the bot to #scout:** `/invite @<app name>` in the channel (`C0AE02FJR5Y`).
-6. **Set the secrets on Railway** (never commit):
-   `railway variables --set SLACK_BOT_TOKEN=xoxb-… --set SLACK_SIGNING_SECRET=…`
-   (optional `--set SLACK_SCOUT_CHANNEL=C0AE02FJR5Y` if you ever change channels).
+4. **Event Subscriptions:** on → Request URL `https://<railway-url>/api/tethr/slack/events`
+   (auto-answers Slack's challenge) → subscribe to bot events `app_mention`, `message.channels`.
+5. `/invite @<app>` into **#scout** (`C0AE02FJR5Y`).
+6. `railway variables --set SLACK_BOT_TOKEN=xoxb-… --set SLACK_SIGNING_SECRET=…` (secrets).
 
-**Where:** api.slack.com/apps + Railway. **Unblocks:** Phase 2 (agents post to #scout; your
-tagged links route into Tethr as Helm tasks).
+### A3 · Say "go" for the first #scout post — ~1 min
 
-### A3 · Say "go" for the first real #scout post — ~1 min
-
-The first live Slack post is a hard gate. Once `SLACK_BOT_TOKEN` is set, the test post is a
-single command — `SLACK_BOT_TOKEN=xoxb-… node scripts/tethr-slack-send.mjs` — which drops one
-standard-format recommendation into #scout. Run it yourself, or reply **"go"** and I'll run it
-in a session where the token is available. (Rollback is instant: unset `SLACK_BOT_TOKEN`.)
+Once the token is set, `SLACK_BOT_TOKEN=xoxb-… node scripts/tethr-slack-send.mjs` drops one
+standard-format recommendation into #scout. Run it (or reply "go" in a session where the token
+is available). Then test inbound: post a link in #scout tagging the bot → it routes into the
+Tethr Queue. Rollback: unset `SLACK_BOT_TOKEN`.
 
 ---
 
-## GROUP B — unlocks money / live runs
+## GROUP B — money / live runs
 
-### B1 · Anthropic API key with a low spend cap (unblocks Phase 3) — ~10 min
+### B1 · Anthropic API key + spend cap (unblocks Phase 3) — ~10 min
 
-**Built & ready:** Phase 3 fixed two real bugs so the budget cap actually enforces (before,
-every agent's cost recorded as $0 and only Tailwind hard-stopped — the caps did nothing). The
-live-run safety envelope (no writes outside the Drive; no external publish except the
-`SLACK_BOT_TOKEN`-gated Slack notify) is locked by 8 passing tests. So this is genuinely just
-the key + a "go".
+Phase 3 fixed two real bugs so budget caps now actually enforce (before, every agent recorded
+$0 cost and only Tailwind hard-stopped). Safety is locked by 8 tests. So this is just:
 
-1. **console.anthropic.com** → **Settings → Limits** → set an **org spend limit of
-   $25/mo** for the shakedown (keep this permanently — it's the real backstop).
-2. **API Keys** → create a key; label it `tethr-railway`.
-3. Set it on Railway:
-   `railway variables --set ANTHROPIC_API_KEY=sk-ant-… --set TETHR_LIVE_FETCH=true`
-   (secrets — never commit). Leave `SLACK_BOT_TOKEN` unset for the tightest first run, or keep
-   it for a #scout digest. Restart the service (the provider is chosen at boot).
+1. **console.anthropic.com → Settings → Limits** → org spend limit **$25/mo** (keep permanently).
+2. **API Keys** → create `tethr-railway`.
+3. `railway variables --set ANTHROPIC_API_KEY=sk-ant-… --set TETHR_LIVE_FETCH=true`. Restart.
+   Leave `SLACK_BOT_TOKEN` unset for the tightest first run, or keep it for a #scout digest.
 
-**Where:** console.anthropic.com + Railway. **Unblocks:** Phase 3 — a $0.01-cap stop test
-(proves the hard-stop), then one real $5-capped Sonar news-scan.
+### B2 · Say "go" for the first live spend — ~1 min
 
-### B2 · Say "go" for the first live-LLM spend — ~1 min
-
-First live spend is a hard gate. Claude runs a $0.01-cap stop test first (proves the
-hard-stop), then asks before the real $5-capped Sonar run. Reply **"go"**. Rollback: unset
-`ANTHROPIC_API_KEY` → instant revert to mock.
+The plan runs a **$0.01-cap stop test** first (proves the hard-stop halts a run), then one real
+**$5-capped** Sonar news-scan. Reply "go". Read the cost on the Budgets page. Rollback: unset
+`ANTHROPIC_API_KEY` → instant mock revert.
 
 ### B3 · Cursor integration + turn Sentry on (unblocks Phase 4) — ~15 min
 
-**Built & ready:** the Sentry site auditor is coded and tested (meta / JSON-LD / broken-link /
-GA4+GTM checks, 14-day dedupe, ≤3 findings/day). It's **seeded paused** with a $20/mo hard cap,
-so it does nothing until you switch it on. Steps:
+Sentry (site auditor: meta / JSON-LD / broken-link / GA4+GTM checks, 14-day dedupe) is built,
+tested, seeded **paused** with a $20/mo cap.
 
-1. **Cursor** → dashboard → Integrations → Slack → connect your workspace; set the default repo
-   to your **website repo** (`Wandr-Health-Inc-Engineering/<website-repo>`). Cursor's native
-   feature — Tethr builds nothing for it.
-2. **Preview what Sentry would post** (no posting yet): with the server deployed, set
-   `railway variables --set TETHR_SENTRY_DRY_RUN=true`, then trigger one run —
-   `POST <url>/api/tethr/<companyId>/agents/<sentryAgentId>/run-now` (or "Run now" on Sentry in
-   the Company page). The run's `resultJson.sentry.postedFindings` lists the findings. Review them.
-3. **Go live:** `railway variables --set TETHR_SENTRY_DRY_RUN=false` (or unset it); confirm
-   `SLACK_BOT_TOKEN` is set (A2). Trigger once to post the reviewed batch to #scout, then
-   **enable Sentry's heartbeat** (unpause Sentry / enable its routine) for the daily $20-capped run.
-4. In #scout, reply in-thread: `@Cursor fix this — <one sentence>`. Cursor's PR link appears;
-   review on GitHub mobile and merge. **That merged PR is V1 done.**
-
-**Where:** cursor.com + Railway + your phone. **Unblocks:** Phase 4 (the full V1 loop).
+1. **Cursor** dashboard → Integrations → Slack → connect workspace; default repo = your website
+   repo. (Cursor's native feature — Tethr builds nothing for it.)
+2. **Preview:** `railway variables --set TETHR_SENTRY_DRY_RUN=true`, then Run-now on Sentry
+   (`POST <url>/api/tethr/<companyId>/agents/<sentryAgentId>/run-now` or the Company page) →
+   `resultJson.sentry.postedFindings` shows what it would post. Review.
+3. **Go live:** set `TETHR_SENTRY_DRY_RUN=false`, confirm `SLACK_BOT_TOKEN` is set, Run-now to
+   post the batch, then **enable Sentry's heartbeat** (unpause) for the daily run.
+4. In #scout: reply `@Cursor fix this — <one sentence>`. Cursor opens a PR; review on mobile,
+   merge. **That merged PR is V1 done.**
 
 ---
 
 ## GROUP C — everything else
 
-### C1 · Command Center migration inputs (unblocks Phase 7) — ~10 min + a file
+### C1 · PostHog key + fill Pulse config (Phase 8) — ~10 min
 
-The Command Center app lives in Drive (`05 Marketing /Command Center/`, Python stdlib), not
-in this repo. To migrate it Claude needs:
-1. **Access to the source** — either mount/copy `05 Marketing /Command Center/` where Claude
-   Code can read it, or paste `server.py` + `static/`.
-2. **A fresh copy of `data.db`** handed to Claude at migration time (row counts get verified).
-3. **Pick a `CC_PASSWORD`** — set it on Railway (`railway variables --set CC_PASSWORD=…`);
-   never commit.
+Pulse (analytics agent: error spike / dead event / funnel drop, PHI denylist) is built, tested,
+seeded paused ($20/mo). To turn it on:
 
-**Where:** your machine + Railway. **Unblocks:** Phase 7 (Command Center at a URL with login).
+1. **us.posthog.com → Settings → Personal API Keys** → **read-only** key scoped to project
+   **361561**; `railway variables --set POSTHOG_API_KEY=phx_…`.
+2. **Fill `server/src/tethr/tools/pulse-events.json`** — replace each `FILL_ME` with real event
+   names (a couple of critical events + one funnel pair). Marketing events only (clinical names
+   auto-rejected). Commit it (config, not a secret).
+3. Preview with `TETHR_PULSE_DRY_RUN=true` (Run-now on Pulse), review, then enable its heartbeat.
 
-### C2 · PostHog key + fill Pulse config (unblocks Phase 8) — ~10 min
+### C2 · Frank/Alec logins + uptime pinger (Phase 9) — ~10 min
 
-**Built & ready:** Pulse (the analytics agent) is coded and tested — 3 detection rules (error
-spike / dead tracking event / funnel drop), a PHI denylist on event names, seeded paused with a
-$20/mo cap. It stays inert until both of these are done:
+Core ships **better-auth** (the deploy already runs authenticated), so this is account setup, not
+a build:
 
-1. **us.posthog.com → Settings → Personal API Keys** → create a key scoped **read-only** to
-   project **361561**; `railway variables --set POSTHOG_API_KEY=phx_…` (secret).
-2. **Fill `server/src/tethr/tools/pulse-events.json`** — replace each `FILL_ME` with real
-   PostHog event names (a couple of critical events + one funnel pair). **Marketing events
-   only** — clinical-looking names are auto-rejected. Commit it (config, not a secret).
-3. **Preview:** `TETHR_PULSE_DRY_RUN=true`, Run-now on Pulse → `resultJson.pulse.postedFindings`.
-   Review, then unset it and **enable Pulse's heartbeat** for the daily run.
+1. Add **Frank** (admin) and **Alec** (viewer) via the app once live. If core has no viewer role
+   yet, make all three admins for now (noted in `RUNBOOK.md`). Never print passwords.
+2. **Uptime:** point **UptimeRobot** (free) at `https://<railway-url>/api/tethr/health/deep`,
+   5-min HTTP monitor, alert on non-200. (Deep check reports DB + heartbeat age.)
+3. Optionally schedule the weekly Monday spend summary alongside the daily digest.
 
-**Where:** us.posthog.com + Railway + the repo. **Unblocks:** Phase 8 (Pulse on the #scout loop).
+### C3 · Backfill published-content memory (Phase 6) — ~2 min, optional
 
-### C3 · Frank/Alec logins (unblocks Phase 9) — depends on the auth approach
-
-Phase 9 investigates what Paperclip core already ships for auth before building. If it needs
-real work, Claude stops and presents options (build-minimal vs Railway private
-networking + Tailscale vs defer) rather than sinking time. Your part: confirm which of
-Mark=admin / Frank=admin / Alec=viewer you want, and receive seeded initial credentials
-(never printed in chat).
-
-### C4 · If the Scout repo turns up — ~2 min
-
-`../scout` isn't on this machine (see `scout-audit.md`), so Phase 2 builds the inbound
-surface fresh. **If** you have the Scout repo somewhere, clone it to
-`/Users/markkaram/git/scout` (or tell Claude the path) *before* Phase 2's inbound step so it
-reuses working code instead of rewriting.
-
-### C6 · Backfill published-content memory (unblocks Phase 6's dedupe fully) — ~2 min
-
-Phase 6's duplicate-topic dedupe is **built and tested**, and every new publish self-records —
-so this is only the initial backfill of your existing catalog. When you have the blueprint
-corpus (`My Drive/tethr/shared/memory-published-articles.md`), with the server deployed run:
+Dedupe is built and every new publish self-records; this only backfills your existing catalog.
+When you have `My Drive/tethr/shared/memory-published-articles.md`:
 
 ```
 TETHR_COMPANY_ID=<wandr-growth-id> TETHR_BASE_URL=https://<railway-url> \
   node scripts/tethr-seed-memory.mjs /path/to/memory-published-articles.md
 ```
 
-Idempotent — re-running skips anything already loaded. Optional: send the ADR
-(`docs/adr/0002-memory-architecture.md`) to Frank for the embeddings/graph call.
+Idempotent. Optionally send `docs/adr/0002-memory-architecture.md` to Frank for the embeddings/
+graph call.
 
-**Where:** your terminal. **Unblocks:** Phase 6 dedupe over your back-catalog (the loop already
-works for anything published from now on).
+### C4 · Migrate the laptop workflows (Phase 5) — needs Drive access + your judgment
 
-### C5 · Deferred (not scheduled — no action needed now)
+**Not yet built — it needs inputs only you have.** This moves the 4 active laptop crons
+(blog / briefs / itineraries / analytics) into Tethr heartbeats, one at a time, Sonar first.
+For a future Claude Code session to build each migration it needs read access to the Drive
+blueprint (`My Drive/tethr/agents/…`, `…/skills/wandr/…`, `engine-inventory.md`) and the live
+engine at `05 Marketing /Claude Marketing/` **as read-only reference**. Then per workflow: Claude
+builds the heartbeat, does one manual run, and places the output beside the laptop's latest for
+**your parity judgment**; only after 3 outputs at parity do **you** pause (never delete) that
+laptop cron. **Ads pair (Tailwind/Ledger) is excluded** until the Google Ads/Chrome-headless
+question is solved. Nothing here touches the laptop or Drive engine without you.
 
-- **Ads pair (Tailwind/Ledger):** excluded from migration until the Google Ads MCP auth +
-  Chrome action layer is solved for headless. They stay recommendation-only with the spend
-  hard-gate.
-- **Instagram Graph API publishing:** Command Center stays "generate → one-tap approve →
-  you post manually"; the Graph API path (Business account + FB Page + app review) is a
-  future phase.
-- **Founding docs:** the May 18 "Wandr x AI" notes + `wandr-concept-v6.pdf` aren't in the
-  contact@ Drive (likely personal account). Not blocking — the Jun 10–18 blueprint
-  supersedes them. Share them only if you want the §5.1 reconciliation done.
+### C5 · Command Center → cloud (Phase 7) — needs the source + a file
+
+**Not yet built — the app lives in Drive, not this repo.** To migrate it, a future session needs:
+(a) read access to `05 Marketing /Command Center/` (`server.py` + `static/`), (b) a fresh
+`data.db` at migration time (row counts get verified), (c) a `CC_PASSWORD` you set on Railway.
+Then it's copied (never moved) into `apps/command-center/`, Postgres-backed, behind a login,
+restyled to the Tethr brand, with the Reddit/Instagram flows preserved. Your laptop copy keeps
+running throughout — it *is* the rollback.
+
+### C6 · If the Scout repo turns up — ~2 min
+
+`../scout` isn't on this machine, so Phase 2 built the inbound surface fresh. **If** you have the
+Scout repo, clone it to `/Users/markkaram/git/scout` before revisiting Phase 2 so working code
+can be reused instead of rewritten. (`docs/tethr-buildout/scout-audit.md`.)
+
+### C7 · Deferred (no action needed now)
+
+- **Ads pair (Tailwind/Ledger):** excluded until Google Ads MCP auth + Chrome-action layer works
+  headless — stays recommendation-only with the spend hard-gate.
+- **Instagram Graph API publishing:** Command Center stays "generate → one-tap approve → you post."
+- **S3/R2 for Drive file bytes:** Railway's FS is ephemeral; core's S3 provider is a later env swap
+  (or attach a Railway volume at `/paperclip`).
+- **Founding docs:** the May 18 notes + `wandr-concept-v6.pdf` aren't in the contact@ Drive; the
+  Jun 10–18 blueprint supersedes them.
 
 ---
 
-### One-evening path to "agents in my Slack"
+## The one-evening path
 
-From your phone/laptop in one sitting: **A1** (Railway deploy) → **A2** (Slack app + token)
-→ **A3** ("go"). That's Phases 1–2 live. Add **B1 + B2** the same evening and you also have
-one real capped agent run (Phase 3). Everything between those steps is already built and
-waiting.
+**A1 → A2 → A3** = agents posting in #scout from the cloud. Add **B1 → B2** the same evening and
+you also have one real, $5-capped agent run. **B3** then closes the V1 loop (a Sentry finding →
+`@Cursor` → merged PR). Everything in those steps is already built and waiting on the token/click
+each one names. Group C is at your leisure; C4/C5 are the only remaining *build* work, and each
+just needs you to open a door (Drive access, the CC source) for a future session.
