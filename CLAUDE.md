@@ -172,6 +172,15 @@ to #scout in the standard recommendation format; a human tags `@Cursor` in-threa
 - The fix loop is **Cursor's native Slack integration** — nothing is built for it (gate B3).
   Phase 8 adds a second Reliability agent (Pulse, PostHog) on the same loop.
 
+## Memory & published-content dedupe (Phase 6)
+
+`tethr_memories` is keyword (`ilike`) recall. `published-memory.ts` adds a dedup layer:
+`gating.ts` records a company-scoped `published-content` memory on every publish; `routing.ts`
+warns (advisory, never blocks) on a duplicate-topic content request. Backfill the blueprint
+corpus once via `POST /api/tethr/:companyId/seed-memory` (or `scripts/tethr-seed-memory.mjs`,
+`TETHR_MEMORY_SEED_PATH`) — idempotent. Embeddings/graph decision deferred with triggers in
+`docs/adr/0002-memory-architecture.md`.
+
 ## Brand lock (any UI work)
 
 Urbanist + JetBrains Mono · pure black/white · 2px borders · **no gradients, no color, no
@@ -215,7 +224,7 @@ At a gate: print the exact commands / dashboard steps, add them to
 | 3 | Go live with Claude (supervised) | **code + safety built** (budget cap now enforces; 8 safety/pricing tests); blocked on `ANTHROPIC_API_KEY` **B1/B2** |
 | 4 | V1 recommendation loop (Sentry → #scout → @Cursor → PR) | **code + tests built** (auditor, 4 checks, dedupe, seeded paused); needs P2/P3 live + Cursor **B3** |
 | 5 | Migrate laptop workflows | pending; parity/cron gates are Mark's |
-| 6 | Memory upgrade (dedupe) | pending |
+| 6 | Memory upgrade (dedupe) | **built + tested** (`published-memory.ts`, publish-record hook, routing warning, seed endpoint, ADR-0002); corpus backfill is 1 manual step |
 | 7 | Command Center → cloud | pending; source in Drive, not repo |
 | 8 | Error-patching agent (Pulse / PostHog) | pending; blocked on `POSTHOG_API_KEY` |
 | 9 | Observability, budgets, access control | pending |

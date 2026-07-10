@@ -817,6 +817,43 @@ export function tethrRoutes(db: Db) {
     res.json(await memory.list(companyId, { agentId }));
   });
 
+  // Phase 6: idempotently seed published-content memories from a corpus (the
+  // blueprint's memory-published-articles.md). Corpus text in the body, or read
+  // server-side from TETHR_MEMORY_SEED_PATH. Re-running skips existing fingerprints.
+  router.post("/tethr/:companyId/seed-memory", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { parsePublishedCorpus, recordPublished } = await import(
+      "../tethr/published-memory.js"
+    );
+    let corpus = typeof req.body?.corpus === "string" ? req.body.corpus : "";
+    if (!corpus) {
+      const p = process.env.TETHR_MEMORY_SEED_PATH?.trim();
+      if (p) {
+        try {
+          const fs = await import("node:fs");
+          corpus = fs.readFileSync(p, "utf8");
+        } catch (err) {
+          res.status(400).json({ error: `could not read TETHR_MEMORY_SEED_PATH: ${String(err)}` });
+          return;
+        }
+      }
+    }
+    if (!corpus) {
+      res.status(400).json({ error: "provide { corpus } in the body or set TETHR_MEMORY_SEED_PATH" });
+      return;
+    }
+    const items = parsePublishedCorpus(corpus);
+    let created = 0;
+    let existing = 0;
+    for (const item of items) {
+      const r = await recordPublished(db, companyId, item, null);
+      if (r === "created") created++;
+      else existing++;
+    }
+    res.json({ parsed: items.length, created, existing });
+  });
+
   // ---- Digest -------------------------------------------------------------------
   router.post("/tethr/:companyId/digest", async (req, res) => {
     const companyId = req.params.companyId as string;

@@ -5,7 +5,9 @@ import type { TethrRouteInvocationSource } from "@paperclipai/shared";
 import { logActivity } from "../services/activity-log.js";
 import { getTethrLLMProvider } from "./llm/index.js";
 import type { LLMUsage } from "./llm/types.js";
+import { notificationService } from "./notify.js";
 import { orgService } from "./org.js";
+import { isContentRequest, publishedDuplicateWarning } from "./published-memory.js";
 import { workerService } from "./worker.js";
 
 // The routing engine — ROUTING-MODEL.md as code.
@@ -93,6 +95,25 @@ export function routingService(db: Db) {
         .where(eq(tethrRouteRuns.id, run.id));
     }
     input.onStarted?.({ routeRunId: run.id, threadId });
+
+    // Phase 6: flag a duplicate content topic (advisory — never blocks routing).
+    if (isContentRequest(input.requestText)) {
+      const dupWarning = await publishedDuplicateWarning(
+        db,
+        input.companyId,
+        input.requestText,
+      );
+      if (dupWarning) {
+        await notificationService(db)
+          .send({
+            companyId: input.companyId,
+            kind: "system",
+            title: "Possible duplicate content topic",
+            body: dupWarning,
+          })
+          .catch(() => {});
+      }
+    }
 
     // Conversation context for follow-ups in the same thread.
     let conversationContext = "";

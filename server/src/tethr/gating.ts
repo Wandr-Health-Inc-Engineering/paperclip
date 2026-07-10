@@ -254,6 +254,25 @@ export function gatingService(db: Db) {
         await trackers.markRowPublished(companyId, trackerName, row.slug, publishedBy);
       }
     }
+    // Phase 6: also record a company-scoped published-content memory so the
+    // routing engine can flag a duplicate-topic request before re-creating it.
+    {
+      const { recordPublished } = await import("./published-memory.js");
+      const pubKind =
+        output.kind === "blog_draft"
+          ? "blog"
+          : output.kind === "brief"
+            ? "brief"
+            : output.kind === "itinerary"
+              ? "itinerary"
+              : "content";
+      await recordPublished(
+        db,
+        companyId,
+        { kind: pubKind, slug: publishedSlug, title: output.title, date: new Date().toISOString().slice(0, 10) },
+        null,
+      );
+    }
     return updated;
   }
 

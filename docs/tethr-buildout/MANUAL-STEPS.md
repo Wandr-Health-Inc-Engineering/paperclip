@@ -1,6 +1,6 @@
 # Tethr buildout — manual steps for Mark
 
-**Regenerated: 2026-07-09 (after Phase 4 code-side).** This is the running list of every action that
+**Regenerated: 2026-07-09 (after Phase 6 code-side).** This is the running list of every action that
 needs *you* (an account, a card, a dashboard click, a "go") — everything else Claude Code
 builds without you. Groups are priority-ordered: **(A)** gets your agents talking in Slack
 fastest, **(B)** unlocks money / live runs, **(C)** everything else.
@@ -20,7 +20,7 @@ fastest, **(B)** unlocks money / live runs, **(C)** everything else.
 | 3 | Go live with Claude (supervised) | ✅ code + safety (budget cap now enforces; 8 tests) | ❌ (spend) | **B1** Anthropic key; **B2** "go" for spend |
 | 4 | V1 loop (Sentry → #scout → @Cursor → PR) | ✅ code + tests (auditor, 4 checks, dedupe, seeded paused) | ❌ (run) | **B3** Cursor; needs P2+P3 live |
 | 5 | Migrate laptop workflows | ⏳ pending | ❌ | **C-parity** your parity judgment + cron pause |
-| 6 | Memory upgrade (dedupe) | ⏳ pending | ❌ | none (buildable) |
+| 6 | Memory upgrade (dedupe) | ✅ built + tested (dedup module, hooks, seed endpoint, ADR-0002) | ⚠️ backfill | **C6** corpus backfill (1 command, optional) |
 | 7 | Command Center → cloud | ⏳ pending | ❌ | **C1** CC source + `data.db` + `CC_PASSWORD` |
 | 8 | Error-patching agent (Pulse/PostHog) | ⏳ pending | ❌ | **C2** PostHog key; needs P4 |
 | 9 | Observability, budgets, access control | ⏳ pending | ❌ | **C3** Frank/Alec logins; needs P3+P5+P7 |
@@ -184,6 +184,23 @@ Mark=admin / Frank=admin / Alec=viewer you want, and receive seeded initial cred
 surface fresh. **If** you have the Scout repo somewhere, clone it to
 `/Users/markkaram/git/scout` (or tell Claude the path) *before* Phase 2's inbound step so it
 reuses working code instead of rewriting.
+
+### C6 · Backfill published-content memory (unblocks Phase 6's dedupe fully) — ~2 min
+
+Phase 6's duplicate-topic dedupe is **built and tested**, and every new publish self-records —
+so this is only the initial backfill of your existing catalog. When you have the blueprint
+corpus (`My Drive/tethr/shared/memory-published-articles.md`), with the server deployed run:
+
+```
+TETHR_COMPANY_ID=<wandr-growth-id> TETHR_BASE_URL=https://<railway-url> \
+  node scripts/tethr-seed-memory.mjs /path/to/memory-published-articles.md
+```
+
+Idempotent — re-running skips anything already loaded. Optional: send the ADR
+(`docs/adr/0002-memory-architecture.md`) to Frank for the embeddings/graph call.
+
+**Where:** your terminal. **Unblocks:** Phase 6 dedupe over your back-catalog (the loop already
+works for anything published from now on).
 
 ### C5 · Deferred (not scheduled — no action needed now)
 
