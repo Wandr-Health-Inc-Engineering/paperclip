@@ -153,6 +153,25 @@ Both directions run through `server/src/tethr/`, gated on env so local dev stays
   `medical`/`public`/`spend`/`pr` publishes without an approval. Keep the org-level Anthropic
   spend limit ($25/mo) on permanently.
 
+## Reliability division — Sentry (Phase 4, the V1 loop)
+
+**Sentry** is the site auditor in the (now active) Reliability division. It runs a
+deterministic, read-only audit of travelwithwandr.com's public pages and posts ≤3 findings/day
+to #scout in the standard recommendation format; a human tags `@Cursor` in-thread to fix.
+
+- **Checks** (`checks/site-audit.ts`, pure + unit-tested): meta title/description, JSON-LD
+  presence/validity, broken internal links, GA4 `G-WP11MQFLQ5` / GTM `GTM-N7K829F8` presence,
+  duplicate titles. Structural/technical only — **never** medical-content correctness.
+- **Runner** (`checks/sentry.ts`): fetches the fixed page list, dedupes against `tethr_memories`
+  (14-day window; fingerprint stored in memory content), posts via the Notifier, records each.
+- **Heartbeat mode:** `adapter.ts` `heartbeatMode: "site_audit"` (sibling of Helm's `digest`).
+  Sentry is **seeded paused** ($20/mo cap, hard-stop on) — enable its heartbeat only after a
+  reviewed run. `TETHR_SENTRY_DRY_RUN=true` previews findings (in `resultJson`) without posting.
+- **Config env:** `TETHR_SENTRY_SITE` (default `https://travelwithwandr.com`),
+  `TETHR_SENTRY_GA4_ID`, `TETHR_SENTRY_GTM_ID`, `TETHR_SENTRY_DRY_RUN`.
+- The fix loop is **Cursor's native Slack integration** — nothing is built for it (gate B3).
+  Phase 8 adds a second Reliability agent (Pulse, PostHog) on the same loop.
+
 ## Brand lock (any UI work)
 
 Urbanist + JetBrains Mono · pure black/white · 2px borders · **no gradients, no color, no
@@ -194,7 +213,7 @@ At a gate: print the exact commands / dashboard steps, add them to
 | 1 | Deploy Tethr to Railway | code-ready; blocked on Railway account |
 | 2 | Slack: real senders + inbound surface | **code built** (sender + recommendation format + inbound events, 14 tests); blocked on Slack app **A2** |
 | 3 | Go live with Claude (supervised) | **code + safety built** (budget cap now enforces; 8 safety/pricing tests); blocked on `ANTHROPIC_API_KEY` **B1/B2** |
-| 4 | V1 recommendation loop (Sentry → #scout → @Cursor → PR) | pending |
+| 4 | V1 recommendation loop (Sentry → #scout → @Cursor → PR) | **code + tests built** (auditor, 4 checks, dedupe, seeded paused); needs P2/P3 live + Cursor **B3** |
 | 5 | Migrate laptop workflows | pending; parity/cron gates are Mark's |
 | 6 | Memory upgrade (dedupe) | pending |
 | 7 | Command Center → cloud | pending; source in Drive, not repo |

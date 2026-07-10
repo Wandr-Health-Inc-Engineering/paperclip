@@ -64,6 +64,30 @@ async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionRe
     };
   }
 
+  // Site-audit mode: Sentry's deterministic public-site audit (Phase 4). Posts
+  // recommendations to #scout via the Notifier (Slack only fires with a token);
+  // set TETHR_SENTRY_DRY_RUN=true to compute findings without posting/recording.
+  if (config.heartbeatMode === "site_audit") {
+    const { runSentryAudit } = await import("./checks/sentry.js");
+    const dryRun = process.env.TETHR_SENTRY_DRY_RUN === "true";
+    const audit = await runSentryAudit(db, companyId, ctx.agent.id, { dryRun });
+    await ctx.onLog(
+      "stdout",
+      `[tethr] sentry: scanned ${audit.scanned} pages, ${audit.findings} findings, ${audit.posted} posted${dryRun ? " (dry run)" : ""}\n`,
+    );
+    return {
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      provider: provider.id,
+      model: provider.model,
+      billingType: "fixed",
+      usage: { inputTokens: 0, outputTokens: 0 },
+      resultJson: { sentry: audit },
+      summary: `Sentry audit: ${audit.posted}/${audit.findings} finding(s) posted${dryRun ? " (dry run)" : ""}.`,
+    };
+  }
+
   // Division heads (Helm) have a routing table but no subagents of their own:
   // their heartbeat routes across the whole org instead of within one agent.
   const ownSubagents = await org.listSubagents(companyId, ctx.agent.id);

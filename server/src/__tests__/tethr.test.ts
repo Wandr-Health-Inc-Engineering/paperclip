@@ -124,15 +124,17 @@ describeEmbeddedPostgres("tethr engine end-to-end", () => {
     fs.rmSync(storageDir, { recursive: true, force: true });
   });
 
-  it("seeds the full org: divisions, CEO→Helm→8 agents, 22 subagents", async () => {
+  it("seeds the full org: divisions, CEO→Helm→8 growth agents + Sentry, 22 subagents", async () => {
     const org = orgService(db);
     const divisions = await org.listDivisions(companyId);
     expect(divisions).toHaveLength(4);
     expect(divisions.find((d) => d.key === "growth")?.status).toBe("active");
-    expect(divisions.filter((d) => d.status === "shell")).toHaveLength(3);
+    // Reliability is activated by the Sentry site auditor (Phase 4).
+    expect(divisions.find((d) => d.key === "reliability")?.status).toBe("active");
+    expect(divisions.filter((d) => d.status === "shell")).toHaveLength(2);
 
     const profiles = await org.listProfiles(companyId);
-    expect(profiles).toHaveLength(10); // ceo + helm + 8
+    expect(profiles).toHaveLength(11); // ceo + helm + 8 growth + sentry
 
     const subagents = await org.listSubagents(companyId);
     expect(subagents).toHaveLength(22);

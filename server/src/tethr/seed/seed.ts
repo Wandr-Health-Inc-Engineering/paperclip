@@ -396,6 +396,86 @@ export async function seedWandrGrowth(
     );
   }
 
+  // --- Reliability division: Sentry, the site auditor (Phase 4) --------------
+  // Activates the Reliability shell with a deterministic public-site auditor.
+  // Seeded PAUSED: the daily heartbeat stays off until Mark enables it after a
+  // reviewed manual run (the phase's approval gate). Findings are internal-only
+  // recommendations posted to #scout — never customer-facing content.
+  {
+    const reliabilityId = divisionByKey.get("reliability") ?? null;
+    const sentry = await createAgent({
+      key: "sentry",
+      name: "Sentry",
+      role: "general",
+      title: "Site Auditor",
+      capabilities:
+        "Audit the public travelwithwandr.com surface for technical/SEO issues (meta tags, JSON-LD, broken internal links, GA4/GTM presence) and recommend fixes to #scout. Structural/technical only — never medical-content correctness. Read-only.",
+      reportsTo: ceo.id,
+      status: "paused",
+      pausedReason:
+        "Heartbeat off until Mark enables it after a reviewed manual run (Phase 4).",
+      budgetMonthlyCents: 2000,
+      adapterConfig: { agentTag: "@sentry", heartbeatMode: "site_audit" },
+    });
+    await db.insert(tethrAgentProfiles).values({
+      companyId,
+      agentId: sentry.id,
+      divisionId: reliabilityId,
+      tag: "@sentry",
+      codename: "Sentry",
+      mission:
+        "Keep the public site technically sound: flag missing/over-long meta, missing/malformed JSON-LD, 404 internal links, and missing GA4/GTM tags. Post ≤3 findings/day to #scout in the standard format for a human to route to @Cursor.",
+      approvalGate: "internal",
+      heartbeatCron: "0 9 * * *",
+      heartbeatNote: "Daily 9:00 AM site audit (paused until enabled)",
+      portPriority: null,
+      routingTable: [],
+      standingRules: STANDING_RULES,
+    });
+    if (reliabilityId) {
+      await db
+        .update(tethrDivisions)
+        .set({ status: "active", headAgentId: sentry.id, updatedAt: new Date() })
+        .where(eq(tethrDivisions.id, reliabilityId));
+    }
+    await db.insert(budgetPolicies).values({
+      companyId,
+      scopeType: "agent",
+      scopeId: sentry.id,
+      metric: "billed_cents",
+      windowKind: "calendar_month_utc",
+      amount: 2000,
+      warnPercent: 80,
+      hardStopEnabled: true,
+      createdByUserId: "tethr-seed",
+    });
+    const sentryRoutine = await routines.create(
+      companyId,
+      {
+        title: "Sentry heartbeat",
+        description: "Daily public-site technical audit; posts ≤3 findings/day to #scout.",
+        assigneeAgentId: sentry.id,
+        priority: "medium",
+        status: "paused",
+        concurrencyPolicy: "coalesce_if_active",
+        catchUpPolicy: "skip_missed",
+        variables: [],
+      },
+      { userId: "tethr-seed" },
+    );
+    await routines.createTrigger(
+      sentryRoutine.id,
+      {
+        kind: "schedule",
+        cronExpression: "0 9 * * *",
+        timezone: "America/New_York",
+        enabled: false,
+        label: "Daily 9:00 AM site audit (disabled until enabled)",
+      } as never,
+      { userId: "tethr-seed" },
+    );
+  }
+
   // --- Drive: folders + spec files -------------------------------------------
   const baseFolders = [
     "/agents/helm",

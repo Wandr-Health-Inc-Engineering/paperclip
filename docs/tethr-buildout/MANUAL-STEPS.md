@@ -1,6 +1,6 @@
 # Tethr buildout — manual steps for Mark
 
-**Regenerated: 2026-07-09 (after Phase 3 code-side).** This is the running list of every action that
+**Regenerated: 2026-07-09 (after Phase 4 code-side).** This is the running list of every action that
 needs *you* (an account, a card, a dashboard click, a "go") — everything else Claude Code
 builds without you. Groups are priority-ordered: **(A)** gets your agents talking in Slack
 fastest, **(B)** unlocks money / live runs, **(C)** everything else.
@@ -18,7 +18,7 @@ fastest, **(B)** unlocks money / live runs, **(C)** everything else.
 | 1 | Deploy Tethr to Railway | ✅ code (`railway.toml`, server build verified) | ❌ (deploy) | **A1** Railway account/CLI |
 | 2 | Slack: real senders + inbound surface | ✅ code (sender, recommendation builder, inbound events, 14 tests) | ❌ (token/post) | **A2** Slack app + token; needs P1 URL |
 | 3 | Go live with Claude (supervised) | ✅ code + safety (budget cap now enforces; 8 tests) | ❌ (spend) | **B1** Anthropic key; **B2** "go" for spend |
-| 4 | V1 loop (Sentry → #scout → @Cursor → PR) | ⏳ pending | ❌ | **B3** Cursor Slack integration; needs P2+P3 |
+| 4 | V1 loop (Sentry → #scout → @Cursor → PR) | ✅ code + tests (auditor, 4 checks, dedupe, seeded paused) | ❌ (run) | **B3** Cursor; needs P2+P3 live |
 | 5 | Migrate laptop workflows | ⏳ pending | ❌ | **C-parity** your parity judgment + cron pause |
 | 6 | Memory upgrade (dedupe) | ⏳ pending | ❌ | none (buildable) |
 | 7 | Command Center → cloud | ⏳ pending | ❌ | **C1** CC source + `data.db` + `CC_PASSWORD` |
@@ -123,16 +123,26 @@ First live spend is a hard gate. Claude runs a $0.01-cap stop test first (proves
 hard-stop), then asks before the real $5-capped Sonar run. Reply **"go"**. Rollback: unset
 `ANTHROPIC_API_KEY` → instant revert to mock.
 
-### B3 · Install Cursor's Slack integration (unblocks Phase 4) — ~10 min
+### B3 · Cursor integration + turn Sentry on (unblocks Phase 4) — ~15 min
 
-1. **Cursor dashboard → Integrations → Slack** → connect your Slack workspace.
-2. Set the default repo to your **website repo** under
-   `Wandr-Health-Inc-Engineering/<website-repo>`.
-3. That's it — this is Cursor's native feature; Tethr builds nothing for it. After Phase 4
-   posts a finding, you reply in-thread `@Cursor fix this — <one sentence>` and Cursor opens
-   the PR.
+**Built & ready:** the Sentry site auditor is coded and tested (meta / JSON-LD / broken-link /
+GA4+GTM checks, 14-day dedupe, ≤3 findings/day). It's **seeded paused** with a $20/mo hard cap,
+so it does nothing until you switch it on. Steps:
 
-**Where:** cursor.com dashboard. **Unblocks:** Phase 4 (the full V1 loop → merged PR = V1 done).
+1. **Cursor** → dashboard → Integrations → Slack → connect your workspace; set the default repo
+   to your **website repo** (`Wandr-Health-Inc-Engineering/<website-repo>`). Cursor's native
+   feature — Tethr builds nothing for it.
+2. **Preview what Sentry would post** (no posting yet): with the server deployed, set
+   `railway variables --set TETHR_SENTRY_DRY_RUN=true`, then trigger one run —
+   `POST <url>/api/tethr/<companyId>/agents/<sentryAgentId>/run-now` (or "Run now" on Sentry in
+   the Company page). The run's `resultJson.sentry.postedFindings` lists the findings. Review them.
+3. **Go live:** `railway variables --set TETHR_SENTRY_DRY_RUN=false` (or unset it); confirm
+   `SLACK_BOT_TOKEN` is set (A2). Trigger once to post the reviewed batch to #scout, then
+   **enable Sentry's heartbeat** (unpause Sentry / enable its routine) for the daily $20-capped run.
+4. In #scout, reply in-thread: `@Cursor fix this — <one sentence>`. Cursor's PR link appears;
+   review on GitHub mobile and merge. **That merged PR is V1 done.**
+
+**Where:** cursor.com + Railway + your phone. **Unblocks:** Phase 4 (the full V1 loop).
 
 ---
 
