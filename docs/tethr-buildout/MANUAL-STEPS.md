@@ -64,7 +64,9 @@ before Group C's real logins). **Where:** railway.app + terminal. Full runbook: 
 
 At **api.slack.com/apps** (uses the Events API against your Railway URL — no Socket Mode):
 
-1. **Create New App** → *From scratch* → your Wandr workspace.
+1. **Create New App** → *From scratch* → your Wandr workspace. **Name it "Tethr"** (App Name
+   and the bot's display name under App Home) — tagging `@tethr` is how everyone reaches the
+   coordinator. If the app already exists under another name (e.g. "Scout"), rename it there.
 2. **OAuth & Permissions → Bot Token Scopes:** `chat:write`, `channels:read`,
    `channels:history`, `files:read`, `app_mentions:read`. **Install to Workspace** → copy the
    **Bot User OAuth Token** (`xoxb-…`).

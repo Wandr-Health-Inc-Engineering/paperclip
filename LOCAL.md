@@ -2,21 +2,22 @@
 
 Everything runs locally — no cloud, no Railway. As a solo user this is the nicest place to
 start: the embedded Postgres persists across restarts and you have the Console UI right there.
-Two ways to talk to your operator (Helm, the router that absorbs any request and routes it):
+Two ways to talk to **Tethr** (the coordinator — the one agent that absorbs any request):
 the **Console chat** (built in) and **Slack tag/DM** (Socket Mode — no tunnel).
 
 ## 1. Start it
 
 ```bash
 pnpm install     # once
-pnpm dev         # server :3100 + UI :5173, embedded Postgres, auto-seeds Wandr Growth
+pnpm dev         # server :3100 + UI :5173, embedded Postgres, auto-seeds the org
 ```
 
-Open **http://localhost:5173** → switch to the **Wandr Growth** company (prefix `WG`) → open
-**Console** in the sidebar. Type a request — "write a blog about altitude sickness", "can we
-afford more on Peru ads", "scan travel-health news" — and watch **Helm** classify it and route
-to the right agent, streaming each hop. Approve gated work in the **Queue**. That's the whole
-product, on **mock LLM** (deterministic, free, offline). Nothing else is required.
+First boot seeds the clean-slate org: company **Wandr** (prefix `WD`) with one agent —
+**Tethr** (`@tethr`), the coordinator. (If an older DB still has the 12-agent "Wandr Growth"
+org, it is archived automatically — nothing deleted.) Open **http://localhost:5173** → the
+**Wandr** company → **Console**. Type anything — a question, "draft a plan for X" — and Tethr
+answers directly or saves a plan to the Drive. Gated work stops in the **Queue**. That's the
+whole product, on **mock LLM** (deterministic, free, offline). Nothing else is required.
 
 **Local config lives in `~/.paperclip/instances/default/.env`** (NOT the repo `.env`). Add the
 vars below there and restart `pnpm dev`. (Exporting them in your shell before `pnpm dev` also
@@ -29,7 +30,9 @@ You don't need a public URL or a tunnel: outbound is a normal API call, and inbo
 
 ### 2a. Create the Slack app (~15 min, once) — api.slack.com/apps
 
-1. **Create New App → From scratch** → your workspace.
+1. **Create New App → From scratch** → your workspace. **Name it "Tethr"** (App Name and the
+   bot display name under App Home) so tagging `@tethr` reaches the coordinator. Renaming an
+   existing app: Basic Information → App Name + App Home → bot display name.
 2. **Socket Mode** (left nav) → toggle **On**. It prompts you to create an **App-Level Token**
    with scope `connections:write` → copy it (`xapp-…`) → this is `SLACK_APP_TOKEN`.
 3. **OAuth & Permissions → Bot Token Scopes:** `chat:write`, `app_mentions:read`,
@@ -54,9 +57,9 @@ SLACK_APP_TOKEN=xapp-…      # Socket Mode (inbound, no public URL)
 
 Restart `pnpm dev`. You'll see `tethr slack: Socket Mode connected` in the log. Now:
 
-- **DM the bot** anything ("what's our Peru ad budget?") → it routes to Helm exactly like the
-  Console chat and replies in the DM.
-- **@-mention the bot** in #scout, or drop a link → same thing, answered in-thread.
+- **DM the bot** anything ("what's our Peru ad budget?") → Tethr handles it exactly like the
+  Console chat, and **the answer comes back in the same DM/thread**.
+- **@tethr-mention the bot** in #scout, or drop a link → same thing, answered in-thread.
 - **Agents post to #scout** — recommendations, digests, approvals — via the bot.
 
 > Requires **Node ≥ 22** (for the built-in WebSocket). Check with `node -v`. If it's older,
@@ -86,7 +89,9 @@ the key to snap back to the free mock. Read spend on the **Budgets** page.
 
 ## 4. The two auditors (Sentry + Pulse)
 
-Both live in the Reliability division, **seeded paused**. Locally you can run them on demand:
+Their code is built and tested, but the clean-slate org doesn't seed them — they return as
+Tethr's org grows (or live in the archived Wandr Growth org, re-seedable with
+`POST /api/tethr/seed {"org":"growth"}`). Once seeded, run them on demand:
 
 - **Sentry** (site audit — travelwithwandr.com): "Run now" on Sentry in the Company page, or set
   `TETHR_SENTRY_DRY_RUN=true` to preview findings without posting. Needs internet (it fetches the

@@ -73,6 +73,8 @@ export const TETHR_MEMORY_KINDS = [
   "preference",
   "history",
   "rule",
+  // Phase 6: fingerprint records of everything published (dedupe layer).
+  "published-content",
 ] as const;
 export type TethrMemoryKind = (typeof TETHR_MEMORY_KINDS)[number];
 

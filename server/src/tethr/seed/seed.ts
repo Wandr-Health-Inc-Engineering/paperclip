@@ -974,16 +974,22 @@ export async function seedWandrGrowth(
   };
 }
 
-/** Auto-seed hook used at server startup (TETHR_AUTOSEED=false disables). */
+/**
+ * Auto-seed hook used at server startup (TETHR_AUTOSEED=false disables).
+ * Phase 11: the default org is the clean slate — one coordinator agent,
+ * @tethr — seeded by tethr-core.ts. The full Wandr Growth org above is kept
+ * as the parts bin for re-adding specialists (POST /api/tethr/seed {"org":"growth"}).
+ */
 export async function maybeAutoSeed(db: Db): Promise<void> {
   if (process.env.TETHR_AUTOSEED === "false") return;
   if (process.env.VITEST || process.env.NODE_ENV === "test") return;
   try {
-    const result = await seedWandrGrowth(db);
-    if (result.created) {
+    const { seedTethrCore } = await import("./tethr-core.js");
+    const result = await seedTethrCore(db);
+    if (result.created || result.archivedOldCompany) {
       logger.info(
-        { companyId: result.companyId, driveFiles: result.driveFiles },
-        "[tethr] auto-seeded Wandr Growth",
+        { companyId: result.companyId, created: result.created, archivedOldCompany: result.archivedOldCompany },
+        "[tethr] auto-seeded the clean-slate org (@tethr)",
       );
     }
   } catch (err) {

@@ -44,6 +44,18 @@ export function orgService(db: Db) {
     return row ?? null;
   }
 
+  /**
+   * The router — the profile every request enters through. @tethr (the
+   * clean-slate coordinator, Phase 11) first; @helm kept as a fallback so the
+   * archived Wandr Growth org and anything seeded from it still routes.
+   */
+  async function getRouterProfile(companyId: string) {
+    return (
+      (await getProfileByTag(companyId, "@tethr")) ??
+      (await getProfileByTag(companyId, "@helm"))
+    );
+  }
+
   async function getProfileByAgentId(companyId: string, agentId: string) {
     const [row] = await db
       .select({ profile: tethrAgentProfiles, agent: agents })
@@ -84,6 +96,7 @@ export function orgService(db: Db) {
     listDivisions,
     listProfiles,
     getProfileByTag,
+    getRouterProfile,
     getProfileByAgentId,
     listSubagents,
     getSubagentByTag,

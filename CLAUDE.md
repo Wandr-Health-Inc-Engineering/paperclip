@@ -22,18 +22,26 @@ engine's own seams**, never by forking the engine.
 ### Layer map (from ARCHITECTURE-LOCAL.md)
 
 ```
-Layer 3  Content   Wandr Growth company (seeded): CEO → Helm (CGO) → 8 agents → 22 subagents
+Layer 3  Content   Wandr company (seeded): ONE agent — Tethr (@tethr), the coordinator
 Layer 2  Tethr     server/src/tethr/** — routing, gating, drive, memory, notify, llm, seed, tools
 Layer 1  Shell     ui/src/pages/tethr/** — Console, Company, Queue, Drive, Runs, Budgets, Audit, Memory, Settings, AgentPage
 Layer 0  Paperclip untouched engine (heartbeats, routines, approvals, budgets, costs, storage)
 ```
 
-The 8 agents: **Helm** (Chief Growth Officer, router) → **Atlas** (content/SEO),
-**Compass** (briefs), **Voyager** (itineraries), **Sonar** (scout/leads), **Tailwind**
-(ads, spend-gated), **Ledger** (analytics), **Herald** (PR), **Beacon** (strategy/brand).
-4 divisions: Growth (active) + Engineering, Reliability, Customer Feedback (shells — the
-designed landing zones for future agents, e.g. the Phase 4 site auditor "Sentry" and
-Phase 8 "Pulse" go in Reliability).
+**Phase 11 clean slate (2026-07-11, Mark's call — 12 agents were overwhelming to manage):**
+the default org is now company **Wandr** (prefix `WD`) with a single agent, **Tethr**
+(`@tethr`) — the orchestrator / AI chat / coordinator. Tag `@tethr` on Slack, DM the bot, or
+use the Console chat: every request lands on Tethr (`@tethr.chat` answers directly,
+`@tethr.plan` drafts internal briefs to the Drive). Specialists get re-added one at a time as
+rows in Tethr's routing table. Seed: `seed/tethr-core.ts`. Router resolution:
+`org.getRouterProfile` — `@tethr` first, `@helm` legacy fallback. Slack answers now post back
+into the originating thread/DM.
+
+The old **Wandr Growth** org (CEO → Helm → Atlas/Compass/Voyager/Sonar/Tailwind/Ledger/
+Herald/Beacon + Sentry/Pulse, 22 subagents, 4 divisions) is **archived on first boot, never
+deleted** — the parts bin for re-adds. Its seed stays in `seed/seed.ts`/`wandr-growth.ts`
+(`POST /api/tethr/seed {"org":"growth"}`), its tests still run against it, and all tool/check
+code (Sentry, Pulse, Google Ads, Keyword Planner) stays live and allowlisted.
 
 ## Where the Tethr layer lives (all additive)
 
@@ -57,10 +65,11 @@ pnpm install        # once
 pnpm dev            # server :3100 + UI :5173, embedded Postgres, auto-migrate, auto-seed
 ```
 
-First boot auto-seeds **Wandr Growth** (company prefix `WG`) — CEO → Helm → 8 agents → 22
-subagents, Growth division populated, 3 shell divisions, heartbeat routines, budgets,
-Drive content. No Docker / external DB / API key needed: embedded Postgres + deterministic
-**mock LLM** out of the box. Docker path: `make compose-up` (Postgres 17 + server + bundled
+First boot auto-seeds the clean-slate org: **Wandr** (prefix `WD`) — one agent, **Tethr**
+(`@tethr`), with `chat` + `plan` subagents, an Operations division, budgets ($100/mo company
+line, $25/mo Tethr cap, hard-stop on) and a Drive README; any existing "Wandr Growth" org is
+archived (recoverable), never deleted. No Docker / external DB / API key needed: embedded
+Postgres + deterministic **mock LLM** out of the box. Docker path: `make compose-up` (Postgres 17 + server + bundled
 UI on :3100). Re-seed (idempotent): `curl -X POST http://localhost:3100/api/tethr/seed -d '{}' -H 'content-type: application/json'`.
 
 **Dev env is loaded from the Paperclip instance dir, not repo `.env`:**
@@ -259,6 +268,7 @@ At a gate: print the exact commands / dashboard steps, add them to
 | 8 | Error-patching agent (Pulse / PostHog) | **code + tests built** (3 rules, PHI denylist, seeded paused); blocked on `POSTHOG_API_KEY` **C2** + fill config |
 | 9 | Observability, budgets, access control | **built** (error→#scout throttled, deep health route, weekly spend digest, RUNBOOK; auth = core better-auth, 3-user setup) |
 | 10 | Scale review vs $1M-no-hiring | excluded (needs steady-state data) |
+| 11 | Clean slate: one coordinator (@tethr) | **built + tested** (`seed/tethr-core.ts`, router resolution, Slack thread answers, 8 tests); old org archived not deleted; Slack app rename = manual **A2** |
 
 Full run instructions: `docs/tethr-buildout/RUN-ALL-PROMPT.md`. Remaining human actions
 (the deliverable Mark cares about most): `docs/tethr-buildout/MANUAL-STEPS.md`.

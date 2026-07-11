@@ -1049,12 +1049,21 @@ export function tethrRoutes(db: Db) {
   });
 
   // ---- Seed ----------------------------------------------------------------------
+  // Default: the Phase 11 clean slate (one coordinator, @tethr). The legacy
+  // 12-agent org is still seedable with {"org":"growth"} — the parts bin for
+  // re-adding specialists.
   router.post("/tethr/seed", async (req, res) => {
-    const { seedWandrGrowth } = await import("../tethr/seed/seed.js");
-    const result = await seedWandrGrowth(db, {
-      force: req.body?.force === true,
-      demo: req.body?.demo !== false,
-    });
+    if (req.body?.org === "growth") {
+      const { seedWandrGrowth } = await import("../tethr/seed/seed.js");
+      const result = await seedWandrGrowth(db, {
+        force: req.body?.force === true,
+        demo: req.body?.demo !== false,
+      });
+      res.json(result);
+      return;
+    }
+    const { seedTethrCore } = await import("../tethr/seed/tethr-core.js");
+    const result = await seedTethrCore(db, { force: req.body?.force === true });
     res.json(result);
   });
 

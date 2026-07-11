@@ -8,12 +8,13 @@
 // Scout turns up, reuse its handlers here (see docs/tethr-buildout/scout-audit.md).
 //
 // Nothing here auto-posts content anywhere: outbound is notifications only,
-// inbound turns a tagged link/photo into a routed Helm task (intake).
+// inbound turns a tag/DM/link into a routed @tethr task (intake) whose answer
+// is posted back into the same thread.
 
 import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { companies } from "@paperclipai/db";
+import { companies, tethrAgentProfiles } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 
 const SLACK_API = "https://slack.com/api";
@@ -21,8 +22,8 @@ const SLACK_API = "https://slack.com/api";
 /** Default #scout channel from the bundle. Override with SLACK_SCOUT_CHANNEL. */
 export const DEFAULT_SCOUT_CHANNEL = "C0AE02FJR5Y";
 
-/** Wandr Growth company name (the seeded Tethr company). */
-const TETHR_COMPANY_NAME = "Wandr Growth";
+/** Legacy company-name fallback (pre-Phase-11 orgs). */
+const LEGACY_COMPANY_NAME = "Wandr Growth";
 
 /** Never touch real Slack under test — the suite must not post to #scout even
  * if a real token leaks into process.env (e.g. loaded from the instance .env). */
@@ -227,15 +228,22 @@ export function interpretSlackEvent(
 
 /**
  * Resolve which Tethr company an inbound Slack event routes into.
- * Prefers TETHR_SLACK_COMPANY_ID; otherwise the seeded "Wandr Growth".
+ * Prefers TETHR_SLACK_COMPANY_ID; otherwise the company that has the @tethr
+ * coordinator seeded (Phase 11 clean slate); legacy name lookup last.
  */
 export async function resolveTethrCompanyId(db: Db): Promise<string | null> {
   const override = process.env.TETHR_SLACK_COMPANY_ID?.trim();
   if (override) return override;
+  const [tethr] = await db
+    .select({ companyId: tethrAgentProfiles.companyId })
+    .from(tethrAgentProfiles)
+    .where(eq(tethrAgentProfiles.tag, "@tethr"))
+    .limit(1);
+  if (tethr) return tethr.companyId;
   const [row] = await db
     .select({ id: companies.id })
     .from(companies)
-    .where(eq(companies.name, TETHR_COMPANY_NAME))
+    .where(eq(companies.name, LEGACY_COMPANY_NAME))
     .limit(1);
   return row?.id ?? null;
 }
@@ -243,10 +251,12 @@ export async function resolveTethrCompanyId(db: Db): Promise<string | null> {
 // ---- Inbound routing + Socket Mode (local-friendly, no public URL) ---------
 
 /**
- * Turn an interpreted kickoff into a routed Helm task + threaded ack. Shared by
- * the HTTP events endpoint (cloud) and the Socket Mode client (local). Helm is
- * the router that absorbs any request and routes it — same entry point as the
- * Console chat, so a Slack DM/tag and a Console message behave identically.
+ * Turn an interpreted kickoff into a routed Tethr task: quick threaded ack,
+ * then the actual answer posted back to the same thread when the run finishes.
+ * Shared by the HTTP events endpoint (cloud) and the Socket Mode client
+ * (local). @tethr is the coordinator that absorbs any request — same entry
+ * point as the Console chat, so a Slack DM/tag and a Console message behave
+ * identically.
  */
 export async function routeInboundKickoff(
   db: Db,
@@ -260,8 +270,9 @@ export async function routeInboundKickoff(
   // Dynamic import breaks the notify → slack → routing → notify module cycle.
   const { routingService } = await import("./routing.js");
   const routing = routingService(db);
+  let runPromise!: Promise<{ status: string; resultText: string }>;
   const ids = await new Promise<{ routeRunId: string; threadId: string }>((resolve, reject) => {
-    routing
+    runPromise = routing
       .routeRequest({
         companyId,
         requestText: interp.requestText,
@@ -269,13 +280,33 @@ export async function routeInboundKickoff(
         hopDelayMs: 0,
         onStarted: resolve,
       })
-      .catch(reject);
+      .catch((err) => {
+        reject(err);
+        return { status: "failed", resultText: err instanceof Error ? err.message : String(err) };
+      });
   });
   await postSlackMessage({
     channel: interp.channel,
     threadTs: interp.threadTs,
-    text: `On it — routing to Helm (task ${ids.routeRunId}). I'll follow up here.`,
+    text: `On it (task ${ids.routeRunId}) — answer coming in this thread.`,
   });
+  // Post the actual answer back to the thread when the run finishes. Fire and
+  // forget: the events endpoint must return fast, Slack retries on slow acks.
+  void runPromise
+    .then((result) => {
+      const answer = (result.resultText || "").trim();
+      return postSlackMessage({
+        channel: interp.channel,
+        threadTs: interp.threadTs,
+        text:
+          result.status === "failed"
+            ? `That didn't work: ${answer.slice(0, 500) || "unknown error"}`
+            : result.status === "gated"
+              ? `${answer.slice(0, 2500)}\n\n_This output is gated — review it in the Tethr Queue before it goes anywhere._`
+              : answer.slice(0, 3000) || "Done — no text output (check the Tethr Console).",
+      });
+    })
+    .catch((err) => logger.warn({ err }, "tethr slack: failed to post the answer back"));
   return ids;
 }
 
@@ -297,7 +328,7 @@ interface SlackWs {
 export async function startSlackSocketMode(db: Db): Promise<void> {
   const appToken = process.env.SLACK_APP_TOKEN?.trim();
   if (!appToken) return;
-  const WS = (globalThis as { WebSocket?: new (url: string) => SlackWs }).WebSocket;
+  const WS = (globalThis as unknown as { WebSocket?: new (url: string) => SlackWs }).WebSocket;
   if (!WS) {
     logger.warn("SLACK_APP_TOKEN set but no global WebSocket (need Node ≥ 22); Socket Mode disabled");
     return;

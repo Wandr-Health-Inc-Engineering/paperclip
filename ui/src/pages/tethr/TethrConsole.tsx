@@ -118,8 +118,8 @@ export function TethrConsole() {
               ask the company
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Helm reads every request, plans across agents when it has to, and the
-              specialists work their tools. Gated work stops in the Queue.
+              Tethr reads every request — it answers directly, drafts plans, and
+              routes to specialists as they come online. Gated work stops in the Queue.
             </p>
           </div>
           {threadId ? (
@@ -145,7 +145,7 @@ export function TethrConsole() {
             placeholder={
               threadId
                 ? "Follow up in this thread…"
-                : "Helm, can we afford to spend more on Peru?"
+                : "Tethr, how did our ads do last month?"
             }
             className="w-full resize-none bg-transparent px-4 py-3 text-base font-semibold outline-none placeholder:text-muted-foreground/60"
           />

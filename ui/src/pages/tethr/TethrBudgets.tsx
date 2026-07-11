@@ -67,8 +67,8 @@ export function TethrBudgets() {
         <MonoTag className="text-foreground">● tethr · budgets</MonoTag>
         <h1 className="mt-2 text-3xl font-extrabold tracking-tight">the growth line</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Helm holds the combined budget. Each agent has a monthly cap; Tailwind
-          hard-stops because it moves real money.
+          One combined monthly line for the company. Each agent has its own cap,
+          enforced as a hard stop.
         </p>
       </div>
 
@@ -85,7 +85,7 @@ export function TethrBudgets() {
             </p>
           </div>
           <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-            held by @helm · warn at {data.companyPolicy?.warnPercent ?? 80}%
+            held by {helm ? "@helm" : "the company line"} · warn at {data.companyPolicy?.warnPercent ?? 80}%
           </p>
         </div>
         <BudgetBar

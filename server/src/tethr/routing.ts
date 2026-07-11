@@ -12,9 +12,12 @@ import { workerService } from "./worker.js";
 
 // The routing engine — ROUTING-MODEL.md as code.
 //
-//   request → @helm (classify, or plan a multi-agent sequence) → @agent
+//   request → router (classify, or plan a multi-agent sequence) → @agent
 //   (classify) → @agent.subagent (do the work with tools, or stage for
 //   approval).
+//
+// The router is @tethr (the clean-slate coordinator) or @helm (legacy org) —
+// resolved per company via org.getRouterProfile.
 //
 // Every hop — including each tool call — is recorded on the route run AND in
 // the core activity log, so a request's full path is reconstructable.
@@ -286,8 +289,10 @@ export function routingService(db: Db) {
     }
 
     try {
-      const helm = await org.getProfileByTag(input.companyId, "@helm");
-      if (!helm) return await fail("Helm is not seeded for this company.");
+      // The router: @tethr (clean-slate coordinator) or @helm (legacy org).
+      const helm = await org.getRouterProfile(input.companyId);
+      if (!helm) return await fail("No router agent (@tethr) is seeded for this company.");
+      const routerTag = helm.profile.tag;
       const helmOptions = helm.profile.routingTable.map((r) => ({
         tag: r.to,
         description: r.description ?? "",
@@ -298,7 +303,7 @@ export function routingService(db: Db) {
         // Heartbeats: standing assignment, no Helm classification.
         await recordHop({
           layer: "helm",
-          actorTag: "@helm",
+          actorTag: routerTag,
           decision: `route → ${input.startAtAgentTag}`,
           reason:
             input.invocationSource === "heartbeat"
@@ -311,19 +316,24 @@ export function routingService(db: Db) {
         });
         if (!step.ok) return await fail(step.error ?? "Routing failed.");
       } else {
-        if (helmOptions.length === 0) return await fail("Helm has no routing table.");
+        if (helmOptions.length === 0)
+          return await fail(`${routerTag} has no routing table.`);
 
-        // Cross-domain? Ask for a plan first.
-        const plan = await provider.plan({
+        // Cross-domain? Ask for a plan first. A plan is only usable when every
+        // step's agent actually exists in this org's routing table — the mock
+        // provider can suggest specialists a minimal org doesn't have.
+        const knownTags = new Set(helmOptions.map((o) => o.tag));
+        let plan = await provider.plan({
           request: input.requestText,
           agents: helmOptions,
         });
         if (plan) usage = sumUsage(usage, plan.usage);
+        if (plan && !plan.steps.every((s) => knownTags.has(s.agentTag))) plan = null;
 
         if (plan && plan.steps.length >= 2) {
           await recordHop({
             layer: "helm",
-            actorTag: "@helm",
+            actorTag: routerTag,
             decision: `plan → ${plan.steps.length} steps (${plan.steps.map((s) => s.agentTag).join(" → ")})`,
             reason: plan.reason,
             at: new Date().toISOString(),
@@ -332,7 +342,7 @@ export function routingService(db: Db) {
             const step = plan.steps[i];
             await recordHop({
               layer: "helm",
-              actorTag: "@helm",
+              actorTag: routerTag,
               decision: `step ${i + 1} → ${step.agentTag}`,
               reason: step.request.slice(0, 160),
               at: new Date().toISOString(),
@@ -350,14 +360,14 @@ export function routingService(db: Db) {
         } else {
           const classified = await provider.classify({
             layer: "helm",
-            actorTag: "@helm",
+            actorTag: routerTag,
             request: input.requestText,
             options: helmOptions,
           });
           usage = sumUsage(usage, classified.usage);
           await recordHop({
             layer: "helm",
-            actorTag: "@helm",
+            actorTag: routerTag,
             decision: `route → ${classified.choiceTag}`,
             reason: classified.reason,
             at: new Date().toISOString(),

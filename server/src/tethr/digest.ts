@@ -5,9 +5,10 @@ import { gatingService } from "./gating.js";
 import { notificationService } from "./notify.js";
 import { orgService } from "./org.js";
 
-// The daily digest: Helm's "what needs you" summary. Queue items, budget
+// The daily digest: the router's "what needs you" summary. Queue items, budget
 // pressure, failed runs — one internal output + one notification, on a
-// schedule or on demand.
+// schedule or on demand. Attributed to the org's router (@tethr, or @helm in
+// the legacy org).
 
 export function digestService(db: Db) {
   const org = orgService(db);
@@ -19,8 +20,8 @@ export function digestService(db: Db) {
     title: string;
     pendingCount: number;
   }> {
-    const helm = await org.getProfileByTag(companyId, "@helm");
-    if (!helm) throw new Error("Helm is not seeded");
+    const helm = await org.getRouterProfile(companyId);
+    if (!helm) throw new Error("No router agent (@tethr) is seeded");
 
     const pending = await db
       .select()
@@ -92,7 +93,7 @@ export function digestService(db: Db) {
     const output = await gating.createOutput({
       companyId,
       agentId: helm.agent.id,
-      agentTag: "@helm",
+      agentTag: helm.profile.tag,
       kind: "document",
       title: `Daily digest — ${date}`,
       body: lines.join("\n"),
@@ -107,7 +108,7 @@ export function digestService(db: Db) {
       title: `Daily digest: ${pending.length} in the queue${hotAgents.length ? `, ${hotAgents.length} budget warning${hotAgents.length === 1 ? "" : "s"}` : ""}`,
       body: failedRuns.length ? `${failedRuns.length} failed run(s) in the last 24h.` : undefined,
       href: `/queue`,
-      agentTag: "@helm",
+      agentTag: helm.profile.tag,
     });
 
     return { outputId: output.id, title: output.title, pendingCount: pending.length };
@@ -138,12 +139,12 @@ export function digestService(db: Db) {
         return `- ${p.profile.tag}: ${dollars(p.agent.spentMonthlyCents)} / ${dollars(p.agent.budgetMonthlyCents)} (${pct}%)${pct >= 80 ? " — over 80% cap" : ""}`;
       }),
     ];
-    const helm = await org.getProfileByTag(companyId, "@helm");
+    const helm = await org.getRouterProfile(companyId);
     if (helm) {
       await gating.createOutput({
         companyId,
         agentId: helm.agent.id,
-        agentTag: "@helm",
+        agentTag: helm.profile.tag,
         kind: "document",
         title: `Weekly spend summary — ${date}`,
         body: lines.join("\n"),
@@ -157,7 +158,7 @@ export function digestService(db: Db) {
       title: `Weekly spend: ${dollars(totalSpentCents)} across ${spenders.length} agents`,
       body: lines.slice(4).join("\n"),
       href: `/budgets`,
-      agentTag: "@helm",
+      agentTag: helm?.profile.tag ?? "@tethr",
     });
     return { totalSpentCents, agents: spenders.length };
   }

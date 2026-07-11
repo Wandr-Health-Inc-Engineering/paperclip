@@ -7,6 +7,12 @@
       "runtimeArgs": ["run", "dev"],
       "cwd": "ui",
       "port": 5173
+    },
+    {
+      "name": "tethr-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
+      "port": 5173
     }
   ]
 }

@@ -39,6 +39,10 @@ const ALL_TOOLS: Record<string, TethrTool> = Object.fromEntries(
 const BASELINE = ["drive_list", "drive_read", "recall_memory"];
 
 const ALLOWLIST: Record<string, string[]> = {
+  // Tethr — the coordinator (Phase 11 clean slate). Chat answers directly and
+  // may pull read-only reports; Plan drafts internal docs. Neither can publish.
+  "tethr.chat": ["web_fetch", "google_ads_report"],
+  "tethr.plan": ["web_fetch", "drive_write", "keyword_ideas"],
   // Sonar — the scout
   "sonar.leads": ["reddit_scan", "web_fetch", "notify"],
   "sonar.reply": ["reddit_scan"],
