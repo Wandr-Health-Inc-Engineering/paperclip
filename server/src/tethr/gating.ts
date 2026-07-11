@@ -273,6 +273,20 @@ export function gatingService(db: Db) {
         null,
       );
     }
+    // Phase 11: mirror the published deliverable into the configured Google Drive
+    // folder — best-effort, never fails a publish; only the folder shared with the
+    // service account is writable, so nothing else in Drive is touched.
+    try {
+      const gdrive = await import("./tools/google-drive.js");
+      if (gdrive.googleDriveConfigured()) {
+        await gdrive.driveCreateFile(
+          `${publishedSlug || slugify(output.title)}.md`,
+          `# ${output.title}\n\n${output.body}\n`,
+        );
+      }
+    } catch {
+      /* Drive mirror is best-effort */
+    }
     return updated;
   }
 

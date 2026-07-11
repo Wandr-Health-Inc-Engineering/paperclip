@@ -197,6 +197,20 @@ failures through it. `digest.ts` `generateWeeklySummary` posts total + per-agent
 Ops guide (restart, kill switches, rollback, uptime, access) = **`RUNBOOK.md`**. Access control
 uses core **better-auth** (authenticated mode) — a 3-user setup, not a build.
 
+## Google integrations — Ads, Keywords, Drive (recycled from Scout)
+
+Ported from `scout-wandr-app` (raw fetch, no SDK). Setup + safety: **`GOOGLE-SETUP.md`**.
+
+- **Google Ads** (`tools/google-ads.ts`, tool `google_ads_report`) — **READ-ONLY** overview/
+  campaigns/keywords/search-terms. Granted to **Tailwind** + **Ledger**. No mutate functions were
+  ported: agents analyze + recommend; any account/spend change stays a human-approved `spend`-gated
+  output. Locked by `tethr-google.test.ts`. Reuses `GOOGLE_ADS_*` (already in the instance env).
+- **Keyword Planner** (`tools/keyword-planner.ts`, tool `keyword_ideas`) — real search volume;
+  granted to **Atlas** + **Beacon**. Needs a Basic/Standard dev token (Explorer → clear error).
+- **Google Drive** (`tools/google-drive.ts`) — service-account writer scoped to **one shared
+  folder** (`TETHR_GDRIVE_FOLDER_ID`); `gating.ts` mirrors every published deliverable there
+  (best-effort, never fails a publish). Inert until `TETHR_GDRIVE_SA_KEY[_PATH]` + folder id set.
+
 ## Brand lock (any UI work)
 
 Urbanist + JetBrains Mono · pure black/white · 2px borders · **no gradients, no color, no

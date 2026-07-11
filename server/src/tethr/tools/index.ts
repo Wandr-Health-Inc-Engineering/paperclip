@@ -6,6 +6,8 @@ import {
   notifyTool,
   recallMemoryTool,
 } from "./internal.js";
+import { googleAdsReportTool } from "./google-ads.js";
+import { keywordIdeasTool } from "./keyword-planner.js";
 import { advanceTrackerTool, readTrackerTool } from "./trackers.js";
 import { cdcScanTool, redditScanTool, webFetchTool } from "./web.js";
 import type { TethrTool } from "./types.js";
@@ -25,6 +27,8 @@ const ALL_TOOLS: Record<string, TethrTool> = Object.fromEntries(
     notifyTool,
     readTrackerTool,
     advanceTrackerTool,
+    googleAdsReportTool,
+    keywordIdeasTool,
   ].map((t) => [t.name, t]),
 );
 
@@ -40,30 +44,30 @@ const ALLOWLIST: Record<string, string[]> = {
   "sonar.reply": ["reddit_scan"],
   "sonar.news": ["cdc_scan", "web_fetch"],
   // Atlas — content
-  "atlas.blog": ["read_tracker", "advance_tracker", "web_fetch", "drive_write"],
+  "atlas.blog": ["read_tracker", "advance_tracker", "web_fetch", "drive_write", "keyword_ideas"],
   "atlas.geo": ["drive_write"],
-  "atlas.keywords": ["read_tracker", "advance_tracker", "web_fetch"],
+  "atlas.keywords": ["read_tracker", "advance_tracker", "web_fetch", "keyword_ideas"],
   // Compass — briefs
   "compass.brief": ["read_tracker", "advance_tracker", "web_fetch", "cdc_scan", "drive_write"],
   // Voyager — itineraries
   "voyager.draft": ["read_tracker", "advance_tracker", "web_fetch", "drive_write"],
   "voyager.health": ["cdc_scan", "web_fetch"],
-  // Tailwind — ads (read/analyze only; no web reach needed locally)
-  "tailwind.analyze": [],
-  "tailwind.bids": [],
+  // Tailwind — ads (READ-ONLY Google Ads analysis; changes stay human-approved)
+  "tailwind.analyze": ["google_ads_report"],
+  "tailwind.bids": ["google_ads_report"],
   "tailwind.copy": [],
-  "tailwind.negatives": [],
-  // Ledger — analytics
-  "ledger.guardrails": [],
-  "ledger.modeler": [],
-  "ledger.reporter": ["drive_write", "notify"],
+  "tailwind.negatives": ["google_ads_report"],
+  // Ledger — analytics (Google Ads + PostHog read)
+  "ledger.guardrails": ["google_ads_report"],
+  "ledger.modeler": ["google_ads_report"],
+  "ledger.reporter": ["drive_write", "notify", "google_ads_report"],
   // Herald — PR
   "herald.press": ["read_tracker", "web_fetch", "drive_write"],
   "herald.pickup": ["web_fetch"],
   "herald.announce": [],
   // Beacon — strategy
-  "beacon.icp": ["web_fetch"],
-  "beacon.messaging": ["web_fetch"],
+  "beacon.icp": ["web_fetch", "keyword_ideas"],
+  "beacon.messaging": ["web_fetch", "keyword_ideas"],
   "beacon.brand": [],
 };
 
