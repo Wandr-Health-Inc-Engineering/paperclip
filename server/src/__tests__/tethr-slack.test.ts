@@ -4,6 +4,8 @@ import { buildRecommendation } from "../tethr/recommendation.js";
 import {
   extractLinks,
   interpretSlackEvent,
+  postSlackMessage,
+  slackConfigured,
   verifySlackSignature,
 } from "../tethr/slack.js";
 
@@ -119,6 +121,33 @@ describe("interpretSlackEvent", () => {
       event: { type: "message", bot_id: "B1", text: "posted <https://x.com>" },
     });
     expect(r.type).toBe("ignore");
+  });
+});
+
+describe("test-safety: the suite never posts to real Slack", () => {
+  // Regression: a real SLACK_BOT_TOKEN was leaking into the test process via the
+  // instance .env and the e2e notifications posted fixtures to the live #scout.
+  it("slackConfigured() is false under test even when a token is set", () => {
+    const saved = process.env.SLACK_BOT_TOKEN;
+    process.env.SLACK_BOT_TOKEN = "xoxb-must-not-be-used-in-tests";
+    try {
+      expect(slackConfigured()).toBe(false);
+    } finally {
+      if (saved === undefined) delete process.env.SLACK_BOT_TOKEN;
+      else process.env.SLACK_BOT_TOKEN = saved;
+    }
+  });
+  it("postSlackMessage() skips (never calls Slack) under test", async () => {
+    const saved = process.env.SLACK_BOT_TOKEN;
+    process.env.SLACK_BOT_TOKEN = "xoxb-must-not-be-used-in-tests";
+    try {
+      const r = await postSlackMessage({ text: "should never send" });
+      expect(r.ok).toBe(false);
+      expect(r.skipped).toBe(true);
+    } finally {
+      if (saved === undefined) delete process.env.SLACK_BOT_TOKEN;
+      else process.env.SLACK_BOT_TOKEN = saved;
+    }
   });
 });
 

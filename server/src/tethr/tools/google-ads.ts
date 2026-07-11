@@ -36,6 +36,7 @@ function getConfig(): AdsConfig | null {
 }
 
 export function googleAdsConfigured(): boolean {
+  if (process.env.VITEST || process.env.NODE_ENV === "test") return false; // never call live APIs in tests
   return getConfig() !== null;
 }
 

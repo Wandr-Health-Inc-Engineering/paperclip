@@ -47,6 +47,7 @@ export function driveFolderId(): string | undefined {
 }
 
 export function googleDriveConfigured(): boolean {
+  if (process.env.VITEST || process.env.NODE_ENV === "test") return false; // never write to Drive in tests
   return loadServiceAccount() !== null && Boolean(driveFolderId());
 }
 

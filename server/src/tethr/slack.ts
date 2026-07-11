@@ -24,12 +24,19 @@ export const DEFAULT_SCOUT_CHANNEL = "C0AE02FJR5Y";
 /** Wandr Growth company name (the seeded Tethr company). */
 const TETHR_COMPANY_NAME = "Wandr Growth";
 
+/** Never touch real Slack under test — the suite must not post to #scout even
+ * if a real token leaks into process.env (e.g. loaded from the instance .env). */
+function underTest(): boolean {
+  return Boolean(process.env.VITEST) || process.env.NODE_ENV === "test";
+}
+
 export function slackBotToken(): string | undefined {
   return process.env.SLACK_BOT_TOKEN?.trim() || undefined;
 }
 
 /** True once a bot token is set (cloud). Local dev stays offline without it. */
 export function slackConfigured(): boolean {
+  if (underTest()) return false;
   return Boolean(slackBotToken());
 }
 
@@ -57,6 +64,7 @@ export interface PostMessageResult {
 export async function postSlackMessage(
   input: PostMessageInput,
 ): Promise<PostMessageResult> {
+  if (underTest()) return { ok: false, skipped: true, error: "test env" };
   const token = slackBotToken();
   if (!token) return { ok: false, skipped: true, error: "no SLACK_BOT_TOKEN" };
   try {

@@ -12,6 +12,7 @@ export function posthogKey(): string | undefined {
   return process.env.POSTHOG_API_KEY?.trim() || undefined;
 }
 export function posthogConfigured(): boolean {
+  if (process.env.VITEST || process.env.NODE_ENV === "test") return false; // never call PostHog in tests
   return Boolean(posthogKey());
 }
 
