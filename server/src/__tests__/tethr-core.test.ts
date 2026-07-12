@@ -12,6 +12,7 @@ import { memoryService } from "../tethr/memory.ts";
 import {
   handleConversationReset,
   overseerMention,
+  renderAgentsMessage,
   resolveContinuationThreadId,
   resolveOverseer,
   resolveTethrCompanyId,
@@ -341,6 +342,41 @@ describeEmbeddedPostgres("tethr clean-slate org (@tethr coordinator)", () => {
     expect(await hasHistory()).toBe(true); // prompt only
     await routeInboundKickoff(db, { requestText: "yes", channel: "D-CONFIRM-B", isDM: true });
     expect(await hasHistory()).toBe(false); // confirmed → cleared
+  });
+
+  it("handles built-in commands deterministically (no LLM route)", async () => {
+    const routing = routingService(db);
+    const countRuns = async () => (await routing.listRouteRuns(companyId, 500)).length;
+
+    const before = await countRuns();
+    // /help, /agents, and an unknown /command are all answered directly.
+    for (const cmd of ["/help", "help", "/agents", "/frobnicate"]) {
+      const r = await routeInboundKickoff(db, { requestText: cmd, channel: "D-CMD", isDM: true });
+      expect(r, cmd).toBeNull();
+    }
+    // None of them created a route run (they never touched the router).
+    expect(await countRuns()).toBe(before);
+
+    // A real question still routes (returns run ids).
+    const routed = await routeInboundKickoff(db, {
+      requestText: "who is our biggest competitor?",
+      channel: "D-CMD2",
+      isDM: true,
+    });
+    expect(routed).not.toBeNull();
+  });
+
+  it("renders the /agents roster with each agent's overseer", async () => {
+    const saved = process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID;
+    process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID = "U_MARK";
+    try {
+      const roster = await renderAgentsMessage(db, companyId);
+      expect(roster).toContain("@tethr");
+      expect(roster).toContain("<@U_MARK>"); // overseer mention resolved
+    } finally {
+      if (saved === undefined) delete process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID;
+      else process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID = saved;
+    }
   });
 
   it("surfaces an escalation up through routing when the agent raises a hand", async () => {

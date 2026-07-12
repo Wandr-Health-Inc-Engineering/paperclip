@@ -16,6 +16,7 @@ import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { companies, tethrAgentProfiles, tethrRouteRuns } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
+import { matchMetaCommand, renderHelpMessage } from "./commands.js";
 import { memoryService } from "./memory.js";
 
 const SLACK_API = "https://slack.com/api";
@@ -290,6 +291,26 @@ export function overseerMention(o: Overseer): string {
   return o.slackId ? `<@${o.slackId}>` : o.name;
 }
 
+/** The `/agents` roster: every agent and who oversees it. Deterministic. */
+export async function renderAgentsMessage(db: Db, companyId: string): Promise<string> {
+  const profiles = await db
+    .select({ tag: tethrAgentProfiles.tag, codename: tethrAgentProfiles.codename })
+    .from(tethrAgentProfiles)
+    .where(eq(tethrAgentProfiles.companyId, companyId))
+    .orderBy(tethrAgentProfiles.tag);
+  const lines: string[] = [];
+  for (const p of profiles) {
+    const o = await resolveOverseer(db, companyId, p.tag);
+    lines.push(`• *${p.tag}* — ${p.codename} (overseer: ${overseerMention(o)})`);
+  }
+  return [
+    "*Team roster*",
+    lines.length ? lines.join("\n") : "• Just me for now.",
+    "",
+    "Specialists get added one at a time, each with its own human overseer. Ask me what's next.",
+  ].join("\n");
+}
+
 // ---- Inbound routing + Socket Mode (local-friendly, no public URL) ---------
 
 /** A DM is one rolling conversation; a reply after this gap starts fresh. */
@@ -463,16 +484,46 @@ export async function routeInboundKickoff(
   const sourceKey = slackSourceKey(interp);
   const now = Date.now();
 
+  // Built-in commands. "/help" and "help" both work (leading slash optional),
+  // so they act like slash commands without Slack's native registration. A
+  // bare word must match exactly; a slash signals intent, so "/agents foo" also
+  // matches on the first word.
+  const slashPrefixed = interp.requestText.trim().startsWith("/");
+  const bareCommand = interp.requestText.trim().replace(/^\/+/, "").trim();
+  const meta = matchMetaCommand(bareCommand, { firstWord: slashPrefixed });
+  if (meta === "help") {
+    await postSlackMessage({ channel: interp.channel, threadTs: interp.threadTs, text: renderHelpMessage() });
+    return null;
+  }
+  if (meta === "agents") {
+    await postSlackMessage({
+      channel: interp.channel,
+      threadTs: interp.threadTs,
+      text: await renderAgentsMessage(db, companyId),
+    });
+    return null;
+  }
+  // An explicit "/something" we don't recognize (and isn't a wipe) → nudge to help.
+  if (interp.requestText.trim().startsWith("/") && bareCommand && !isResetPhrase(bareCommand)) {
+    const attempted = bareCommand.split(/\s+/)[0];
+    await postSlackMessage({
+      channel: interp.channel,
+      threadTs: interp.threadTs,
+      text: `I don't know the command \`/${attempted}\`. Try \`/help\` to see what I can do.`,
+    });
+    return null;
+  }
+
   // Wipes are confirmed, not immediate. A reset command asks first and parks
   // any carried question; the next message confirms (wipe) or cancels (route
   // it normally). Requires a sourceKey to correlate the two turns.
   let requestText = interp.requestText;
   let forceFresh = false;
   if (sourceKey) {
-    if (isResetPhrase(interp.requestText)) {
+    if (isResetPhrase(bareCommand)) {
       // New/repeat reset command → confirm before wiping. Don't route yet.
       pendingResets.set(sourceKey, {
-        question: stripResetPhrase(interp.requestText),
+        question: stripResetPhrase(bareCommand),
         expiresAt: now + RESET_CONFIRM_TTL_MS,
       });
       await postSlackMessage({

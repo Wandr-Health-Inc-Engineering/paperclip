@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { describe, it, expect } from "vitest";
+import { matchMetaCommand, renderHelpMessage, TETHR_COMMANDS } from "../tethr/commands.js";
 import { buildRecommendation } from "../tethr/recommendation.js";
 import {
   chunkSlackText,
@@ -175,6 +176,29 @@ describe("slack conversation continuity helpers", () => {
     expect(stripResetPhrase("wipe memory")).toBe("");
     expect(stripResetPhrase("new topic: how are ads doing?")).toBe("how are ads doing?");
     expect(stripResetPhrase("forget everything, what's our CAC?")).toBe("what's our CAC?");
+  });
+
+  it("matches built-in commands but not lookalike questions", () => {
+    expect(matchMetaCommand("help")).toBe("help");
+    expect(matchMetaCommand("guide")).toBe("help");
+    expect(matchMetaCommand("what can you do")).toBe("help");
+    expect(matchMetaCommand("agents")).toBe("agents");
+    expect(matchMetaCommand("team")).toBe("agents");
+    // Reset is documented but handled by the wipe flow, not here.
+    expect(matchMetaCommand("reset")).toBeNull();
+    // A bare question that starts with an alias word must NOT trigger a command.
+    expect(matchMetaCommand("who is our biggest competitor?")).toBeNull();
+    expect(matchMetaCommand("clear expectations with the vendor")).toBeNull();
+    // A slash signals intent → first-word matching is allowed.
+    expect(matchMetaCommand("agents please", { firstWord: true })).toBe("agents");
+  });
+
+  it("renders a help guide listing every registered command", () => {
+    const help = renderHelpMessage();
+    expect(help).toContain("Tethr");
+    for (const cmd of TETHR_COMMANDS) {
+      expect(help, `guide lists ${cmd.usage}`).toContain(cmd.usage);
+    }
   });
 
   it("treats a short yes as confirmation, but not a real message", () => {
