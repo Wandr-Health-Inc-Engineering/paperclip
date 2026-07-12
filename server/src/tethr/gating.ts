@@ -32,6 +32,8 @@ const PUBLISH_FOLDERS: Partial<Record<TethrOutputKind, string>> = {
   icp_profile: "/strategy",
   messaging: "/strategy",
   document: "/documents",
+  // Coordinator chat answers get their own area, kept out of the deliverables tree.
+  answer: "/tethr/chat-log",
 };
 
 export interface CreateOutputInput {
@@ -221,6 +223,13 @@ export function gatingService(db: Db) {
       agentId: output.agentId,
       details: { title: output.title, drivePath: path, kind: output.kind },
     });
+
+    // Chat answers are conversational, not published content: they go to the
+    // chat-log area (above) but never enter the dedup log, advance a tracker,
+    // or mirror to Google Drive. Everything below is publish-of-record work.
+    if (output.kind === "answer") {
+      return updated;
+    }
 
     // Working state: published content lands in the dedup log and advances
     // its tracker row (claimed at draft time) to published.

@@ -186,6 +186,9 @@ export function routingService(db: Db) {
 
     const outputs: RouteRequestResult["outputs"] = [];
     const summaries: string[] = [];
+    // Track chat-answer bodies so a single ungated answer can be inlined as the
+    // result (what the human actually reads in Slack/Console) instead of a stub.
+    const answerBodies: string[] = [];
 
     /** Layer 2+3 for one agent: classify the subagent (or use a chain), do the work. */
     async function runAgentStep(
@@ -284,6 +287,7 @@ export function routingService(db: Db) {
           gated: result.gated,
         });
         summaries.push(result.summary);
+        if (result.kind === "answer" && !result.gated) answerBodies.push(result.body);
       }
       return { ok: true };
     }
@@ -383,7 +387,13 @@ export function routingService(db: Db) {
 
       const anyGated = outputs.some((o) => o.gated);
       const status = anyGated ? "gated" : "done";
-      const resultText = summaries.join("\n");
+      // A single ungated chat answer IS the result — inline the body so the human
+      // reads the actual answer. Anything else (plans, gated work, multi-step)
+      // keeps the terse summary + Queue links.
+      const resultText =
+        outputs.length === 1 && answerBodies.length === 1
+          ? answerBodies[0]
+          : summaries.join("\n");
       const durationMs = Date.now() - startedAt;
 
       await db

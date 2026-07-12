@@ -35,6 +35,17 @@ const KIND_BY_SUBAGENT_KEY: Record<string, TethrOutputKind> = {
   icp: "icp_profile",
   messaging: "messaging",
   brand: "document",
+  // @tethr, the coordinator (Phase 12): chat answers inline into the
+  // conversation; plans are internal briefs that gate to the Queue.
+  chat: "answer",
+  plan: "brief",
+};
+
+// Per-subagent agentic turn budget. Chat stays snappy; plan gets room to
+// research before writing. Everything else keeps the provider default.
+const MAX_TURNS_BY_SUBAGENT_KEY: Record<string, number> = {
+  chat: 8,
+  plan: 12,
 };
 
 export interface SubagentJobInput {
@@ -63,6 +74,8 @@ export interface SubagentJobResult {
   kind: TethrOutputKind;
   gated: boolean;
   summary: string;
+  /** The full generated body — lets routing inline chat answers (kind "answer"). */
+  body: string;
   usage: LLMUsage;
 }
 
@@ -128,6 +141,7 @@ export function workerService(db: Db) {
       system,
       prompt: input.request,
       kind,
+      maxTurns: MAX_TURNS_BY_SUBAGENT_KEY[input.subagent.key],
       context: { agentTag: input.agentTag, subagentTag: input.subagent.tag },
       tools: tools.map((t) => ({
         name: t.name,
@@ -208,7 +222,10 @@ export function workerService(db: Db) {
       gated,
       summary: gated
         ? `${output.title} — staged in the Queue for human review (${sensitivity}-sensitive).`
-        : `${output.title} — published to the Drive.`,
+        : kind === "answer"
+          ? `${input.subagent.tag} answered.`
+          : `${output.title} — published to the Drive.`,
+      body: output.body,
       usage: generated.usage,
     };
   }

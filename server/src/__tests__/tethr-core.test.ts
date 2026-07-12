@@ -2,8 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
-import { companies, createDb, tethrAgentProfiles } from "@paperclipai/db";
+import { and, eq } from "drizzle-orm";
+import { companies, createDb, tethrAgentProfiles, tethrDriveNodes, tethrMemories } from "@paperclipai/db";
 import { orgService } from "../tethr/org.ts";
 import { routingService } from "../tethr/routing.ts";
 import { seedWandrGrowth } from "../tethr/seed/seed.ts";
@@ -115,6 +115,51 @@ describeEmbeddedPostgres("tethr clean-slate org (@tethr coordinator)", () => {
     expect(result.hops[0]?.actorTag).toBe("@tethr");
     expect(result.outputs.length).toBeGreaterThan(0);
     expect(result.resultText.length).toBeGreaterThan(0);
+  });
+
+  it("inlines the chat answer body as resultText (not a 'published' stub)", async () => {
+    const routing = routingService(db);
+    const result = await routing.routeRequest({
+      companyId,
+      requestText: "How are we doing on travel content this week?",
+    });
+    // The human reads the actual answer, not "Title — published to the Drive."
+    expect(result.status).toBe("done");
+    expect(result.resultText).not.toContain("published to the Drive");
+    expect(result.resultText).not.toContain("staged in the Queue");
+    expect(result.resultText.length).toBeGreaterThan(40);
+    // It routed through the chat subagent and produced an "answer" output.
+    expect(result.hops.some((h) => h.actorTag === "@tethr.chat")).toBe(true);
+  });
+
+  it("logs chat answers to /tethr/chat-log and never to the published-content dedup log", async () => {
+    const routing = routingService(db);
+    await routing.routeRequest({
+      companyId,
+      requestText: "Quick sanity check — are we set up correctly?",
+    });
+    // A chat-log file exists…
+    const chatLog = await db
+      .select()
+      .from(tethrDriveNodes)
+      .where(
+        and(
+          eq(tethrDriveNodes.companyId, companyId),
+          eq(tethrDriveNodes.kind, "file"),
+        ),
+      );
+    expect(chatLog.some((n) => (n.path ?? "").startsWith("/tethr/chat-log/"))).toBe(true);
+    // …but no published-content memory was recorded for a chat answer.
+    const memories = await db
+      .select()
+      .from(tethrMemories)
+      .where(
+        and(
+          eq(tethrMemories.companyId, companyId),
+          eq(tethrMemories.kind, "published-content"),
+        ),
+      );
+    expect(memories.length).toBe(0);
   });
 
   it("survives a request the mock would plan across agents that don't exist", async () => {

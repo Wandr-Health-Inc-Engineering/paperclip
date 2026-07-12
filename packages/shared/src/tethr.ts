@@ -45,6 +45,9 @@ export const TETHR_OUTPUT_KINDS = [
   "icp_profile",
   "messaging",
   "document",
+  // Phase 12: a direct chat answer from the coordinator — inlined into the
+  // conversation, logged to /tethr/chat-log, never treated as published content.
+  "answer",
 ] as const;
 export type TethrOutputKind = (typeof TETHR_OUTPUT_KINDS)[number];
 

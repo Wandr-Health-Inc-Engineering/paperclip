@@ -424,6 +424,13 @@ ${prompt.trim()}
 
 Result prepared by the assigned subagent with standing guardrails applied.`,
   }),
+  // A direct coordinator reply — reads like a chat answer, not a document.
+  answer: (topic, prompt) => ({
+    title: `Re: ${capitalize(topic)}`,
+    body: `Here's where things stand on "${prompt.trim().slice(0, 120)}":
+
+Right now the org is just me (Tethr) — I answer directly and draft plans; the specialist agents get re-added one at a time. For "${topic}", I can give you the coordinator's read now, or draft a full plan to the Drive if you want something you can act on. Say the word.`,
+  }),
 };
 
 function capitalize(text: string): string {
