@@ -68,7 +68,27 @@ export function memoryService(db: Db) {
       .limit(limit);
   }
 
-  return { record, list, recall };
+  /**
+   * Forget an agent's run-history memories (the ephemeral "what I just did"
+   * notes that drive recency recall). Scoped to kind "history" for one agent —
+   * facts, rules, preferences, and published-content are never touched. Used by
+   * the chat reset command to wipe conversational bleed on demand.
+   */
+  async function clearHistory(companyId: string, agentId: string) {
+    const deleted = await db
+      .delete(tethrMemories)
+      .where(
+        and(
+          eq(tethrMemories.companyId, companyId),
+          eq(tethrMemories.agentId, agentId),
+          eq(tethrMemories.kind, "history"),
+        ),
+      )
+      .returning({ id: tethrMemories.id });
+    return deleted.length;
+  }
+
+  return { record, list, recall, clearHistory };
 }
 
 export type MemoryService = ReturnType<typeof memoryService>;

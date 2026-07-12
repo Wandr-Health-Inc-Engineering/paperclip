@@ -8,7 +8,9 @@ import { orgService } from "../tethr/org.ts";
 import { routingService } from "../tethr/routing.ts";
 import { seedWandrGrowth } from "../tethr/seed/seed.ts";
 import { seedTethrCore } from "../tethr/seed/tethr-core.ts";
+import { memoryService } from "../tethr/memory.ts";
 import {
+  handleConversationReset,
   overseerMention,
   resolveContinuationThreadId,
   resolveOverseer,
@@ -242,25 +244,75 @@ describeEmbeddedPostgres("tethr clean-slate org (@tethr coordinator)", () => {
   });
 
   it("resolves an agent's overseer, falling back to the org default", async () => {
-    // No overseer assigned yet → falls back to the env default (the team lead).
     const saved = process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID;
     const savedName = process.env.TETHR_DEFAULT_OVERSEER_NAME;
-    process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID = "U_MARK";
-    process.env.TETHR_DEFAULT_OVERSEER_NAME = "Mark";
     try {
+      // With a default set → that's the overseer, @-mentioned.
+      process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID = "U_MARK";
+      process.env.TETHR_DEFAULT_OVERSEER_NAME = "Mark";
       const o = await resolveOverseer(db, companyId, "@tethr");
       expect(o.slackId).toBe("U_MARK");
       expect(overseerMention(o)).toBe("<@U_MARK>");
+
+      // With no default set → the mention degrades to a plain name (never crashes).
+      delete process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID;
+      delete process.env.TETHR_DEFAULT_OVERSEER_NAME;
+      const noDefault = await resolveOverseer(db, companyId, "@tethr");
+      expect(noDefault.slackId).toBeUndefined();
+      expect(overseerMention(noDefault)).toBe("the overseer");
     } finally {
       if (saved === undefined) delete process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID;
       else process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID = saved;
       if (savedName === undefined) delete process.env.TETHR_DEFAULT_OVERSEER_NAME;
       else process.env.TETHR_DEFAULT_OVERSEER_NAME = savedName;
     }
-    // With no default set, the mention degrades to a plain name (never crashes).
-    const noDefault = await resolveOverseer(db, companyId, "@tethr");
-    expect(noDefault.slackId).toBeUndefined();
-    expect(overseerMention(noDefault)).toBe("the overseer");
+  });
+
+  it("a chat answer does not record a recallable history memory", async () => {
+    const org = orgService(db);
+    const router = await org.getRouterProfile(companyId);
+    const agentId = router!.agent.id;
+    const mem = memoryService(db);
+    const historyCount = async () =>
+      (await mem.list(companyId, { agentId })).filter((m) => m.kind === "history").length;
+    const before = await historyCount();
+    await routingService(db).routeRequest({
+      companyId,
+      requestText: "Quick question — what are SEO basics?",
+    });
+    // Chat is ephemeral: it must not add to the recency-recalled history.
+    expect(await historyCount()).toBe(before);
+  });
+
+  it("reset wipes the chat: history cleared, continuity starts fresh", async () => {
+    const routing = routingService(db);
+    const org = orgService(db);
+    const mem = memoryService(db);
+    const agentId = (await org.getRouterProfile(companyId))!.agent.id;
+    const sourceKey = "slack:im:D-WIPE";
+
+    // Seed a history memory + a fact, and start a conversation.
+    await mem.record({ companyId, agentId, kind: "history", content: "chatted about Peru budgets" });
+    await mem.record({ companyId, agentId, kind: "fact", content: "Standing fact: CAC target is $40" });
+    const first = await routing.routeRequest({
+      companyId,
+      requestText: "We're focused on Peru right now.",
+      sourceKey,
+    });
+    expect(await resolveContinuationThreadId(db, companyId, sourceKey, { isDM: true })).toBe(first.threadId);
+
+    // Wipe.
+    await handleConversationReset(db, companyId, sourceKey);
+
+    // History is gone; the standing fact survives.
+    const remaining = await mem.list(companyId, { agentId });
+    expect(remaining.some((m) => m.kind === "history")).toBe(false);
+    expect(remaining.some((m) => m.content.includes("CAC target is $40"))).toBe(true);
+
+    // Continuity no longer resumes the pre-reset thread (it caps at the marker).
+    const after = await resolveContinuationThreadId(db, companyId, sourceKey, { isDM: true });
+    expect(after).not.toBe(first.threadId);
+    expect(after).not.toBeNull();
   });
 
   it("surfaces an escalation up through routing when the agent raises a hand", async () => {

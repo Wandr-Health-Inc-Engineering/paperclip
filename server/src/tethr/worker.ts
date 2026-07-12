@@ -214,16 +214,21 @@ export function workerService(db: Db) {
       .where(eq(agents.id, input.agentId));
 
     const gated = output.status === "gated";
-    const memoryNote = gated
-      ? `${input.subagent.tag} staged "${output.title}" for human review (${sensitivity}).`
-      : `${input.subagent.tag} produced "${output.title}".`;
-    await memory.record({
-      companyId: input.companyId,
-      agentId: input.agentId,
-      kind: "history",
-      content: memoryNote,
-      source: input.subagent.tag,
-    });
+    // Chat answers are ephemeral conversation, not org history — recording them
+    // would make recent chatter bleed into future recall (recency-ordered).
+    // They're already audit-logged to the Drive chat-log; skip the memory.
+    if (kind !== "answer") {
+      const memoryNote = gated
+        ? `${input.subagent.tag} staged "${output.title}" for human review (${sensitivity}).`
+        : `${input.subagent.tag} produced "${output.title}".`;
+      await memory.record({
+        companyId: input.companyId,
+        agentId: input.agentId,
+        kind: "history",
+        content: memoryNote,
+        source: input.subagent.tag,
+      });
+    }
 
     return {
       outputId: output.id,

@@ -9,6 +9,7 @@ import {
   postSlackMessage,
   slackConfigured,
   slackSourceKey,
+  stripResetPhrase,
   verifySlackSignature,
 } from "../tethr/slack.js";
 
@@ -146,11 +147,26 @@ describe("slack conversation continuity helpers", () => {
     expect(slackSourceKey({})).toBeNull();
   });
 
-  it("detects a 'new topic' reset that forces a fresh thread", () => {
+  it("detects a reset/wipe command that forces a fresh thread", () => {
     expect(isResetPhrase("new topic — how's SEO?")).toBe(true);
     expect(isResetPhrase("Start over")).toBe(true);
     expect(isResetPhrase("nevermind")).toBe(true);
+    expect(isResetPhrase("wipe memory")).toBe(true);
+    expect(isResetPhrase("clear the chat")).toBe(true);
+    expect(isResetPhrase("forget everything")).toBe(true);
+    expect(isResetPhrase("new chat")).toBe(true);
+    // Not a reset: normal questions that merely contain a keyword mid-sentence.
     expect(isResetPhrase("what's our ad spend?")).toBe(false);
+    expect(isResetPhrase("clearly we should ship this")).toBe(false);
+    expect(isResetPhrase("can you reset expectations with the vendor?")).toBe(false);
+  });
+
+  it("strips the reset command, leaving any real question that followed", () => {
+    expect(stripResetPhrase("new topic — how's SEO?")).toBe("how's SEO?");
+    expect(stripResetPhrase("reset")).toBe("");
+    expect(stripResetPhrase("wipe memory")).toBe("");
+    expect(stripResetPhrase("new topic: how are ads doing?")).toBe("how are ads doing?");
+    expect(stripResetPhrase("forget everything, what's our CAC?")).toBe("what's our CAC?");
   });
 
   it("chunks long answers on boundaries, short ones pass through whole", () => {

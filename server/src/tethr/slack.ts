@@ -16,6 +16,7 @@ import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { companies, tethrAgentProfiles, tethrRouteRuns } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
+import { memoryService } from "./memory.js";
 
 const SLACK_API = "https://slack.com/api";
 
@@ -313,9 +314,22 @@ export function slackSourceKey(interp: {
   return null;
 }
 
-/** "new topic" / "start over" forces a fresh conversation even in a live DM. */
+/**
+ * A leading command that wipes the conversation: "reset", "new topic",
+ * "clear/wipe (the chat|memory|context)", "forget everything", "fresh start".
+ * Matched at the start so a normal question mentioning "reset" isn't caught.
+ */
+const RESET_RE =
+  /^\s*(new topic|start over|new (chat|thread|conversation)|reset|clear(\s+(the\s+)?(chat|memory|context|conversation))?|wipe(\s+(the\s+)?(chat|memory|context|conversation))?|forget(\s+(all|everything|the\s+(chat|context|conversation)))?|fresh start|nvm|never\s?mind)\b[\s,:.!—-]*/i;
+
+/** True when the message opens with a reset/wipe command. */
 export function isResetPhrase(text: string): boolean {
-  return /^\s*(new topic|start over|new thread|reset|nvm|never ?mind)\b/i.test(text);
+  return RESET_RE.test(text);
+}
+
+/** Remove a leading reset command, returning any real request that followed. */
+export function stripResetPhrase(text: string): string {
+  return text.replace(RESET_RE, "").trim();
 }
 
 /** Split a long answer into Slack-sized chunks on paragraph/line boundaries. */
@@ -367,6 +381,51 @@ export async function resolveContinuationThreadId(
 }
 
 /**
+ * Wipe the conversation for a Slack origin: forget the coordinator's recent
+ * run-history (so recency recall stops bleeding old chatter in) and drop a
+ * reset marker so a later message in this DM/thread starts from a clean slate
+ * instead of resuming the pre-reset conversation. Best-effort.
+ */
+export async function handleConversationReset(
+  db: Db,
+  companyId: string,
+  sourceKey: string | null,
+): Promise<void> {
+  // Forget @tethr's run-history memories (kind "history" only — facts, rules,
+  // and seeded knowledge are untouched).
+  const [coordinator] = await db
+    .select({ agentId: tethrAgentProfiles.agentId })
+    .from(tethrAgentProfiles)
+    .where(and(eq(tethrAgentProfiles.companyId, companyId), eq(tethrAgentProfiles.tag, "@tethr")))
+    .limit(1);
+  if (coordinator) {
+    await memoryService(db).clearHistory(companyId, coordinator.agentId).catch(() => {});
+  }
+  // Cap the conversation: a marker run with a fresh thread so continuity for
+  // this origin resolves past everything said before the reset.
+  if (sourceKey) {
+    const [marker] = await db
+      .insert(tethrRouteRuns)
+      .values({
+        companyId,
+        requestText: "(conversation reset)",
+        invocationSource: "api",
+        sourceKey,
+        status: "done",
+        resultText: "Conversation reset by the user.",
+        llmProvider: "system",
+      })
+      .returning({ id: tethrRouteRuns.id });
+    if (marker) {
+      await db
+        .update(tethrRouteRuns)
+        .set({ threadId: marker.id })
+        .where(eq(tethrRouteRuns.id, marker.id));
+    }
+  }
+}
+
+/**
  * Turn an interpreted kickoff into a routed Tethr task: the answer is posted
  * back to the originating thread when the run finishes (a quick "On it" ack
  * only if the run is slow). Replies in the same Slack thread/DM continue the
@@ -383,10 +442,28 @@ export async function routeInboundKickoff(
     logger.warn("tethr slack: no Tethr company resolved for inbound kickoff");
     return null;
   }
-  // Continuity: reuse the live thread for this Slack origin unless the user
-  // explicitly opens a new topic.
+
   const sourceKey = slackSourceKey(interp);
-  const threadId = isResetPhrase(interp.requestText)
+  const resetting = isResetPhrase(interp.requestText);
+  const requestText = resetting ? stripResetPhrase(interp.requestText) : interp.requestText;
+
+  // A bare "reset" / "wipe memory" with no follow-up question: forget the
+  // conversation and confirm — nothing to route.
+  if (resetting && !requestText) {
+    await handleConversationReset(db, companyId, sourceKey);
+    await postSlackMessage({
+      channel: interp.channel,
+      threadTs: interp.threadTs,
+      text: "🧹 Cleared. Fresh start — I won't carry anything from before into this conversation. What's next?",
+    });
+    return null;
+  }
+  // A reset that carries a question ("new topic — how are ads?"): wipe first,
+  // then answer the new question in a fresh thread.
+  if (resetting) await handleConversationReset(db, companyId, sourceKey);
+
+  // Continuity: reuse the live thread for this Slack origin unless we just reset.
+  const threadId = resetting
     ? null
     : await resolveContinuationThreadId(db, companyId, sourceKey, { isDM: interp.isDM });
 
@@ -404,7 +481,7 @@ export async function routeInboundKickoff(
     runPromise = routing
       .routeRequest({
         companyId,
-        requestText: interp.requestText,
+        requestText,
         invocationSource: "api",
         threadId,
         sourceKey,
