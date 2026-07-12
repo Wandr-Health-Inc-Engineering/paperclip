@@ -15,6 +15,7 @@ import {
   resolveContinuationThreadId,
   resolveOverseer,
   resolveTethrCompanyId,
+  routeInboundKickoff,
 } from "../tethr/slack.ts";
 import { toolsetForSubagent } from "../tethr/tools/index.ts";
 import {
@@ -313,6 +314,33 @@ describeEmbeddedPostgres("tethr clean-slate org (@tethr coordinator)", () => {
     const after = await resolveContinuationThreadId(db, companyId, sourceKey, { isDM: true });
     expect(after).not.toBe(first.threadId);
     expect(after).not.toBeNull();
+  });
+
+  it("requires a confirmation before wiping — 'yes' clears, anything else cancels", async () => {
+    const org = orgService(db);
+    const mem = memoryService(db);
+    const agentId = (await org.getRouterProfile(companyId))!.agent.id;
+    const hasHistory = async () =>
+      (await mem.list(companyId, { agentId })).some((m) => m.kind === "history");
+
+    // Cancel path: reset command prompts, but a non-yes reply leaves memory intact.
+    await mem.record({ companyId, agentId, kind: "history", content: "keep me unless confirmed" });
+    const prompt = await routeInboundKickoff(db, {
+      requestText: "clean up",
+      channel: "D-CONFIRM-A",
+      isDM: true,
+    });
+    expect(prompt).toBeNull(); // asked to confirm, nothing routed
+    expect(await hasHistory()).toBe(true); // NOT wiped yet
+    // A different message cancels the pending wipe.
+    await routeInboundKickoff(db, { requestText: "actually, what's our CAC?", channel: "D-CONFIRM-A", isDM: true });
+    expect(await hasHistory()).toBe(true); // still not wiped
+
+    // Confirm path: reset command, then "yes" → wiped.
+    await routeInboundKickoff(db, { requestText: "wipe memory", channel: "D-CONFIRM-B", isDM: true });
+    expect(await hasHistory()).toBe(true); // prompt only
+    await routeInboundKickoff(db, { requestText: "yes", channel: "D-CONFIRM-B", isDM: true });
+    expect(await hasHistory()).toBe(false); // confirmed → cleared
   });
 
   it("surfaces an escalation up through routing when the agent raises a hand", async () => {

@@ -5,6 +5,7 @@ import {
   chunkSlackText,
   extractLinks,
   interpretSlackEvent,
+  isAffirmative,
   isResetPhrase,
   postSlackMessage,
   slackConfigured,
@@ -161,12 +162,28 @@ describe("slack conversation continuity helpers", () => {
     expect(isResetPhrase("can you reset expectations with the vendor?")).toBe(false);
   });
 
+  it("recognizes 'clean up' / 'clean slate' as wipe commands", () => {
+    expect(isResetPhrase("clean up")).toBe(true);
+    expect(isResetPhrase("cleanup")).toBe(true);
+    expect(isResetPhrase("clean slate")).toBe(true);
+    expect(stripResetPhrase("clean up")).toBe("");
+  });
+
   it("strips the reset command, leaving any real question that followed", () => {
     expect(stripResetPhrase("new topic — how's SEO?")).toBe("how's SEO?");
     expect(stripResetPhrase("reset")).toBe("");
     expect(stripResetPhrase("wipe memory")).toBe("");
     expect(stripResetPhrase("new topic: how are ads doing?")).toBe("how are ads doing?");
     expect(stripResetPhrase("forget everything, what's our CAC?")).toBe("what's our CAC?");
+  });
+
+  it("treats a short yes as confirmation, but not a real message", () => {
+    for (const yes of ["yes", "y", "Yep", "confirm", "do it", "ok", "sure", "wipe it"]) {
+      expect(isAffirmative(yes), yes).toBe(true);
+    }
+    for (const no of ["no", "not yet", "yes but keep the Peru notes", "actually how are ads?"]) {
+      expect(isAffirmative(no), no).toBe(false);
+    }
   });
 
   it("chunks long answers on boundaries, short ones pass through whole", () => {

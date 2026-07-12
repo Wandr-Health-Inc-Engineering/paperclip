@@ -299,6 +299,16 @@ const ACK_AFTER_MS = 4000;
 /** Slack messages cap ~4k chars; chunk below that with headroom. */
 const SLACK_CHUNK_CHARS = 2900;
 const MAX_ANSWER_CHUNKS = 4;
+/** A wipe must be confirmed within this window or the request lapses. */
+const RESET_CONFIRM_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Wipes are two-step to avoid accidents: a reset command asks for confirmation
+ * and parks the request here (keyed by Slack origin) until the next message
+ * confirms it. In-memory by design — a confirmation is seconds-long and never
+ * needs to survive a restart. Any carried question is answered after the wipe.
+ */
+const pendingResets = new Map<string, { question: string; expiresAt: number }>();
 
 /** Origin key so a later message from the same Slack thread/DM continues it. */
 export function slackSourceKey(interp: {
@@ -320,7 +330,7 @@ export function slackSourceKey(interp: {
  * Matched at the start so a normal question mentioning "reset" isn't caught.
  */
 const RESET_RE =
-  /^\s*(new topic|start over|new (chat|thread|conversation)|reset|clear(\s+(the\s+)?(chat|memory|context|conversation))?|wipe(\s+(the\s+)?(chat|memory|context|conversation))?|forget(\s+(all|everything|the\s+(chat|context|conversation)))?|fresh start|nvm|never\s?mind)\b[\s,:.!—-]*/i;
+  /^\s*(new topic|start over|new (chat|thread|conversation)|reset|clean\s?up(\s+(the\s+)?(chat|memory|context|conversation))?|clean slate|clear(\s+(the\s+)?(chat|memory|context|conversation))?|wipe(\s+(the\s+)?(chat|memory|context|conversation))?|forget(\s+(all|everything|the\s+(chat|context|conversation)))?|fresh start|nvm|never\s?mind)\b[\s,:.!—-]*/i;
 
 /** True when the message opens with a reset/wipe command. */
 export function isResetPhrase(text: string): boolean {
@@ -330,6 +340,13 @@ export function isResetPhrase(text: string): boolean {
 /** Remove a leading reset command, returning any real request that followed. */
 export function stripResetPhrase(text: string): string {
   return text.replace(RESET_RE, "").trim();
+}
+
+/** A short yes to a confirmation prompt (wipe only proceeds on this). */
+export function isAffirmative(text: string): boolean {
+  return /^\s*(y|yes+|yep|yeah|yup|confirm(ed)?|do it|go( ahead)?|sure|ok(ay)?|clear it|wipe it|please do)\b[\s.!]*$/i.test(
+    text,
+  );
 }
 
 /** Split a long answer into Slack-sized chunks on paragraph/line boundaries. */
@@ -444,26 +461,52 @@ export async function routeInboundKickoff(
   }
 
   const sourceKey = slackSourceKey(interp);
-  const resetting = isResetPhrase(interp.requestText);
-  const requestText = resetting ? stripResetPhrase(interp.requestText) : interp.requestText;
+  const now = Date.now();
 
-  // A bare "reset" / "wipe memory" with no follow-up question: forget the
-  // conversation and confirm — nothing to route.
-  if (resetting && !requestText) {
-    await handleConversationReset(db, companyId, sourceKey);
-    await postSlackMessage({
-      channel: interp.channel,
-      threadTs: interp.threadTs,
-      text: "🧹 Cleared. Fresh start — I won't carry anything from before into this conversation. What's next?",
-    });
-    return null;
+  // Wipes are confirmed, not immediate. A reset command asks first and parks
+  // any carried question; the next message confirms (wipe) or cancels (route
+  // it normally). Requires a sourceKey to correlate the two turns.
+  let requestText = interp.requestText;
+  let forceFresh = false;
+  if (sourceKey) {
+    if (isResetPhrase(interp.requestText)) {
+      // New/repeat reset command → confirm before wiping. Don't route yet.
+      pendingResets.set(sourceKey, {
+        question: stripResetPhrase(interp.requestText),
+        expiresAt: now + RESET_CONFIRM_TTL_MS,
+      });
+      await postSlackMessage({
+        channel: interp.channel,
+        threadTs: interp.threadTs,
+        text: "⚠️ This clears what I remember from our current conversation (your standing facts and settings stay). Reply *yes* to confirm — or just keep chatting to cancel.",
+      });
+      return null;
+    }
+    const pending = pendingResets.get(sourceKey);
+    if (pending) {
+      pendingResets.delete(sourceKey);
+      if (pending.expiresAt > now && isAffirmative(interp.requestText)) {
+        await handleConversationReset(db, companyId, sourceKey);
+        if (!pending.question) {
+          await postSlackMessage({
+            channel: interp.channel,
+            threadTs: interp.threadTs,
+            text: "🧹 Cleared — fresh start. What's next?",
+          });
+          return null;
+        }
+        // A reset that carried a question ("new topic — how are ads?"): wiped,
+        // now answer it in a fresh thread.
+        requestText = pending.question;
+        forceFresh = true;
+      }
+      // Not a confirmation (or expired) → the pending wipe is cancelled and this
+      // message is treated as an ordinary request.
+    }
   }
-  // A reset that carries a question ("new topic — how are ads?"): wipe first,
-  // then answer the new question in a fresh thread.
-  if (resetting) await handleConversationReset(db, companyId, sourceKey);
 
   // Continuity: reuse the live thread for this Slack origin unless we just reset.
-  const threadId = resetting
+  const threadId = forceFresh
     ? null
     : await resolveContinuationThreadId(db, companyId, sourceKey, { isDM: interp.isDM });
 
