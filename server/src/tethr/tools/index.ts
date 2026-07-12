@@ -3,6 +3,7 @@ import {
   driveListTool,
   driveReadTool,
   driveWriteTool,
+  escalateTool,
   notifyTool,
   recallMemoryTool,
 } from "./internal.js";
@@ -24,6 +25,7 @@ const ALL_TOOLS: Record<string, TethrTool> = Object.fromEntries(
     driveReadTool,
     driveWriteTool,
     recallMemoryTool,
+    escalateTool,
     notifyTool,
     readTrackerTool,
     advanceTrackerTool,
@@ -36,7 +38,9 @@ const ALL_TOOLS: Record<string, TethrTool> = Object.fromEntries(
 // everyone: read the Drive + recall memory. Web reach and tracker writes are
 // granted only where the spec calls for them. Nothing here can publish —
 // publishing only happens through the gating service.
-const BASELINE = ["drive_list", "drive_read", "recall_memory"];
+// Every agent can read the Drive, recall memory, and raise a hand to its human
+// overseer. Escalation is universal — that's the point of the overseer model.
+const BASELINE = ["drive_list", "drive_read", "recall_memory", "escalate"];
 
 const ALLOWLIST: Record<string, string[]> = {
   // Tethr — the coordinator (Phase 11 clean slate). Chat answers directly and

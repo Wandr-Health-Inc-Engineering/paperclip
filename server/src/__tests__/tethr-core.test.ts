@@ -8,7 +8,12 @@ import { orgService } from "../tethr/org.ts";
 import { routingService } from "../tethr/routing.ts";
 import { seedWandrGrowth } from "../tethr/seed/seed.ts";
 import { seedTethrCore } from "../tethr/seed/tethr-core.ts";
-import { resolveContinuationThreadId, resolveTethrCompanyId } from "../tethr/slack.ts";
+import {
+  overseerMention,
+  resolveContinuationThreadId,
+  resolveOverseer,
+  resolveTethrCompanyId,
+} from "../tethr/slack.ts";
 import { toolsetForSubagent } from "../tethr/tools/index.ts";
 import {
   getEmbeddedPostgresTestSupport,
@@ -227,10 +232,47 @@ describeEmbeddedPostgres("tethr clean-slate org (@tethr coordinator)", () => {
   it("keeps Tethr's toolset read-safe: chat can't write, neither can publish", () => {
     const chatTools = toolsetForSubagent({ tag: "@tethr.chat" }).map((t) => t.name);
     expect(chatTools).toContain("google_ads_report");
+    expect(chatTools).toContain("escalate"); // can raise a hand to its overseer
     expect(chatTools).not.toContain("drive_write");
     expect(chatTools).not.toContain("notify");
     const planTools = toolsetForSubagent({ tag: "@tethr.plan" }).map((t) => t.name);
     expect(planTools).toContain("drive_write");
+    expect(planTools).toContain("escalate");
     expect(planTools).not.toContain("notify");
+  });
+
+  it("resolves an agent's overseer, falling back to the org default", async () => {
+    // No overseer assigned yet → falls back to the env default (the team lead).
+    const saved = process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID;
+    const savedName = process.env.TETHR_DEFAULT_OVERSEER_NAME;
+    process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID = "U_MARK";
+    process.env.TETHR_DEFAULT_OVERSEER_NAME = "Mark";
+    try {
+      const o = await resolveOverseer(db, companyId, "@tethr");
+      expect(o.slackId).toBe("U_MARK");
+      expect(overseerMention(o)).toBe("<@U_MARK>");
+    } finally {
+      if (saved === undefined) delete process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID;
+      else process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID = saved;
+      if (savedName === undefined) delete process.env.TETHR_DEFAULT_OVERSEER_NAME;
+      else process.env.TETHR_DEFAULT_OVERSEER_NAME = savedName;
+    }
+    // With no default set, the mention degrades to a plain name (never crashes).
+    const noDefault = await resolveOverseer(db, companyId, "@tethr");
+    expect(noDefault.slackId).toBeUndefined();
+    expect(overseerMention(noDefault)).toBe("the overseer");
+  });
+
+  it("surfaces an escalation up through routing when the agent raises a hand", async () => {
+    const routing = routingService(db);
+    // The mock escalates when the request explicitly needs a human decision.
+    const result = await routing.routeRequest({
+      companyId,
+      requestText: "I need your call on this — should we escalate the Peru budget to Mark?",
+    });
+    expect(result.status).not.toBe("failed");
+    expect(result.escalations.length).toBe(1);
+    expect(result.escalations[0].agentTag).toBe("@tethr");
+    expect(result.escalations[0].note.length).toBeGreaterThan(0);
   });
 });

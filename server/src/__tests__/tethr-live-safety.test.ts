@@ -33,16 +33,21 @@ describe("Sonar live-run safety (tool allowlist)", () => {
   });
 
   it("otherwise limits Sonar to read/fetch tools", () => {
+    // escalate is baseline (every agent can raise a hand to its overseer); it
+    // reaches a human via an in-thread mention, not an external publish, so it
+    // is not part of the external-vector surface asserted above.
     expect(toolsetForSubagent({ tag: "@sonar.reply" }).map((t) => t.name)).toEqual([
       "drive_list",
       "drive_read",
       "recall_memory",
+      "escalate",
       "reddit_scan",
     ]);
     expect(toolsetForSubagent({ tag: "@sonar.news" }).map((t) => t.name)).toEqual([
       "drive_list",
       "drive_read",
       "recall_memory",
+      "escalate",
       "cdc_scan",
       "web_fetch",
     ]);

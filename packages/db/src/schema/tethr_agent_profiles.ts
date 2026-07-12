@@ -34,6 +34,11 @@ export const tethrAgentProfiles = pgTable(
     tag: text("tag").notNull(),
     codename: text("codename").notNull(),
     mission: text("mission"),
+    // The human who oversees this agent — tagged in Slack when it stages work
+    // for approval or escalates a question. Falls back to the org default
+    // overseer (TETHR_DEFAULT_OVERSEER_SLACK_ID) when unset.
+    overseerSlackId: text("overseer_slack_id"),
+    overseerName: text("overseer_name"),
     approvalGate: text("approval_gate").notNull().default("none"),
     heartbeatCron: text("heartbeat_cron"),
     heartbeatNote: text("heartbeat_note"),

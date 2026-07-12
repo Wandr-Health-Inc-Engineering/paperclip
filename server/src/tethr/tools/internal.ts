@@ -120,6 +120,37 @@ export const recallMemoryTool: TethrTool = {
   },
 };
 
+export const escalateTool: TethrTool = {
+  name: "escalate",
+  description:
+    "Raise a question or blocker to your human overseer when you genuinely cannot resolve it yourself — a decision only a human can make, or information you don't have. The overseer is tagged directly in the conversation thread. Use sparingly: answer or draft a plan when you can; escalate only when a human is truly needed.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      question: {
+        type: "string",
+        description: "The specific question or decision the overseer needs to weigh in on.",
+      },
+      urgency: { type: "string", enum: ["low", "normal", "high"], description: "Default normal." },
+    },
+    required: ["question"],
+    additionalProperties: false,
+  },
+  // The escalation is carried by this tool-call record; the worker detects it and
+  // the Slack layer tags the overseer in the originating thread. Nothing is
+  // published or sent from here.
+  async execute(_ctx, input) {
+    const question = String(input.question ?? "").trim();
+    if (!question) {
+      return { output: "Provide the question to escalate.", summary: "escalate: (empty, ignored)" };
+    }
+    return {
+      output: `Escalation noted — your overseer will be tagged in this thread with: "${question.slice(0, 200)}". Continue with what you can do meanwhile.`,
+      summary: `escalated: ${question.slice(0, 80)}`,
+    };
+  },
+};
+
 export const notifyTool: TethrTool = {
   name: "notify",
   description:

@@ -250,6 +250,45 @@ export async function resolveTethrCompanyId(db: Db): Promise<string | null> {
   return row?.id ?? null;
 }
 
+// ---- Overseer resolution (who to tag when an agent needs a human) ----------
+
+export interface Overseer {
+  /** Slack user id for an @-mention, if known. */
+  slackId?: string;
+  /** Display name, for the message text / fallback when no slackId. */
+  name: string;
+}
+
+/**
+ * The human who oversees an agent: the agent's assigned overseer, else the org
+ * default (TETHR_DEFAULT_OVERSEER_SLACK_ID / _NAME). This is who gets tagged in
+ * the originating thread when the agent stages work for approval or escalates.
+ */
+export async function resolveOverseer(
+  db: Db,
+  companyId: string,
+  agentTag: string,
+): Promise<Overseer> {
+  const [profile] = await db
+    .select({
+      slackId: tethrAgentProfiles.overseerSlackId,
+      name: tethrAgentProfiles.overseerName,
+    })
+    .from(tethrAgentProfiles)
+    .where(and(eq(tethrAgentProfiles.companyId, companyId), eq(tethrAgentProfiles.tag, agentTag)))
+    .limit(1);
+  const slackId =
+    profile?.slackId?.trim() || process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID?.trim() || undefined;
+  const name =
+    profile?.name?.trim() || process.env.TETHR_DEFAULT_OVERSEER_NAME?.trim() || "the overseer";
+  return { slackId, name };
+}
+
+/** Slack @-mention when we have a user id, otherwise the plain display name. */
+export function overseerMention(o: Overseer): string {
+  return o.slackId ? `<@${o.slackId}>` : o.name;
+}
+
 // ---- Inbound routing + Socket Mode (local-friendly, no public URL) ---------
 
 /** A DM is one rolling conversation; a reply after this gap starts fresh. */
@@ -354,7 +393,13 @@ export async function routeInboundKickoff(
   // Dynamic import breaks the notify → slack → routing → notify module cycle.
   const { routingService } = await import("./routing.js");
   const routing = routingService(db);
-  let runPromise!: Promise<{ status: string; resultText: string }>;
+  type RunResult = {
+    status: string;
+    resultText: string;
+    outputs: Array<{ title: string; gated: boolean; agentTag: string }>;
+    escalations: Array<{ agentTag: string; note: string; urgency: string }>;
+  };
+  let runPromise!: Promise<RunResult>;
   const ids = await new Promise<{ routeRunId: string; threadId: string }>((resolve, reject) => {
     runPromise = routing
       .routeRequest({
@@ -368,7 +413,12 @@ export async function routeInboundKickoff(
       })
       .catch((err) => {
         reject(err);
-        return { status: "failed", resultText: err instanceof Error ? err.message : String(err) };
+        return {
+          status: "failed",
+          resultText: err instanceof Error ? err.message : String(err),
+          outputs: [],
+          escalations: [],
+        };
       });
   });
 
@@ -390,6 +440,7 @@ export async function routeInboundKickoff(
       settled = true;
       clearTimeout(ackTimer);
       await postAnswerToThread(interp, result);
+      await tagOverseersInThread(db, companyId, interp, result);
     })
     .catch((err) => {
       settled = true;
@@ -397,6 +448,50 @@ export async function routeInboundKickoff(
       logger.warn({ err }, "tethr slack: failed to post the answer back");
     });
   return ids;
+}
+
+/**
+ * When the run staged gated work or an agent escalated, tag the responsible
+ * agent's human overseer directly in the originating thread — the two moments a
+ * human actually needs to step in. Best-effort; never throws into the caller.
+ */
+async function tagOverseersInThread(
+  db: Db,
+  companyId: string,
+  interp: { channel?: string; threadTs?: string },
+  result: {
+    outputs: Array<{ title: string; gated: boolean; agentTag: string }>;
+    escalations: Array<{ agentTag: string; note: string; urgency: string }>;
+  },
+): Promise<void> {
+  const lines: string[] = [];
+  // Cache overseer lookups per agent so we don't re-query for each item.
+  const overseerByAgent = new Map<string, Overseer>();
+  const overseerFor = async (agentTag: string): Promise<Overseer> => {
+    const cached = overseerByAgent.get(agentTag);
+    if (cached) return cached;
+    const o = await resolveOverseer(db, companyId, agentTag);
+    overseerByAgent.set(agentTag, o);
+    return o;
+  };
+
+  for (const esc of result.escalations) {
+    const o = await overseerFor(esc.agentTag);
+    const flag = esc.urgency === "high" ? " *(high priority)*" : "";
+    lines.push(`${overseerMention(o)} — ${esc.agentTag} needs your call${flag}: ${esc.note}`);
+  }
+  for (const out of result.outputs.filter((o) => o.gated)) {
+    const o = await overseerFor(out.agentTag);
+    lines.push(
+      `${overseerMention(o)} — ${out.agentTag} staged “${out.title}” for your review. Approve it in the Tethr Queue before it goes anywhere.`,
+    );
+  }
+  if (!lines.length) return;
+  await postSlackMessage({
+    channel: interp.channel,
+    threadTs: interp.threadTs,
+    text: lines.join("\n"),
+  });
 }
 
 /** Post a run's result to the originating thread, chunking long answers. */

@@ -54,7 +54,11 @@ export interface RouteRequestResult {
     title: string;
     status: string;
     gated: boolean;
+    /** The agent that produced it — used to resolve the overseer to tag. */
+    agentTag: string;
   }>;
+  /** Agents that raised a hand this run — their overseer gets tagged in-thread. */
+  escalations: Array<{ agentTag: string; note: string; urgency: string }>;
   usage: LLMUsage;
   llmProvider: string;
   durationMs: number;
@@ -182,6 +186,7 @@ export function routingService(db: Db) {
         hops,
         resultText: error,
         outputs: [],
+        escalations: [],
         usage,
         llmProvider: provider.id,
         durationMs: Date.now() - startedAt,
@@ -190,6 +195,7 @@ export function routingService(db: Db) {
 
     const outputs: RouteRequestResult["outputs"] = [];
     const summaries: string[] = [];
+    const escalations: RouteRequestResult["escalations"] = [];
     // Track chat-answer bodies so a single ungated answer can be inlined as the
     // result (what the human actually reads in Slack/Console) instead of a stub.
     const answerBodies: string[] = [];
@@ -289,9 +295,17 @@ export function routingService(db: Db) {
           title: result.title,
           status: result.status,
           gated: result.gated,
+          agentTag,
         });
         summaries.push(result.summary);
         if (result.kind === "answer" && !result.gated) answerBodies.push(result.body);
+        if (result.escalation) {
+          escalations.push({
+            agentTag,
+            note: result.escalation.note,
+            urgency: result.escalation.urgency,
+          });
+        }
       }
       return { ok: true };
     }
@@ -412,6 +426,7 @@ export function routingService(db: Db) {
         hops,
         resultText,
         outputs,
+        escalations,
         usage,
         llmProvider: provider.id,
         durationMs,

@@ -81,10 +81,13 @@ const SUBAGENTS = [
     output: "A direct answer in the thread/console.",
     guardrails: [
       "Read-only — never publishes or spends",
+      "Lead with the answer. Keep it Slack-ready and concise (~250 words) unless asked for depth",
+      "Use earlier context in the thread without restating it; say 'I don't know' plainly when you don't",
       "If the honest answer is 'a specialist should own this', say that",
+      "Use the escalate tool only when a human decision or info you lack is truly required — it tags your overseer in the thread",
     ],
     doneWhen: "The question is answered or explicitly deferred to a plan.",
-    escalation: "Anything gated (medical/public/spend/pr) goes to the queue for Mark.",
+    escalation: "Call escalate to tag the overseer when a human decision is genuinely needed; gated work (medical/public/spend/pr) still goes to the Queue.",
     sensitivity: "safe" as const,
   },
   {

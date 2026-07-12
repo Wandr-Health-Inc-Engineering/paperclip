@@ -76,6 +76,8 @@ export interface SubagentJobResult {
   summary: string;
   /** The full generated body — lets routing inline chat answers (kind "answer"). */
   body: string;
+  /** Set when the agent called `escalate` — a question for its human overseer. */
+  escalation?: { note: string; urgency: string };
   usage: LLMUsage;
 }
 
@@ -169,6 +171,16 @@ export function workerService(db: Db) {
       },
     });
 
+    // Did the agent raise a hand? The escalate tool-call carries the question;
+    // routing/Slack tag the overseer in the originating thread.
+    const escalateCall = generated.toolCalls.find((t) => t.name === "escalate");
+    const escalation = escalateCall
+      ? {
+          note: String((escalateCall.input as Record<string, unknown>)?.question ?? "").slice(0, 500),
+          urgency: String((escalateCall.input as Record<string, unknown>)?.urgency ?? "normal"),
+        }
+      : undefined;
+
     const sensitivity = input.subagent.sensitivity as TethrSensitivity;
     const output = await gating.createOutput({
       companyId: input.companyId,
@@ -226,6 +238,7 @@ export function workerService(db: Db) {
           ? `${input.subagent.tag} answered.`
           : `${output.title} — published to the Drive.`,
       body: output.body,
+      escalation,
       usage: generated.usage,
     };
   }

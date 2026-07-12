@@ -160,6 +160,15 @@ export class MockProvider implements LLMProvider {
       toolContext += `\nRecall:\n${memory.output.slice(0, 400)}`;
     }
 
+    // Raise a hand when the request explicitly needs a human decision. Keeps the
+    // escalation path deterministic offline (real Claude decides on its own).
+    if (available.has("escalate") && /\bescalat|ask (mark|a human|the team)|need.*(your call|sign-?off|a human|approval to decide)/i.test(input.prompt)) {
+      await call("escalate", {
+        question: input.prompt.trim().slice(0, 200),
+        urgency: /urgent|asap|high priority/i.test(input.prompt) ? "high" : "normal",
+      });
+    }
+
     const trackerByAgent: Record<string, string> = {
       "@atlas": "content-calendar",
       "@compass": "destination-tracker",
