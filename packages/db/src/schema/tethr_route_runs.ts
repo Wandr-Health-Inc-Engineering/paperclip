@@ -32,6 +32,10 @@ export const tethrRouteRuns = pgTable(
     invocationSource: text("invocation_source").notNull().default("console"),
     // Console conversations: follow-ups share the first run's id as threadId.
     threadId: uuid("thread_id"),
+    // Origin key for continuity across surfaces (e.g. "slack:<channel>:<threadTs>"
+    // or "slack:im:<channel>"). Lets a reply in the same Slack thread/DM resume
+    // the same conversation thread instead of starting a context-free run.
+    sourceKey: text("source_key"),
     status: text("status").notNull().default("routing"),
     hops: jsonb("hops").$type<TethrRouteHop[]>().notNull().default([]),
     agentId: uuid("agent_id").references(() => agents.id, {
@@ -62,6 +66,11 @@ export const tethrRouteRuns = pgTable(
     companyStatusIdx: index("tethr_route_runs_company_status_idx").on(
       table.companyId,
       table.status,
+    ),
+    companySourceKeyIdx: index("tethr_route_runs_company_source_key_idx").on(
+      table.companyId,
+      table.sourceKey,
+      table.createdAt,
     ),
   }),
 );

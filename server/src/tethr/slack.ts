@@ -12,9 +12,9 @@
 // is posted back into the same thread.
 
 import crypto from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { companies, tethrAgentProfiles } from "@paperclipai/db";
+import { companies, tethrAgentProfiles, tethrRouteRuns } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 
 const SLACK_API = "https://slack.com/api";
@@ -145,6 +145,7 @@ export type SlackInterpretation =
       links: string[];
       channel?: string;
       threadTs?: string;
+      isDM?: boolean;
     }
   | { type: "ignore"; reason: string };
 
@@ -221,6 +222,7 @@ export function interpretSlackEvent(
         : typeof ev.ts === "string"
           ? ev.ts
           : undefined,
+    isDM,
   };
 }
 
@@ -250,23 +252,105 @@ export async function resolveTethrCompanyId(db: Db): Promise<string | null> {
 
 // ---- Inbound routing + Socket Mode (local-friendly, no public URL) ---------
 
+/** A DM is one rolling conversation; a reply after this gap starts fresh. */
+const DM_CONTINUITY_WINDOW_MS = 4 * 60 * 60 * 1000; // 4 hours
+/** Skip the "On it" ack when the run answers within this window. */
+const ACK_AFTER_MS = 4000;
+/** Slack messages cap ~4k chars; chunk below that with headroom. */
+const SLACK_CHUNK_CHARS = 2900;
+const MAX_ANSWER_CHUNKS = 4;
+
+/** Origin key so a later message from the same Slack thread/DM continues it. */
+export function slackSourceKey(interp: {
+  channel?: string;
+  threadTs?: string;
+  isDM?: boolean;
+}): string | null {
+  if (!interp.channel) return null;
+  // A DM channel is 1:1 — the whole DM is one rolling conversation.
+  if (interp.isDM) return `slack:im:${interp.channel}`;
+  // A channel thread is a conversation; the thread root ties replies together.
+  if (interp.threadTs) return `slack:${interp.channel}:${interp.threadTs}`;
+  return null;
+}
+
+/** "new topic" / "start over" forces a fresh conversation even in a live DM. */
+export function isResetPhrase(text: string): boolean {
+  return /^\s*(new topic|start over|new thread|reset|nvm|never ?mind)\b/i.test(text);
+}
+
+/** Split a long answer into Slack-sized chunks on paragraph/line boundaries. */
+export function chunkSlackText(text: string, max = SLACK_CHUNK_CHARS): string[] {
+  const clean = (text ?? "").trim();
+  if (clean.length <= max) return clean ? [clean] : [];
+  const chunks: string[] = [];
+  let rest = clean;
+  while (rest.length > max) {
+    // Prefer a paragraph break, then a line break, then a hard cut.
+    let cut = rest.lastIndexOf("\n\n", max);
+    if (cut < max * 0.5) cut = rest.lastIndexOf("\n", max);
+    if (cut < max * 0.5) cut = max;
+    chunks.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trim();
+  }
+  if (rest) chunks.push(rest);
+  return chunks;
+}
+
 /**
- * Turn an interpreted kickoff into a routed Tethr task: quick threaded ack,
- * then the actual answer posted back to the same thread when the run finishes.
- * Shared by the HTTP events endpoint (cloud) and the Socket Mode client
- * (local). @tethr is the coordinator that absorbs any request — same entry
- * point as the Console chat, so a Slack DM/tag and a Console message behave
- * identically.
+ * Resume the conversation thread for a Slack origin, if one is live. Channel
+ * threads always continue; DMs continue within a rolling window unless the
+ * user opens a new topic. Returns the threadId to reuse, or null to start fresh.
+ */
+export async function resolveContinuationThreadId(
+  db: Db,
+  companyId: string,
+  sourceKey: string | null,
+  opts: { isDM?: boolean; nowMs?: number } = {},
+): Promise<string | null> {
+  if (!sourceKey) return null;
+  const [prior] = await db
+    .select({ threadId: tethrRouteRuns.threadId, createdAt: tethrRouteRuns.createdAt })
+    .from(tethrRouteRuns)
+    .where(
+      and(
+        eq(tethrRouteRuns.companyId, companyId),
+        eq(tethrRouteRuns.sourceKey, sourceKey),
+      ),
+    )
+    .orderBy(desc(tethrRouteRuns.createdAt))
+    .limit(1);
+  if (!prior?.threadId) return null;
+  if (!opts.isDM) return prior.threadId; // a channel thread is a conversation
+  const now = opts.nowMs ?? Date.now();
+  const age = now - new Date(prior.createdAt).getTime();
+  return age <= DM_CONTINUITY_WINDOW_MS ? prior.threadId : null;
+}
+
+/**
+ * Turn an interpreted kickoff into a routed Tethr task: the answer is posted
+ * back to the originating thread when the run finishes (a quick "On it" ack
+ * only if the run is slow). Replies in the same Slack thread/DM continue the
+ * conversation with context. Shared by the HTTP events endpoint (cloud) and
+ * the Socket Mode client (local) — @tethr absorbs any request, same entry
+ * point as the Console chat.
  */
 export async function routeInboundKickoff(
   db: Db,
-  interp: { requestText: string; channel?: string; threadTs?: string },
+  interp: { requestText: string; channel?: string; threadTs?: string; isDM?: boolean },
 ): Promise<{ routeRunId: string; threadId: string } | null> {
   const companyId = await resolveTethrCompanyId(db);
   if (!companyId) {
     logger.warn("tethr slack: no Tethr company resolved for inbound kickoff");
     return null;
   }
+  // Continuity: reuse the live thread for this Slack origin unless the user
+  // explicitly opens a new topic.
+  const sourceKey = slackSourceKey(interp);
+  const threadId = isResetPhrase(interp.requestText)
+    ? null
+    : await resolveContinuationThreadId(db, companyId, sourceKey, { isDM: interp.isDM });
+
   // Dynamic import breaks the notify → slack → routing → notify module cycle.
   const { routingService } = await import("./routing.js");
   const routing = routingService(db);
@@ -277,6 +361,8 @@ export async function routeInboundKickoff(
         companyId,
         requestText: interp.requestText,
         invocationSource: "api",
+        threadId,
+        sourceKey,
         hopDelayMs: 0,
         onStarted: resolve,
       })
@@ -285,29 +371,71 @@ export async function routeInboundKickoff(
         return { status: "failed", resultText: err instanceof Error ? err.message : String(err) };
       });
   });
-  await postSlackMessage({
-    channel: interp.channel,
-    threadTs: interp.threadTs,
-    text: `On it (task ${ids.routeRunId}) — answer coming in this thread.`,
-  });
+
+  // Ack only if the answer is slow — a fast reply just answers, like a person.
+  let settled = false;
+  const ackTimer = setTimeout(() => {
+    if (settled) return;
+    void postSlackMessage({
+      channel: interp.channel,
+      threadTs: interp.threadTs,
+      text: "On it — answer coming in this thread.",
+    });
+  }, ACK_AFTER_MS);
+
   // Post the actual answer back to the thread when the run finishes. Fire and
   // forget: the events endpoint must return fast, Slack retries on slow acks.
   void runPromise
-    .then((result) => {
-      const answer = (result.resultText || "").trim();
-      return postSlackMessage({
-        channel: interp.channel,
-        threadTs: interp.threadTs,
-        text:
-          result.status === "failed"
-            ? `That didn't work: ${answer.slice(0, 500) || "unknown error"}`
-            : result.status === "gated"
-              ? `${answer.slice(0, 2500)}\n\n_This output is gated — review it in the Tethr Queue before it goes anywhere._`
-              : answer.slice(0, 3000) || "Done — no text output (check the Tethr Console).",
-      });
+    .then(async (result) => {
+      settled = true;
+      clearTimeout(ackTimer);
+      await postAnswerToThread(interp, result);
     })
-    .catch((err) => logger.warn({ err }, "tethr slack: failed to post the answer back"));
+    .catch((err) => {
+      settled = true;
+      clearTimeout(ackTimer);
+      logger.warn({ err }, "tethr slack: failed to post the answer back");
+    });
   return ids;
+}
+
+/** Post a run's result to the originating thread, chunking long answers. */
+async function postAnswerToThread(
+  interp: { channel?: string; threadTs?: string },
+  result: { status: string; resultText: string },
+): Promise<void> {
+  const answer = (result.resultText || "").trim();
+  if (result.status === "failed") {
+    await postSlackMessage({
+      channel: interp.channel,
+      threadTs: interp.threadTs,
+      text: `That didn't work: ${answer.slice(0, 500) || "unknown error"}`,
+    });
+    return;
+  }
+  if (!answer) {
+    await postSlackMessage({
+      channel: interp.channel,
+      threadTs: interp.threadTs,
+      text: "Done — no text output (check the Tethr Console).",
+    });
+    return;
+  }
+  const gatedNote =
+    "\n\n_This is staged in the Tethr Queue — review it before it goes anywhere._";
+  const full = result.status === "gated" ? answer + gatedNote : answer;
+  const chunks = chunkSlackText(full);
+  const posted = chunks.slice(0, MAX_ANSWER_CHUNKS);
+  if (chunks.length > MAX_ANSWER_CHUNKS) {
+    posted[posted.length - 1] += "\n\n_(truncated — full text in the Tethr Console)_";
+  }
+  for (const chunk of posted) {
+    await postSlackMessage({
+      channel: interp.channel,
+      threadTs: interp.threadTs,
+      text: chunk,
+    });
+  }
 }
 
 /** Minimal WebSocket surface we use (avoids a DOM lib dependency in tsconfig). */

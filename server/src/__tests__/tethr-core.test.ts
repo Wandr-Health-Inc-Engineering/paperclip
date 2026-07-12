@@ -8,7 +8,7 @@ import { orgService } from "../tethr/org.ts";
 import { routingService } from "../tethr/routing.ts";
 import { seedWandrGrowth } from "../tethr/seed/seed.ts";
 import { seedTethrCore } from "../tethr/seed/tethr-core.ts";
-import { resolveTethrCompanyId } from "../tethr/slack.ts";
+import { resolveContinuationThreadId, resolveTethrCompanyId } from "../tethr/slack.ts";
 import { toolsetForSubagent } from "../tethr/tools/index.ts";
 import {
   getEmbeddedPostgresTestSupport,
@@ -172,6 +172,56 @@ describeEmbeddedPostgres("tethr clean-slate org (@tethr coordinator)", () => {
     });
     expect(result.status).not.toBe("failed");
     expect(result.hops.some((h) => h.actorTag === "@tethr")).toBe(true);
+  });
+
+  it("continues a Slack conversation: same source key resumes the thread, with context", async () => {
+    const routing = routingService(db);
+    const sourceKey = "slack:im:D-CONT-TEST";
+    // First message in a DM.
+    const first = await routing.routeRequest({
+      companyId,
+      requestText: "We're focused on Peru travel content right now.",
+      sourceKey,
+    });
+    // A reply in the same DM resolves back to the first run's thread…
+    const resumed = await resolveContinuationThreadId(db, companyId, sourceKey, { isDM: true });
+    expect(resumed).toBe(first.threadId);
+    // …and routing with that threadId stitches the earlier turn into context.
+    const second = await routing.routeRequest({
+      companyId,
+      requestText: "What did I just say we're focused on?",
+      threadId: resumed,
+      sourceKey,
+    });
+    expect(second.threadId).toBe(first.threadId);
+    expect(second.status).not.toBe("failed");
+  });
+
+  it("expires a stale DM thread but never a channel thread", async () => {
+    const routing = routingService(db);
+    const dmKey = "slack:im:D-STALE";
+    const run = await routing.routeRequest({
+      companyId,
+      requestText: "First DM message.",
+      sourceKey: dmKey,
+    });
+    // Fresh: within the window it resumes.
+    expect(await resolveContinuationThreadId(db, companyId, dmKey, { isDM: true })).toBe(run.threadId);
+    // Stale: a lookup 5 hours later starts fresh.
+    const fiveHoursLater = Date.now() + 5 * 60 * 60 * 1000;
+    expect(
+      await resolveContinuationThreadId(db, companyId, dmKey, { isDM: true, nowMs: fiveHoursLater }),
+    ).toBeNull();
+    // A channel thread never expires (a thread is a conversation by construction).
+    const chanKey = "slack:C-CHAN:1700.5";
+    const chanRun = await routing.routeRequest({
+      companyId,
+      requestText: "Channel thread root.",
+      sourceKey: chanKey,
+    });
+    expect(
+      await resolveContinuationThreadId(db, companyId, chanKey, { isDM: false, nowMs: fiveHoursLater }),
+    ).toBe(chanRun.threadId);
   });
 
   it("keeps Tethr's toolset read-safe: chat can't write, neither can publish", () => {

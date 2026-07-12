@@ -34,6 +34,9 @@ export interface RouteRequestInput {
   subagentChain?: string[];
   /** Console conversations: share the first run's id. */
   threadId?: string | null;
+  /** Origin key for cross-surface continuity (e.g. a Slack thread/DM). Stored
+   * on the run so a later reply from the same origin can resume the thread. */
+  sourceKey?: string | null;
   /** Pace hops so the Console can stream them (console runs only). */
   hopDelayMs?: number;
   /** Fires as soon as the run row exists — lets callers return early and poll. */
@@ -86,6 +89,7 @@ export function routingService(db: Db) {
         invocationSource: input.invocationSource ?? "console",
         heartbeatRunId: input.heartbeatRunId ?? null,
         threadId: input.threadId ?? null,
+        sourceKey: input.sourceKey ?? null,
         status: "routing",
         llmProvider: provider.id,
       })
@@ -132,12 +136,12 @@ export function routingService(db: Db) {
           ),
         )
         .orderBy(desc(tethrRouteRuns.createdAt))
-        .limit(3);
+        .limit(5);
       if (previous.length) {
         conversationContext = [
           "Earlier in this conversation (most recent first):",
           ...previous.map(
-            (p) => `Q: ${p.requestText.slice(0, 200)}\nA: ${(p.resultText ?? "").slice(0, 300)}`,
+            (p) => `Q: ${p.requestText.slice(0, 300)}\nA: ${(p.resultText ?? "").slice(0, 600)}`,
           ),
         ].join("\n\n");
       }

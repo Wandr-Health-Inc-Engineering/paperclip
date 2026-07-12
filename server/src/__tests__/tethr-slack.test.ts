@@ -2,10 +2,13 @@ import crypto from "node:crypto";
 import { describe, it, expect } from "vitest";
 import { buildRecommendation } from "../tethr/recommendation.js";
 import {
+  chunkSlackText,
   extractLinks,
   interpretSlackEvent,
+  isResetPhrase,
   postSlackMessage,
   slackConfigured,
+  slackSourceKey,
   verifySlackSignature,
 } from "../tethr/slack.js";
 
@@ -121,6 +124,44 @@ describe("interpretSlackEvent", () => {
       event: { type: "message", bot_id: "B1", text: "posted <https://x.com>" },
     });
     expect(r.type).toBe("ignore");
+  });
+
+  it("marks a DM kickoff with isDM for continuity keying", () => {
+    const r = interpretSlackEvent({
+      type: "event_callback",
+      event: { type: "message", channel_type: "im", text: "hi", channel: "D9", ts: "5.0" },
+    });
+    expect(r.type).toBe("kickoff");
+    if (r.type !== "kickoff") return;
+    expect(r.isDM).toBe(true);
+  });
+});
+
+describe("slack conversation continuity helpers", () => {
+  it("keys a DM to one rolling conversation, a channel thread to its root", () => {
+    expect(slackSourceKey({ channel: "D1", isDM: true, threadTs: "9.9" })).toBe("slack:im:D1");
+    expect(slackSourceKey({ channel: "C1", threadTs: "1700.1" })).toBe("slack:C1:1700.1");
+    // A channel message with no thread can't be keyed (avoid cross-talk).
+    expect(slackSourceKey({ channel: "C1" })).toBeNull();
+    expect(slackSourceKey({})).toBeNull();
+  });
+
+  it("detects a 'new topic' reset that forces a fresh thread", () => {
+    expect(isResetPhrase("new topic — how's SEO?")).toBe(true);
+    expect(isResetPhrase("Start over")).toBe(true);
+    expect(isResetPhrase("nevermind")).toBe(true);
+    expect(isResetPhrase("what's our ad spend?")).toBe(false);
+  });
+
+  it("chunks long answers on boundaries, short ones pass through whole", () => {
+    expect(chunkSlackText("short answer")).toEqual(["short answer"]);
+    expect(chunkSlackText("")).toEqual([]);
+    const para = `${"a".repeat(2000)}\n\n${"b".repeat(2000)}`;
+    const chunks = chunkSlackText(para, 2900);
+    expect(chunks.length).toBe(2);
+    expect(chunks.every((c) => c.length <= 2900)).toBe(true);
+    expect(chunks[0]).toMatch(/^a+$/);
+    expect(chunks[1]).toMatch(/^b+$/);
   });
 });
 
