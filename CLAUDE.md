@@ -43,6 +43,28 @@ deleted** — the parts bin for re-adds. Its seed stays in `seed/seed.ts`/`wandr
 (`POST /api/tethr/seed {"org":"growth"}`), its tests still run against it, and all tool/check
 code (Sentry, Pulse, Google Ads, Keyword Planner) stays live and allowlisted.
 
+### AI organization — the CEO + the conductor (phase 12, Mark's model 2026-07-12)
+
+"Run like Paperclip intended" = an org, not one chatbot. Mark's shape (his exact call):
+
+- **@tethr = the conductor (Jarvis).** `reportsTo: null`, a SEPARATE root — the
+  communicator/manager between the human team and the agents, off to the side, NOT in the
+  command chain. Its title/mission were reframed to "Conductor — the interface between the team
+  and the agents." Still the router (`getRouterProfile`).
+- **CEO (`@ceo`, codename "CEO") = head of the AGENT org.** `reportsTo: null` too (a second
+  root, tier 0). Holds the mission, sets priorities, delegates; specialists report up to IT.
+  Real agent (not the old hollow placeholder): `@ceo.plan` subagent drafts a priorities brief
+  (internal → Drive), $25/mo hard-stop, daily 8 AM planning heartbeat **seeded PAUSED**.
+  Seed: `seed/ceo.ts` `seedCeoAgent(db, companyId)` — additive + idempotent, run from
+  `maybeAutoSeed` (fills the live org on boot) and the default `/seed` endpoint. It also adds a
+  `@ceo` routing row to @tethr. Rendered in the tier-0 banner on the Company page (divisionId
+  null; the banner's old hardcoded "placeholder" label is gone). Tests: `tethr-ceo.test.ts`.
+- **Specialists** (next: **Journal** — the daily blog writer, renamed from the old "Atlas")
+  report to the CEO. Add one at a time, each seeded paused, each a row in @tethr's routing
+  table. The old Atlas `blog` subagent spec (in `wandr-growth.ts`) is the reference for
+  Journal's flow — but it reads Mark's Drive docs (content calendar, GEO checklist, pillar
+  spec, brand voice), so replicating his CURRENT flow needs his input / the Drive.
+
 ## Where the Tethr layer lives (all additive)
 
 - `server/src/tethr/**` — the whole L2 engine: `routing.ts`, `worker.ts`, `gating.ts`, `drive.ts`, `org.ts`, `memory.ts`, `notify.ts`, `digest.ts`, `state.ts`, `export.ts`, `adapter.ts`, `index.ts`, plus `llm/` (mock ↔ claude), `tools/` (allowlisted registry), `seed/` (`wandr-growth.ts`).

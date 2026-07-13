@@ -986,10 +986,19 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
   try {
     const { seedTethrCore } = await import("./tethr-core.js");
     const result = await seedTethrCore(db);
-    if (result.created || result.archivedOldCompany) {
+    // The CEO is the head of the agent org — layered on additively + idempotently,
+    // so it fills into the existing live org on the next boot too.
+    const { seedCeoAgent } = await import("./ceo.js");
+    const ceo = await seedCeoAgent(db, result.companyId);
+    if (result.created || result.archivedOldCompany || ceo.created) {
       logger.info(
-        { companyId: result.companyId, created: result.created, archivedOldCompany: result.archivedOldCompany },
-        "[tethr] auto-seeded the clean-slate org (@tethr)",
+        {
+          companyId: result.companyId,
+          created: result.created,
+          archivedOldCompany: result.archivedOldCompany,
+          ceoAdded: ceo.created,
+        },
+        "[tethr] auto-seeded the clean-slate org (@tethr + CEO)",
       );
     }
   } catch (err) {

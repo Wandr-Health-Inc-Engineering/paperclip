@@ -1180,7 +1180,9 @@ export function tethrRoutes(db: Db) {
     }
     const { seedTethrCore } = await import("../tethr/seed/tethr-core.js");
     const result = await seedTethrCore(db, { force: req.body?.force === true });
-    res.json(result);
+    const { seedCeoAgent } = await import("../tethr/seed/ceo.js");
+    const ceo = await seedCeoAgent(db, result.companyId);
+    res.json({ ...result, ceoAdded: ceo.created });
   });
 
   return router;

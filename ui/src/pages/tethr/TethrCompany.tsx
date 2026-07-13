@@ -96,21 +96,26 @@ export function TethrCompany() {
         </Button>
       </div>
 
-      {/* CEO */}
+      {/* CEO — head of the agent org (tier 0). @tethr, the conductor, sits
+          separately as its own root; see its card in Operations. */}
       {ceo ? (
         <div className="flex justify-center">
-          <div className="flex items-center gap-3 border-2 border-foreground bg-foreground px-5 py-3 text-background">
+          <Link
+            to={`/crew/${ceo.agent.id}`}
+            className="group flex items-center gap-3 border-2 border-foreground bg-foreground px-5 py-3 text-background transition-colors hover:bg-foreground/90"
+          >
             <Crown className="h-4 w-4" />
-            <div>
+            <div className="min-w-0">
               <span className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] opacity-70">
-                tier · 00
+                tier · 00 · head of the agent org
               </span>
-              <p className="text-sm font-extrabold leading-tight">CEO</p>
+              <p className="flex items-center gap-1.5 text-sm font-extrabold leading-tight">
+                {ceo.profile.codename}
+                <AgentStatusDot status={ceo.agent.status} />
+              </p>
             </div>
-            <span className="ml-2 border border-background/40 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em] opacity-80">
-              placeholder
-            </span>
-          </div>
+            <ChevronRight className="h-3.5 w-3.5 opacity-70 transition-transform group-hover:translate-x-0.5" />
+          </Link>
         </div>
       ) : null}
 
@@ -121,7 +126,8 @@ export function TethrCompany() {
           const members = data.agents.filter(
             (a) =>
               a.profile.divisionId === division.id &&
-              a.agent.id !== division.headAgentId,
+              a.agent.id !== division.headAgentId &&
+              a.profile.tag !== "@ceo", // shown in the tier-0 banner, not as a member
           );
           const DivisionIcon = tethrIcon(division.icon);
           const isShell = division.status === "shell";
