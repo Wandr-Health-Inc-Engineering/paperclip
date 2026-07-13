@@ -993,11 +993,21 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
     // Tinkr, the org mechanic, follows the same pattern (reports to the CEO).
     const { seedTinkrAgent } = await import("./tinkr.js");
     const tinkr = await seedTinkrAgent(db, result.companyId);
+    // Patch, the debug agent — tag @tethr when something breaks (reports to CEO).
+    const { seedPatchAgent } = await import("./patch.js");
+    const patch = await seedPatchAgent(db, result.companyId);
     // Heal any factory agent created before per-subagent tool grants existed
     // (migration 0093) so a created "research" agent can actually fetch.
     const { backfillFactoryAgentTools } = await import("./backfill-tools.js");
     const healed = await backfillFactoryAgentTools(db, result.companyId);
-    if (result.created || result.archivedOldCompany || ceo.created || tinkr.created || healed) {
+    if (
+      result.created ||
+      result.archivedOldCompany ||
+      ceo.created ||
+      tinkr.created ||
+      patch.created ||
+      healed
+    ) {
       logger.info(
         {
           companyId: result.companyId,
@@ -1005,8 +1015,9 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
           archivedOldCompany: result.archivedOldCompany,
           ceoAdded: ceo.created,
           tinkrAdded: tinkr.created,
+          patchAdded: patch.created,
         },
-        "[tethr] auto-seeded the clean-slate org (@tethr + CEO + Tinkr)",
+        "[tethr] auto-seeded the clean-slate org (@tethr + CEO + Tinkr + Patch)",
       );
     }
   } catch (err) {

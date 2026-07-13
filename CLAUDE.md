@@ -91,6 +91,24 @@ code (Sentry, Pulse, Google Ads, Keyword Planner) stays live and allowlisted.
   @tinkr can't be renamed/paused; $100/mo budget ceiling; no create/delete. Rename cascades
   tag everywhere (profile, subagent tags, adapterConfig, all routing tables). Seed:
   `seed/tinkr.ts` ($10/mo cap, no heartbeat, reports to CEO). Tests: `tethr-tinkr.test.ts`.
+- **Patch (`@patch`) = the debug agent** (phase 12, Mark's spec 2026-07-13, name "Patch").
+  Tag `@tethr` when something breaks; Tethr routes to Patch. It reads the failure log via the
+  **`read_failures`** tool (recent `tethr_route_runs` where status=failed or error set — request +
+  error + last hops; **DB only, no filesystem, company-scoped**; granted ONLY to `@patch.diagnose`),
+  diagnoses the root cause, and writes a **Claude-Code-ready fix report** (what broke · likely
+  file/cause · paste-ready prompt · any human step) into the shared workspace under `07 Debug/`
+  (via the `[file-under: 07 Debug]` directive). Read-only — it never applies a fix. Reports are
+  `internal` → auto-publish (no gate). Seed: `seed/patch.ts` (@patch reports to CEO, $10/mo cap,
+  **no heartbeat**, on-request only; @tethr routing row for error/broke/failed/debug keywords).
+  Wired into `maybeAutoSeed` + `/seed`. Tests: `tethr-patch.test.ts`. `KIND_BY_SUBAGENT_KEY.diagnose
+  = "document"`.
+- **Slack images (2026-07-13 fix):** every inbound Slack image is normalized through **sharp**
+  (`fetchSlackImageAttachments` in slack.ts) — decode + EXIF-rotate + resize ≤1568px + re-encode
+  JPEG — so iPhone HEIC and oversized photos work, and a non-image (a Slack login page returned
+  when the bot lacks the `files:read` scope) throws in sharp and is dropped with an actionable log
+  instead of 400-ing the whole request. Accepted mimetype widened to `image/*` (sharp is the
+  gatekeeper). **Manual gate: the Slack app needs the `files:read` scope** or image downloads
+  return HTML.
 - **Slack formatting:** outbound answers pass through `toSlackMrkdwn` (slack.ts) — GFM
   headers/bold/tables/links → Slack mrkdwn (tables become labeled bullets). Never post raw
   `##`/`**`/pipes again.

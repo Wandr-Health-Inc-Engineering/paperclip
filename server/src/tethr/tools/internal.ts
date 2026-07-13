@@ -1,3 +1,5 @@
+import { and, desc, eq, isNotNull, or } from "drizzle-orm";
+import { tethrRouteRuns } from "@paperclipai/db";
 import { driveService } from "../drive.js";
 import { memoryService } from "../memory.js";
 import { notificationService } from "../notify.js";
@@ -195,6 +197,82 @@ export const stageOrgChangeTool: TethrTool = {
     return {
       output: `Change staged for ${result.target!.codename} (${result.target!.tag}) — op ${result.spec!.op}. It is NOT applied yet: it now waits for a human to approve it in the Queue. Tell the requester that, briefly.`,
       summary: `staged ${result.spec!.op} on ${result.target!.tag}`,
+    };
+  },
+};
+
+export const readFailuresTool: TethrTool = {
+  name: "read_failures",
+  description:
+    "Read this company's recent FAILED or errored requests (the debug log). Returns each failure's request, the exact error message, and the step-by-step trace of what the agent did before it broke. Read-only — use it to diagnose what went wrong and recommend a fix.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description:
+          "Optional keyword to filter by (matched against the error message and the request). Omit to see the most recent failures.",
+      },
+      limit: { type: "number", description: "How many to return (default 5, max 20)." },
+    },
+    required: [],
+  },
+  async execute(ctx, input) {
+    const limit = Math.min(Math.max(Number(input.limit ?? 5) || 5, 1), 20);
+    const rows = await ctx.db
+      .select({
+        createdAt: tethrRouteRuns.createdAt,
+        status: tethrRouteRuns.status,
+        request: tethrRouteRuns.requestText,
+        error: tethrRouteRuns.error,
+        provider: tethrRouteRuns.llmProvider,
+        hops: tethrRouteRuns.hops,
+      })
+      .from(tethrRouteRuns)
+      .where(
+        and(
+          eq(tethrRouteRuns.companyId, ctx.companyId),
+          or(eq(tethrRouteRuns.status, "failed"), isNotNull(tethrRouteRuns.error)),
+        ),
+      )
+      .orderBy(desc(tethrRouteRuns.createdAt))
+      .limit(50);
+
+    const q = input.query ? String(input.query).toLowerCase() : "";
+    const matched = (q
+      ? rows.filter(
+          (r) =>
+            (r.error ?? "").toLowerCase().includes(q) ||
+            (r.request ?? "").toLowerCase().includes(q),
+        )
+      : rows
+    ).slice(0, limit);
+
+    if (!matched.length) {
+      return {
+        output: q ? `No recent failures match "${q}".` : "No recent failures on record — nothing is broken.",
+        summary: `read_failures: 0 (${q || "recent"})`,
+      };
+    }
+
+    const blocks = matched.map((r, i) => {
+      const when = r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt);
+      const trace = Array.isArray(r.hops)
+        ? (r.hops as unknown as Array<Record<string, unknown>>)
+            .slice(-6)
+            .map((h) => `    - [${h.layer}] ${h.actorTag ?? ""} ${h.decision ?? ""}${h.reason ? `: ${String(h.reason).slice(0, 100)}` : ""}`)
+            .join("\n")
+        : "    (no trace)";
+      return [
+        `${i + 1}. ${when} · status=${r.status} · provider=${r.provider ?? "?"}`,
+        `   request: ${(r.request ?? "").slice(0, 200)}`,
+        `   error:   ${(r.error ?? "(none)").slice(0, 500)}`,
+        `   last steps:\n${trace}`,
+      ].join("\n");
+    });
+    return {
+      output: `${matched.length} recent failure(s):\n\n${blocks.join("\n\n")}`,
+      summary: `read_failures: ${matched.length} (${q || "recent"})`,
     };
   },
 };

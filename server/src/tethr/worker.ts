@@ -43,6 +43,8 @@ const KIND_BY_SUBAGENT_KEY: Record<string, TethrOutputKind> = {
   // @tinkr, the org mechanic (Phase 12): staged agent modifications that gate
   // to the Queue and apply on approval.
   change: "org_change",
+  // @patch, the debug agent (Phase 12): a fix report, internal → auto-published.
+  diagnose: "document",
 };
 
 // Per-subagent agentic turn budget. Chat stays snappy; plan gets room to

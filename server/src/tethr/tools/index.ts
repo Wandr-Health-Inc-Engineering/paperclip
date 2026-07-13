@@ -5,6 +5,7 @@ import {
   driveWriteTool,
   escalateTool,
   notifyTool,
+  readFailuresTool,
   recallMemoryTool,
   stageOrgChangeTool,
 } from "./internal.js";
@@ -33,6 +34,7 @@ const ALL_TOOLS: Record<string, TethrTool> = Object.fromEntries(
     googleAdsReportTool,
     keywordIdeasTool,
     stageOrgChangeTool,
+    readFailuresTool,
   ].map((t) => [t.name, t]),
 );
 
@@ -52,6 +54,9 @@ const ALLOWLIST: Record<string, string[]> = {
   // Tinkr — the org mechanic (Phase 12). The ONLY subagent that can stage
   // agent modifications; nothing applies without a human approval in the Queue.
   "tinkr.change": ["stage_org_change"],
+  // Patch — the debug agent (Phase 12). Reads the failure log (read-only) and
+  // writes a Claude-Code-ready fix. read_failures is granted ONLY here.
+  "patch.diagnose": ["read_failures", "drive_write"],
   // Sonar — the scout
   "sonar.leads": ["reddit_scan", "web_fetch", "notify"],
   "sonar.reply": ["reddit_scan"],
