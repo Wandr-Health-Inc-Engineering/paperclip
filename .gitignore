@@ -68,3 +68,6 @@ terraform/*.tfvars
 
 # Tethr local data
 .tethr-data/
+
+# The public marketing site — its own repo nested at the root, never tracked here
+tethr-site/
