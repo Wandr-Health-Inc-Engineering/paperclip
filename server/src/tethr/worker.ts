@@ -6,6 +6,7 @@ import { getTethrLLMProvider } from "./llm/index.js";
 import type { LLMImageAttachment, LLMUsage } from "./llm/types.js";
 import { gatingService } from "./gating.js";
 import { memoryService } from "./memory.js";
+import { MIRROR_FOLDERS } from "./mirror.js";
 import { toolsetForSubagent, type TethrToolContext } from "./tools/index.js";
 
 // The "do" step of classify → route → do. Renders the subagent's fine-tuned
@@ -131,6 +132,18 @@ export function workerService(db: Db) {
       system += `\n\nAdditional context for this run:\n${input.extraContext}`;
     }
     const kind = KIND_BY_SUBAGENT_KEY[input.subagent.key] ?? "document";
+    // Deliverables land in the shared team workspace on approval — tell the
+    // agent how to file them (destination folder + format directives).
+    if (MIRROR_FOLDERS[kind]) {
+      system += [
+        "\n\nFiling: when approved, this deliverable is filed into the shared team workspace",
+        `(default folder: "${MIRROR_FOLDERS[kind]}"). To file it elsewhere or in another format,`,
+        "start your response with directives, each on its own line, then a blank line:",
+        "[file-under: <folder name, e.g. 07 Competitor Analysis>]",
+        "[format: md|pdf|pptx|docx]",
+        "Omit them to accept the defaults. Choose folders a business partner would find sensible.",
+      ].join("\n");
+    }
 
     // The subagent's hands: its allowlisted tools, every call recorded as a
     // hop so the Console shows the work, not just the result.
@@ -193,6 +206,24 @@ export function workerService(db: Db) {
     let body = generated.body;
     let changeMeta: Record<string, unknown> = {};
 
+    // Shared-workspace filing (phase 12): agents may lead their deliverable
+    // with [file-under: …] / [format: …] directives. Parse + strip them; the
+    // values ride in meta so the overseer approves the destination along with
+    // the content, and the mirror files it there on publish.
+    let mirrorMeta: Record<string, unknown> = {};
+    if (kind !== "answer" && kind !== "org_change") {
+      const { parseMirrorDirectives, sanitizeFolderHint } = await import("./mirror.js");
+      const parsed = parseMirrorDirectives(body);
+      const folder = sanitizeFolderHint(parsed.folder);
+      if (folder || parsed.format) {
+        body = parsed.body;
+        mirrorMeta = {
+          ...(folder ? { mirrorFolder: folder } : {}),
+          ...(parsed.format ? { mirrorFormat: parsed.format } : {}),
+        };
+      }
+    }
+
     // Tinkr (kind org_change): the staged change — not the LLM prose — is the
     // work product. Re-validate the last stage_org_change call and render a
     // deterministic before→after diff as the gated body. If nothing valid was
@@ -231,6 +262,7 @@ export function workerService(db: Db) {
         request: input.request.slice(0, 500),
         provider: provider.id,
         toolCalls: generated.toolCalls.map((t) => t.summary),
+        ...mirrorMeta,
         ...changeMeta,
       },
       revisionOfId: input.revisionOfId ?? null,

@@ -1236,8 +1236,40 @@ export function tethrRoutes(db: Db) {
       notifications: {
         channels: ["in_app (live)", "slack (mock)", "sms (mock)", "email (mock)"],
       },
+      mirror: await (async () => {
+        const m = await import("../tethr/mirror.js");
+        return { enabled: m.mirrorConfigured(), dir: m.mirrorDir() };
+      })(),
       paperclipSha: await getPaperclipSha(),
     });
+  });
+
+  // Shared-workspace mirror (phase 12, v1): the live read-only view of the
+  // Google Drive-synced "00 Tethr" folder. Stateless readdir walk — human
+  // deletes/moves/renames show up immediately; file CONTENT is never served.
+  router.get("/tethr/:companyId/mirror/tree", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { mirrorTree } = await import("../tethr/mirror.js");
+    res.json(await mirrorTree());
+  });
+
+  // One-time (idempotent) projection of already-published deliverables into
+  // the shared folder. Human deletions are final — re-running does not
+  // resurrect them (tracked via meta.mirror) unless ?force=true.
+  router.post("/tethr/:companyId/mirror/backfill", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const mirror = await import("../tethr/mirror.js");
+    if (!mirror.mirrorConfigured()) {
+      res.status(400).json({
+        error:
+          "TETHR_MIRROR_DIR is not configured or the folder does not exist (is Google Drive mounted?)",
+      });
+      return;
+    }
+    const force = req.query.force === "true" || req.body?.force === true;
+    res.json(await mirror.backfillMirror(db, companyId, { force }));
   });
 
   // Flip the instance between live Claude and the deterministic mock at runtime.

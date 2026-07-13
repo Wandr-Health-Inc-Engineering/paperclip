@@ -185,6 +185,18 @@ running throughout — it *is* the rollback.
 Scout repo, clone it to `/Users/markkaram/git/scout` before revisiting Phase 2 so working code
 can be reused instead of rewritten. (`docs/tethr-buildout/scout-audit.md`.)
 
+### C6b · AI image generation into the shared workspace (deferred; needs your account)
+
+The shared-folder mirror (2026-07-13) can already carry any file bytes; what's missing is a
+*generator*. Anthropic has no image-gen API, so this needs a second provider:
+
+1. **Recommended: OpenAI Images (`gpt-image-1`)** — best quality/simplicity for marketing
+   visuals (~$0.02–0.19/image). Alternative: Google Imagen (Vertex).
+2. Create the account/key yourself, then set `OPENAI_API_KEY` in the instance env.
+3. Say "go" in a session: the build is a `generate_image` tool (allowlisted per-agent,
+   `spend`-sensitivity gated so every image is human-approved) writing PNGs through the same
+   mirror seam into `00 Tethr`. Zero code exists today; it's a one-session add.
+
 ### C7 · Deferred (no action needed now)
 
 - **Ads pair (Tailwind/Ledger):** excluded until Google Ads MCP auth + Chrome-action layer works

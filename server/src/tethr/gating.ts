@@ -9,6 +9,7 @@ import {
   type TethrSensitivity,
 } from "@paperclipai/shared";
 import { logActivity } from "../services/activity-log.js";
+import { logger } from "../middleware/logger.js";
 import { driveService } from "./drive.js";
 import { instantiateAgentFromSpec } from "./factory.js";
 import { notificationService } from "./notify.js";
@@ -225,6 +226,28 @@ export function gatingService(db: Db) {
       agentId: output.agentId,
       details: { title: output.title, drivePath: path, kind: output.kind },
     });
+
+    // Shared-workspace mirror (phase 12, v1): project the published deliverable
+    // as a plain file into the local Google Drive-synced folder ("00 Tethr").
+    // Best-effort — a publish never fails because the mirror failed. Sits
+    // before the answer early-return so enabling answers later is just a map
+    // entry in MIRROR_FOLDERS (today "answer" is unmapped → no-op).
+    try {
+      const mirror = await import("./mirror.js");
+      const outMeta = (output.meta ?? {}) as Record<string, unknown>;
+      await mirror.mirrorPublishedOutput(db, {
+        outputId: output.id,
+        kind: output.kind as TethrOutputKind,
+        title: output.title,
+        body: output.body,
+        agentTag: (outMeta.agentTag as string | undefined) ?? null,
+        publishedAt: updated?.publishedAt ?? new Date(),
+        folder: (outMeta.mirrorFolder as string | undefined) ?? null,
+        format: (outMeta.mirrorFormat as string | undefined) ?? null,
+      });
+    } catch (err) {
+      logger.warn({ err }, "[tethr] shared-folder mirror failed (publish unaffected)");
+    }
 
     // Chat answers are conversational, not published content: they go to the
     // chat-log area (above) but never enter the dedup log, advance a tracker,

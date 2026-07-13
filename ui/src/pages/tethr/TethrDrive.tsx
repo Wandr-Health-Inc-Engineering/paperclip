@@ -4,6 +4,7 @@ import {
   Archive,
   ChevronDown,
   ChevronRight,
+  Cloud,
   File,
   FileText,
   Folder,
@@ -14,6 +15,7 @@ import {
   Lock,
   PanelLeft,
   Pencil,
+  RefreshCw,
   Tag,
   X,
 } from "lucide-react";
@@ -26,7 +28,12 @@ import { MonoTag, formatRelative } from "@/components/tethr/primitives";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
 import { cn } from "@/lib/utils";
-import { tethrApi, tethrKeys, type TethrDriveNode } from "@/api/tethr";
+import {
+  tethrApi,
+  tethrKeys,
+  type TethrDriveNode,
+  type TethrMirrorTreeNode,
+} from "@/api/tethr";
 
 // The Drive, as a file manager. Agents write into their own folders (they never
 // move or reorganize); this page is the manual surface for a person — browse the
@@ -51,6 +58,7 @@ export function TethrDrive() {
   const [crumbs, setCrumbs] = useState<Crumb[]>([{ id: null, name: "drive" }]);
   const [selectedFile, setSelectedFile] = useState<TethrDriveNode | null>(null);
   const [showTree, setShowTree] = useState(true);
+  const [showMirror, setShowMirror] = useState(false);
   const [dialog, setDialog] = useState<DriveDialog>(null);
   const currentFolder = crumbs[crumbs.length - 1];
 
@@ -127,6 +135,16 @@ export function TethrDrive() {
           <FolderPlus className="h-3.5 w-3.5" />
           New folder
         </Button>
+        <Button
+          variant={showMirror ? "default" : "outline"}
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setShowMirror((v) => !v)}
+          title="The synced Google Drive folder (00 Tethr) — live, read-only"
+        >
+          <Cloud className="h-3.5 w-3.5" />
+          Google Drive
+        </Button>
         {/* Path bar */}
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 border-2 border-foreground bg-card px-3 py-1.5">
           {crumbs.map((crumb, index) => (
@@ -152,6 +170,8 @@ export function TethrDrive() {
           ))}
         </div>
       </div>
+
+      {showMirror ? <MirrorPanel companyId={selectedCompanyId} /> : null}
 
       <div className="flex gap-5">
         {showTree ? (
@@ -319,6 +339,112 @@ function RowAction({
     >
       {children}
     </button>
+  );
+}
+
+// ---- The synced Google Drive folder (00 Tethr) -----------------------------------
+// A LIVE, read-only view of the real folder on disk — every render is a fresh
+// walk server-side, so files partners delete/move/rename in Drive show up
+// exactly as they are. Nothing here can modify the folder.
+
+function MirrorPanel({ companyId }: { companyId: string }) {
+  const { data, isLoading, refetch, isFetching } = useQuery({
+    queryKey: tethrKeys.mirrorTree(companyId),
+    queryFn: () => tethrApi.mirrorTree(companyId),
+    refetchOnWindowFocus: true,
+    staleTime: 5_000,
+  });
+
+  return (
+    <div className="border-2 border-foreground bg-card">
+      <div className="flex items-center gap-2 border-b-2 border-foreground px-3 py-2">
+        <Cloud className="h-4 w-4" />
+        <span className="font-mono text-[11px] font-bold uppercase tracking-[0.14em]">
+          google drive · 00 tethr
+        </span>
+        <span className="hidden font-mono text-[10px] text-muted-foreground sm:inline">
+          live · read-only · synced by Drive for desktop
+        </span>
+        <div className="flex-1" />
+        <button
+          title="Refresh"
+          aria-label="Refresh"
+          onClick={() => void refetch()}
+          className="border border-transparent p-1 text-muted-foreground hover:border-foreground hover:text-foreground"
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
+        </button>
+      </div>
+      <div className="max-h-96 overflow-y-auto p-3">
+        {isLoading ? (
+          <p className="text-xs text-muted-foreground">Reading the folder…</p>
+        ) : !data?.enabled ? (
+          <p className="text-xs text-muted-foreground">
+            Not connected — set TETHR_MIRROR_DIR to the synced "00 Tethr" folder
+            (and make sure Google Drive for desktop is running), then restart.
+          </p>
+        ) : data.tree?.length ? (
+          <MirrorTreeList nodes={data.tree} depth={0} />
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Empty — files appear here when an approved deliverable publishes.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MirrorTreeList({ nodes, depth }: { nodes: TethrMirrorTreeNode[]; depth: number }) {
+  return (
+    <div className="space-y-0.5">
+      {nodes.map((node) => (
+        <MirrorTreeRow key={`${node.name}-${node.kind}`} node={node} depth={depth} />
+      ))}
+    </div>
+  );
+}
+
+function MirrorTreeRow({ node, depth }: { node: TethrMirrorTreeNode; depth: number }) {
+  const [open, setOpen] = useState(depth < 1);
+  const pad = { paddingLeft: `${depth * 16}px` };
+  if (node.kind === "folder") {
+    return (
+      <div>
+        <button
+          onClick={() => setOpen((v) => !v)}
+          style={pad}
+          className="flex w-full items-center gap-1.5 py-0.5 text-left text-sm font-semibold hover:text-foreground"
+        >
+          {open ? (
+            <ChevronDown className="h-3 w-3 shrink-0" />
+          ) : (
+            <ChevronRight className="h-3 w-3 shrink-0" />
+          )}
+          <Folder className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{node.name}</span>
+        </button>
+        {open && node.children?.length ? (
+          <MirrorTreeList nodes={node.children} depth={depth + 1} />
+        ) : null}
+      </div>
+    );
+  }
+  return (
+    <div style={pad} className="flex items-center gap-1.5 py-0.5 pl-[18px] text-sm">
+      <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1 truncate">{node.name}</span>
+      {node.size != null ? (
+        <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+          {formatBytes(node.size)}
+        </span>
+      ) : null}
+      {node.modifiedAt ? (
+        <span className="hidden shrink-0 font-mono text-[10px] text-muted-foreground sm:inline">
+          {formatRelative(node.modifiedAt)}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

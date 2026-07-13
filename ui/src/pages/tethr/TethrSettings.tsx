@@ -73,6 +73,16 @@ export function TethrSettings() {
           swap="Notifier interface → Slack / SMS / email implementations"
         />
         <ProviderCard
+          name="Shared workspace"
+          state={data.mirror.enabled ? "mirroring" : "off"}
+          detail={
+            data.mirror.enabled
+              ? `Published deliverables project into ${data.mirror.dir} (Google Drive desktop sync uploads them)`
+              : "TETHR_MIRROR_DIR not set — approved deliverables stay in the in-app Drive only."
+          }
+          swap="v2 (cloud): Google Drive API via service account"
+        />
+        <ProviderCard
           name="Spec bundle"
           state={data.bundle.path ? "linked" : "vendored"}
           detail={

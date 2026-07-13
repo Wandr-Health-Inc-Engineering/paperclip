@@ -328,7 +328,22 @@ export interface TethrStatus {
   database: { external: boolean };
   bundle: { path: string | null };
   notifications: { channels: string[] };
+  mirror: { enabled: boolean; dir: string | null };
   paperclipSha: string;
+}
+
+export interface TethrMirrorTreeNode {
+  name: string;
+  kind: "folder" | "file";
+  size?: number;
+  modifiedAt?: string;
+  children?: TethrMirrorTreeNode[];
+}
+
+export interface TethrMirrorTree {
+  enabled: boolean;
+  dir?: string;
+  tree?: TethrMirrorTreeNode[];
 }
 
 export interface TethrMemory {
@@ -374,6 +389,7 @@ export const tethrKeys = {
   memories: (c: string, agentId?: string) => ["tethr", c, "memories", agentId ?? "all"] as const,
   status: (c: string) => ["tethr", c, "status"] as const,
   orgChanges: (c: string) => ["tethr", c, "org-changes"] as const,
+  mirrorTree: (c: string) => ["tethr", c, "mirror-tree"] as const,
 };
 
 export const tethrApi = {
@@ -483,4 +499,13 @@ export const tethrApi = {
       model: string;
       liveKeyPresent: boolean;
     }>(`/tethr/${c}/llm-mode`, { mode }),
+  mirrorTree: (c: string) => api.get<TethrMirrorTree>(`/tethr/${c}/mirror/tree`),
+  mirrorBackfill: (c: string, force?: boolean) =>
+    api.post<{
+      scanned: number;
+      written: number;
+      skippedUpToDate: number;
+      skippedUnmapped: number;
+      failed: number;
+    }>(`/tethr/${c}/mirror/backfill${force ? "?force=true" : ""}`, {}),
 };

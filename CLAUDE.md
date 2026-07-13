@@ -284,14 +284,29 @@ show/hide toggle, move dialog (tree destination picker, self-exclusion), rename,
 **Agents never call these** — they only `putFile` into their own folders; move/organize is a
 person's job. Locked by `tethr-drive-manager.test.ts` (10 tests).
 
-**D2 — point it at the real Google Drive (NOT built; gated on Mark's Google setup, `GOOGLE-SETUP.md`).**
-Mark's chosen reach (2026-07-12): **"Tethr + folders you share"** — agents stay locked to the
-Tethr folder; the UI can move files between Tethr and any *other* folder Mark shares with the
-service account. This needs: (1) scope upgrade `drive.file` → `drive` (drive.file only sees
-app-created files — can't list human-added/shared files); (2) new read/list/move Drive API
-functions in `google-drive.ts`; (3) per-agent subfolders under the Tethr folder (mirror is one
-flat folder today). Full-Drive reach (option "your whole Drive") was declined — it would need
-Mark's own OAuth + a whole-Drive token.
+**D2 — shared Google Drive workspace, v1 BUILT via desktop sync (2026-07-13).** The
+service-account API path hit permission blocks, so v1 needs **zero Google credentials**: Mark
+runs Google Drive for Desktop, and `server/src/tethr/mirror.ts` projects every published
+deliverable as a plain file into the synced folder (`TETHR_MIRROR_DIR` →
+`~/Library/CloudStorage/GoogleDrive-contact@travelwithwandr.com/My Drive/00 Tethr`); the Drive
+client uploads them. Design contract (Mark's spec): the DB stays the system of record; the
+folder is a **write-once-per-publish projection** tracked in `tethr_outputs.meta.mirror` —
+humans freely delete/move/rename in the folder and nothing breaks or resurrects (backfill
+skips anything with meta.mirror set; `?force=true` overrides). Partner-facing taxonomy
+(strict kind allowlist — answer/agent_proposal/org_change NEVER mirror): 01 Briefs · 02
+Documents · 03 Research · 04 Content/{Blog Drafts,Press,Itineraries} · 05 Ads & Analytics ·
+06 Strategy · 99 Archive (human-only). Agents can file elsewhere/other formats with
+`[file-under: …]` / `[format: md|pdf|pptx|docx]` directives atop their output (parsed+stripped
+in worker.ts, sanitized, destination shown in the approval). Renderers in `mirror-render.ts`
+(marked+playwright PDF, pptxgenjs, docx — dynamic imports, fall back to .md). The single live
+call site is gating.publishToDrive (best-effort, publish never fails); collision = output-uuid
+front matter (own file → overwrite; other output → ` (<id8>)` suffix); writes are same-dir
+dot-temp + atomic rename. Live view: `GET /tethr/:companyId/mirror/tree` (stateless readdir,
+no contents) + a "Google Drive" toggle panel on TethrDrive.tsx; backfill route
+`POST /mirror/backfill`; status shows `mirror:{enabled,dir}`. Tests: `tethr-mirror.test.ts`
+(20; inert-under-test guard, `TETHR_MIRROR_ALLOW_TEST=1` temp-dir hatch). **V2 (cloud) = the
+old service-account plan** — scope `drive` + read/list/move API functions — still pending
+Mark's Google setup.
 
 ## Brand lock (any UI work)
 

@@ -31,7 +31,16 @@ token. If yours is an Explorer/test token, `keyword_ideas` returns a clear
 `DEVELOPER_TOKEN_NOT_APPROVED` message — request Basic access in the Google Ads API Center. The
 ads *reports* (`google_ads_report`) work on any token level.
 
-## Google Drive — the one new credential (service account, tightly scoped)
+## Google Drive — v1 ships WITHOUT any of this (desktop-sync mirror, 2026-07-13)
+
+The service-account setup below hit org-policy permission blocks, so the live v1 path needs
+**no Google credentials at all**: `TETHR_MIRROR_DIR` points at the Drive-for-desktop-synced
+`00 Tethr` folder and `server/src/tethr/mirror.ts` writes published deliverables there as
+plain files; the desktop client uploads them. See CLAUDE.md → "D2 — shared Google Drive
+workspace". The section below remains the **v2 (cloud)** path for when the server no longer
+runs on a machine with Drive for desktop.
+
+## Google Drive v2 (cloud) — the one new credential (service account, tightly scoped)
 
 A **service account can only touch files/folders you explicitly share with it** — so sharing
 just the "Tethr" folder means it can write there and *nowhere else* in your Drive. Same key works
