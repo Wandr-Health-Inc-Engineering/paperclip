@@ -3,7 +3,7 @@ import type { Db } from "@paperclipai/db";
 import { agents, tethrSubagents, type TethrRouteHop } from "@paperclipai/db";
 import type { TethrOutputKind, TethrSensitivity } from "@paperclipai/shared";
 import { getTethrLLMProvider } from "./llm/index.js";
-import type { LLMUsage } from "./llm/types.js";
+import type { LLMImageAttachment, LLMUsage } from "./llm/types.js";
 import { gatingService } from "./gating.js";
 import { memoryService } from "./memory.js";
 import { toolsetForSubagent, type TethrToolContext } from "./tools/index.js";
@@ -61,6 +61,8 @@ export interface SubagentJobInput {
   onHop?: (hop: TethrRouteHop) => Promise<void>;
   /** Extra system-prompt context (revision notes, prior sequence results). */
   extraContext?: string;
+  /** Images shared with the request (e.g. Slack screenshots) for the model. */
+  attachments?: LLMImageAttachment[];
   /** Revision lineage when re-running after "request changes". */
   revisionOfId?: string | null;
   revisionNumber?: number;
@@ -144,6 +146,7 @@ export function workerService(db: Db) {
       prompt: input.request,
       kind,
       maxTurns: MAX_TURNS_BY_SUBAGENT_KEY[input.subagent.key],
+      attachments: input.attachments,
       context: { agentTag: input.agentTag, subagentTag: input.subagent.tag },
       tools: tools.map((t) => ({
         name: t.name,

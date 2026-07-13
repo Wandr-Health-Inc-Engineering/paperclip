@@ -78,7 +78,7 @@ export function renderHelpMessage(): string {
     (c) => `• \`${c.usage}\` — ${c.summary}`,
   ).join("\n");
   return [
-    "*Tethr — your coordinator* 🧭",
+    "*Tethr — your coordinator*",
     "Ask me anything in plain language and I'll answer, draft a plan for the Drive, or (as specialists come online) route it to the right agent. Tag me in a channel or just DM me.",
     "",
     "*Commands*",

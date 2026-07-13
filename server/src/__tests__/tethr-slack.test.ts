@@ -4,6 +4,7 @@ import { matchMetaCommand, renderHelpMessage, TETHR_COMMANDS } from "../tethr/co
 import { buildRecommendation } from "../tethr/recommendation.js";
 import {
   chunkSlackText,
+  extractImageFiles,
   extractLinks,
   interpretSlackEvent,
   isAffirmative,
@@ -110,6 +111,25 @@ describe("interpretSlackEvent", () => {
     expect(r.type).toBe("ignore");
   });
 
+  it("turns a shared screenshot into an image kickoff", () => {
+    const r = interpretSlackEvent({
+      type: "event_callback",
+      event: {
+        type: "message",
+        channel_type: "im",
+        channel: "D1",
+        ts: "9.0",
+        text: "",
+        files: [{ mimetype: "image/png", url_private: "https://files.slack/x.png", name: "shot.png", size: 1000 }],
+      },
+    });
+    expect(r.type).toBe("kickoff");
+    if (r.type !== "kickoff") return;
+    expect(r.images?.length).toBe(1);
+    expect(r.images?.[0].url).toBe("https://files.slack/x.png");
+    expect(r.requestText.toLowerCase()).toContain("image");
+  });
+
   it("treats any DM to the bot as a kickoff (like the Console chat)", () => {
     const r = interpretSlackEvent({
       type: "event_callback",
@@ -137,6 +157,26 @@ describe("interpretSlackEvent", () => {
     expect(r.type).toBe("kickoff");
     if (r.type !== "kickoff") return;
     expect(r.isDM).toBe(true);
+  });
+});
+
+describe("extractImageFiles", () => {
+  it("keeps images (preferring the download URL), drops non-images, normalizes jpg", () => {
+    const files = [
+      { mimetype: "image/png", url_private_download: "https://d/1.png", url_private: "https://p/1.png", name: "1.png", size: 10 },
+      { mimetype: "application/pdf", url_private: "https://p/doc.pdf", name: "doc.pdf" },
+      { mimetype: "image/jpg", url_private: "https://p/2.jpg", name: "2.jpg" },
+    ];
+    const imgs = extractImageFiles(files);
+    expect(imgs.map((i) => i.url)).toEqual(["https://d/1.png", "https://p/2.jpg"]);
+    expect(imgs[0].mimeType).toBe("image/png");
+    expect(imgs[1].mimeType).toBe("image/jpeg"); // jpg normalized
+  });
+
+  it("returns [] for no files or a non-array", () => {
+    expect(extractImageFiles(undefined)).toEqual([]);
+    expect(extractImageFiles([])).toEqual([]);
+    expect(extractImageFiles("nope")).toEqual([]);
   });
 });
 

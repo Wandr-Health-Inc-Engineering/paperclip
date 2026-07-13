@@ -47,6 +47,7 @@ describeEmbeddedPostgres("tethr clean-slate org (@tethr coordinator)", () => {
     delete process.env.TETHR_BUNDLE_PATH;
     delete process.env.ANTHROPIC_API_KEY; // force the mock provider
     delete process.env.TETHR_SLACK_COMPANY_ID;
+    process.env.TETHR_LIVE_FETCH = "false"; // hermetic: fixtures, never the network
 
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-tethr-core-");
     db = createDb(tempDb.connectionString);
@@ -377,6 +378,23 @@ describeEmbeddedPostgres("tethr clean-slate org (@tethr coordinator)", () => {
       if (saved === undefined) delete process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID;
       else process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID = saved;
     }
+  });
+
+  it("threads a shared image through routing to the model", async () => {
+    const routing = routingService(db);
+    // 1x1 transparent PNG.
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+    const result = await routing.routeRequest({
+      companyId,
+      requestText: "What's in this screenshot?",
+      attachments: [{ mimeType: "image/png", dataBase64: png, name: "shot.png" }],
+    });
+    expect(result.status).not.toBe("failed");
+    // The mock can't see pixels, but it must confirm the image reached the model
+    // (proving the Slack → routing → worker → LLM pipeline carries attachments).
+    expect(result.resultText.toLowerCase()).toContain("image");
+    expect(result.resultText).toContain("shot.png");
   });
 
   it("surfaces an escalation up through routing when the agent raises a hand", async () => {

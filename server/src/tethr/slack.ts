@@ -17,6 +17,7 @@ import type { Db } from "@paperclipai/db";
 import { companies, tethrAgentProfiles, tethrRouteRuns } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { matchMetaCommand, renderHelpMessage } from "./commands.js";
+import type { LLMImageAttachment } from "./llm/types.js";
 import { memoryService } from "./memory.js";
 
 const SLACK_API = "https://slack.com/api";
@@ -139,6 +140,14 @@ export function verifySlackSignature(input: VerifyInput): boolean {
 
 // ---- Inbound: pure event interpreter -------------------------------------
 
+/** An image shared in Slack: a private URL (needs the bot token) + metadata. */
+export interface SlackImageRef {
+  url: string;
+  mimeType: string;
+  name?: string;
+  size?: number;
+}
+
 export type SlackInterpretation =
   | { type: "challenge"; challenge: string }
   | {
@@ -148,6 +157,7 @@ export type SlackInterpretation =
       channel?: string;
       threadTs?: string;
       isDM?: boolean;
+      images?: SlackImageRef[];
     }
   | { type: "ignore"; reason: string };
 
@@ -193,6 +203,7 @@ export function interpretSlackEvent(
 
   const rawText = String(ev.text ?? "");
   const links = extractLinks(rawText);
+  const images = extractImageFiles(ev.files);
   const hasFiles = Array.isArray(ev.files) && ev.files.length > 0;
 
   // In a DM (`channel_type: "im"`) the bot is 1:1 with the user, so ANY message
@@ -210,8 +221,10 @@ export function interpretSlackEvent(
   const requestText =
     cleaned ||
     (links[0]
-      ? `Review this link and kick off content: ${links[0]}`
-      : "Kick off content from the shared media");
+      ? `Take a look at this link: ${links[0]}`
+      : images.length
+        ? "Take a look at the attached image(s) and tell me what you see."
+        : "Take a look at the shared file.");
 
   return {
     type: "kickoff",
@@ -225,7 +238,65 @@ export function interpretSlackEvent(
           ? ev.ts
           : undefined,
     isDM,
+    images: images.length ? images : undefined,
   };
+}
+
+const IMAGE_MIME_RE = /^image\/(png|jpe?g|gif|webp)$/i;
+/** Vision guardrails: cap count and per-image bytes. */
+const MAX_IMAGES = 6;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
+
+/** Pull image files (screenshots, photos) out of a Slack event's files array. */
+export function extractImageFiles(files: unknown): SlackImageRef[] {
+  if (!Array.isArray(files)) return [];
+  const out: SlackImageRef[] = [];
+  for (const f of files) {
+    const file = f as Record<string, unknown>;
+    const mimeType = String(file.mimetype ?? "");
+    const url = String(file.url_private_download ?? file.url_private ?? "");
+    if (!url || !IMAGE_MIME_RE.test(mimeType)) continue;
+    out.push({
+      url,
+      mimeType: mimeType.toLowerCase().replace("image/jpg", "image/jpeg"),
+      name: typeof file.name === "string" ? file.name : undefined,
+      size: typeof file.size === "number" ? file.size : undefined,
+    });
+  }
+  return out;
+}
+
+/**
+ * Download Slack images (private URLs need the bot token) and base64-encode them
+ * for the vision model. Skips oversized files, caps the count, and never throws
+ * — a failed image just doesn't get attached. No-op under test / without a token.
+ */
+export async function fetchSlackImageAttachments(
+  images: SlackImageRef[],
+): Promise<LLMImageAttachment[]> {
+  if (underTest()) return [];
+  const token = slackBotToken();
+  if (!token || !images.length) return [];
+  const out: LLMImageAttachment[] = [];
+  for (const img of images.slice(0, MAX_IMAGES)) {
+    if (img.size && img.size > MAX_IMAGE_BYTES) {
+      logger.warn({ name: img.name, size: img.size }, "tethr slack: image too large, skipped");
+      continue;
+    }
+    try {
+      const res = await fetch(img.url, { headers: { authorization: `Bearer ${token}` } });
+      if (!res.ok) {
+        logger.warn({ name: img.name, status: res.status }, "tethr slack: image download failed");
+        continue;
+      }
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.byteLength > MAX_IMAGE_BYTES || buf.byteLength === 0) continue;
+      out.push({ mimeType: img.mimeType, dataBase64: buf.toString("base64"), name: img.name });
+    } catch (err) {
+      logger.warn({ err, name: img.name }, "tethr slack: image fetch error");
+    }
+  }
+  return out;
 }
 
 // ---- Company resolution for inbound (no companyId in Slack payloads) ------
@@ -473,7 +544,13 @@ export async function handleConversationReset(
  */
 export async function routeInboundKickoff(
   db: Db,
-  interp: { requestText: string; channel?: string; threadTs?: string; isDM?: boolean },
+  interp: {
+    requestText: string;
+    channel?: string;
+    threadTs?: string;
+    isDM?: boolean;
+    images?: SlackImageRef[];
+  },
 ): Promise<{ routeRunId: string; threadId: string } | null> {
   const companyId = await resolveTethrCompanyId(db);
   if (!companyId) {
@@ -529,7 +606,7 @@ export async function routeInboundKickoff(
       await postSlackMessage({
         channel: interp.channel,
         threadTs: interp.threadTs,
-        text: "⚠️ This clears what I remember from our current conversation (your standing facts and settings stay). Reply *yes* to confirm — or just keep chatting to cancel.",
+        text: "This clears what I remember from our current conversation (your standing facts and settings stay). Reply *yes* to confirm — or just keep chatting to cancel.",
       });
       return null;
     }
@@ -542,7 +619,7 @@ export async function routeInboundKickoff(
           await postSlackMessage({
             channel: interp.channel,
             threadTs: interp.threadTs,
-            text: "🧹 Cleared — fresh start. What's next?",
+            text: "Cleared — fresh start. What's next?",
           });
           return null;
         }
@@ -560,6 +637,11 @@ export async function routeInboundKickoff(
   const threadId = forceFresh
     ? null
     : await resolveContinuationThreadId(db, companyId, sourceKey, { isDM: interp.isDM });
+
+  // Download any shared screenshots so the model can see them (live vision).
+  const attachments = interp.images?.length
+    ? await fetchSlackImageAttachments(interp.images)
+    : undefined;
 
   // Dynamic import breaks the notify → slack → routing → notify module cycle.
   const { routingService } = await import("./routing.js");
@@ -579,6 +661,7 @@ export async function routeInboundKickoff(
         invocationSource: "api",
         threadId,
         sourceKey,
+        attachments,
         hopDelayMs: 0,
         onStarted: resolve,
       })

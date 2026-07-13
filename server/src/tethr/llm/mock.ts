@@ -199,9 +199,17 @@ export class MockProvider implements LLMProvider {
     const topic = claimedTopic ?? extractTopic(input.prompt, input.kind);
     const build = TEMPLATES[input.kind] ?? TEMPLATES.document;
     const { title, body } = build(topic, input.prompt);
-    const bodyWithTrail = toolCalls.length
-      ? `${body}\n\n---\n*Worked with: ${toolCalls.map((t) => t.summary).join(" · ")}*`
-      : body;
+    // The mock can't see images — acknowledge them so the pipeline is verifiable
+    // offline; real vision analysis happens in live mode.
+    const imageNote = input.attachments?.length
+      ? `\n\nReceived ${input.attachments.length} image${input.attachments.length > 1 ? "s" : ""} (${input.attachments
+          .map((a) => a.name ?? "screenshot")
+          .join(", ")}). I can read screenshots in live mode; on the local mock I can't analyze the pixels yet.`
+      : "";
+    const bodyWithTrail =
+      (toolCalls.length
+        ? `${body}\n\n---\n*Worked with: ${toolCalls.map((t) => t.summary).join(" · ")}*`
+        : body) + imageNote;
     const generated = approxUsage(input.system + input.prompt + toolContext, bodyWithTrail);
     return {
       title,

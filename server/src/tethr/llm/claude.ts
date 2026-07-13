@@ -168,11 +168,23 @@ export class ClaudeProvider implements LLMProvider {
       description: t.description,
       input_schema: t.inputSchema,
     }));
+    const promptText = `${input.prompt}\n\nUse your tools to ground the work before producing it. Return the final work product as markdown. First line: a short title prefixed with "TITLE: ".`;
+    // Attach any shared images as vision blocks in the first user message.
+    const images = (input.attachments ?? []).map((a) => ({
+      type: "image",
+      source: { type: "base64", media_type: a.mimeType, data: a.dataBase64 },
+    }));
+    const firstContent = images.length
+      ? [
+          ...images,
+          {
+            type: "text",
+            text: `${promptText}\n\nThe user attached the image(s) above — examine them as part of the request.`,
+          },
+        ]
+      : promptText;
     const messages: Array<{ role: "user" | "assistant"; content: unknown }> = [
-      {
-        role: "user",
-        content: `${input.prompt}\n\nUse your tools to ground the work before producing it. Return the final work product as markdown. First line: a short title prefixed with "TITLE: ".`,
-      },
+      { role: "user", content: firstContent },
     ];
 
     for (let turn = 0; turn < maxTurns; turn++) {

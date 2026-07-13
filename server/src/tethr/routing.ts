@@ -4,7 +4,7 @@ import { tethrRouteRuns, type TethrRouteHop } from "@paperclipai/db";
 import type { TethrRouteInvocationSource } from "@paperclipai/shared";
 import { logActivity } from "../services/activity-log.js";
 import { getTethrLLMProvider } from "./llm/index.js";
-import type { LLMUsage } from "./llm/types.js";
+import type { LLMImageAttachment, LLMUsage } from "./llm/types.js";
 import { notificationService } from "./notify.js";
 import { orgService } from "./org.js";
 import { isContentRequest, publishedDuplicateWarning } from "./published-memory.js";
@@ -37,6 +37,8 @@ export interface RouteRequestInput {
   /** Origin key for cross-surface continuity (e.g. a Slack thread/DM). Stored
    * on the run so a later reply from the same origin can resume the thread. */
   sourceKey?: string | null;
+  /** Images shared with the request (e.g. Slack screenshots) for the model. */
+  attachments?: LLMImageAttachment[];
   /** Pace hops so the Console can stream them (console runs only). */
   hopDelayMs?: number;
   /** Fires as soon as the run row exists — lets callers return early and poll. */
@@ -288,6 +290,7 @@ export function routingService(db: Db) {
           heartbeatRunId: input.heartbeatRunId ?? null,
           onHop: recordHop,
           extraContext: extraParts.length ? extraParts.join("\n\n") : undefined,
+          attachments: input.attachments,
         });
         usage = sumUsage(usage, result.usage);
         outputs.push({

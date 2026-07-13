@@ -26,6 +26,15 @@ export interface ClassifyResult {
   usage: LLMUsage;
 }
 
+/** An image the user shared (e.g. a Slack screenshot) for the model to see. */
+export interface LLMImageAttachment {
+  /** image/png, image/jpeg, image/gif, or image/webp. */
+  mimeType: string;
+  /** Base64-encoded image bytes (no data: prefix). */
+  dataBase64: string;
+  name?: string;
+}
+
 export interface GenerateInput {
   /** Subagent identity + guardrails, rendered as the system prompt. */
   system: string;
@@ -35,6 +44,8 @@ export interface GenerateInput {
   kind: string;
   /** Extra structured context (agent tag, steps, reads). */
   context?: Record<string, unknown>;
+  /** Images to examine alongside the request (vision; live Claude only). */
+  attachments?: LLMImageAttachment[];
 }
 
 export interface GenerateResult {
