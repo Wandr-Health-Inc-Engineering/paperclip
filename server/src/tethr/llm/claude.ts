@@ -38,6 +38,13 @@ interface ClaudeResponse {
   usage?: { input_tokens?: number; output_tokens?: number };
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Retries: rate limits (429) and overload/5xx are transient — a low Anthropic
+// tier caps input tokens per minute, so a burst 429s until the bucket refills.
+const MAX_ATTEMPTS = 4;
+const MAX_BACKOFF_MS = 60_000;
+
 export class ClaudeProvider implements LLMProvider {
   readonly id = "claude" as const;
   readonly model: string;
@@ -55,31 +62,58 @@ export class ClaudeProvider implements LLMProvider {
     this.fastModel = fastModel;
   }
 
+  /**
+   * POST to the Messages API with retry on rate limits (429) and transient
+   * overload (529/5xx). Honors the `retry-after` header, else exponential
+   * backoff. A persistent rate limit surfaces a plain-English message (not raw
+   * JSON) that points at the real fix: raise the Anthropic tier.
+   */
+  private async post(body: Record<string, unknown>): Promise<ClaudeResponse> {
+    let last = { status: 0, detail: "" };
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": this.apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) return (await res.json()) as ClaudeResponse;
+
+      last = { status: res.status, detail: await res.text().catch(() => "") };
+      const retryable = res.status === 429 || res.status === 529 || res.status >= 500;
+      if (!retryable || attempt === MAX_ATTEMPTS - 1) break;
+
+      const retryAfter = Number(res.headers.get("retry-after"));
+      const waitMs =
+        Number.isFinite(retryAfter) && retryAfter > 0
+          ? Math.min(MAX_BACKOFF_MS, retryAfter * 1000)
+          : Math.min(MAX_BACKOFF_MS, 1000 * 2 ** attempt);
+      await sleep(waitMs + Math.floor(Math.random() * 250));
+    }
+
+    if (last.status === 429) {
+      throw new Error(
+        "Claude rate limit reached — your Anthropic org caps input tokens per minute on this model, and it stayed capped after retries. Try again in a minute, or raise your usage tier at console.anthropic.com.",
+      );
+    }
+    throw new Error(`Claude API ${last.status}: ${last.detail.slice(0, 300)}`);
+  }
+
   private async call(
     system: string,
     prompt: string,
     maxTokens: number,
     model = this.model,
   ): Promise<{ text: string; usage: LLMUsage }> {
-    const res = await fetch(API_URL, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": this.apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: maxTokens,
-        system,
-        messages: [{ role: "user", content: prompt }],
-      }),
+    const data = await this.post({
+      model,
+      max_tokens: maxTokens,
+      system,
+      messages: [{ role: "user", content: prompt }],
     });
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      throw new Error(`Claude API ${res.status}: ${detail.slice(0, 300)}`);
-    }
-    const data = (await res.json()) as ClaudeResponse;
     const text = data.content
       .filter((b) => b.type === "text" && typeof b.text === "string")
       .map((b) => b.text)
@@ -230,26 +264,13 @@ export class ClaudeProvider implements LLMProvider {
     ];
 
     for (let turn = 0; turn < maxTurns; turn++) {
-      const res = await fetch(API_URL, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-api-key": this.apiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: this.model,
-          max_tokens: 3000,
-          system: input.system,
-          tools,
-          messages,
-        }),
+      const data = await this.post({
+        model: this.model,
+        max_tokens: 3000,
+        system: input.system,
+        tools,
+        messages,
       });
-      if (!res.ok) {
-        const detail = await res.text().catch(() => "");
-        throw new Error(`Claude API ${res.status}: ${detail.slice(0, 300)}`);
-      }
-      const data = (await res.json()) as ClaudeResponse;
       usage = {
         inputTokens: usage.inputTokens + (data.usage?.input_tokens ?? 0),
         outputTokens: usage.outputTokens + (data.usage?.output_tokens ?? 0),
