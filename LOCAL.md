@@ -80,7 +80,8 @@ Still local — just swap the provider:
 ```
 ANTHROPIC_API_KEY=sk-ant-…
 TETHR_LIVE_FETCH=true
-# optional: TETHR_CLAUDE_MODEL=claude-sonnet-4-6   (the default)
+# optional: TETHR_CLAUDE_MODEL=claude-sonnet-5        (work model — the default)
+# optional: TETHR_CLAUDE_FAST_MODEL=claude-haiku-4-5  (cheap routing — the default)
 ```
 
 Restart. Now agents use real Claude, and **budget caps enforce for real** (each agent has a

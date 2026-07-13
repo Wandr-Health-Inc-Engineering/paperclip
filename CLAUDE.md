@@ -80,7 +80,8 @@ UI on :3100). Re-seed (idempotent): `curl -X POST http://localhost:3100/api/teth
 | Var | Effect |
 |---|---|
 | `ANTHROPIC_API_KEY` | swaps every agent from mock → live Claude (`llm/claude.ts`, plain fetch) |
-| `TETHR_CLAUDE_MODEL` | live model override (default `claude-sonnet-4-6`) |
+| `TETHR_CLAUDE_MODEL` | the "work" model — chat answers, plans, drafts, vision (default `claude-sonnet-5`) |
+| `TETHR_CLAUDE_FAST_MODEL` | the cheap routing model — classify/plan hops (default `claude-haiku-4-5`) |
 | `TETHR_LIVE_FETCH=true` | enables real read-only CDC/web fetches via allowlisted tools (Reddit falls back to fixtures — blocks unauth) |
 | `TETHR_AUTO_REVISE=false` | turn off auto-revision on "request changes" |
 | `TETHR_BUNDLE_PATH` | path to the `/tethr` spec bundle; seeder imports real agent markdown (else vendored specs) |

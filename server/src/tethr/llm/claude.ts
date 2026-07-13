@@ -16,7 +16,11 @@ import type {
 // no SDK dependency. Selected automatically when ANTHROPIC_API_KEY is set.
 
 const API_URL = "https://api.anthropic.com/v1/messages";
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+// The "work" model does the actual thinking — chat answers, plans, drafts,
+// vision. The "fast" model handles the cheap, high-frequency routing hops
+// (classify, plan-vs-not) where a small model is plenty and ~1/3 the cost.
+const DEFAULT_MODEL = "claude-sonnet-5";
+const DEFAULT_FAST_MODEL = "claude-haiku-4-5";
 
 interface ClaudeContentBlock {
   type: string;
@@ -35,14 +39,26 @@ interface ClaudeResponse {
 export class ClaudeProvider implements LLMProvider {
   readonly id = "claude" as const;
   readonly model: string;
+  /** Cheap model for routing hops (classify/plan). */
+  readonly fastModel: string;
   private readonly apiKey: string;
 
-  constructor(apiKey: string, model = process.env.TETHR_CLAUDE_MODEL || DEFAULT_MODEL) {
+  constructor(
+    apiKey: string,
+    model = process.env.TETHR_CLAUDE_MODEL || DEFAULT_MODEL,
+    fastModel = process.env.TETHR_CLAUDE_FAST_MODEL || DEFAULT_FAST_MODEL,
+  ) {
     this.apiKey = apiKey;
     this.model = model;
+    this.fastModel = fastModel;
   }
 
-  private async call(system: string, prompt: string, maxTokens: number): Promise<{ text: string; usage: LLMUsage }> {
+  private async call(
+    system: string,
+    prompt: string,
+    maxTokens: number,
+    model = this.model,
+  ): Promise<{ text: string; usage: LLMUsage }> {
     const res = await fetch(API_URL, {
       method: "POST",
       headers: {
@@ -51,7 +67,7 @@ export class ClaudeProvider implements LLMProvider {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: this.model,
+        model,
         max_tokens: maxTokens,
         system,
         messages: [{ role: "user", content: prompt }],
@@ -88,6 +104,7 @@ export class ClaudeProvider implements LLMProvider {
       system,
       `Request: ${input.request}\n\nDestinations:\n${optionLines}`,
       300,
+      this.fastModel, // routing is a cheap classification — small model
     );
     const parsed = safeJson(text);
     const tag = typeof parsed?.tag === "string" ? parsed.tag : input.options[0]?.tag ?? "";
@@ -135,6 +152,7 @@ export class ClaudeProvider implements LLMProvider {
       system,
       `Request: ${input.request}\n\nAgents:\n${agentLines}`,
       500,
+      this.fastModel, // plan-or-not is a cheap decision — small model
     );
     const parsed = safeJson(text);
     const steps = parsed?.steps;
