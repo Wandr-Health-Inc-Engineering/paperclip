@@ -288,6 +288,125 @@ export function driveService(db: Db) {
     return updated ?? null;
   }
 
+  // ---- File-manager operations (manual, human-driven from the UI) ---------------
+  // Agents never call these — they write through putFile into their own folders.
+  // These are the move/rename/organize surface for a person in the Drive page.
+
+  /** Create an empty folder under a parent (or root when parentId is null). */
+  async function createFolder(
+    companyId: string,
+    parentId: string | null,
+    name: string,
+    createdByTag = "mark",
+  ) {
+    const clean = name.trim();
+    if (!clean || clean.includes("/")) throw new Error("invalid folder name");
+    let prefix = "";
+    if (parentId) {
+      const parent = await getNode(companyId, parentId);
+      if (!parent || parent.kind !== "folder") throw new Error("parent folder not found");
+      prefix = parent.path;
+    }
+    return ensureFolder(companyId, `${prefix}/${clean}`, createdByTag);
+  }
+
+  /**
+   * Reparent and/or rename a node. Moving a folder rewrites the path of every
+   * descendant (a single SQL prefix-swap). newParentId: undefined = keep parent
+   * (rename in place), null = move to root, else the destination folder id.
+   * Returns null if the node is missing; throws on collisions or cycles.
+   */
+  async function moveNode(
+    companyId: string,
+    nodeId: string,
+    opts: { newParentId?: string | null; newName?: string; actorTag?: string },
+  ) {
+    const node = await getNode(companyId, nodeId);
+    if (!node) return null;
+
+    let newParentId: string | null;
+    let prefix: string;
+    if (opts.newParentId === undefined) {
+      newParentId = node.parentId;
+      const p = node.parentId ? await getNode(companyId, node.parentId) : null;
+      prefix = p?.path ?? "";
+    } else if (opts.newParentId === null) {
+      newParentId = null;
+      prefix = "";
+    } else {
+      const parent = await getNode(companyId, opts.newParentId);
+      if (!parent || parent.kind !== "folder") throw new Error("destination folder not found");
+      newParentId = parent.id;
+      prefix = parent.path;
+    }
+
+    const newName = (opts.newName ?? node.name).trim();
+    if (!newName || newName.includes("/")) throw new Error("invalid name");
+    const newPath = normalizePath(`${prefix}/${newName}`);
+    if (newPath === node.path) return node; // no-op
+
+    if (newParentId === node.id) throw new Error("cannot move a folder into itself");
+    if (
+      node.kind === "folder" &&
+      (prefix === node.path || prefix.startsWith(`${node.path}/`))
+    ) {
+      throw new Error("cannot move a folder into its own subtree");
+    }
+    if (await findNodeByPath(companyId, newPath)) {
+      throw new Error(`"${newName}" already exists in the destination`);
+    }
+
+    const oldPath = node.path;
+    await db.transaction(async (tx) => {
+      await tx
+        .update(tethrDriveNodes)
+        .set({ parentId: newParentId, name: newName, path: newPath, updatedAt: new Date() })
+        .where(and(eq(tethrDriveNodes.companyId, companyId), eq(tethrDriveNodes.id, node.id)));
+      if (node.kind === "folder") {
+        await tx
+          .update(tethrDriveNodes)
+          .set({
+            path: sql`${newPath} || substr(${tethrDriveNodes.path}, ${oldPath.length + 1})`,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(tethrDriveNodes.companyId, companyId),
+              sql`${tethrDriveNodes.path} like ${`${oldPath}/%`}`,
+            ),
+          );
+      }
+    });
+
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: opts.actorTag ?? "mark",
+      action: "tethr_drive_node_moved",
+      entityType: "tethr_drive_node",
+      entityId: node.id,
+      details: { from: oldPath, to: newPath },
+    });
+
+    return getNode(companyId, node.id);
+  }
+
+  /** Soft delete: move a node into /archive (never a hard delete). */
+  async function archiveNode(companyId: string, nodeId: string, actorTag = "mark") {
+    const node = await getNode(companyId, nodeId);
+    if (!node) return null;
+    const archive = await ensureFolder(companyId, "/archive", actorTag);
+    let name = node.name;
+    let n = 2;
+    // Pick a collision-free name under /archive (ignoring the node itself).
+    for (;;) {
+      const existing = await findNodeByPath(companyId, `/archive/${name}`);
+      if (!existing || existing.id === nodeId) break;
+      name = `${node.name} (${n++})`;
+    }
+    return moveNode(companyId, nodeId, { newParentId: archive.id, newName: name, actorTag });
+  }
+
   return {
     ensureFolder,
     putFile,
@@ -299,6 +418,9 @@ export function driveService(db: Db) {
     readCurrent,
     setTags,
     setPermissions,
+    createFolder,
+    moveNode,
+    archiveNode,
   };
 }
 

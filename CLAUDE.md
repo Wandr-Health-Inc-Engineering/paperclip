@@ -221,6 +221,26 @@ Ported from `scout-wandr-app` (raw fetch, no SDK). Setup + safety: **`GOOGLE-SET
   folder** (`TETHR_GDRIVE_FOLDER_ID`); `gating.ts` mirrors every published deliverable there
   (best-effort, never fails a publish). Inert until `TETHR_GDRIVE_SA_KEY[_PATH]` + folder id set.
 
+## Drive as a file manager (phase 12, D1 built)
+
+The Drive page is now a real file manager, not a read-only browser. `drive.ts` adds
+**human-only** ops — `createFolder`, `moveNode` (reparent + rename; a folder move rewrites
+every descendant path in one SQL prefix-swap), `archiveNode` (soft delete = move to
+`/archive`, **never** a hard delete). Routes: `POST /drive/folder`, `/drive/node/:id/move`,
+`/drive/node/:id/archive` (all `assertCompanyAccess`). UI (`TethrDrive.tsx`): folder tree +
+show/hide toggle, move dialog (tree destination picker, self-exclusion), rename, new-folder.
+**Agents never call these** — they only `putFile` into their own folders; move/organize is a
+person's job. Locked by `tethr-drive-manager.test.ts` (10 tests).
+
+**D2 — point it at the real Google Drive (NOT built; gated on Mark's Google setup, `GOOGLE-SETUP.md`).**
+Mark's chosen reach (2026-07-12): **"Tethr + folders you share"** — agents stay locked to the
+Tethr folder; the UI can move files between Tethr and any *other* folder Mark shares with the
+service account. This needs: (1) scope upgrade `drive.file` → `drive` (drive.file only sees
+app-created files — can't list human-added/shared files); (2) new read/list/move Drive API
+functions in `google-drive.ts`; (3) per-agent subfolders under the Tethr folder (mirror is one
+flat folder today). Full-Drive reach (option "your whole Drive") was declined — it would need
+Mark's own OAuth + a whole-Drive token.
+
 ## Brand lock (any UI work)
 
 Urbanist + JetBrains Mono · pure black/white · 2px borders · **no gradients, no color, no

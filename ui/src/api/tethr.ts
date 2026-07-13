@@ -397,6 +397,15 @@ export const tethrApi = {
     api.post(`/tethr/${c}/drive/file`, { path, content, note }),
   setDriveTags: (c: string, nodeId: string, tags: string[]) =>
     api.post(`/tethr/${c}/drive/node/${nodeId}/tags`, { tags }),
+  createDriveFolder: (c: string, parentId: string | null, name: string) =>
+    api.post<TethrDriveNode>(`/tethr/${c}/drive/folder`, { parentId, name }),
+  moveDriveNode: (
+    c: string,
+    nodeId: string,
+    opts: { newParentId?: string | null; newName?: string },
+  ) => api.post<TethrDriveNode>(`/tethr/${c}/drive/node/${nodeId}/move`, opts),
+  archiveDriveNode: (c: string, nodeId: string) =>
+    api.post<TethrDriveNode>(`/tethr/${c}/drive/node/${nodeId}/archive`, {}),
   runs: (c: string) =>
     api.get<{ schedules: TethrSchedule[]; runs: TethrRunRow[] }>(`/tethr/${c}/runs`),
   runNow: (c: string, agentId: string, request?: string) =>

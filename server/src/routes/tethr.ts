@@ -510,6 +510,75 @@ export function tethrRoutes(db: Db) {
     },
   );
 
+  // File-manager mutations — manual, human-driven. Agents never hit these; they
+  // only ever putFile into their own folders.
+  router.post("/tethr/:companyId/drive/folder", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    const { parentId, name } = req.body ?? {};
+    if (typeof name !== "string" || !name.trim()) {
+      res.status(400).json({ error: "name is required" });
+      return;
+    }
+    try {
+      const node = await drive.createFolder(
+        companyId,
+        parentId == null ? null : String(parentId),
+        name,
+        actor.actorId,
+      );
+      res.json(node);
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  router.post("/tethr/:companyId/drive/node/:nodeId/move", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    const body = req.body ?? {};
+    // newParentId: omit to keep parent (rename), null to move to root.
+    const opts: { newParentId?: string | null; newName?: string; actorTag: string } = {
+      actorTag: actor.actorId,
+    };
+    if ("newParentId" in body) {
+      opts.newParentId = body.newParentId == null ? null : String(body.newParentId);
+    }
+    if (typeof body.newName === "string") opts.newName = body.newName;
+    try {
+      const node = await drive.moveNode(companyId, req.params.nodeId as string, opts);
+      if (!node) {
+        res.status(404).json({ error: "Node not found" });
+        return;
+      }
+      res.json(node);
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  router.post("/tethr/:companyId/drive/node/:nodeId/archive", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    try {
+      const node = await drive.archiveNode(
+        companyId,
+        req.params.nodeId as string,
+        actor.actorId,
+      );
+      if (!node) {
+        res.status(404).json({ error: "Node not found" });
+        return;
+      }
+      res.json(node);
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   // ---- Runs / heartbeats ----------------------------------------------------
   router.get("/tethr/:companyId/runs", async (req, res) => {
     const companyId = req.params.companyId as string;
