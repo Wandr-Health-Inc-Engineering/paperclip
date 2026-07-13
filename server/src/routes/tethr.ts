@@ -682,7 +682,13 @@ export function tethrRoutes(db: Db) {
     assertCompanyAccess(req, companyId);
 
     const since = new Date(Date.now() - 30 * 24 * 3600 * 1000);
-    const [profiles, policies, series] = await Promise.all([
+    // Real month-to-date spend per agent, summed from cost_events (the same
+    // source the budget hard-stop enforces on) — so the page shows what actually
+    // accrued, not a stale denormalized field.
+    const monthStart = new Date();
+    monthStart.setUTCDate(1);
+    monthStart.setUTCHours(0, 0, 0, 0);
+    const [profiles, policies, series, monthSpend] = await Promise.all([
       org.listProfiles(companyId),
       db
         .select()
@@ -699,7 +705,18 @@ export function tethrRoutes(db: Db) {
           and(eq(costEvents.companyId, companyId), gte(costEvents.occurredAt, since)),
         )
         .groupBy(costEvents.agentId, sql`to_char(${costEvents.occurredAt}, 'YYYY-MM-DD')`),
+      db
+        .select({
+          agentId: costEvents.agentId,
+          costCents: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
+        })
+        .from(costEvents)
+        .where(
+          and(eq(costEvents.companyId, companyId), gte(costEvents.occurredAt, monthStart)),
+        )
+        .groupBy(costEvents.agentId),
     ]);
+    const spentByAgent = new Map(monthSpend.map((r) => [r.agentId, r.costCents]));
 
     res.json({
       agents: profiles.map(({ agent, profile }) => ({
@@ -708,7 +725,7 @@ export function tethrRoutes(db: Db) {
         tag: profile.tag,
         icon: agent.icon,
         budgetMonthlyCents: agent.budgetMonthlyCents,
-        spentMonthlyCents: agent.spentMonthlyCents,
+        spentMonthlyCents: spentByAgent.get(agent.id) ?? agent.spentMonthlyCents ?? 0,
         approvalGate: profile.approvalGate,
         policy:
           policies.find(

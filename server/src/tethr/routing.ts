@@ -1,9 +1,10 @@
 import { and, desc, eq, ne } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { tethrRouteRuns, type TethrRouteHop } from "@paperclipai/db";
+import { costEvents, tethrRouteRuns, type TethrRouteHop } from "@paperclipai/db";
 import type { TethrRouteInvocationSource } from "@paperclipai/shared";
 import { logActivity } from "../services/activity-log.js";
 import { getTethrLLMProvider } from "./llm/index.js";
+import { priceUsd } from "./llm/pricing.js";
 import type { LLMImageAttachment, LLMUsage } from "./llm/types.js";
 import { notificationService } from "./notify.js";
 import { orgService } from "./org.js";
@@ -421,6 +422,36 @@ export function routingService(db: Db) {
         .update(tethrRouteRuns)
         .set({ status, resultText, durationMs, updatedAt: new Date() })
         .where(eq(tethrRouteRuns.id, run.id));
+
+      // Record live spend so it flows into core cost_events → budget hard-stop.
+      // Console/Slack/API requests run through here; heartbeats are billed by
+      // adapter.ts instead (skip them to avoid double-charging). Mock runs bill
+      // $0. Priced at the work-model rate — a small conservative overcharge for
+      // the cheaper routing hops.
+      const isHeartbeat = Boolean(input.heartbeatRunId);
+      if (
+        !isHeartbeat &&
+        run.agentId &&
+        provider.id === "claude" &&
+        (usage.inputTokens > 0 || usage.outputTokens > 0)
+      ) {
+        const costCents = Math.max(0, Math.round(priceUsd(provider.model, usage) * 100));
+        await db
+          .insert(costEvents)
+          .values({
+            companyId: input.companyId,
+            agentId: run.agentId,
+            provider: "anthropic",
+            biller: "anthropic",
+            billingType: "api",
+            model: provider.model,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            costCents,
+            occurredAt: new Date(),
+          })
+          .catch(() => {}); // never fail a request over cost bookkeeping
+      }
 
       return {
         routeRunId: run.id,

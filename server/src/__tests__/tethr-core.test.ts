@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { companies, createDb, tethrAgentProfiles, tethrDriveNodes, tethrMemories } from "@paperclipai/db";
+import { companies, costEvents, createDb, tethrAgentProfiles, tethrDriveNodes, tethrMemories } from "@paperclipai/db";
 import { orgService } from "../tethr/org.ts";
 import { routingService } from "../tethr/routing.ts";
 import { seedWandrGrowth } from "../tethr/seed/seed.ts";
@@ -378,6 +378,17 @@ describeEmbeddedPostgres("tethr clean-slate org (@tethr coordinator)", () => {
       if (saved === undefined) delete process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID;
       else process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID = saved;
     }
+  });
+
+  it("bills nothing on the mock provider (cost events are live-only)", async () => {
+    const routing = routingService(db);
+    await routing.routeRequest({ companyId, requestText: "A quick free question." });
+    const events = await db
+      .select()
+      .from(costEvents)
+      .where(eq(costEvents.companyId, companyId));
+    // Mock is deterministic and free — no spend must ever accrue in dev/test.
+    expect(events.length).toBe(0);
   });
 
   it("threads a shared image through routing to the model", async () => {
