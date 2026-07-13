@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import { matchMetaCommand, renderHelpMessage, TETHR_COMMANDS } from "../tethr/commands.js";
 import { buildRecommendation } from "../tethr/recommendation.js";
 import {
+  buildFiledFilesMessage,
   chunkSlackText,
   extractImageFiles,
   extractLinks,
@@ -182,6 +183,34 @@ describe("extractImageFiles", () => {
     expect(extractImageFiles(undefined)).toEqual([]);
     expect(extractImageFiles([])).toEqual([]);
     expect(extractImageFiles("nope")).toEqual([]);
+  });
+});
+
+describe("buildFiledFilesMessage", () => {
+  it("returns null when nothing was filed", () => {
+    expect(buildFiledFilesMessage([])).toBeNull();
+  });
+
+  it("gives a detail line + a copyable code-block path per file", () => {
+    const msg = buildFiledFilesMessage([
+      { title: "Weekly Market Brief", kind: "brief", agent: "@radar", path: "00 Tethr/01 Briefs/2026-07-13 Weekly Market Brief.md" },
+    ]);
+    expect(msg).toContain("*Filed to your shared Drive*");
+    expect(msg).toContain("*Weekly Market Brief*");
+    expect(msg).toContain("Brief"); // friendly kind label
+    expect(msg).toContain("@radar");
+    // Path is inside a fenced code block for one-tap copy.
+    expect(msg).toContain("```\n00 Tethr/01 Briefs/2026-07-13 Weekly Market Brief.md\n```");
+  });
+
+  it("pluralizes the header and labels multi-word kinds", () => {
+    const msg = buildFiledFilesMessage([
+      { title: "Post", kind: "blog_draft", path: "00 Tethr/04 Content/Blog Drafts/a.md" },
+      { title: "ICP", kind: "icp_profile", path: "00 Tethr/06 Strategy/b.md" },
+    ]);
+    expect(msg).toContain("*Filed 2 files to your shared Drive*");
+    expect(msg).toContain("Blog Draft");
+    expect(msg).toContain("ICP Profile"); // icp normalized to uppercase
   });
 });
 

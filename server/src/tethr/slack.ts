@@ -12,6 +12,7 @@
 // is posted back into the same thread.
 
 import crypto from "node:crypto";
+import path from "node:path";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { companies, tethrAgentProfiles, tethrOutputs, tethrRouteRuns } from "@paperclipai/db";
@@ -19,6 +20,7 @@ import { logger } from "../middleware/logger.js";
 import { matchMetaCommand, renderHelpMessage } from "./commands.js";
 import type { LLMImageAttachment } from "./llm/types.js";
 import { memoryService } from "./memory.js";
+import { mirrorDir } from "./mirror.js";
 
 const SLACK_API = "https://slack.com/api";
 
@@ -938,6 +940,8 @@ export async function routeInboundKickoff(
       settled = true;
       clearTimeout(ackTimer);
       await postAnswerToThread(interp, result);
+      // Show exactly what landed in the Drive, with a copyable path per file.
+      await postFiledFilesToThread(db, companyId, interp, ids.routeRunId);
       await tagOverseersInThread(db, companyId, interp, result);
     })
     .catch((err) => {
@@ -990,6 +994,89 @@ async function tagOverseersInThread(
     threadTs: interp.threadTs,
     text: lines.join("\n"),
   });
+}
+
+/** Friendly label for an output kind (brief → "Brief", blog_draft → "Blog draft"). */
+export function kindLabel(kind: string): string {
+  return kind
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .replace(/\bIcp\b/, "ICP");
+}
+
+export interface FiledFile {
+  title: string;
+  kind: string;
+  agent?: string;
+  path: string;
+}
+
+/**
+ * The "here's what I filed" message: a detail line (title · type · agent) and
+ * the file path in a copyable code block, per file. Pure — returns null when
+ * nothing was filed so the caller posts nothing.
+ */
+export function buildFiledFilesMessage(files: FiledFile[]): string | null {
+  if (!files.length) return null;
+  const header =
+    files.length === 1
+      ? "*Filed to your shared Drive*"
+      : `*Filed ${files.length} files to your shared Drive*`;
+  const blocks = files.map((f) => {
+    const detail = `• *${f.title}*  ·  ${kindLabel(f.kind)}${f.agent ? `  ·  ${f.agent}` : ""}`;
+    // Fenced code block → one-tap copy of the exact path in the folder.
+    return `${detail}\n\`\`\`\n${f.path}\n\`\`\``;
+  });
+  return `${header}\n${blocks.join("\n")}`;
+}
+
+/**
+ * After a run, tell the user exactly what landed in the shared Drive: for each
+ * published deliverable that mirrored to a folder, a detail line and the file
+ * path in a copyable code block. Best-effort — never throws into the caller,
+ * and posts nothing when no files were written.
+ */
+async function postFiledFilesToThread(
+  db: Db,
+  companyId: string,
+  interp: { channel?: string; threadTs?: string },
+  routeRunId: string,
+): Promise<void> {
+  try {
+    const rows = await db
+      .select({ title: tethrOutputs.title, kind: tethrOutputs.kind, meta: tethrOutputs.meta })
+      .from(tethrOutputs)
+      .where(
+        and(
+          eq(tethrOutputs.companyId, companyId),
+          eq(tethrOutputs.routeRunId, routeRunId),
+          eq(tethrOutputs.status, "published"),
+        ),
+      );
+
+    // The Drive-relative prefix the user sees in Finder (e.g. "00 Tethr").
+    const root = mirrorDir();
+    const base = root ? path.basename(root) : null;
+
+    const files: FiledFile[] = [];
+    for (const r of rows) {
+      const meta = (r.meta ?? {}) as Record<string, unknown>;
+      const mirror = meta.mirror as { relPath?: string } | undefined;
+      if (!mirror?.relPath) continue; // only files that actually reached a folder
+      files.push({
+        title: r.title,
+        kind: r.kind,
+        agent: typeof meta.agentTag === "string" ? meta.agentTag : undefined,
+        path: base ? `${base}/${mirror.relPath}` : mirror.relPath,
+      });
+    }
+
+    const text = buildFiledFilesMessage(files);
+    if (!text) return;
+    await postSlackMessage({ channel: interp.channel, threadTs: interp.threadTs, text });
+  } catch (err) {
+    logger.warn({ err }, "tethr slack: failed to post the filed-files summary");
+  }
 }
 
 /** Post a run's result to the originating thread, chunking long answers. */
