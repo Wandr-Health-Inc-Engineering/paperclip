@@ -323,7 +323,7 @@ export interface TethrAgentDetail {
 }
 
 export interface TethrStatus {
-  llm: { provider: string; model: string; liveKeyPresent: boolean };
+  llm: { provider: string; model: string; mode: "live" | "mock"; liveKeyPresent: boolean };
   storage: { provider: string; localDir: string | null };
   database: { external: boolean };
   bundle: { path: string | null };
@@ -442,4 +442,11 @@ export const tethrApi = {
       `/tethr/${c}/memories${agentId ? `?agentId=${agentId}` : ""}`,
     ),
   status: (c: string) => api.get<TethrStatus>(`/tethr/${c}/status`),
+  setLlmMode: (c: string, mode: "live" | "mock") =>
+    api.post<{
+      mode: "live" | "mock";
+      provider: string;
+      model: string;
+      liveKeyPresent: boolean;
+    }>(`/tethr/${c}/llm-mode`, { mode }),
 };

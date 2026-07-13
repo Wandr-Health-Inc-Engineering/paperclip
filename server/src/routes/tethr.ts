@@ -19,7 +19,12 @@ import {
 import { loadConfig } from "../config.js";
 import { logger } from "../middleware/logger.js";
 import { logActivity } from "../services/activity-log.js";
-import { getTethrLLMProvider } from "../tethr/llm/index.js";
+import {
+  getTethrLLMProvider,
+  getTethrLlmMode,
+  setTethrLlmMode,
+  tethrLiveKeyPresent,
+} from "../tethr/llm/index.js";
 import { driveService } from "../tethr/drive.js";
 import { gatingService } from "../tethr/gating.js";
 import { memoryService } from "../tethr/memory.js";
@@ -1045,7 +1050,8 @@ export function tethrRoutes(db: Db) {
       llm: {
         provider: provider.id,
         model: provider.model,
-        liveKeyPresent: Boolean(process.env.ANTHROPIC_API_KEY),
+        mode: getTethrLlmMode(),
+        liveKeyPresent: tethrLiveKeyPresent(),
       },
       storage: {
         provider: config.storageProvider,
@@ -1063,6 +1069,30 @@ export function tethrRoutes(db: Db) {
       },
       paperclipSha: await getPaperclipSha(),
     });
+  });
+
+  // Flip the instance between live Claude and the deterministic mock at runtime.
+  // In-memory (resets to the env default on restart); "live" needs a key present.
+  router.post("/tethr/:companyId/llm-mode", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const mode = req.body?.mode;
+    if (mode !== "live" && mode !== "mock") {
+      res.status(400).json({ error: "mode must be 'live' or 'mock'" });
+      return;
+    }
+    try {
+      const effective = setTethrLlmMode(mode);
+      const provider = getTethrLLMProvider();
+      res.json({
+        mode: effective,
+        provider: provider.id,
+        model: provider.model,
+        liveKeyPresent: tethrLiveKeyPresent(),
+      });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   // ---- Seed ----------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Cog, GitCommitHorizontal } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { PageSkeleton } from "@/components/PageSkeleton";
@@ -7,17 +7,18 @@ import { MonoTag } from "@/components/tethr/primitives";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
 import { cn } from "@/lib/utils";
-import { tethrApi, tethrKeys } from "@/api/tethr";
+import { tethrApi, tethrKeys, type TethrStatus } from "@/api/tethr";
 
 // Tethr settings: provider status (everything behind an interface), the
-// env-driven config surfaced read-only, and the vendored Paperclip SHA.
+// env-driven config surfaced read-only, plus the one runtime switch that
+// actually flips behavior — live Claude vs the deterministic mock.
 
 export function TethrSettings() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Tethr Settings" }]);
+    setBreadcrumbs([{ label: "Providers" }]);
   }, [setBreadcrumbs]);
 
   const { data, isLoading } = useQuery({
@@ -44,16 +45,7 @@ export function TethrSettings() {
       </div>
 
       <div className="space-y-3" data-tethr-stagger>
-        <ProviderCard
-          name="Agent intelligence"
-          state={data.llm.provider === "claude" ? "live" : "mock"}
-          detail={
-            data.llm.provider === "claude"
-              ? `Claude API · ${data.llm.model}`
-              : `Deterministic mock (${data.llm.model}). Set ANTHROPIC_API_KEY for live calls — no code change.`
-          }
-          swap="LLMProvider → ClaudeProvider"
-        />
+        <LlmModeCard companyId={selectedCompanyId} llm={data.llm} />
         <ProviderCard
           name="Drive storage"
           state={data.storage.provider === "local_disk" ? "local" : "cloud"}
@@ -107,6 +99,100 @@ export function TethrSettings() {
         see .env.example for every knob.
       </p>
     </div>
+  );
+}
+
+// The one card that's a real switch, not a status badge: flip the whole
+// instance between live Claude and the free deterministic mock at runtime.
+function LlmModeCard({
+  companyId,
+  llm,
+}: {
+  companyId: string;
+  llm: TethrStatus["llm"];
+}) {
+  const queryClient = useQueryClient();
+  const isLive = llm.mode === "live";
+
+  const mutation = useMutation({
+    mutationFn: (mode: "live" | "mock") => tethrApi.setLlmMode(companyId, mode),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: tethrKeys.status(companyId) });
+    },
+  });
+
+  const canGoLive = llm.liveKeyPresent;
+  const disabled = mutation.isPending || (!isLive && !canGoLive);
+
+  return (
+    <div className="border-2 border-foreground bg-card p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-extrabold tracking-tight">Agent intelligence</p>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            {isLive
+              ? `Live Claude · ${llm.model}. Every agent reply is a real API call — it spends.`
+              : "Deterministic mock — free, offline, no spend. Answers are canned, for testing."}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-col items-center gap-1.5">
+          <Switch
+            on={isLive}
+            disabled={disabled}
+            onToggle={() => mutation.mutate(isLive ? "mock" : "live")}
+            label={isLive ? "Live Claude" : "Mock"}
+          />
+          <span className="font-mono text-[9px] font-bold uppercase tracking-[0.14em]">
+            {isLive ? "live" : "mock"}
+          </span>
+        </div>
+      </div>
+      <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/70">
+        {!canGoLive
+          ? "set ANTHROPIC_API_KEY to enable live · resets to env default on restart"
+          : "instance-wide · takes effect on the next request · resets to env default on restart"}
+      </p>
+      {mutation.isError ? (
+        <p className="mt-2 border-l-2 border-foreground pl-2 text-xs text-muted-foreground">
+          {mutation.error instanceof Error ? mutation.error.message : "Could not switch."}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function Switch({
+  on,
+  disabled,
+  onToggle,
+  label,
+}: {
+  on: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onToggle}
+      className={cn(
+        "relative inline-flex h-6 w-11 items-center rounded-full border-2 border-foreground transition-colors",
+        on ? "bg-foreground" : "bg-background",
+        disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
+      )}
+    >
+      <span
+        className={cn(
+          "inline-block h-4 w-4 rounded-full transition-transform",
+          on ? "translate-x-[1.375rem] bg-background" : "translate-x-0.5 bg-foreground",
+        )}
+      />
+    </button>
   );
 }
 
