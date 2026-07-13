@@ -874,6 +874,18 @@ export async function routeInboundKickoff(
   const attachments = interp.images?.length
     ? await fetchSlackImageAttachments(interp.images)
     : undefined;
+  // If image(s) were attached but NONE could be read (the Slack app is missing
+  // the files:read scope, or an unsupported file), tell the agent so it says so
+  // plainly instead of answering blind on the text alone — that silent guess is
+  // the #1 cause of a confusing, "irrelevant" reply.
+  if (interp.images?.length && !attachments?.length) {
+    requestText =
+      `${requestText}\n\n[System note: the user attached ${interp.images.length} image(s) that could NOT be read` +
+      ` — most likely the Slack app is missing the "files:read" scope, or the file is an unsupported type.` +
+      ` Do not guess at the image's contents or run generic research as if you saw it. Briefly tell the user` +
+      ` you couldn't open the attachment, name the likely fix (add the files:read scope and reinstall the` +
+      ` Slack app, or paste the key details as text), and stop.]`;
+  }
 
   // Dynamic import breaks the notify → slack → routing → notify module cycle.
   const { routingService } = await import("./routing.js");

@@ -163,16 +163,19 @@ describe("interpretSlackEvent", () => {
 });
 
 describe("extractImageFiles", () => {
-  it("keeps images (preferring the download URL), drops non-images, normalizes jpg", () => {
+  it("keeps images (preferring the download URL), drops non-images, normalizes jpg, accepts HEIC", () => {
     const files = [
       { mimetype: "image/png", url_private_download: "https://d/1.png", url_private: "https://p/1.png", name: "1.png", size: 10 },
       { mimetype: "application/pdf", url_private: "https://p/doc.pdf", name: "doc.pdf" },
       { mimetype: "image/jpg", url_private: "https://p/2.jpg", name: "2.jpg" },
+      // iPhone photos arrive as HEIC — now accepted (sharp converts them downstream).
+      { mimetype: "image/heic", url_private: "https://p/IMG_0164.heic", name: "IMG_0164.heic" },
     ];
     const imgs = extractImageFiles(files);
-    expect(imgs.map((i) => i.url)).toEqual(["https://d/1.png", "https://p/2.jpg"]);
+    expect(imgs.map((i) => i.url)).toEqual(["https://d/1.png", "https://p/2.jpg", "https://p/IMG_0164.heic"]);
     expect(imgs[0].mimeType).toBe("image/png");
     expect(imgs[1].mimeType).toBe("image/jpeg"); // jpg normalized
+    expect(imgs[2].mimeType).toBe("image/heic"); // HEIC kept; sharp handles conversion
   });
 
   it("returns [] for no files or a non-array", () => {
