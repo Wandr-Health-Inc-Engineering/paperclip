@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ScrollText, SearchX } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -34,15 +34,23 @@ const ACTION_LABEL: Record<string, string> = {
   tethr_drive_file_saved: "drive write",
 };
 
+const PER_PAGE = 20;
+
 export function TethrAudit() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [kind, setKind] = useState("all");
   const [actor, setActor] = useState("");
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Audit" }]);
   }, [setBreadcrumbs]);
+
+  // A new filter is a new trail — jump back to the first page.
+  useEffect(() => {
+    setPage(0);
+  }, [kind, actor, selectedCompanyId]);
 
   const { data, isLoading } = useQuery({
     queryKey: tethrKeys.audit(selectedCompanyId!, kind, actor),
@@ -58,6 +66,12 @@ export function TethrAudit() {
   if (!selectedCompanyId) {
     return <EmptyState icon={ScrollText} message="Select a company to view the audit log." />;
   }
+
+  const total = data?.length ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PER_PAGE));
+  const safePage = Math.min(page, pageCount - 1);
+  const start = safePage * PER_PAGE;
+  const pageItems = (data ?? []).slice(start, start + PER_PAGE);
 
   return (
     <div className="space-y-5">
@@ -95,12 +109,44 @@ export function TethrAudit() {
 
       {isLoading ? (
         <PageSkeleton variant="list" />
-      ) : data?.length ? (
-        <div className="border-2 border-foreground bg-card">
-          {data.map((event, index) => (
-            <AuditRow key={event.id} event={event} last={index === data.length - 1} />
-          ))}
-        </div>
+      ) : total ? (
+        <>
+          <div className="border-2 border-foreground bg-card">
+            {pageItems.map((event, index) => (
+              <AuditRow
+                key={event.id}
+                event={event}
+                last={index === pageItems.length - 1}
+              />
+            ))}
+          </div>
+
+          {pageCount > 1 ? (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                {start + 1}–{start + pageItems.length} of {total}
+                {total === 150 ? "+" : ""}
+              </span>
+              <div className="flex items-center gap-2">
+                <PagerButton
+                  onClick={() => setPage(safePage - 1)}
+                  disabled={safePage === 0}
+                >
+                  ← prev
+                </PagerButton>
+                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                  {safePage + 1} / {pageCount}
+                </span>
+                <PagerButton
+                  onClick={() => setPage(safePage + 1)}
+                  disabled={safePage >= pageCount - 1}
+                >
+                  next →
+                </PagerButton>
+              </div>
+            </div>
+          ) : null}
+        </>
       ) : (
         <div className="flex flex-col items-center border border-dashed border-foreground/30 px-4 py-12">
           <SearchX className="mb-3 h-7 w-7 text-muted-foreground/40" />
@@ -108,6 +154,31 @@ export function TethrAudit() {
         </div>
       )}
     </div>
+  );
+}
+
+function PagerButton({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "border px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] transition-colors",
+        disabled
+          ? "cursor-not-allowed border-border text-muted-foreground/40"
+          : "border-foreground text-foreground hover:bg-foreground hover:text-background",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
