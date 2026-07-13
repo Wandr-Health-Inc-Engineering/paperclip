@@ -13,6 +13,7 @@ import {
   slackConfigured,
   slackSourceKey,
   stripResetPhrase,
+  toSlackMrkdwn,
   verifySlackSignature,
 } from "../tethr/slack.js";
 
@@ -259,6 +260,56 @@ describe("slack conversation continuity helpers", () => {
     expect(chunks.every((c) => c.length <= 2900)).toBe(true);
     expect(chunks[0]).toMatch(/^a+$/);
     expect(chunks[1]).toMatch(/^b+$/);
+  });
+});
+
+describe("toSlackMrkdwn — GitHub Markdown → Slack mrkdwn", () => {
+  it("turns headers into bold lines (no raw ##)", () => {
+    expect(toSlackMrkdwn("## What I am")).toBe("*What I am*");
+    expect(toSlackMrkdwn("### Deep\ntext")).toBe("*Deep*\ntext");
+    expect(toSlackMrkdwn("## What I am")).not.toContain("#");
+  });
+
+  it("converts **bold**/__bold__ to *bold* and keeps _italic_", () => {
+    expect(toSlackMrkdwn("I'm **@tethr.chat**, a bot")).toBe("I'm *@tethr.chat*, a bot");
+    expect(toSlackMrkdwn("__strong__")).toBe("*strong*");
+    expect(toSlackMrkdwn("_stays italic_")).toBe("_stays italic_");
+    expect(toSlackMrkdwn("**bold**")).not.toContain("**");
+  });
+
+  it("renders a GFM table as bullets — never raw pipes", () => {
+    const table = [
+      "| Tool | What it does | Notes |",
+      "|---|---|---|",
+      "| drive_list | Lists files | Read-only |",
+      "| web_fetch | Fetches pages | GET only |",
+    ].join("\n");
+    const out = toSlackMrkdwn(table);
+    expect(out).not.toMatch(/\|/); // no table pipes survive
+    expect(out).not.toMatch(/---/);
+    expect(out).toContain("*drive_list*");
+    expect(out).toContain("What it does: Lists files");
+    expect(out).toContain("Notes: Read-only");
+    expect(out.split("\n")).toHaveLength(2); // one bullet per data row
+  });
+
+  it("converts markdown links and list bullets", () => {
+    expect(toSlackMrkdwn("see [the docs](https://x.com/y)")).toBe(
+      "see <https://x.com/y|the docs>",
+    );
+    expect(toSlackMrkdwn("- first\n- second")).toBe("•  first\n•  second");
+    expect(toSlackMrkdwn("* star bullet")).toBe("•  star bullet");
+  });
+
+  it("drops horizontal rules and preserves code", () => {
+    expect(toSlackMrkdwn("a\n\n---\n\nb")).toBe("a\n\nb");
+    expect(toSlackMrkdwn("```\ncode **stays** raw\n```")).toContain("code **stays** raw");
+    expect(toSlackMrkdwn("use `npm **run**` here")).toBe("use `npm **run**` here");
+  });
+
+  it("leaves already-clean Slack text untouched", () => {
+    const clean = "Just a plain answer with _emphasis_ and a `code` bit.";
+    expect(toSlackMrkdwn(clean)).toBe(clean);
   });
 });
 

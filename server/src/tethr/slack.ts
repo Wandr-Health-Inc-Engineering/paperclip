@@ -442,6 +442,113 @@ export function isAffirmative(text: string): boolean {
 }
 
 /** Split a long answer into Slack-sized chunks on paragraph/line boundaries. */
+// ---- Markdown → Slack mrkdwn -----------------------------------------------
+// The LLM answers in GitHub-flavored Markdown (great for the Console + Drive).
+// Slack speaks a different dialect: *bold* not **bold**, _italic_, no `##`
+// headers, and NO tables. This converts at the Slack boundary only, so posts
+// never show raw `##` or `| pipe | tables |`. The canonical answer stays GFM.
+
+function slackInline(s: string): string {
+  // Shield inline code spans so we don't rewrite Markdown inside them.
+  const codes: string[] = [];
+  let t = s.replace(/`[^`]+`/g, (m) => {
+    codes.push(m);
+    return ` ${codes.length - 1} `;
+  });
+  t = t
+    // [text](url) → <url|text>
+    .replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, "<$2|$1>")
+    // **bold** / __bold__ → *bold* (Slack has no separate strong)
+    .replace(/\*\*([^*]+)\*\*/g, "*$1*")
+    .replace(/__([^_]+)__/g, "*$1*");
+  return t.replace(/ (\d+) /g, (_, n) => codes[Number(n)]);
+}
+
+function splitTableRow(row: string): string[] {
+  return row
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((c) => c.trim());
+}
+
+/** Convert a GFM table into a Slack-readable bulleted list (Slack has no tables). */
+function renderTableRow(header: string[], cells: string[]): string {
+  const first = slackInline(cells[0] ?? "");
+  const rest = cells
+    .slice(1)
+    .map((c, idx) => {
+      if (!c) return "";
+      const label = header[idx + 1];
+      return label ? `${slackInline(label)}: ${slackInline(c)}` : slackInline(c);
+    })
+    .filter(Boolean);
+  return `•  *${first}*${rest.length ? " — " + rest.join(" · ") : ""}`;
+}
+
+export function toSlackMrkdwn(md: string): string {
+  const lines = (md ?? "").replace(/\r\n/g, "\n").split("\n");
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Fenced code block: pass through verbatim (Slack supports ```).
+    if (/^\s*```/.test(line)) {
+      out.push(line);
+      i++;
+      while (i < lines.length && !/^\s*```/.test(lines[i])) out.push(lines[i++]);
+      if (i < lines.length) out.push(lines[i++]); // closing fence
+      continue;
+    }
+
+    // GFM table: a row of cells + a separator row of dashes → bullets.
+    const next = lines[i + 1] ?? "";
+    if (
+      line.includes("|") &&
+      /\|/.test(next) &&
+      /^[\s|:-]+$/.test(next) &&
+      /-/.test(next)
+    ) {
+      const header = splitTableRow(line);
+      i += 2; // consume header + separator
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim() !== "") {
+        out.push(renderTableRow(header, splitTableRow(lines[i])));
+        i++;
+      }
+      continue;
+    }
+
+    // Headers `## Title` → *Title*
+    const h = line.match(/^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$/);
+    if (h) {
+      out.push(`*${slackInline(h[1])}*`);
+      i++;
+      continue;
+    }
+
+    // Horizontal rule → blank line
+    if (/^\s*([-*_])\1{2,}\s*$/.test(line)) {
+      out.push("");
+      i++;
+      continue;
+    }
+
+    // Bullets `- ` / `* ` / `+ ` → `• ` (keep indentation)
+    const b = line.match(/^(\s*)[-*+]\s+(.*)$/);
+    if (b) {
+      out.push(`${b[1]}•  ${slackInline(b[2])}`);
+      i++;
+      continue;
+    }
+
+    out.push(slackInline(line));
+    i++;
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 export function chunkSlackText(text: string, max = SLACK_CHUNK_CHARS): string[] {
   const clean = (text ?? "").trim();
   if (clean.length <= max) return clean ? [clean] : [];
@@ -773,7 +880,9 @@ async function postAnswerToThread(
   const gatedNote =
     "\n\n_This is staged in the Tethr Queue — review it before it goes anywhere._";
   const full = result.status === "gated" ? answer + gatedNote : answer;
-  const chunks = chunkSlackText(full);
+  // Slack renders its own mrkdwn, not GitHub Markdown — translate so headers,
+  // bold, and tables never post as raw ## / ** / | pipes |.
+  const chunks = chunkSlackText(toSlackMrkdwn(full));
   const posted = chunks.slice(0, MAX_ANSWER_CHUNKS);
   if (chunks.length > MAX_ANSWER_CHUNKS) {
     posted[posted.length - 1] += "\n\n_(truncated — full text in the Tethr Console)_";
