@@ -8,6 +8,8 @@ import type {
   LLMUsage,
   PlanInput,
   PlanResult,
+  ProposeAgentInput,
+  ProposeAgentResult,
   RunAgenticInput,
   RunAgenticResult,
 } from "./types.js";
@@ -173,6 +175,28 @@ export class ClaudeProvider implements LLMProvider {
       reason: typeof parsed?.reason === "string" ? parsed.reason : "Cross-domain plan.",
       usage,
     };
+  }
+
+  async proposeAgent(input: ProposeAgentInput): Promise<ProposeAgentResult> {
+    const system = [
+      "You are the CEO of an AI marketing/distribution org for a travel-health company.",
+      "Propose ONE new specialist agent worth building. It must be buildable from the",
+      "read-only tools listed — never invent capabilities, never propose anything that",
+      "publishes, spends, or contacts people. Its work is internal briefs a human reviews.",
+      `Available tools (choose a subset): ${input.availableTools.join(", ")}.`,
+      `Do not duplicate existing agents: ${input.existingAgents.join(", ") || "none"}.`,
+      `Budget must be an integer cents value ≤ ${input.maxBudgetCents}.`,
+      "Respond with JSON only, no prose, matching exactly:",
+      '{"codename":"Word","role":"short role","mission":"1-2 sentences","rationale":"why we need it (2-3 sentences)","tools":["web_fetch"],"budgetMonthlyCents":5000,"heartbeatCron":"0 9 * * 1","heartbeatNote":"weekly ...","subagents":[{"key":"scan","name":"...","job":"...","routeWhen":["..."],"steps":["..."],"output":"...","guardrails":["..."],"sensitivity":"internal"}]}',
+      "1-4 subagents. codename is a single evocative word (letters only).",
+    ].join("\n");
+    const { text, usage } = await this.call(
+      system,
+      `Company mission: ${input.companyMission}\n\nPropose an agent for: ${input.brief}`,
+      1500,
+      this.model, // a real design decision — use the capable work model
+    );
+    return { spec: safeJson(text) ?? {}, usage };
   }
 
   /** Real Claude tool-use loop: call tools until end_turn or the turn cap. */

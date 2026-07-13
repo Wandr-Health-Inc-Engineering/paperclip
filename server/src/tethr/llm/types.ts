@@ -98,6 +98,25 @@ export interface PlanResult {
   usage: LLMUsage;
 }
 
+export interface ProposeAgentInput {
+  /** The company's mission, to ground the proposal. */
+  companyMission: string;
+  /** What kind of agent to propose (e.g. "market research"). */
+  brief: string;
+  /** The read-only tools a proposed agent may be granted. */
+  availableTools: string[];
+  /** Codenames/tags already in the org, to avoid duplicates. */
+  existingAgents: string[];
+  /** The per-agent monthly budget ceiling, in cents. */
+  maxBudgetCents: number;
+}
+
+export interface ProposeAgentResult {
+  /** A raw agent spec (validated by the factory before anything is created). */
+  spec: unknown;
+  usage: LLMUsage;
+}
+
 export interface LLMProvider {
   readonly id: "mock" | "claude";
   readonly model: string;
@@ -110,4 +129,6 @@ export interface LLMProvider {
    * requests that span agents, or null to fall back to single-agent routing.
    */
   plan(input: PlanInput): Promise<PlanResult | null>;
+  /** The CEO's brain: draft a structured new-agent spec from a brief. */
+  proposeAgent(input: ProposeAgentInput): Promise<ProposeAgentResult>;
 }

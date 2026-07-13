@@ -8,6 +8,8 @@ import type {
   LLMUsage,
   PlanInput,
   PlanResult,
+  ProposeAgentInput,
+  ProposeAgentResult,
   RunAgenticInput,
   RunAgenticResult,
 } from "./types.js";
@@ -128,6 +130,63 @@ export class MockProvider implements LLMProvider {
       };
     }
     return null;
+  }
+
+  async proposeAgent(input: ProposeAgentInput): Promise<ProposeAgentResult> {
+    // Deterministic proposal: a market-research agent, with a codename that
+    // dodges anything already in the org so repeated proposals don't collide.
+    const taken = new Set(input.existingAgents.map((a) => a.toLowerCase().replace(/[^a-z0-9]/g, "")));
+    const codename =
+      ["Radar", "Lookout", "Prospector", "Compass Rose", "Periscope"].find(
+        (c) => !taken.has(c.toLowerCase().replace(/[^a-z0-9]/g, "")),
+      ) ?? "Radar";
+    const has = (t: string) => input.availableTools.includes(t);
+    const tools = ["web_fetch", "reddit_scan", "keyword_ideas"].filter(has);
+    const spec = {
+      codename,
+      role: "Market Research",
+      mission:
+        "Keep a continuous read on the travel-health market — competitor moves, rising search demand, and the questions travelers are actually asking — and brief the org.",
+      rationale: `Requested: "${input.brief}". We have no standing read on the market, so content and strategy are flying blind. A read-only research agent surfaces competitor changes, demand signals, and audience questions on a cadence — all internal briefs, nothing published.`,
+      tools: tools.length ? tools : ["web_fetch"],
+      budgetMonthlyCents: Math.min(5000, input.maxBudgetCents),
+      heartbeatCron: "0 9 * * 1",
+      heartbeatNote: "Weekly market scan (Mondays)",
+      subagents: [
+        {
+          key: "scan",
+          name: "Market Scanner",
+          job: "Scan competitors and industry sources for what changed this week and why it matters to us.",
+          routeWhen: ["market research", "competitor", "industry news", "what's changing in the market"],
+          steps: [
+            "Fetch competitor and industry pages (web_fetch)",
+            "Skim Reddit travel-health threads for recurring questions (reddit_scan)",
+            "Summarize the 3–5 signals that matter, with sources",
+          ],
+          output: "A short weekly market brief saved to the Drive.",
+          guardrails: [
+            "Read-only — never posts, contacts, or publishes anything",
+            "Cite every source; no medical claims",
+          ],
+          sensitivity: "internal",
+        },
+        {
+          key: "demand",
+          name: "Demand Researcher",
+          job: "Find rising search demand and topic opportunities near revenue.",
+          routeWhen: ["search demand", "keyword opportunity", "what are people searching for"],
+          steps: [
+            "Pull keyword ideas for the category (keyword_ideas)",
+            "Rank by volume and proximity to revenue",
+            "List the top opportunities, flagging zero-volume ideas",
+          ],
+          output: "A ranked demand list saved to the Drive.",
+          guardrails: ["Read-only", "Flag anything with no real search volume"],
+          sensitivity: "internal",
+        },
+      ],
+    };
+    return { spec, usage: approxUsage(input.brief, "proposal") };
   }
 
   /**

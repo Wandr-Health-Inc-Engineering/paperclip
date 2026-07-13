@@ -9,6 +9,9 @@ export const TETHR_SENSITIVITIES = [
   "public",
   "spend",
   "pr",
+  // Phase 12: a change to the org itself (e.g. the CEO proposing a new agent) —
+  // gated so a human approves before anything is created.
+  "org",
   "internal",
   "safe",
 ] as const;
@@ -20,6 +23,7 @@ export const TETHR_GATED_SENSITIVITIES: readonly TethrSensitivity[] = [
   "public",
   "spend",
   "pr",
+  "org",
 ];
 
 export const TETHR_OUTPUT_STATUSES = [
@@ -48,8 +52,39 @@ export const TETHR_OUTPUT_KINDS = [
   // Phase 12: a direct chat answer from the coordinator — inlined into the
   // conversation, logged to /tethr/chat-log, never treated as published content.
   "answer",
+  // Phase 12: the CEO proposing a new agent. Carries a structured agent spec in
+  // the output's `meta`; approving it instantiates the agent (seeded paused).
+  "agent_proposal",
 ] as const;
 export type TethrOutputKind = (typeof TETHR_OUTPUT_KINDS)[number];
+
+// A structured agent spec — what the CEO proposes and what an approval
+// instantiates. Rides in a `agent_proposal` output's `meta.spec`.
+export interface TethrProposedSubagent {
+  key: string;
+  name: string;
+  job: string;
+  routeWhen: string[];
+  steps: string[];
+  output: string;
+  guardrails: string[];
+  sensitivity: TethrSensitivity;
+}
+
+export interface TethrAgentSpec {
+  codename: string;
+  role: string;
+  mission: string;
+  /** Why the CEO thinks this agent is worth building — shown in the proposal. */
+  rationale: string;
+  /** Tool names, validated against the proposable read-only registry. */
+  tools: string[];
+  budgetMonthlyCents: number;
+  /** Cron for the agent's heartbeat, or null for on-request only. Always seeded paused. */
+  heartbeatCron: string | null;
+  heartbeatNote?: string;
+  subagents: TethrProposedSubagent[];
+}
 
 export const TETHR_ROUTE_RUN_STATUSES = [
   "routing",

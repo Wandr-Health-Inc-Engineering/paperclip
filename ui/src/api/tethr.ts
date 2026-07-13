@@ -446,6 +446,11 @@ export const tethrApi = {
       approvalGate?: string;
     },
   ) => api.post<{ agentId: string; tag: string }>(`/tethr/${c}/agents`, body),
+  proposeAgent: (c: string, brief?: string) =>
+    api.post<{ outputId: string; codename: string; tag: string }>(
+      `/tethr/${c}/agents/propose`,
+      { brief },
+    ),
   memories: (c: string, agentId?: string) =>
     api.get<TethrMemory[]>(
       `/tethr/${c}/memories${agentId ? `?agentId=${agentId}` : ""}`,

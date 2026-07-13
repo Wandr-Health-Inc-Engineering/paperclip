@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Crown, Network, Plus } from "lucide-react";
+import { ChevronRight, Crown, Network, Plus, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -44,6 +44,7 @@ export function TethrCompany() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [divisionDialogOpen, setDivisionDialogOpen] = useState(false);
+  const [proposeOpen, setProposeOpen] = useState(false);
   const [agentDialog, setAgentDialog] = useState<{
     divisionId: string | null;
     divisionName: string;
@@ -78,6 +79,12 @@ export function TethrCompany() {
 
   const ceo = data.agents.find((a) => a.profile.tag === "@ceo");
   const byId = new Map(data.agents.map((a) => [a.agent.id, a]));
+  // Specialists the CEO built (report to it, not slotted into a division).
+  const ceoReports = ceo
+    ? data.agents.filter(
+        (a) => a.agent.reportsTo === ceo.agent.id && !a.profile.divisionId,
+      )
+    : [];
 
   return (
     <div className="space-y-8">
@@ -90,10 +97,18 @@ export function TethrCompany() {
             and recent work.
           </p>
         </div>
-        <Button size="sm" variant="outline" onClick={() => setDivisionDialogOpen(true)}>
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
-          Add division
-        </Button>
+        <div className="flex items-center gap-2">
+          {ceo ? (
+            <Button size="sm" onClick={() => setProposeOpen(true)}>
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+              Ask the CEO for an agent
+            </Button>
+          ) : null}
+          <Button size="sm" variant="outline" onClick={() => setDivisionDialogOpen(true)}>
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            Add division
+          </Button>
+        </div>
       </div>
 
       {/* CEO — head of the agent org (tier 0). @tethr, the conductor, sits
@@ -116,6 +131,20 @@ export function TethrCompany() {
             </div>
             <ChevronRight className="h-3.5 w-3.5 opacity-70 transition-transform group-hover:translate-x-0.5" />
           </Link>
+        </div>
+      ) : null}
+
+      {/* The CEO's crew — specialists it proposed and you approved into being. */}
+      {ceoReports.length ? (
+        <div>
+          <p className="mb-2 text-center font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+            reports to the CEO
+          </p>
+          <div className="mx-auto grid max-w-3xl gap-2 md:grid-cols-2">
+            {ceoReports.map((entry) => (
+              <AgentRow key={entry.agent.id} entry={entry} />
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -228,6 +257,11 @@ export function TethrCompany() {
         state={agentDialog}
         onClose={() => setAgentDialog(null)}
       />
+      <ProposeAgentDialog
+        companyId={selectedCompanyId}
+        open={proposeOpen}
+        onOpenChange={setProposeOpen}
+      />
     </div>
   );
 }
@@ -292,6 +326,83 @@ function AddDivisionDialog({
             <Plus className="mr-1.5 h-3.5 w-3.5" />
             Create division
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ProposeAgentDialog({
+  companyId,
+  open,
+  onOpenChange,
+}: {
+  companyId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [brief, setBrief] = useState("");
+  const propose = useMutation({
+    mutationFn: () => tethrApi.proposeAgent(companyId, brief.trim() || undefined),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: tethrKeys.overview(companyId) });
+    },
+  });
+  const close = () => {
+    setBrief("");
+    propose.reset();
+    onOpenChange(false);
+  };
+  return (
+    <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(true) : close())}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Ask the CEO to propose an agent</DialogTitle>
+          <DialogDescription>
+            The CEO drafts a new agent for the area you name (or its own pick). It lands in
+            the Queue and Slack as a yes/no — nothing is created until you approve it.
+          </DialogDescription>
+        </DialogHeader>
+        {propose.data ? (
+          <div className="space-y-2 border-2 border-foreground bg-card p-4">
+            <p className="text-sm font-bold">
+              Proposed: {propose.data.codename}{" "}
+              <span className="font-mono text-xs text-muted-foreground">{propose.data.tag}</span>
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Review and approve it in the{" "}
+              <Link to="/queue" className="font-semibold underline" onClick={close}>
+                Queue
+              </Link>{" "}
+              (it also posted to Slack).
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <Textarea
+              value={brief}
+              onChange={(e) => setBrief(e.target.value)}
+              placeholder="What should it work on? e.g. market research: competitor moves + rising search demand (leave blank to let the CEO decide)"
+              rows={3}
+              autoFocus
+            />
+            {propose.isError ? (
+              <p className="text-sm text-destructive">{(propose.error as Error).message}</p>
+            ) : null}
+          </div>
+        )}
+        <DialogFooter>
+          {propose.data ? (
+            <Button variant="outline" onClick={close}>
+              Done
+            </Button>
+          ) : (
+            <Button onClick={() => propose.mutate()} disabled={propose.isPending}>
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+              {propose.isPending ? "Thinking…" : "Propose an agent"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

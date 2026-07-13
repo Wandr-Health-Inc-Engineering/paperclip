@@ -25,6 +25,11 @@ import {
   setTethrLlmMode,
   tethrLiveKeyPresent,
 } from "../tethr/llm/index.js";
+import {
+  NoCeoError,
+  ProposalRejectedError,
+  proposeAgent,
+} from "../tethr/proposals.js";
 import { driveService } from "../tethr/drive.js";
 import { gatingService } from "../tethr/gating.js";
 import { memoryService } from "../tethr/memory.js";
@@ -1085,6 +1090,30 @@ export function tethrRoutes(db: Db) {
       details: { tag, title, divisionId, isHead },
     });
     res.json({ agentId: agent.id, tag });
+  });
+
+  // The CEO proposes a new agent → gated `agent_proposal` output (Queue + Slack).
+  // A human approves it to actually build the agent (gating.approveAgentProposal).
+  router.post("/tethr/:companyId/agents/propose", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    try {
+      const { output, spec } = await proposeAgent(db, companyId, {
+        brief: typeof req.body?.brief === "string" ? req.body.brief : undefined,
+        autonomous: req.body?.autonomous === true,
+      });
+      res.json({ outputId: output?.id, codename: spec.codename, tag: `@${spec.codename.toLowerCase().replace(/[^a-z0-9]/g, "")}` });
+    } catch (err) {
+      if (err instanceof NoCeoError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      if (err instanceof ProposalRejectedError) {
+        res.status(422).json({ error: err.message, errors: err.errors });
+        return;
+      }
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   // ---- Export / import ------------------------------------------------------------

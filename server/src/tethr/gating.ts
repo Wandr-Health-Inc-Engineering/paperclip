@@ -4,11 +4,13 @@ import { approvals, tethrOutputs, tethrSubagents } from "@paperclipai/db";
 import {
   TETHR_GATED_SENSITIVITIES,
   TETHR_OUTPUT_APPROVAL_TYPE,
+  type TethrAgentSpec,
   type TethrOutputKind,
   type TethrSensitivity,
 } from "@paperclipai/shared";
 import { logActivity } from "../services/activity-log.js";
 import { driveService } from "./drive.js";
+import { instantiateAgentFromSpec } from "./factory.js";
 import { notificationService } from "./notify.js";
 import { trackerService, type TrackerName } from "./state.js";
 
@@ -348,6 +350,10 @@ export function gatingService(db: Db) {
     });
 
     if (input.decision === "approve") {
+      // Approving an agent proposal doesn't "publish" — it BUILDS the agent.
+      if (output.kind === "agent_proposal") {
+        return approveAgentProposal(output, input.companyId, input.reviewer);
+      }
       const published = await publishToDrive(output.id, input.companyId, input.reviewer);
       await notify.send({
         companyId: input.companyId,
@@ -374,6 +380,44 @@ export function gatingService(db: Db) {
           : `Changes requested: ${output.title}`,
       body: input.note,
       href: `/queue/${output.id}`,
+    });
+    return updated;
+  }
+
+  // Approving an `agent_proposal` builds the agent from the spec in its meta,
+  // reporting to the CEO that proposed it, seeded paused. The proposal output is
+  // marked published (it did its job) — nothing is written to the Drive.
+  async function approveAgentProposal(
+    output: typeof tethrOutputs.$inferSelect,
+    companyId: string,
+    reviewer: string,
+  ) {
+    const spec = (output.meta as { spec?: TethrAgentSpec } | null)?.spec;
+    if (!spec) throw new Error("This proposal has no agent spec to build");
+    const result = await instantiateAgentFromSpec(db, companyId, spec, {
+      reportsTo: output.agentId, // the CEO proposed it → the new agent reports to it
+    });
+    const [updated] = await db
+      .update(tethrOutputs)
+      .set({ status: "published", updatedAt: new Date() })
+      .where(eq(tethrOutputs.id, output.id))
+      .returning();
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: reviewer,
+      action: "tethr_agent_created",
+      entityType: "agent",
+      entityId: result.agentId,
+      agentId: result.agentId,
+      details: { tag: result.tag, via: "ceo_proposal", outputId: output.id },
+    });
+    await notify.send({
+      companyId,
+      kind: "approval",
+      title: `New agent created: ${spec.codename} (${result.tag})`,
+      body: "Reporting to the CEO, seeded paused. Enable its heartbeat when you're ready.",
+      href: "/company-view",
     });
     return updated;
   }
