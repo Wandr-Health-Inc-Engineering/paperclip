@@ -123,7 +123,7 @@ export function validateAgentSpec(
 }
 
 /** Add a routing row to @tethr so it can hand requests to the new agent (idempotent). */
-async function addTethrRoutingRow(
+export async function addTethrRoutingRow(
   db: Db,
   companyId: string,
   row: { when: string[]; to: string; description: string },

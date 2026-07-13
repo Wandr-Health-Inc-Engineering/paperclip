@@ -990,15 +990,19 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
     // so it fills into the existing live org on the next boot too.
     const { seedCeoAgent } = await import("./ceo.js");
     const ceo = await seedCeoAgent(db, result.companyId);
-    if (result.created || result.archivedOldCompany || ceo.created) {
+    // Tinkr, the org mechanic, follows the same pattern (reports to the CEO).
+    const { seedTinkrAgent } = await import("./tinkr.js");
+    const tinkr = await seedTinkrAgent(db, result.companyId);
+    if (result.created || result.archivedOldCompany || ceo.created || tinkr.created) {
       logger.info(
         {
           companyId: result.companyId,
           created: result.created,
           archivedOldCompany: result.archivedOldCompany,
           ceoAdded: ceo.created,
+          tinkrAdded: tinkr.created,
         },
-        "[tethr] auto-seeded the clean-slate org (@tethr + CEO)",
+        "[tethr] auto-seeded the clean-slate org (@tethr + CEO + Tinkr)",
       );
     }
   } catch (err) {

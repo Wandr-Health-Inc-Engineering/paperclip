@@ -354,6 +354,10 @@ export function gatingService(db: Db) {
       if (output.kind === "agent_proposal") {
         return approveAgentProposal(output, input.companyId, input.reviewer);
       }
+      // Approving an org change doesn't "publish" — it APPLIES the change.
+      if (output.kind === "org_change") {
+        return approveOrgChange(output, input.companyId, input.reviewer);
+      }
       const published = await publishToDrive(output.id, input.companyId, input.reviewer);
       await notify.send({
         companyId: input.companyId,
@@ -417,6 +421,51 @@ export function gatingService(db: Db) {
       kind: "approval",
       title: `New agent created: ${spec.codename} (${result.tag})`,
       body: "Reporting to the CEO, seeded paused. Enable its heartbeat when you're ready.",
+      href: "/company-view",
+    });
+    return updated;
+  }
+
+  // Approving an `org_change` applies the staged modification (Tinkr) and
+  // records it in the revertible change log. Nothing writes to the Drive.
+  async function approveOrgChange(
+    output: typeof tethrOutputs.$inferSelect,
+    companyId: string,
+    reviewer: string,
+  ) {
+    const meta = output.meta as {
+      change?: import("./org-changes.js").OrgChangeSpec;
+      revertOfChangeId?: string;
+    } | null;
+    if (!meta?.change) throw new Error("This output has no staged change to apply");
+    const { applyOrgChange } = await import("./org-changes.js");
+    const change = await applyOrgChange(db, {
+      companyId,
+      spec: meta.change,
+      outputId: output.id,
+      appliedBy: reviewer,
+      revertOfChangeId: meta.revertOfChangeId ?? null,
+    });
+    const [updated] = await db
+      .update(tethrOutputs)
+      .set({ status: "published", updatedAt: new Date() })
+      .where(eq(tethrOutputs.id, output.id))
+      .returning();
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: reviewer,
+      action: "tethr_org_change_applied",
+      entityType: "tethr_org_change",
+      entityId: change.id,
+      agentId: change.targetAgentId,
+      details: { summary: change.summary, op: change.op, outputId: output.id },
+    });
+    await notify.send({
+      companyId,
+      kind: "approval",
+      title: `Applied: ${change.summary}`,
+      body: "Logged on the Company page — revertible any time.",
       href: "/company-view",
     });
     return updated;

@@ -6,6 +6,7 @@ import {
   escalateTool,
   notifyTool,
   recallMemoryTool,
+  stageOrgChangeTool,
 } from "./internal.js";
 import { googleAdsReportTool } from "./google-ads.js";
 import { keywordIdeasTool } from "./keyword-planner.js";
@@ -31,6 +32,7 @@ const ALL_TOOLS: Record<string, TethrTool> = Object.fromEntries(
     advanceTrackerTool,
     googleAdsReportTool,
     keywordIdeasTool,
+    stageOrgChangeTool,
   ].map((t) => [t.name, t]),
 );
 
@@ -47,6 +49,9 @@ const ALLOWLIST: Record<string, string[]> = {
   // may pull read-only reports; Plan drafts internal docs. Neither can publish.
   "tethr.chat": ["web_fetch", "google_ads_report"],
   "tethr.plan": ["web_fetch", "drive_write", "keyword_ideas"],
+  // Tinkr — the org mechanic (Phase 12). The ONLY subagent that can stage
+  // agent modifications; nothing applies without a human approval in the Queue.
+  "tinkr.change": ["stage_org_change"],
   // Sonar — the scout
   "sonar.leads": ["reddit_scan", "web_fetch", "notify"],
   "sonar.reply": ["reddit_scan"],

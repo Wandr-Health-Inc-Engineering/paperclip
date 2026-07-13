@@ -39,6 +39,9 @@ const KIND_BY_SUBAGENT_KEY: Record<string, TethrOutputKind> = {
   // conversation; plans are internal briefs that gate to the Queue.
   chat: "answer",
   plan: "brief",
+  // @tinkr, the org mechanic (Phase 12): staged agent modifications that gate
+  // to the Queue and apply on approval.
+  change: "org_change",
 };
 
 // Per-subagent agentic turn budget. Chat stays snappy; plan gets room to
@@ -184,7 +187,35 @@ export function workerService(db: Db) {
         }
       : undefined;
 
-    const sensitivity = input.subagent.sensitivity as TethrSensitivity;
+    let sensitivity = input.subagent.sensitivity as TethrSensitivity;
+    let effectiveKind = kind;
+    let title = generated.title;
+    let body = generated.body;
+    let changeMeta: Record<string, unknown> = {};
+
+    // Tinkr (kind org_change): the staged change — not the LLM prose — is the
+    // work product. Re-validate the last stage_org_change call and render a
+    // deterministic before→after diff as the gated body. If nothing valid was
+    // staged (a clarifying question, a refused change), answer inline instead
+    // of littering the Queue.
+    if (kind === "org_change") {
+      const { validateOrgChange, computeBefore, renderChangeBody, changeSummary } =
+        await import("./org-changes.js");
+      const stageCall = [...generated.toolCalls].reverse().find((t) => t.name === "stage_org_change");
+      const validated = stageCall
+        ? await validateOrgChange(db, input.companyId, stageCall.input)
+        : null;
+      if (validated?.ok && validated.spec && validated.target) {
+        const before = await computeBefore(db, input.companyId, validated.spec);
+        title = `Org change: ${changeSummary(validated.spec, before)}`;
+        body = renderChangeBody(validated.spec, before, validated.target);
+        changeMeta = { change: validated.spec };
+      } else {
+        // No applicable change — this is conversation, not an org mutation.
+        effectiveKind = "answer";
+        sensitivity = "safe";
+      }
+    }
     const output = await gating.createOutput({
       companyId: input.companyId,
       agentId: input.agentId,
@@ -192,14 +223,15 @@ export function workerService(db: Db) {
       subagentId: input.subagent.id,
       routeRunId: input.routeRunId ?? null,
       heartbeatRunId: input.heartbeatRunId ?? null,
-      kind,
-      title: generated.title,
-      body: generated.body,
+      kind: effectiveKind,
+      title,
+      body,
       sensitivity,
       meta: {
         request: input.request.slice(0, 500),
         provider: provider.id,
         toolCalls: generated.toolCalls.map((t) => t.summary),
+        ...changeMeta,
       },
       revisionOfId: input.revisionOfId ?? null,
       revisionNumber: input.revisionNumber ?? 1,
@@ -220,7 +252,7 @@ export function workerService(db: Db) {
     // Chat answers are ephemeral conversation, not org history — recording them
     // would make recent chatter bleed into future recall (recency-ordered).
     // They're already audit-logged to the Drive chat-log; skip the memory.
-    if (kind !== "answer") {
+    if (effectiveKind !== "answer") {
       const memoryNote = gated
         ? `${input.subagent.tag} staged "${output.title}" for human review (${sensitivity}).`
         : `${input.subagent.tag} produced "${output.title}".`;
@@ -238,11 +270,13 @@ export function workerService(db: Db) {
       title: output.title,
       status: output.status,
       sensitivity,
-      kind,
+      kind: effectiveKind,
       gated,
       summary: gated
-        ? `${output.title} — staged in the Queue for human review (${sensitivity}-sensitive).`
-        : kind === "answer"
+        ? effectiveKind === "org_change"
+          ? `${output.title} — waiting for your approval in the Queue. Nothing is changed until you approve.`
+          : `${output.title} — staged in the Queue for human review (${sensitivity}-sensitive).`
+        : effectiveKind === "answer"
           ? `${input.subagent.tag} answered.`
           : `${output.title} — published to the Drive.`,
       body: output.body,

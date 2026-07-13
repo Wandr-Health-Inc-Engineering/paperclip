@@ -19,6 +19,22 @@ import type {
 // templates per output kind. No randomness: the same input always produces
 // the same output, which keeps the demo loop and the tests stable offline.
 
+/** Deterministic request → org-change spec parse for the mock Tinkr path. */
+function parseOrgChangeRequest(prompt: string): Record<string, unknown> | null {
+  const p = prompt.trim();
+  let m = p.match(/rename\s+@?([a-z0-9]+)\s+to\s+([A-Za-z][A-Za-z0-9 ]{1,24})/i);
+  if (m) return { op: "rename", targetTag: `@${m[1].toLowerCase()}`, newCodename: m[2].trim() };
+  m = p.match(/@?([a-z0-9]+)(?:'s)?\s+budget\s+to\s+\$?(\d+)/i);
+  if (m) return { op: "update_budget", targetTag: `@${m[1].toLowerCase()}`, budgetMonthlyCents: Number(m[2]) * 100 };
+  m = p.match(/\b(pause|resume)\s+(?:agent\s+)?@?([a-z0-9]+)/i);
+  if (m) return { op: "set_status", targetTag: `@${m[2].toLowerCase()}`, status: m[1].toLowerCase() === "pause" ? "paused" : "active" };
+  m = p.match(/\b(enable|disable)\s+@?([a-z0-9]+)(?:'s)?\s+schedule/i);
+  if (m) return { op: "set_schedule", targetTag: `@${m[2].toLowerCase()}`, scheduleEnabled: m[1].toLowerCase() === "enable" };
+  m = p.match(/\bmission\s+of\s+@?([a-z0-9]+)\s+to\s+"?([^"]+)"?/i);
+  if (m) return { op: "update_profile", targetTag: `@${m[1].toLowerCase()}`, mission: m[2].trim() };
+  return null;
+}
+
 function tokenize(text: string): string[] {
   return text
     .toLowerCase()
@@ -226,6 +242,31 @@ export class MockProvider implements LLMProvider {
         question: input.prompt.trim().slice(0, 200),
         urgency: /urgent|asap|high priority/i.test(input.prompt) ? "high" : "normal",
       });
+    }
+
+    // Tinkr (deterministic): parse the request into exactly one staged change.
+    // Live Claude reads the tool schema and decides on its own; the mock keeps
+    // the offline pipeline + tests reproducible.
+    if (available.has("stage_org_change")) {
+      const spec = parseOrgChangeRequest(input.prompt);
+      let body: string;
+      if (spec) {
+        const staged = await call("stage_org_change", spec);
+        body = staged.output;
+      } else {
+        body =
+          "Tell me the exact change — for example: \"rename @radar to Scout\", \"set @radar budget to $60\", \"pause @radar\", or \"disable @radar's schedule\". I stage one change at a time, and it always waits for your approval in the Queue.";
+      }
+      const generated = approxUsage(input.system + input.prompt, body);
+      return {
+        title: "Org change request",
+        body,
+        usage: {
+          inputTokens: usage.inputTokens + generated.inputTokens,
+          outputTokens: usage.outputTokens + generated.outputTokens,
+        },
+        toolCalls,
+      };
     }
 
     const trackerByAgent: Record<string, string> = {

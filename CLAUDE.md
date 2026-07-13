@@ -59,11 +59,25 @@ code (Sentry, Pulse, Google Ads, Keyword Planner) stays live and allowlisted.
   `maybeAutoSeed` (fills the live org on boot) and the default `/seed` endpoint. It also adds a
   `@ceo` routing row to @tethr. Rendered in the tier-0 banner on the Company page (divisionId
   null; the banner's old hardcoded "placeholder" label is gone). Tests: `tethr-ceo.test.ts`.
-- **Specialists** (next: **Journal** — the daily blog writer, renamed from the old "Atlas")
-  report to the CEO. Add one at a time, each seeded paused, each a row in @tethr's routing
-  table. The old Atlas `blog` subagent spec (in `wandr-growth.ts`) is the reference for
-  Journal's flow — but it reads Mark's Drive docs (content calendar, GEO checklist, pillar
-  spec, brand voice), so replicating his CURRENT flow needs his input / the Drive.
+- **Specialists** report to the CEO. Add one at a time, each seeded paused, each a row in
+  @tethr's routing table. First one: **Radar** (@radar, market research) — born via the
+  factory. (Journal, the blog writer, is deferred: Mark decided rerouting his existing
+  Claude blog flow into Tethr isn't cost-efficient; the org does NET-NEW work instead.)
+- **Tinkr (`@tinkr`) = the org mechanic** (phase 12, Mark's spec — "Tinkr" no e). Modifies
+  existing agents: rename / title+mission / budget / subagent spec / pause-resume /
+  schedule. Reached ONLY via @tethr routing (no Tinkr Slack bot). Every change is staged by
+  the `stage_org_change` tool (granted solely to `@tinkr.change`) as a gated `org_change`
+  output (`org` sensitivity gates) → Queue + Slack → approving APPLIES it
+  (`gating.approveOrgChange` → `org-changes.ts` `applyOrgChange`) and logs it in
+  **`tethr_org_changes`** (migration 0092) with before/after. **Revert is git-style**: the
+  Company-page change log's Revert button (`POST /org-changes/:id/revert`) stages the
+  INVERSE change through the same gate; history is append-only. Guardrails: @tethr/@ceo/
+  @tinkr can't be renamed/paused; $100/mo budget ceiling; no create/delete. Rename cascades
+  tag everywhere (profile, subagent tags, adapterConfig, all routing tables). Seed:
+  `seed/tinkr.ts` ($10/mo cap, no heartbeat, reports to CEO). Tests: `tethr-tinkr.test.ts`.
+- **Slack formatting:** outbound answers pass through `toSlackMrkdwn` (slack.ts) — GFM
+  headers/bold/tables/links → Slack mrkdwn (tables become labeled bullets). Never post raw
+  `##`/`**`/pipes again.
 
 ## Where the Tethr layer lives (all additive)
 

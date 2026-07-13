@@ -90,3 +90,4 @@ export { tethrDriveNodes, tethrDriveVersions } from "./tethr_drive.js";
 export { tethrOutputs } from "./tethr_outputs.js";
 export { tethrMemories } from "./tethr_memories.js";
 export { tethrNotifications } from "./tethr_notifications.js";
+export { tethrOrgChanges } from "./tethr_org_changes.js";

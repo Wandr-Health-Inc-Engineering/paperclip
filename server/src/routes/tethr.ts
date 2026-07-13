@@ -1092,6 +1092,77 @@ export function tethrRoutes(db: Db) {
     res.json({ agentId: agent.id, tag });
   });
 
+  // ---- Org change log (Tinkr) ------------------------------------------------
+  // The revertible history of every applied agent modification.
+  router.get("/tethr/:companyId/org-changes", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { tethrOrgChanges } = await import("@paperclipai/db");
+    const { desc: descOp } = await import("drizzle-orm");
+    const rows = await db
+      .select()
+      .from(tethrOrgChanges)
+      .where(eq(tethrOrgChanges.companyId, companyId))
+      .orderBy(descOp(tethrOrgChanges.appliedAt))
+      .limit(100);
+    res.json(rows);
+  });
+
+  // Revert = stage the INVERSE change through the same human gate (git-revert
+  // style). Nothing is undone until the staged revert is approved in the Queue.
+  router.post("/tethr/:companyId/org-changes/:id/revert", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { tethrOrgChanges } = await import("@paperclipai/db");
+    const [change] = await db
+      .select()
+      .from(tethrOrgChanges)
+      .where(
+        and(
+          eq(tethrOrgChanges.companyId, companyId),
+          eq(tethrOrgChanges.id, req.params.id as string),
+        ),
+      )
+      .limit(1);
+    if (!change) {
+      res.status(404).json({ error: "Change not found" });
+      return;
+    }
+    if (change.status === "reverted") {
+      res.status(409).json({ error: "This change was already reverted" });
+      return;
+    }
+    const { buildInverseSpec, validateOrgChange, computeBefore, renderChangeBody, changeSummary } =
+      await import("../tethr/org-changes.js");
+    const inverse = buildInverseSpec(change);
+    const validated = await validateOrgChange(db, companyId, inverse);
+    if (!validated.ok || !validated.spec || !validated.target) {
+      res.status(409).json({
+        error: `Cannot revert: ${validated.errors.join("; ")} (the org may have changed since)`,
+      });
+      return;
+    }
+    const tinkr = await org.getProfileByTag(companyId, "@tinkr");
+    if (!tinkr) {
+      res.status(409).json({ error: "No @tinkr agent in this org" });
+      return;
+    }
+    const before = await computeBefore(db, companyId, validated.spec);
+    const output = await gating.createOutput({
+      companyId,
+      agentId: tinkr.agent.id,
+      agentTag: "@tinkr",
+      kind: "org_change",
+      title: `Org change (revert): ${changeSummary(validated.spec, before)}`,
+      body:
+        renderChangeBody(validated.spec, before, validated.target) +
+        `\n\n_Reverts change ${change.id.slice(0, 8)} (${change.summary})._`,
+      sensitivity: "org",
+      meta: { change: validated.spec, revertOfChangeId: change.id },
+    });
+    res.json({ outputId: output?.id });
+  });
+
   // The CEO proposes a new agent → gated `agent_proposal` output (Queue + Slack).
   // A human approves it to actually build the agent (gating.approveAgentProposal).
   router.post("/tethr/:companyId/agents/propose", async (req, res) => {
@@ -1211,7 +1282,9 @@ export function tethrRoutes(db: Db) {
     const result = await seedTethrCore(db, { force: req.body?.force === true });
     const { seedCeoAgent } = await import("../tethr/seed/ceo.js");
     const ceo = await seedCeoAgent(db, result.companyId);
-    res.json({ ...result, ceoAdded: ceo.created });
+    const { seedTinkrAgent } = await import("../tethr/seed/tinkr.js");
+    const tinkr = await seedTinkrAgent(db, result.companyId);
+    res.json({ ...result, ceoAdded: ceo.created, tinkrAdded: tinkr.created });
   });
 
   return router;

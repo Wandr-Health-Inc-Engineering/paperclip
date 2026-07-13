@@ -247,6 +247,8 @@ export function TethrCompany() {
         })}
       </div>
 
+      <OrgChangeLog companyId={selectedCompanyId} />
+
       <AddDivisionDialog
         companyId={selectedCompanyId}
         open={divisionDialogOpen}
@@ -329,6 +331,89 @@ function AddDivisionDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// The revertible org change log (Tinkr). Every applied agent modification,
+// git-style: revert stages the inverse change through the same approval gate.
+function OrgChangeLog({ companyId }: { companyId: string }) {
+  const queryClient = useQueryClient();
+  const { data: changes } = useQuery({
+    queryKey: tethrKeys.orgChanges(companyId),
+    queryFn: () => tethrApi.orgChanges(companyId),
+  });
+  const revert = useMutation({
+    mutationFn: (changeId: string) => tethrApi.revertOrgChange(companyId, changeId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: tethrKeys.orgChanges(companyId) });
+    },
+  });
+
+  if (!changes?.length) return null;
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <MonoTag className="text-foreground">change log</MonoTag>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Every applied change to the org — revert stages the inverse for your approval.
+          </p>
+        </div>
+      </div>
+      <div className="border-2 border-foreground bg-card">
+        {changes.map((change, i) => (
+          <div
+            key={change.id}
+            className={cn(
+              "flex flex-wrap items-center gap-3 px-4 py-2.5",
+              i < changes.length - 1 && "border-b border-border",
+            )}
+          >
+            <span className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+              {formatRelative(change.appliedAt)}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+              {change.summary}
+            </span>
+            <span className="font-mono text-[10px] text-muted-foreground">
+              {change.appliedBy}
+            </span>
+            {change.status === "reverted" ? (
+              <span className="border border-border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                reverted
+              </span>
+            ) : change.revertOfChangeId ? (
+              <span className="border border-foreground px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em]">
+                revert
+              </span>
+            ) : (
+              <button
+                onClick={() => revert.mutate(change.id)}
+                disabled={revert.isPending}
+                className="border border-foreground px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] transition-colors hover:bg-foreground hover:text-background disabled:opacity-40"
+              >
+                revert
+              </button>
+            )}
+          </div>
+        ))}
+        {revert.isSuccess ? (
+          <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
+            Revert staged —{" "}
+            <Link to="/queue" className="font-semibold underline">
+              approve it in the Queue
+            </Link>{" "}
+            to apply.
+          </p>
+        ) : null}
+        {revert.isError ? (
+          <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
+            {(revert.error as Error).message}
+          </p>
+        ) : null}
+      </div>
+    </section>
   );
 }
 

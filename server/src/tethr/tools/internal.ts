@@ -1,6 +1,7 @@
 import { driveService } from "../drive.js";
 import { memoryService } from "../memory.js";
 import { notificationService } from "../notify.js";
+import { validateOrgChange, ORG_CHANGE_OPS } from "../org-changes.js";
 import type { TethrTool } from "./types.js";
 
 // Internal tools: the Drive, memory, and notifications. Drive writes are
@@ -147,6 +148,53 @@ export const escalateTool: TethrTool = {
     return {
       output: `Escalation noted — your overseer will be tagged in this thread with: "${question.slice(0, 200)}". Continue with what you can do meanwhile.`,
       summary: `escalated: ${question.slice(0, 80)}`,
+    };
+  },
+};
+
+export const stageOrgChangeTool: TethrTool = {
+  name: "stage_org_change",
+  description:
+    "Stage a modification to an existing agent — rename, title/mission edit, budget change, subagent spec edit, pause/resume, or schedule change. NOTHING is applied by this call: the change is validated, then waits as a gated item for a human to approve in the Queue. Applied changes are logged and revertible. Stage exactly what was asked — never invent changes.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      op: {
+        type: "string",
+        enum: [...ORG_CHANGE_OPS],
+        description:
+          "rename | update_profile (title/mission) | update_budget | update_subagent (job/steps/guardrails/routeWhen) | set_status (pause/resume) | set_schedule (cron/enable)",
+      },
+      targetTag: { type: "string", description: 'The agent to change, e.g. "@radar".' },
+      newCodename: { type: "string", description: "rename: the new name, e.g. Scout." },
+      title: { type: "string" },
+      mission: { type: "string" },
+      budgetMonthlyCents: { type: "number", description: "update_budget: new monthly cap in cents." },
+      subagentTag: { type: "string", description: 'update_subagent: e.g. "@radar.scan".' },
+      job: { type: "string" },
+      steps: { type: "array", items: { type: "string" } },
+      guardrails: { type: "array", items: { type: "string" } },
+      routeWhen: { type: "array", items: { type: "string" } },
+      status: { type: "string", enum: ["active", "paused"] },
+      reason: { type: "string" },
+      cron: { type: "string", description: "set_schedule: 5-field cron expression." },
+      scheduleEnabled: { type: "boolean" },
+    },
+    required: ["op", "targetTag"],
+  },
+  // Validation only — the worker turns the staged spec into a gated org_change
+  // output; applying happens exclusively in gating.decide on human approval.
+  async execute(ctx, input) {
+    const result = await validateOrgChange(ctx.db, ctx.companyId, input);
+    if (!result.ok) {
+      return {
+        output: `Cannot stage that change: ${result.errors.join("; ")}. Tell the requester exactly what's wrong.`,
+        summary: `stage refused: ${result.errors[0]}`,
+      };
+    }
+    return {
+      output: `Change staged for ${result.target!.codename} (${result.target!.tag}) — op ${result.spec!.op}. It is NOT applied yet: it now waits for a human to approve it in the Queue. Tell the requester that, briefly.`,
+      summary: `staged ${result.spec!.op} on ${result.target!.tag}`,
     };
   },
 };

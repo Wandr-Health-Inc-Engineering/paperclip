@@ -340,6 +340,22 @@ export interface TethrMemory {
   createdAt: string;
 }
 
+export interface TethrOrgChange {
+  id: string;
+  outputId: string | null;
+  op: string;
+  targetAgentId: string | null;
+  targetTag: string;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  summary: string;
+  status: "applied" | "reverted";
+  revertOfChangeId: string | null;
+  revertedByChangeId: string | null;
+  appliedBy: string;
+  appliedAt: string;
+}
+
 export const tethrKeys = {
   overview: (c: string) => ["tethr", c, "overview"] as const,
   agent: (c: string, a: string) => ["tethr", c, "agent", a] as const,
@@ -357,6 +373,7 @@ export const tethrKeys = {
   notifications: (c: string) => ["tethr", c, "notifications"] as const,
   memories: (c: string, agentId?: string) => ["tethr", c, "memories", agentId ?? "all"] as const,
   status: (c: string) => ["tethr", c, "status"] as const,
+  orgChanges: (c: string) => ["tethr", c, "org-changes"] as const,
 };
 
 export const tethrApi = {
@@ -456,6 +473,9 @@ export const tethrApi = {
       `/tethr/${c}/memories${agentId ? `?agentId=${agentId}` : ""}`,
     ),
   status: (c: string) => api.get<TethrStatus>(`/tethr/${c}/status`),
+  orgChanges: (c: string) => api.get<TethrOrgChange[]>(`/tethr/${c}/org-changes`),
+  revertOrgChange: (c: string, changeId: string) =>
+    api.post<{ outputId: string }>(`/tethr/${c}/org-changes/${changeId}/revert`, {}),
   setLlmMode: (c: string, mode: "live" | "mock") =>
     api.post<{
       mode: "live" | "mock";

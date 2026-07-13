@@ -55,6 +55,10 @@ export const TETHR_OUTPUT_KINDS = [
   // Phase 12: the CEO proposing a new agent. Carries a structured agent spec in
   // the output's `meta`; approving it instantiates the agent (seeded paused).
   "agent_proposal",
+  // Phase 12: Tinkr staging a modification to an existing agent (rename,
+  // mission/budget/subagent/status/schedule). Carries the change spec in
+  // `meta.change`; approving it applies the change and logs it revertibly.
+  "org_change",
 ] as const;
 export type TethrOutputKind = (typeof TETHR_OUTPUT_KINDS)[number];
 
