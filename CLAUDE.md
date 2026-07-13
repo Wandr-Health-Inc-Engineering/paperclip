@@ -63,6 +63,22 @@ code (Sentry, Pulse, Google Ads, Keyword Planner) stays live and allowlisted.
   @tethr's routing table. First one: **Radar** (@radar, market research) — born via the
   factory. (Journal, the blog writer, is deferred: Mark decided rerouting his existing
   Claude blog flow into Tethr isn't cost-efficient; the org does NET-NEW work instead.)
+- **Factory tool grants are real (2026-07-13 fix).** A created agent's tools used to be
+  dropped on the floor — `tethr_subagents` had no `tools` column and `toolsetForSubagent`
+  read a static code allowlist that never listed factory agents, so every CEO-created agent
+  got baseline-only (drive/memory/escalate) and could never fetch. Now: `tethr_subagents.tools`
+  (migration **0093**, nullable jsonb) holds the authoritative grant; the factory persists
+  `spec.tools` per subagent; `toolsetForSubagent` prefers the DB grant (NULL = fall back to the
+  static allowlist for the built-in agents). `seed/backfill-tools.ts` heals pre-0093 factory
+  agents (identified by their `tethr-factory` budget-policy author) with a read-only research
+  default (`web_fetch,reddit_scan,cdc_scan,keyword_ideas`), run from `maybeAutoSeed` + `/seed`.
+  Locked by `tethr-agent-tools.test.ts` + factory tests.
+- **CDC is a 403 wall — use `cdc_scan`, not `web_fetch` on www.cdc.gov (2026-07-13).**
+  `www.cdc.gov` (Akamai) 403s every server-side GET regardless of user-agent, so direct
+  fetches always dead-ended. `web_fetch` now short-circuits known bot-walled hosts with an
+  actionable redirect (no more "proceed with what you know" — that invited fabrication), and
+  `cdc_scan` merges two *fetchable* feeds: CDC travel notices (`wwwnc.cdc.gov` RSS) + WHO
+  Disease Outbreak News (`who.int` OData JSON), fixture fallback only if both fail.
 - **Tinkr (`@tinkr`) = the org mechanic** (phase 12, Mark's spec — "Tinkr" no e). Modifies
   existing agents: rename / title+mission / budget / subagent spec / pause-resume /
   schedule. Reached ONLY via @tethr routing (no Tinkr Slack bot). Every change is staged by
@@ -84,7 +100,7 @@ code (Sentry, Pulse, Google Ads, Keyword Planner) stays live and allowlisted.
 - `server/src/tethr/**` — the whole L2 engine: `routing.ts`, `worker.ts`, `gating.ts`, `drive.ts`, `org.ts`, `memory.ts`, `notify.ts`, `digest.ts`, `state.ts`, `export.ts`, `adapter.ts`, `index.ts`, plus `llm/` (mock ↔ claude), `tools/` (allowlisted registry), `seed/` (`wandr-growth.ts`).
 - `server/src/routes/tethr.ts` — the Tethr REST surface. (`routes/health.ts` = the existing `/health` + `/api/health` health endpoints — reuse, don't add another.)
 - `ui/src/pages/tethr/**` + `ui/src/components/tethr/**` — the 10 pages.
-- `packages/db/src/schema/tethr_*.ts` — 8 tables (`tethr_divisions`, `tethr_agent_profiles`, `tethr_subagents`, `tethr_route_runs`, `tethr_outputs`, `tethr_drive*`, `tethr_memories`, `tethr_notifications`). Migrations through **0089**.
+- `packages/db/src/schema/tethr_*.ts` — 8 tables (`tethr_divisions`, `tethr_agent_profiles`, `tethr_subagents`, `tethr_route_runs`, `tethr_outputs`, `tethr_drive*`, `tethr_memories`, `tethr_notifications`). Migrations through **0093**.
 
 ## Merge-safe rule (non-negotiable)
 

@@ -36,6 +36,12 @@ export const tethrSubagents = pgTable(
       .notNull()
       .default([]),
     reads: jsonb("reads").$type<string[]>().notNull().default([]),
+    // Explicit per-subagent tool grant. NULL = fall back to the static code
+    // allowlist (the original hand-built agents). A non-null array is the
+    // authoritative grant for factory-born agents, whose tools the CEO chooses
+    // at proposal time — without this, a created agent got only baseline tools
+    // and could never fetch anything (see toolsetForSubagent).
+    tools: jsonb("tools").$type<string[]>(),
     steps: jsonb("steps").$type<string[]>().notNull().default([]),
     output: text("output"),
     guardrails: jsonb("guardrails").$type<string[]>().notNull().default([]),

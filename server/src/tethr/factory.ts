@@ -213,6 +213,11 @@ export async function instantiateAgentFromSpec(
       output: sub.output || null,
       guardrails: sub.guardrails,
       sensitivity: sub.sensitivity,
+      // The authoritative tool grant. The CEO proposes the agent's toolkit and a
+      // human approved it; without persisting it here the subagent falls through
+      // to baseline-only at run time (drive/memory) and can never fetch anything.
+      // Every subagent of a factory agent shares that validated, research-only kit.
+      tools: [...spec.tools],
       sortOrder: order++,
     });
   }

@@ -34,10 +34,29 @@ function stripHtml(html: string): string {
     .trim();
 }
 
+// Hosts that hard-block automated requests (Akamai/CDN bot-walls): they 403
+// every server-side GET regardless of user-agent, so a fetch here always
+// dead-ends. Steer the agent to a fetchable equivalent up front rather than
+// letting it burn a turn and fall back to guessing.
+const BOT_WALLED_HOSTS: Record<string, string> = {
+  "www.cdc.gov":
+    "www.cdc.gov blocks automated requests (403 for every server-side GET). Do NOT rely on it. Use the `cdc_scan` tool for CDC + WHO outbreak and travel-health notices, or fetch a machine-readable CDC host instead: wwwnc.cdc.gov (travel RSS), data.cdc.gov (surveillance API), tools.cdc.gov (content API).",
+  "cdc.gov":
+    "cdc.gov blocks automated requests (403). Use the `cdc_scan` tool, or wwwnc.cdc.gov / data.cdc.gov / tools.cdc.gov.",
+};
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
 export const webFetchTool: TethrTool = {
   name: "web_fetch",
   description:
-    "Fetch a public web page (read-only GET) and return its text content. Use for CDC/WHO/State Dept pages and other public research sources.",
+    "Fetch a public web page (read-only GET) and return its text content. For CDC/WHO outbreak or travel-health data prefer the `cdc_scan` tool — www.cdc.gov blocks automated requests.",
   inputSchema: {
     type: "object",
     properties: {
@@ -50,22 +69,30 @@ export const webFetchTool: TethrTool = {
     if (!/^https?:\/\//.test(url)) {
       return { output: "Error: url must be absolute http(s).", summary: "invalid url" };
     }
+    const host = hostOf(url);
     if (!liveFetchEnabled()) {
       const fixture =
         url.includes("cdc.gov") || url.includes("who.int") || url.includes("state.gov")
           ? CDC_FIXTURE.map((n) => `- [${n.source}] ${n.title}: ${n.summary} (${n.url})`).join("\n")
           : GENERIC_FETCH_FIXTURE(url);
-      return { output: fixture, summary: `fixture for ${new URL(url).hostname}` };
+      return { output: fixture, summary: `fixture for ${host}` };
+    }
+    // Known bot-wall: don't waste the fetch — hand back the working alternative.
+    const walled = BOT_WALLED_HOSTS[host];
+    if (walled) {
+      return { output: `Blocked source. ${walled}`, summary: `blocked host: ${host}` };
     }
     try {
       const body = await politeFetch(url, "text/html,application/json");
       const text = stripHtml(body).slice(0, 6000);
-      return { output: text, summary: `fetched ${new URL(url).hostname} (${text.length} chars)` };
+      return { output: text, summary: `fetched ${host} (${text.length} chars)` };
     } catch (err) {
       logger.warn({ url, err }, "tethr web_fetch failed");
+      // Do NOT tell the agent to "proceed with what you know" — that invites
+      // fabrication. Report the failure and point at real, fetchable sources.
       return {
-        output: `Fetch failed (${err instanceof Error ? err.message : err}). Proceed with what you know and cite cautiously.`,
-        summary: `fetch failed: ${new URL(url).hostname}`,
+        output: `Fetch failed (${err instanceof Error ? err.message : err}). This source is unavailable — try a different URL, or the \`cdc_scan\`/\`reddit_scan\`/\`keyword_ideas\` tools for structured data. Do NOT invent facts, figures, or quotes for a source you could not read; say plainly what could not be verified.`,
+        summary: `fetch failed: ${host}`,
       };
     }
   },
@@ -154,31 +181,76 @@ export const redditScanTool: TethrTool = {
   },
 };
 
+// CDC travel-health notices — the wwwnc.cdc.gov RSS is fetchable server-side
+// (unlike the bot-walled www.cdc.gov). Travel-focused: Zika, measles, etc.
+async function scanCdcTravelNotices(): Promise<string[]> {
+  const body = await politeFetch(
+    "https://wwwnc.cdc.gov/travel/rss/notices.xml",
+    "application/rss+xml,application/xml",
+  );
+  return [...body.matchAll(/<item>([\s\S]*?)<\/item>/g)]
+    .slice(0, 6)
+    .map((m) => {
+      const block = m[1];
+      const pick = (tag: string) =>
+        (block.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`)) ?? [])[1]
+          ?.replace(/<!\[CDATA\[|\]\]>/g, "")
+          .trim() ?? "";
+      const title = pick("title");
+      return title
+        ? `- [CDC] ${title}: ${stripHtml(pick("description")).slice(0, 180)} (${pick("link")})`
+        : "";
+    })
+    .filter(Boolean);
+}
+
+// WHO Disease Outbreak News — OData JSON, fetchable server-side. Covers global
+// and non-travel outbreaks (foodborne, zoonotic) that the CDC travel feed misses.
+async function scanWhoOutbreakNews(): Promise<string[]> {
+  const raw = await politeFetch(
+    "https://www.who.int/api/news/diseaseoutbreaknews?$orderby=PublicationDateAndTime%20desc&$top=6&$select=Title,PublicationDateAndTime,ItemDefaultUrl",
+    "application/json",
+  );
+  const data = JSON.parse(raw) as { value?: Array<Record<string, unknown>> };
+  return (Array.isArray(data.value) ? data.value : [])
+    .slice(0, 6)
+    .map((it) => {
+      const title = String(it.Title ?? "").trim();
+      if (!title) return "";
+      const date = String(it.PublicationDateAndTime ?? "").slice(0, 10);
+      const slug = String(it.ItemDefaultUrl ?? "").replace(/^\//, "");
+      const link = slug
+        ? `https://www.who.int/emergencies/disease-outbreak-news/item/${slug}`
+        : "https://www.who.int/emergencies/disease-outbreak-news";
+      return `- [WHO] ${title} (${date}) (${link})`;
+    })
+    .filter(Boolean);
+}
+
 export const cdcScanTool: TethrTool = {
   name: "cdc_scan",
   description:
-    "Pull recent CDC/WHO/State Dept travel-health notices (read-only). Returns ranked recent items with sources.",
+    "Pull recent CDC travel-health notices and WHO Disease Outbreak News (read-only, from fetchable public feeds). Returns ranked recent outbreak items with sources. Use this for outbreak/health research — www.cdc.gov blocks direct fetches.",
   inputSchema: { type: "object", properties: {}, required: [] },
   async execute() {
     if (liveFetchEnabled()) {
-      try {
-        const body = await politeFetch(
-          "https://wwwnc.cdc.gov/travel/rss/notices.xml",
-          "application/rss+xml,application/xml",
-        );
-        const items = [...body.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 8).map((m) => {
-          const block = m[1];
-          const pick = (tag: string) =>
-            (block.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`)) ?? [])[1]
-              ?.replace(/<!\[CDATA\[|\]\]>/g, "")
-              .trim() ?? "";
-          return `- [CDC] ${pick("title")}: ${stripHtml(pick("description")).slice(0, 200)} (${pick("link")})`;
-        });
-        if (items.length) {
-          return { output: `Recent CDC notices (live):\n${items.join("\n")}`, summary: `cdc: ${items.length} notices (live)` };
-        }
-      } catch (err) {
-        logger.warn({ err }, "tethr cdc_scan live fetch failed; using fixture");
+      // Both sources are independent — one failing must not sink the other.
+      const [cdc, who] = await Promise.all([
+        scanCdcTravelNotices().catch((err) => {
+          logger.warn({ err }, "tethr cdc_scan: CDC travel RSS failed");
+          return [] as string[];
+        }),
+        scanWhoOutbreakNews().catch((err) => {
+          logger.warn({ err }, "tethr cdc_scan: WHO outbreak news failed");
+          return [] as string[];
+        }),
+      ]);
+      const items = [...cdc, ...who];
+      if (items.length) {
+        return {
+          output: `Recent outbreak & travel-health notices (live):\n${items.join("\n")}`,
+          summary: `cdc/who: ${items.length} notices (live)`,
+        };
       }
     }
     const lines = CDC_FIXTURE.map(

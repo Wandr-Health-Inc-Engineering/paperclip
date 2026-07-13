@@ -16,7 +16,13 @@ import { seedTethrCore } from "../tethr/seed/tethr-core.ts";
 import { seedCeoAgent } from "../tethr/seed/ceo.ts";
 import { proposeAgent } from "../tethr/proposals.ts";
 import { gatingService } from "../tethr/gating.ts";
-import { validateAgentSpec, MAX_PROPOSAL_BUDGET_CENTS } from "../tethr/factory.ts";
+import {
+  instantiateAgentFromSpec,
+  validateAgentSpec,
+  MAX_PROPOSAL_BUDGET_CENTS,
+} from "../tethr/factory.ts";
+import { toolsetForSubagent } from "../tethr/tools/index.ts";
+import { backfillFactoryAgentTools } from "../tethr/seed/backfill-tools.ts";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -195,5 +201,58 @@ describeEmbeddedPostgres("CEO proposes → human approves → agent is born", ()
     });
     const after = (await db.select().from(agents).where(eq(agents.companyId, companyId))).length;
     expect(after).toBe(before);
+  });
+
+  it("persists the CEO-chosen toolkit so a born agent can actually fetch", async () => {
+    const spec = validateAgentSpec({ ...GOOD_SPEC, codename: "Probe" }, { existingTags: new Set() }).spec!;
+    const { agentId, tag } = await instantiateAgentFromSpec(db, companyId, spec, {
+      reportsTo: ceoAgentId,
+    });
+
+    const subs = await db
+      .select()
+      .from(tethrSubagents)
+      .where(and(eq(tethrSubagents.companyId, companyId), eq(tethrSubagents.agentId, agentId)));
+    expect(subs.length).toBeGreaterThanOrEqual(1);
+    // The grant is persisted on the row — not left NULL to rot into baseline-only.
+    expect(subs[0].tools).toEqual(spec.tools);
+    // And it actually reaches the runtime toolset: the research agent can fetch.
+    const runtime = toolsetForSubagent(subs[0]).map((t) => t.name);
+    expect(runtime).toContain("web_fetch");
+    expect(runtime).toContain("reddit_scan");
+    expect(tag).toBe("@probe");
+  });
+
+  it("backfill heals a pre-0093 factory agent (NULL tools) but leaves seeded agents alone", async () => {
+    const spec = validateAgentSpec({ ...GOOD_SPEC, codename: "Legacy" }, { existingTags: new Set() }).spec!;
+    const { agentId } = await instantiateAgentFromSpec(db, companyId, spec, { reportsTo: ceoAgentId });
+    // Simulate the pre-fix state: a factory agent whose grant was never stored.
+    await db
+      .update(tethrSubagents)
+      .set({ tools: null })
+      .where(eq(tethrSubagents.agentId, agentId));
+
+    const healed = await backfillFactoryAgentTools(db, companyId);
+    expect(healed).toBeGreaterThanOrEqual(1);
+
+    const [sub] = await db
+      .select()
+      .from(tethrSubagents)
+      .where(eq(tethrSubagents.agentId, agentId))
+      .limit(1);
+    expect(sub.tools).toContain("web_fetch");
+    expect(sub.tools).toContain("cdc_scan"); // research default includes outbreak feeds
+
+    // A seeded agent (@tethr.chat, budget author "tethr-seed") is NOT touched —
+    // it keeps its NULL grant and falls back to the static allowlist.
+    const [tethrChat] = await db
+      .select()
+      .from(tethrSubagents)
+      .where(and(eq(tethrSubagents.companyId, companyId), eq(tethrSubagents.tag, "@tethr.chat")))
+      .limit(1);
+    expect(tethrChat.tools).toBeNull();
+
+    // Idempotent: a second run heals nothing new.
+    expect(await backfillFactoryAgentTools(db, companyId)).toBe(0);
   });
 });

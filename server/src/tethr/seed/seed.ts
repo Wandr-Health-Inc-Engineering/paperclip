@@ -993,7 +993,11 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
     // Tinkr, the org mechanic, follows the same pattern (reports to the CEO).
     const { seedTinkrAgent } = await import("./tinkr.js");
     const tinkr = await seedTinkrAgent(db, result.companyId);
-    if (result.created || result.archivedOldCompany || ceo.created || tinkr.created) {
+    // Heal any factory agent created before per-subagent tool grants existed
+    // (migration 0093) so a created "research" agent can actually fetch.
+    const { backfillFactoryAgentTools } = await import("./backfill-tools.js");
+    const healed = await backfillFactoryAgentTools(db, result.companyId);
+    if (result.created || result.archivedOldCompany || ceo.created || tinkr.created || healed) {
       logger.info(
         {
           companyId: result.companyId,

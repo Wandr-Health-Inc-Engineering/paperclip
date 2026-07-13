@@ -85,12 +85,22 @@ const ALLOWLIST: Record<string, string[]> = {
 };
 
 export function toolsetForSubagent(
-  subagent: Pick<typeof tethrSubagents.$inferSelect, "tag">,
+  subagent: Pick<typeof tethrSubagents.$inferSelect, "tag" | "tools">,
 ): TethrTool[] {
   const key = subagent.tag.replace(/^@/, "");
-  const extra = ALLOWLIST[key] ?? [];
+  // An explicit DB grant (factory-born agents) is authoritative; a null grant
+  // falls back to the static allowlist (the original hand-built agents). This is
+  // what lets the CEO's tool choices actually reach a created agent at run time —
+  // previously every factory agent got baseline-only and couldn't fetch a thing.
+  const extra = subagent.tools ?? ALLOWLIST[key] ?? [];
   const names = [...BASELINE, ...extra];
-  return names.map((n) => ALL_TOOLS[n]).filter((t): t is TethrTool => Boolean(t));
+  // Dedupe + hard-filter to the registry (an unknown/typo'd tool name is dropped,
+  // never invented).
+  const seen = new Set<string>();
+  return names
+    .filter((n) => !seen.has(n) && seen.add(n))
+    .map((n) => ALL_TOOLS[n])
+    .filter((t): t is TethrTool => Boolean(t));
 }
 
 export function getToolByName(name: string): TethrTool | null {
