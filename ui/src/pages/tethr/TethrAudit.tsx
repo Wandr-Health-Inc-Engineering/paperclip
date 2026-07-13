@@ -44,7 +44,7 @@ export function TethrAudit() {
   const [page, setPage] = useState(0);
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Audit" }]);
+    setBreadcrumbs([{ label: "Activity" }]);
   }, [setBreadcrumbs]);
 
   // A new filter is a new trail — jump back to the first page.
@@ -76,7 +76,7 @@ export function TethrAudit() {
   return (
     <div className="space-y-5">
       <div>
-        <MonoTag className="text-foreground">● tethr · audit</MonoTag>
+        <MonoTag className="text-foreground">● tethr · activity</MonoTag>
         <h1 className="mt-2 text-3xl font-extrabold tracking-tight">the trail</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Every hop, run, output, and decision. A request's full path is always

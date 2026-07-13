@@ -119,7 +119,7 @@ Every core file touched, with reason. Everything else Tethr lives in new files.
 | `server/src/index.ts` | + 1 line `maybeAutoSeed(db)` at startup | seeding is a boot concern, not an app-construction concern (keeps API tests clean) |
 | `server/src/adapters/index.ts` | + 1 registry entry for `tethr-llm` | documented adapter seam |
 | `ui/src/App.tsx` | + route entries for Tethr pages | route table |
-| `ui/src/components/Sidebar.tsx` | + "Operate" nav section | nav registration point |
+| `ui/src/components/Sidebar.tsx` | + "Operate" nav section; Phase 12 de-dup: dropped overlapping core nav items (Runs→Routines, Costs→Budgets, Org→Company, Activity→the Tethr trail) per Mark — routes untouched, only nav links | nav registration point |
 | `ui/src/components/CommandPalette.tsx` | + page entries | palette registration point |
 | `ui/src/lib/company-routes.ts` | + Tethr route roots in `BOARD_ROUTE_ROOTS` | prefix resolver allowlist |
 | `packages/db/src/migrations/meta/_journal.json` | + entries 0086–0089 | inherent to adding migrations |

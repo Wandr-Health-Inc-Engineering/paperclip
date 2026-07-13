@@ -3,7 +3,6 @@ import {
   CircleDot,
   Target,
   LayoutDashboard,
-  DollarSign,
   History,
   Search,
   SquarePen,
@@ -15,9 +14,7 @@ import {
   Send,
   ShieldCheck,
   HardDrive,
-  Timer,
   Wallet,
-  ScrollText,
   Plug,
   Brain,
 } from "lucide-react";
@@ -112,9 +109,8 @@ export function Sidebar() {
           <SidebarNavItem to="/company-view" label="Company" icon={Network} />
           <SidebarNavItem to="/queue" label="Queue" icon={ShieldCheck} />
           <SidebarNavItem to="/drive" label="Drive" icon={HardDrive} />
-          <SidebarNavItem to="/runs" label="Runs" icon={Timer} />
           <SidebarNavItem to="/budgets" label="Budgets" icon={Wallet} />
-          <SidebarNavItem to="/audit" label="Audit" icon={ScrollText} />
+          <SidebarNavItem to="/audit" label="Activity" icon={History} />
           <SidebarNavItem to="/memory" label="Memory" icon={Brain} />
           <SidebarNavItem to="/tethr-settings" label="Providers" icon={Plug} />
         </SidebarSection>
@@ -133,10 +129,7 @@ export function Sidebar() {
         <SidebarAgents />
 
         <SidebarSection label="Company">
-          <SidebarNavItem to="/org" label="Org" icon={Network} />
           <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
-          <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
-          <SidebarNavItem to="/activity" label="Activity" icon={History} />
           <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
         </SidebarSection>
 
