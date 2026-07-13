@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { companies, costEvents, createDb, tethrAgentProfiles, tethrDriveNodes, tethrMemories } from "@paperclipai/db";
+import { companies, costEvents, createDb, routines, routineTriggers, tethrAgentProfiles, tethrDriveNodes, tethrMemories } from "@paperclipai/db";
 import { orgService } from "../tethr/org.ts";
 import { routingService } from "../tethr/routing.ts";
 import { seedWandrGrowth } from "../tethr/seed/seed.ts";
@@ -80,6 +80,24 @@ describeEmbeddedPostgres("tethr clean-slate org (@tethr coordinator)", () => {
       .from(tethrAgentProfiles)
       .where(eq(tethrAgentProfiles.companyId, oldCompanyId));
     expect(oldProfiles.length).toBeGreaterThan(0);
+  });
+
+  it("silences the archived org's heartbeats (routines paused, triggers off)", async () => {
+    // Archiving only ever flipped the company status; its scheduled heartbeats
+    // (@atlas/@compass/Helm digest) kept firing and, once Slack went live,
+    // posting to #scout. Seeding the clean slate must pause them all.
+    const oldRoutines = await db
+      .select()
+      .from(routines)
+      .where(eq(routines.companyId, oldCompanyId));
+    expect(oldRoutines.length).toBeGreaterThan(0);
+    expect(oldRoutines.every((r) => r.status === "paused")).toBe(true);
+
+    const oldTriggers = await db
+      .select()
+      .from(routineTriggers)
+      .where(eq(routineTriggers.companyId, oldCompanyId));
+    expect(oldTriggers.every((t) => t.enabled === false)).toBe(true);
   });
 
   it("seeds exactly one agent — @tethr — with chat + plan subagents", async () => {

@@ -1,9 +1,11 @@
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents,
   budgetPolicies,
   companies,
+  routines,
+  routineTriggers,
   tethrAgentProfiles,
   tethrDivisions,
   tethrSubagents,
@@ -119,14 +121,40 @@ export interface CoreSeedResult {
   archivedOldCompany: boolean;
 }
 
-/** Archive (never delete) the old Wandr Growth org so the slate reads clean. */
+/**
+ * Archive (never delete) the old Wandr Growth org so the slate reads clean —
+ * AND silence its heartbeats. Archiving only ever flipped the company status;
+ * it never paused the org's routines, so the core scheduler kept firing
+ * @atlas/@compass/Helm-digest heartbeats and — once Slack went live — posting
+ * them to #scout. The pause runs unconditionally (idempotent), so it also
+ * quiets an org that was archived before this fix. Returns true only on the
+ * first status flip (so the "archived" flag stays a one-time signal).
+ */
 async function archiveWandrGrowth(db: Db): Promise<boolean> {
   const [old] = await db
     .select()
     .from(companies)
     .where(eq(companies.name, "Wandr Growth"))
     .limit(1);
-  if (!old || old.status === "archived") return false;
+  if (!old) return false;
+
+  const paused = await db
+    .update(routines)
+    .set({ status: "paused" })
+    .where(and(eq(routines.companyId, old.id), ne(routines.status, "paused")))
+    .returning({ id: routines.id });
+  await db
+    .update(routineTriggers)
+    .set({ enabled: false })
+    .where(and(eq(routineTriggers.companyId, old.id), eq(routineTriggers.enabled, true)));
+  if (paused.length > 0) {
+    logger.info(
+      { companyId: old.id, paused: paused.length },
+      "[tethr] silenced the archived Wandr Growth org's heartbeats",
+    );
+  }
+
+  if (old.status === "archived") return false;
   await db
     .update(companies)
     .set({ status: "archived", updatedAt: new Date() })
