@@ -11,6 +11,7 @@ import {
   isResetPhrase,
   postSlackMessage,
   slackConfigured,
+  slackDecisionIntent,
   slackSourceKey,
   stripResetPhrase,
   toSlackMrkdwn,
@@ -310,6 +311,25 @@ describe("toSlackMrkdwn — GitHub Markdown → Slack mrkdwn", () => {
   it("leaves already-clean Slack text untouched", () => {
     const clean = "Just a plain answer with _emphasis_ and a `code` bit.";
     expect(toSlackMrkdwn(clean)).toBe(clean);
+  });
+});
+
+describe("slackDecisionIntent — approve/reject a staged item from the thread", () => {
+  it("reads clear approvals", () => {
+    for (const t of ["approve", "Approve", "approved", "yes", "do it", "go ahead", "apply the rename", "ship it", "lgtm", "ok"]) {
+      expect(slackDecisionIntent(t), t).toBe("approve");
+    }
+  });
+  it("reads clear rejections", () => {
+    for (const t of ["reject", "no", "nope", "deny", "discard", "cancel", "decline it", "reject the change"]) {
+      expect(slackDecisionIntent(t), t).toBe("reject");
+    }
+  });
+  it("does NOT treat a longer question as a decision", () => {
+    expect(slackDecisionIntent("yes what's our ad spend this week?")).toBeNull();
+    expect(slackDecisionIntent("no idea, can you check the drive?")).toBeNull();
+    expect(slackDecisionIntent("rename @radar to Scout")).toBeNull();
+    expect(slackDecisionIntent("how are we doing?")).toBeNull();
   });
 });
 

@@ -25,6 +25,13 @@ export interface TethrNotification {
   channelId?: string;
   /** Optional Slack thread to reply into (slack channel only). */
   threadTs?: string;
+  /**
+   * Broadcast this to the #scout Slack channel. OFF by default: internal
+   * approval/staging/system notifications stay in the in-app center (the bell)
+   * so they don't spam the channel. Deliberate posts (agent findings with
+   * `slackBlocks`, the weekly digest, ops alerts) opt in.
+   */
+  slackBroadcast?: boolean;
 }
 
 export interface Notifier {
@@ -53,6 +60,12 @@ export function notificationService(db: Db) {
   const slack: Notifier = {
     channel: "slack",
     async send(n) {
+      // Only deliberate posts reach the channel — everything else is in-app
+      // only. Blocks (agent findings) or an explicit target/broadcast opt in.
+      const wantsChannel = Boolean(
+        n.slackBroadcast || n.slackBlocks || n.channelId || n.threadTs,
+      );
+      if (!wantsChannel) return;
       if (!slackConfigured()) {
         logger.info(
           { title: n.title, channel: "slack" },

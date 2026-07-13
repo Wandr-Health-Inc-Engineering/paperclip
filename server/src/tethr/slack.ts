@@ -12,9 +12,9 @@
 // is posted back into the same thread.
 
 import crypto from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { companies, tethrAgentProfiles, tethrRouteRuns } from "@paperclipai/db";
+import { companies, tethrAgentProfiles, tethrOutputs, tethrRouteRuns } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { matchMetaCommand, renderHelpMessage } from "./commands.js";
 import type { LLMImageAttachment } from "./llm/types.js";
@@ -566,6 +566,58 @@ export function chunkSlackText(text: string, max = SLACK_CHUNK_CHARS): string[] 
   return chunks;
 }
 
+// ---- Approve / reject a staged item from the thread ------------------------
+
+// Decision VERBS can lead a short sentence ("approve the rename"); bare
+// affirmations count only when that's the whole reply, so "yes what's our
+// spend?" still routes as a question rather than approving something.
+const APPROVE_LEAD = /^(approve|approved|accept|accepted|apply|confirm|confirmed|go ahead|do it|ship it|lgtm)\b/i;
+const REJECT_LEAD = /^(reject|rejected|deny|denied|decline|declined|discard|cancel)\b/i;
+const APPROVE_BARE = /^(yes|yep|yeah|yup|ok|okay|sure|approved)[.! ]*$/i;
+const REJECT_BARE = /^(no|nope|nah)[.! ]*$/i;
+
+/** "approve" | "reject" | null — is this reply a decision on a staged item? */
+export function slackDecisionIntent(text: string): "approve" | "reject" | null {
+  const t = (text ?? "").trim();
+  if (REJECT_LEAD.test(t) || REJECT_BARE.test(t)) return "reject";
+  if (APPROVE_LEAD.test(t) || APPROVE_BARE.test(t)) return "approve";
+  return null;
+}
+
+/** The newest still-pending gated output produced in this Slack origin. */
+export async function findPendingGatedForThread(
+  db: Db,
+  companyId: string,
+  sourceKey: string | null,
+): Promise<typeof tethrOutputs.$inferSelect | null> {
+  if (!sourceKey) return null;
+  const [row] = await db
+    .select({ output: tethrOutputs })
+    .from(tethrOutputs)
+    .innerJoin(tethrRouteRuns, eq(tethrRouteRuns.id, tethrOutputs.routeRunId))
+    .where(
+      and(
+        eq(tethrOutputs.companyId, companyId),
+        eq(tethrRouteRuns.sourceKey, sourceKey),
+        inArray(tethrOutputs.status, ["gated", "changes_requested"]),
+      ),
+    )
+    .orderBy(desc(tethrOutputs.createdAt))
+    .limit(1);
+  return row?.output ?? null;
+}
+
+function approvedMessage(output: typeof tethrOutputs.$inferSelect): string {
+  switch (output.kind) {
+    case "org_change":
+      return `Approved and applied — ${output.title}. It's live now; you can revert it on the Company page.`;
+    case "agent_proposal":
+      return `Approved — creating the agent now (${output.title}). It starts paused; enable its schedule when you're ready.`;
+    default:
+      return `Approved and published — ${output.title}.`;
+  }
+}
+
 /**
  * Resume the conversation thread for a Slack origin, if one is live. Channel
  * threads always continue; DMs continue within a rolling window unless the
@@ -737,6 +789,43 @@ export async function routeInboundKickoff(
       }
       // Not a confirmation (or expired) → the pending wipe is cancelled and this
       // message is treated as an ordinary request.
+    }
+  }
+
+  // Approve / reject a staged item straight from the thread — no trip to the
+  // Queue. Only fires when this thread actually has something pending AND the
+  // reply is a clear decision; otherwise it routes as a normal request.
+  if (sourceKey && !forceFresh) {
+    const decision = slackDecisionIntent(requestText);
+    if (decision) {
+      const pending = await findPendingGatedForThread(db, companyId, sourceKey);
+      if (pending) {
+        const { gatingService } = await import("./gating.js");
+        try {
+          await gatingService(db).decide({
+            companyId,
+            outputId: pending.id,
+            decision,
+            reviewer: "mark (Slack)",
+          });
+          await postSlackMessage({
+            channel: interp.channel,
+            threadTs: interp.threadTs,
+            text:
+              decision === "approve"
+                ? approvedMessage(pending)
+                : `Rejected — "${pending.title}" discarded. Nothing changed.`,
+          });
+        } catch (err) {
+          await postSlackMessage({
+            channel: interp.channel,
+            threadTs: interp.threadTs,
+            text: `Couldn't ${decision} that: ${err instanceof Error ? err.message : String(err)}`,
+          });
+        }
+        return null;
+      }
+      // No pending item in this thread → fall through and route it normally.
     }
   }
 

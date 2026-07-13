@@ -219,6 +219,8 @@ export const notifyTool: TethrTool = {
       title: String(input.title ?? ""),
       body: input.body ? String(input.body) : undefined,
       agentTag: ctx.subagentTag,
+      // An agent deliberately notifying the operator — this one reaches #scout.
+      slackBroadcast: true,
     });
     return { output: "Notification sent.", summary: `notified: ${String(input.title ?? "").slice(0, 60)}` };
   },

@@ -316,6 +316,31 @@ describeEmbeddedPostgres("tethr Tinkr (org mechanic)", () => {
     expect(overBudget.errors.join(" ")).toMatch(/ceiling/);
   });
 
+  it("approves a staged change from its Slack thread (sourceKey lookup)", async () => {
+    const routing = routingService(db);
+    const sourceKey = "slack:im:CINTHREAD";
+    const run = await routing.routeRequest({ companyId, requestText: "pause @radar", sourceKey });
+    expect(run.status).toBe("gated");
+
+    // What the Slack handler does on an "approve" reply: find the pending item
+    // for this thread, then decide it.
+    const { findPendingGatedForThread } = await import("../tethr/slack.ts");
+    const pending = await findPendingGatedForThread(db, companyId, sourceKey);
+    expect(pending?.kind).toBe("org_change");
+    // A different thread has nothing pending.
+    expect(await findPendingGatedForThread(db, companyId, "slack:im:OTHER")).toBeNull();
+
+    await gatingService(db).decide({
+      companyId,
+      outputId: pending!.id,
+      decision: "approve",
+      reviewer: "mark (Slack)",
+    });
+    const radar = await profileByTag("@radar");
+    const [agent] = await db.select().from(agents).where(eq(agents.id, radar!.agentId)).limit(1);
+    expect(agent.status).toBe("paused");
+  });
+
   it("an unparseable ask answers inline instead of littering the Queue", async () => {
     const routing = routingService(db);
     const result = await routing.routeRequest({
