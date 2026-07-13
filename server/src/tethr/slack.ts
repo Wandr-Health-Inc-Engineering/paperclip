@@ -242,10 +242,18 @@ export function interpretSlackEvent(
   };
 }
 
-const IMAGE_MIME_RE = /^image\/(png|jpe?g|gif|webp)$/i;
-/** Vision guardrails: cap count and per-image bytes. */
+// Accept anything Slack labels an image (incl. iPhone HEIC/HEIF and TIFF/AVIF);
+// sharp is the real gatekeeper below — it decodes, re-encodes to a Claude-safe
+// JPEG, or throws (dropping non-images). Claude only accepts png/jpeg/gif/webp,
+// so raw HEIC or an over-8000px photo would 400 — normalization is what makes
+// phone photos work at all.
+const IMAGE_MIME_RE = /^image\//i;
+/** Vision guardrails: cap count and per-image download bytes. */
 const MAX_IMAGES = 6;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_DOWNLOAD_BYTES = 15 * 1024 * 1024; // 15 MB (48MP iPhone HEIC fits; sharp shrinks it)
+// Claude's vision sweet spot is ~1568px on the long edge (well under the 8000px
+// hard cap); resizing here keeps the base64 payload small too.
+const MAX_IMAGE_EDGE = 1568;
 
 /** Pull image files (screenshots, photos) out of a Slack event's files array. */
 export function extractImageFiles(files: unknown): SlackImageRef[] {
@@ -266,10 +274,25 @@ export function extractImageFiles(files: unknown): SlackImageRef[] {
   return out;
 }
 
+/** Decode → auto-orient → downscale → re-encode as JPEG. Throws on anything
+ * that isn't a real image (e.g. a Slack login page returned when the bot lacks
+ * the files:read scope), so the caller drops it instead of shipping garbage to
+ * Claude. */
+async function normalizeToClaudeImage(buf: Buffer): Promise<Buffer> {
+  const { default: sharp } = await import("sharp");
+  return sharp(buf)
+    .rotate() // apply EXIF orientation (iPhone photos are frequently rotated)
+    .resize({ width: MAX_IMAGE_EDGE, height: MAX_IMAGE_EDGE, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 82 })
+    .toBuffer();
+}
+
 /**
- * Download Slack images (private URLs need the bot token) and base64-encode them
- * for the vision model. Skips oversized files, caps the count, and never throws
- * — a failed image just doesn't get attached. No-op under test / without a token.
+ * Download Slack images (private URLs need the bot token), normalize each one
+ * through sharp, and base64-encode it for the vision model. Every image becomes
+ * a clean JPEG (HEIC/oversized/rotated all handled); anything that isn't a real
+ * image is dropped with a clear log rather than crashing the whole request.
+ * No-op under test / without a token.
  */
 export async function fetchSlackImageAttachments(
   images: SlackImageRef[],
@@ -279,21 +302,34 @@ export async function fetchSlackImageAttachments(
   if (!token || !images.length) return [];
   const out: LLMImageAttachment[] = [];
   for (const img of images.slice(0, MAX_IMAGES)) {
-    if (img.size && img.size > MAX_IMAGE_BYTES) {
-      logger.warn({ name: img.name, size: img.size }, "tethr slack: image too large, skipped");
-      continue;
-    }
     try {
       const res = await fetch(img.url, { headers: { authorization: `Bearer ${token}` } });
       if (!res.ok) {
         logger.warn({ name: img.name, status: res.status }, "tethr slack: image download failed");
         continue;
       }
+      // A private URL fetched without the files:read scope returns an HTML login
+      // page (HTTP 200) — the classic cause of a downstream "Could not process
+      // image". Catch it explicitly so the log is actionable.
+      const contentType = res.headers.get("content-type") ?? "";
+      if (contentType.includes("text/html")) {
+        logger.warn(
+          { name: img.name },
+          "tethr slack: image URL returned HTML, not an image — the Slack app likely needs the files:read scope",
+        );
+        continue;
+      }
       const buf = Buffer.from(await res.arrayBuffer());
-      if (buf.byteLength > MAX_IMAGE_BYTES || buf.byteLength === 0) continue;
-      out.push({ mimeType: img.mimeType, dataBase64: buf.toString("base64"), name: img.name });
+      if (buf.byteLength === 0 || buf.byteLength > MAX_DOWNLOAD_BYTES) {
+        logger.warn({ name: img.name, bytes: buf.byteLength }, "tethr slack: image empty or too large, skipped");
+        continue;
+      }
+      const normalized = await normalizeToClaudeImage(buf);
+      out.push({ mimeType: "image/jpeg", dataBase64: normalized.toString("base64"), name: img.name });
     } catch (err) {
-      logger.warn({ err, name: img.name }, "tethr slack: image fetch error");
+      // sharp throws here on non-image bytes (login page, corrupt file) — drop
+      // it and keep going; the text request still runs.
+      logger.warn({ err, name: img.name }, "tethr slack: image unreadable, skipped");
     }
   }
   return out;
