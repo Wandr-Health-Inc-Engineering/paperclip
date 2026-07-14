@@ -151,21 +151,40 @@ REPL commands: `/queue`, `/approve <n|id> [note]`, `/reject <n|id> [note]`, `/ag
 
 ### Reaching it from another machine (Frank on his laptop)
 
-The server binds **loopback (`127.0.0.1`) by default**, so the CLI only works on the same
-machine out of the box. To let a teammate reach it, in order of preference:
+Two separate problems: **reachability** (your laptop has no public address — Frank can't connect
+to it at all without a tunnel) and **access control** (who's allowed in once they can). A tunnel
+is required either way; **Tailscale** is the clean one and doubles as the access gate.
 
-1. **Tailscale (recommended).** Put both laptops on the same tailnet (WireGuard-encrypted,
-   device-authenticated). Mark starts the server bound to the tailnet
-   (`PAPERCLIP_TAILNET_BIND_HOST=…` — see `config.ts`), Frank sets
-   `TETHR_URL=http://<mark-tailscale-ip>:5173` (or `:3100`). Traffic is encrypted end-to-end.
-2. **`authenticated` mode + a board API key.** The real multi-user answer: run the server in
-   `authenticated` mode and give Frank a board API key via `TETHR_TOKEN` (env only — never a
-   flag, so it stays out of shell history). The CLI sends it as a bearer token and never prints
-   it.
-3. **LAN (`HOST=0.0.0.0`) — only on a trusted network.** ⚠ In the default `local_trusted` mode
-   **anyone who can reach the port is an instance admin** (no login). Do this only on a network
-   you fully trust; prefer Tailscale. The CLI prints this warning whenever `TETHR_URL` is not a
-   loopback address.
+Note the engine's safety rule: **`local_trusted` is hard-locked to loopback** — it refuses to
+boot bound to anything but `127.0.0.1` (network-bind.ts: "everyone is admin" is only allowed on
+the same machine). So you do NOT bind the server to the tailnet in `local_trusted`. Instead:
+
+1. **Tailscale + `tailscale serve` (recommended — keeps `local_trusted`, no login for you).**
+   Tailscale's own proxy fronts the loopback server; your Tethr process never leaves `127.0.0.1`.
+   - Both machines install Tailscale and join your tailnet; you approve/share your device so
+     Frank's laptop can see it. Membership is device-authenticated (WireGuard keys) — that IS the
+     gate; nothing is exposed to the public internet.
+   - You keep `pnpm dev` on loopback (the default) and expose it to the tailnet with Tailscale's
+     proxy — **`serve`, never `funnel`** (funnel = public internet):
+     ```bash
+     tailscale serve --bg 5173        # proxies https://<your-machine>.<tailnet>.ts.net -> localhost:5173
+     tailscale serve status           # confirm the mapping
+     ```
+   - Frank points the CLI at the tailnet URL and runs it:
+     ```bash
+     export TETHR_URL=https://<your-machine>.<tailnet>.ts.net
+     tethr "what bugs do I need to fix?"
+     ```
+   Only devices on your tailnet can reach that URL. (The CLI prints a "remote instance" notice
+   for any non-loopback `TETHR_URL` — expected here; the tailnet is the wall.)
+2. **Bind the server to the tailnet directly — requires `authenticated` mode.** If you'd rather
+   the server itself listen on the tailnet IP (`PAPERCLIP_TAILNET_BIND_HOST`), the engine requires
+   `authenticated` mode (loopback-only is a `local_trusted` rule). Then issue Frank a board API key
+   and he sets `TETHR_TOKEN` (env only — never a flag, so it stays out of shell history; the CLI
+   sends it as a bearer token and never prints it). Trade-off: you'd log into your own Console too.
+3. **LAN (`HOST=0.0.0.0`)** is **not available in `local_trusted`** (the engine blocks non-loopback
+   binds there) — it only applies under `authenticated` mode, and even then only on a trusted
+   network. Prefer Tailscale.
 
 **Security notes:** the CLI adds no new privilege — it calls the same REST surface the Console
 uses. It writes nothing to disk (thread state is in memory for the session only), never prints
