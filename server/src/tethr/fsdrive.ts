@@ -25,14 +25,16 @@ function nowSuffix(): string {
   return crypto.randomBytes(3).toString("hex");
 }
 
-/** Normalize a caller-supplied relative path: strip leading slashes, drop `.`/
- * `..` segments, re-sanitize each segment. Returns "" for the root. */
+/** Normalize a caller-supplied relative path to an EXISTING item: strip leading
+ * slashes and drop `.`/`..`/empty segments. Real segment names are preserved
+ * verbatim (em dashes, commas, spaces) so they match files on disk — sanitizing
+ * is only for NEW names (create/rename). resolveWithinRoot is the containment
+ * backstop. Returns "" for the root. */
 function normalizeRel(rel: string | undefined | null): string {
   return String(rel ?? "")
     .split("/")
     .map((s) => s.trim())
     .filter((s) => s && s !== "." && s !== "..")
-    .map((s) => sanitizeTitleForFilename(s))
     .join("/");
 }
 
@@ -130,6 +132,37 @@ export async function fsMove(
 function splitName(base: string): { name: string; ext: string } {
   const ext = path.extname(base);
   return { name: ext ? base.slice(0, -ext.length) : base, ext };
+}
+
+const TEXT_EXTS = new Set([
+  ".md", ".markdown", ".txt", ".json", ".csv", ".log", ".yml", ".yaml", ".html", ".xml", ".text",
+]);
+const MAX_PREVIEW_BYTES = 512 * 1024;
+
+export interface FsFileRead {
+  kind: "text" | "binary" | "toolarge" | "missing";
+  content?: string;
+  ext?: string;
+  size?: number;
+}
+
+/** Read a file for in-app preview. Text files (md/txt/json/…) come back as
+ * content; binary or oversized files come back flagged so the UI points at
+ * Google Drive/Finder instead. Guarded to the root; never a hard read outside. */
+export async function readFsFile(root: string, rel: string): Promise<FsFileRead> {
+  const abs = resolveWithinRoot(root, normalizeRel(rel));
+  let st: fs.Stats;
+  try {
+    st = await fsp.stat(abs);
+  } catch {
+    return { kind: "missing" };
+  }
+  if (!st.isFile()) return { kind: "missing" };
+  const ext = path.extname(abs).toLowerCase();
+  if (!TEXT_EXTS.has(ext)) return { kind: "binary", ext, size: st.size };
+  if (st.size > MAX_PREVIEW_BYTES) return { kind: "toolarge", ext, size: st.size };
+  const content = await fsp.readFile(abs, "utf8");
+  return { kind: "text", content, ext, size: st.size };
 }
 
 /** Soft-delete: move an item into the source's "99 Archive" folder (created on

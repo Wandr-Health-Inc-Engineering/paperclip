@@ -24,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageSkeleton } from "@/components/PageSkeleton";
+import { MarkdownBody } from "@/components/MarkdownBody";
 import { formatRelative } from "@/components/tethr/primitives";
 import { cn } from "@/lib/utils";
 import type { DriveSource, FmItem } from "./adapters";
@@ -40,6 +41,7 @@ export function FileManager({ source }: { source: DriveSource }) {
   const [crumbs, setCrumbs] = useState<Crumb[]>([{ ref: "", name: source.rootLabel }]);
   const [dialog, setDialog] = useState<{ type: "newFolder" } | { type: "rename"; item: FmItem } | null>(null);
   const [activeItem, setActiveItem] = useState<FmItem | null>(null);
+  const [preview, setPreview] = useState<FmItem | null>(null);
   const current = crumbs[crumbs.length - 1];
 
   // Reset to root if the source identity changes (e.g. a mount is removed).
@@ -82,6 +84,7 @@ export function FileManager({ source }: { source: DriveSource }) {
 
   const open = (item: FmItem) => {
     if (item.kind === "folder") setCrumbs((prev) => [...prev, { ref: item.key, name: item.name }]);
+    else setPreview(item);
   };
 
   return (
@@ -166,7 +169,55 @@ export function FileManager({ source }: { source: DriveSource }) {
           }}
         />
       ) : null}
+      {preview ? (
+        <PreviewModal source={source} item={preview} onClose={() => setPreview(null)} />
+      ) : null}
     </DndContext>
+  );
+}
+
+/** Read a file in-app. Text/markdown render inline; other types point at Drive. */
+function PreviewModal({ source, item, onClose }: { source: DriveSource; item: FmItem; onClose: () => void }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: [...source.invalidateKey, "read", item.key],
+    queryFn: () => source.read(item.key),
+  });
+  const isMarkdown = /\.(md|markdown)$/i.test(item.name);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col border-2 border-foreground bg-card"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b-2 border-foreground px-4 py-2.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <FileText className="h-4 w-4 shrink-0" />
+            <span className="truncate text-sm font-bold">{item.name}</span>
+          </div>
+          <button onClick={onClose} aria-label="Close" className="shrink-0 text-muted-foreground hover:text-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="overflow-auto px-5 py-4">
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground">Reading…</p>
+          ) : error || data?.kind === "missing" ? (
+            <p className="text-sm text-muted-foreground">Couldn't read this file.</p>
+          ) : data?.kind === "text" ? (
+            isMarkdown ? (
+              <MarkdownBody className="text-sm leading-relaxed">{data.content ?? ""}</MarkdownBody>
+            ) : (
+              <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">{data.content}</pre>
+            )
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {data?.kind === "toolarge" ? "This file is too large to preview here." : "This file type can't be previewed in-app."}{" "}
+              {source.isFs ? "Open it in Google Drive or Finder." : "Open it from the drive."}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -235,11 +286,7 @@ function Row({
       >
         <GripVertical className="h-4 w-4" />
       </button>
-      <button
-        onClick={onOpen}
-        disabled={!isFolder}
-        className={cn("flex min-w-0 flex-1 items-center gap-3 text-left", !isFolder && "cursor-default")}
-      >
+      <button onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left">
         {isFolder ? (
           <Folder className="h-4 w-4 shrink-0" />
         ) : (

@@ -1273,6 +1273,15 @@ export function tethrRoutes(db: Db) {
     res.json({ entries: await listFsChildren(root, req.query.path ? String(req.query.path) : "") });
   });
 
+  router.get("/tethr/:companyId/fsdrive/read", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const root = await resolveFsRoot(companyId, req.query.mount);
+    if (!root) return void res.status(404).json({ error: "That drive isn't connected." });
+    const { readFsFile } = await import("../tethr/fsdrive.js");
+    res.json(await readFsFile(root, String(req.query.path ?? "")));
+  });
+
   router.post("/tethr/:companyId/fsdrive/folder", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);

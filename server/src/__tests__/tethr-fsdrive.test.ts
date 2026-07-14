@@ -10,6 +10,7 @@ import {
   fsMove,
   listFsChildren,
   listMounts,
+  readFsFile,
   removeMount,
   resolveMountRoot,
 } from "../tethr/fsdrive.ts";
@@ -91,6 +92,19 @@ describe("fs file ops (confined to a root)", () => {
     expect(archived).toBe("99 Archive/old.md");
     expect(fs.existsSync(path.join(mirror, "99 Archive", "old.md"))).toBe(true);
     expect(fs.existsSync(path.join(mirror, "old.md"))).toBe(false);
+  });
+
+  it("reads text files (incl. names with em dashes/commas) and flags binary/missing", async () => {
+    // A real agent filename: em dash, commas, spaces — must resolve verbatim.
+    const name = "2026-07-13 Priorities Brief — Unblock, Decide, Close.md";
+    fs.writeFileSync(path.join(mirror, name), "# Priorities\n\nDo the thing.");
+    const text = await readFsFile(mirror, name);
+    expect(text.kind).toBe("text");
+    expect(text.content).toContain("Do the thing.");
+
+    fs.writeFileSync(path.join(mirror, "deck.pdf"), Buffer.from([0x25, 0x50, 0x44, 0x46]));
+    expect((await readFsFile(mirror, "deck.pdf")).kind).toBe("binary");
+    expect((await readFsFile(mirror, "nope.md")).kind).toBe("missing");
   });
 
   it("cannot escape the root via traversal in any op", async () => {

@@ -16,6 +16,13 @@ export interface FmItem {
   modifiedAt?: string;
 }
 
+/** Normalized file preview across backends. */
+export interface FilePreview {
+  kind: "text" | "binary" | "toolarge" | "missing";
+  content?: string;
+  ext?: string;
+}
+
 export interface DriveSource {
   /** Distinguishes sources in query keys / dnd ids. */
   id: string;
@@ -29,6 +36,7 @@ export interface DriveSource {
   rename(itemKey: string, parentRef: string, newName: string): Promise<void>;
   move(itemKey: string, toFolderRef: string): Promise<void>;
   archive(itemKey: string): Promise<void>;
+  read(itemKey: string): Promise<FilePreview>;
 }
 
 /** Filesystem source (00 Tethr or an added folder). folderRef = relative path; "" = root. */
@@ -56,6 +64,7 @@ export function fsSource(companyId: string, mount: string, rootLabel: string): D
       tethrApi.fsMove(companyId, mount, key, parentRef, newName).then(() => {}),
     move: (key, toRef) => tethrApi.fsMove(companyId, mount, key, toRef).then(() => {}),
     archive: (key) => tethrApi.fsArchive(companyId, mount, key).then(() => {}),
+    read: (key) => tethrApi.fsRead(companyId, mount, key),
   };
 }
 
@@ -83,5 +92,9 @@ export function internalSource(companyId: string): DriveSource {
       tethrApi.moveDriveNode(companyId, key, { newName }).then(() => {}),
     move: (key, toRef) => tethrApi.moveDriveNode(companyId, key, { newParentId: toRef || null }).then(() => {}),
     archive: (key) => tethrApi.archiveDriveNode(companyId, key).then(() => {}),
+    async read(key) {
+      const r = await tethrApi.driveContent(companyId, key);
+      return { kind: "text", content: r.content };
+    },
   };
 }

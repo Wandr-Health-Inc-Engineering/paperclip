@@ -532,6 +532,10 @@ export const tethrApi = {
     api.get<{ entries: TethrFsEntry[] }>(
       `/tethr/${c}/fsdrive/list?mount=${encodeURIComponent(mount)}&path=${encodeURIComponent(path)}`,
     ),
+  fsRead: (c: string, mount: string, path: string) =>
+    api.get<{ kind: "text" | "binary" | "toolarge" | "missing"; content?: string; ext?: string; size?: number }>(
+      `/tethr/${c}/fsdrive/read?mount=${encodeURIComponent(mount)}&path=${encodeURIComponent(path)}`,
+    ),
   fsCreateFolder: (c: string, mount: string, path: string, name: string) =>
     api.post<{ path: string }>(`/tethr/${c}/fsdrive/folder`, { mount, path, name }),
   fsMove: (c: string, mount: string, from: string, toDir: string, newName?: string) =>
