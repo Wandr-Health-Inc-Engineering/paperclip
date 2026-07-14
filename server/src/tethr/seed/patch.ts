@@ -128,6 +128,7 @@ export async function seedPatchAgent(db: Db, companyId: string): Promise<PatchSe
     codename: PATCH_AGENT.codename,
     mission: PATCH_AGENT.mission,
     approvalGate: "internal", // reports are internal read-and-recommend — no gate
+    overseerRole: "tech", // debugging routes to the tech overseer (Frank)
     heartbeatNote: "On request — no schedule; Patch works when something breaks.",
     routingTable: [],
     standingRules: CORE_STANDING_RULES,

@@ -1373,6 +1373,40 @@ export function tethrRoutes(db: Db) {
     res.json(await mirror.backfillMirror(db, companyId, { force }));
   });
 
+  // Per-agent controls: auto/manual approvals + which overseer role gets buzzed.
+  router.patch("/tethr/:companyId/agents/:agentId/profile", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const agentId = req.params.agentId as string;
+    const { tethrAgentProfiles } = await import("@paperclipai/db");
+    const { normalizeOverseerRole } = await import("../tethr/overseers.js");
+    const patch: Record<string, unknown> = { updatedAt: new Date() };
+    if (typeof req.body?.autoApprove === "boolean") patch.autoApprove = req.body.autoApprove;
+    if (req.body?.overseerRole !== undefined) patch.overseerRole = normalizeOverseerRole(req.body.overseerRole);
+    const [updated] = await db
+      .update(tethrAgentProfiles)
+      .set(patch)
+      .where(and(eq(tethrAgentProfiles.companyId, companyId), eq(tethrAgentProfiles.agentId, agentId)))
+      .returning();
+    if (!updated) return void res.status(404).json({ error: "Agent not found" });
+    res.json({ autoApprove: updated.autoApprove, overseerRole: updated.overseerRole });
+  });
+
+  // The overseer roster — who gets buzzed for tech / exec / growth work.
+  router.get("/tethr/:companyId/overseers", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { getRoster } = await import("../tethr/overseers.js");
+    res.json({ roster: getRoster(companyId) });
+  });
+
+  router.put("/tethr/:companyId/overseers", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { setRoster } = await import("../tethr/overseers.js");
+    res.json({ roster: await setRoster(companyId, req.body?.roster ?? {}) });
+  });
+
   // Flip the instance between live Claude and the deterministic mock at runtime.
   // In-memory (resets to the env default on restart); "live" needs a key present.
   router.post("/tethr/:companyId/llm-mode", async (req, res) => {

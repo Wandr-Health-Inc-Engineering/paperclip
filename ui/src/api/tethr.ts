@@ -28,12 +28,21 @@ export interface TethrProfile {
   codename: string;
   mission: string | null;
   approvalGate: string;
+  autoApprove: boolean;
+  overseerRole: "tech" | "exec" | "growth";
   heartbeatCron: string | null;
   heartbeatNote: string | null;
   portPriority: number | null;
   routingTable: TethrRoutingEntry[];
   standingRules: string[];
 }
+
+export type TethrOverseerRole = "tech" | "exec" | "growth";
+export interface TethrOverseerPerson {
+  name: string;
+  slackId: string;
+}
+export type TethrOverseerRoster = Record<TethrOverseerRole, TethrOverseerPerson>;
 
 export interface TethrSubagentSummary {
   id: string;
@@ -548,4 +557,16 @@ export const tethrApi = {
     api.post<{ mount: TethrDriveMount }>(`/tethr/${c}/fsdrive/mounts`, { path, label }),
   fsRemoveMount: (c: string, id: string) =>
     api.delete<{ removed: boolean }>(`/tethr/${c}/fsdrive/mounts/${id}`),
+  updateAgentProfile: (
+    c: string,
+    agentId: string,
+    patch: { autoApprove?: boolean; overseerRole?: TethrOverseerRole },
+  ) =>
+    api.patch<{ autoApprove: boolean; overseerRole: TethrOverseerRole }>(
+      `/tethr/${c}/agents/${agentId}/profile`,
+      patch,
+    ),
+  overseers: (c: string) => api.get<{ roster: TethrOverseerRoster }>(`/tethr/${c}/overseers`),
+  setOverseers: (c: string, roster: Partial<TethrOverseerRoster>) =>
+    api.put<{ roster: TethrOverseerRoster }>(`/tethr/${c}/overseers`, { roster }),
 };

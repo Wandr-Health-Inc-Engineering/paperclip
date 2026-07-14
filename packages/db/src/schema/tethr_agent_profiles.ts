@@ -3,6 +3,7 @@ import {
   uuid,
   text,
   integer,
+  boolean,
   timestamp,
   jsonb,
   index,
@@ -39,6 +40,13 @@ export const tethrAgentProfiles = pgTable(
     // overseer (TETHR_DEFAULT_OVERSEER_SLACK_ID) when unset.
     overseerSlackId: text("overseer_slack_id"),
     overseerName: text("overseer_name"),
+    // Which overseer role gets buzzed for this agent — resolved against the
+    // company overseer roster (tech → Frank, exec → Alec, growth → Mark).
+    overseerRole: text("overseer_role").notNull().default("growth"),
+    // When true, this agent's role-appropriate `org` decisions (create/modify
+    // agents, org changes) auto-apply without a human click. Budget/spend,
+    // medical, public, and pr ALWAYS stay manual regardless — see gating.ts.
+    autoApprove: boolean("auto_approve").notNull().default(false),
     approvalGate: text("approval_gate").notNull().default("none"),
     heartbeatCron: text("heartbeat_cron"),
     heartbeatNote: text("heartbeat_note"),

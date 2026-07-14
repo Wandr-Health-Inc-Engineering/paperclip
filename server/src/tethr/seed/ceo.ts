@@ -132,6 +132,7 @@ export async function seedCeoAgent(db: Db, companyId: string): Promise<CeoSeedRe
     codename: CEO_AGENT.codename,
     mission: CEO_AGENT.mission,
     approvalGate: "none",
+    overseerRole: "exec", // CEO decisions route to the exec overseer (Alec)
     heartbeatNote: CEO_AGENT.heartbeatNote,
     routingTable: [],
     standingRules: CORE_STANDING_RULES,

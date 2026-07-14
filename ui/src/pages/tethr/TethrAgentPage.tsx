@@ -25,7 +25,13 @@ import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
 import { Link, useNavigate, useParams } from "../../lib/router";
 import { cn } from "@/lib/utils";
-import { tethrApi, tethrKeys, type TethrSubagent } from "@/api/tethr";
+import {
+  tethrApi,
+  tethrKeys,
+  type TethrOverseerRole,
+  type TethrProfile,
+  type TethrSubagent,
+} from "@/api/tethr";
 
 // Tethr agent detail: role, routing table, the fine-tuned subagent specs,
 // recent runs + outputs, budget. Config editing stays on the core agent page.
@@ -158,6 +164,9 @@ export function TethrAgentPage() {
         </FactCard>
       </div>
 
+      {/* Autonomy + who gets buzzed */}
+      <ApprovalsCard companyId={selectedCompanyId} agentId={agentId} profile={profile} />
+
       {/* Routing table */}
       {profile.routingTable.length > 0 ? (
         <section className="border-2 border-foreground bg-card">
@@ -283,6 +292,111 @@ function FactCard({ label, children }: { label: string; children: React.ReactNod
       <MonoTag>{label}</MonoTag>
       <div className="mt-1.5">{children}</div>
     </div>
+  );
+}
+
+const OVERSEER_ROLES: TethrOverseerRole[] = ["tech", "exec", "growth"];
+const ROLE_LABEL: Record<TethrOverseerRole, string> = { tech: "Tech", exec: "Exec", growth: "Growth & Ops" };
+
+function ApprovalsCard({
+  companyId,
+  agentId,
+  profile,
+}: {
+  companyId: string;
+  agentId: string;
+  profile: TethrProfile;
+}) {
+  const queryClient = useQueryClient();
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: tethrKeys.agent(companyId, agentId) });
+  const { data: rosterData } = useQuery({
+    queryKey: ["tethr", companyId, "overseers"],
+    queryFn: () => tethrApi.overseers(companyId),
+  });
+  const update = useMutation({
+    mutationFn: (patch: { autoApprove?: boolean; overseerRole?: TethrOverseerRole }) =>
+      tethrApi.updateAgentProfile(companyId, agentId, patch),
+    onSuccess: invalidate,
+  });
+  const roster = rosterData?.roster;
+
+  return (
+    <section className="grid gap-3 sm:grid-cols-2">
+      {/* Auto / manual approvals */}
+      <div className="border-2 border-foreground bg-card p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <MonoTag className="text-foreground">approvals</MonoTag>
+            <p className="mt-1.5 text-sm font-bold">{profile.autoApprove ? "Auto" : "Manual"}</p>
+          </div>
+          <Switch
+            on={profile.autoApprove}
+            disabled={update.isPending}
+            onToggle={() => update.mutate({ autoApprove: !profile.autoApprove })}
+            label="Auto-approve"
+          />
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          {profile.autoApprove
+            ? "This agent applies its role-appropriate org decisions (create/modify agents) without you. Budget, medical, public & PR still need your approval; new agents still start paused."
+            : "Everything this agent stages waits for you to approve in the Queue."}
+        </p>
+      </div>
+
+      {/* Who gets buzzed */}
+      <div className="border-2 border-border bg-card p-4">
+        <MonoTag>overseer · who gets buzzed</MonoTag>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {OVERSEER_ROLES.map((role) => (
+            <button
+              key={role}
+              onClick={() => update.mutate({ overseerRole: role })}
+              disabled={update.isPending}
+              className={cn(
+                "border-2 px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition-colors",
+                profile.overseerRole === role
+                  ? "border-foreground bg-foreground text-background"
+                  : "border-border text-muted-foreground hover:border-foreground hover:text-foreground",
+              )}
+            >
+              {ROLE_LABEL[role]}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          {roster
+            ? roster[profile.overseerRole]?.name
+              ? `Alerts go to ${roster[profile.overseerRole].name}${roster[profile.overseerRole].slackId ? "" : " — add their Slack ID in Settings"}.`
+              : "Set this role's person in Settings."
+            : "…"}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function Switch({ on, disabled, onToggle, label }: { on: boolean; disabled?: boolean; onToggle: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onToggle}
+      className={cn(
+        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 border-foreground transition-colors",
+        on ? "bg-foreground" : "bg-background",
+        disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
+      )}
+    >
+      <span
+        className={cn(
+          "inline-block h-4 w-4 rounded-full transition-transform",
+          on ? "translate-x-[1.375rem] bg-background" : "translate-x-0.5 bg-foreground",
+        )}
+      />
+    </button>
   );
 }
 

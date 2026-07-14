@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { approvals, tethrOutputs, tethrSubagents } from "@paperclipai/db";
+import { approvals, tethrAgentProfiles, tethrOutputs, tethrSubagents } from "@paperclipai/db";
 import {
   TETHR_GATED_SENSITIVITIES,
   TETHR_OUTPUT_APPROVAL_TYPE,
@@ -148,6 +148,31 @@ export function gatingService(db: Db) {
         gated,
       },
     });
+
+    // Auto-approve: if the producing agent is on "auto", apply its role-
+    // appropriate org decision without a human click. STRUCTURALLY limited to
+    // sensitivity "org" (agent_proposal / org_change) — spend, medical, public,
+    // and pr can never reach here — and budget-change org_changes are carved out
+    // (always manual, Mark's rule). Auto-created agents still seed paused.
+    if (gated && input.sensitivity === "org") {
+      const change = (input.meta?.change ?? null) as { op?: string } | null;
+      const isBudgetChange = input.kind === "org_change" && change?.op === "update_budget";
+      if (!isBudgetChange) {
+        const [profile] = await db
+          .select({ autoApprove: tethrAgentProfiles.autoApprove })
+          .from(tethrAgentProfiles)
+          .where(eq(tethrAgentProfiles.agentId, input.agentId))
+          .limit(1);
+        if (profile?.autoApprove) {
+          await decide({
+            companyId: input.companyId,
+            outputId: output.id,
+            decision: "approve",
+            reviewer: `auto:${input.agentTag}`,
+          });
+        }
+      }
+    }
 
     return getOutput(input.companyId, output.id);
   }
@@ -358,7 +383,8 @@ export function gatingService(db: Db) {
 
     await logActivity(db, {
       companyId: input.companyId,
-      actorType: "user",
+      // Auto-approvals (reviewer "auto:@tag") are system actions, not a human's.
+      actorType: input.reviewer.startsWith("auto:") ? "system" : "user",
       actorId: input.reviewer,
       action: `tethr_output_${input.decision === "approve" ? "approved" : input.decision === "reject" ? "rejected" : "changes_requested"}`,
       entityType: "tethr_output",

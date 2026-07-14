@@ -1,13 +1,21 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cog, GitCommitHorizontal } from "lucide-react";
+import { Cog, GitCommitHorizontal, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { MonoTag } from "@/components/tethr/primitives";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
 import { cn } from "@/lib/utils";
-import { tethrApi, tethrKeys, type TethrStatus } from "@/api/tethr";
+import {
+  tethrApi,
+  tethrKeys,
+  type TethrOverseerRole,
+  type TethrOverseerRoster,
+  type TethrStatus,
+} from "@/api/tethr";
 
 // Tethr settings: provider status (everything behind an interface), the
 // env-driven config surfaced read-only, plus the one runtime switch that
@@ -93,6 +101,8 @@ export function TethrSettings() {
           swap="TETHR_BUNDLE_PATH (read-only)"
         />
       </div>
+
+      <OverseerRosterCard companyId={selectedCompanyId} />
 
       <div className="flex items-center justify-between border-2 border-foreground bg-card px-4 py-3">
         <div className="flex items-center gap-2">
@@ -237,6 +247,76 @@ function ProviderCard({
       <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/70">
         cloud swap: {swap}
       </p>
+    </div>
+  );
+}
+
+const ROSTER_ROLES: { role: TethrOverseerRole; label: string; hint: string }[] = [
+  { role: "tech", label: "Tech", hint: "Engineering, debugging, reliability" },
+  { role: "exec", label: "Exec", hint: "CEO / strategic decisions" },
+  { role: "growth", label: "Growth & Ops", hint: "Marketing, operations, content" },
+];
+
+// Who gets buzzed on Slack for each kind of work. Each agent routes to one of
+// these three roles; a new tech agent alerts the Tech person automatically.
+function OverseerRosterCard({ companyId }: { companyId: string }) {
+  const queryClient = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ["tethr", companyId, "overseers"],
+    queryFn: () => tethrApi.overseers(companyId),
+  });
+  const [draft, setDraft] = useState<Partial<TethrOverseerRoster>>({});
+  const save = useMutation({
+    mutationFn: (roster: Partial<TethrOverseerRoster>) => tethrApi.setOverseers(companyId, roster),
+    onSuccess: () => {
+      setDraft({});
+      queryClient.invalidateQueries({ queryKey: ["tethr", companyId, "overseers"] });
+    },
+  });
+  const roster = data?.roster;
+  const val = (role: TethrOverseerRole, field: "name" | "slackId") =>
+    draft[role]?.[field] ?? roster?.[role]?.[field] ?? "";
+  const set = (role: TethrOverseerRole, field: "name" | "slackId", v: string) =>
+    setDraft((d) => ({
+      ...d,
+      [role]: {
+        name: field === "name" ? v : (d[role]?.name ?? roster?.[role]?.name ?? ""),
+        slackId: field === "slackId" ? v : (d[role]?.slackId ?? roster?.[role]?.slackId ?? ""),
+      },
+    }));
+
+  return (
+    <div className="border-2 border-foreground bg-card">
+      <div className="flex items-center gap-2 border-b-2 border-foreground px-4 py-2.5">
+        <Users className="h-4 w-4" />
+        <MonoTag className="text-foreground">overseer roster · who gets buzzed</MonoTag>
+      </div>
+      <div className="space-y-3 p-4">
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Slack alerts route by an agent's role. Set the person + their Slack member ID
+          (Slack profile → ⋯ → Copy member ID) for each. New agents auto-route by domain.
+        </p>
+        {ROSTER_ROLES.map(({ role, label, hint }) => (
+          <div key={role} className="grid gap-2 sm:grid-cols-[7rem_minmax(0,1fr)_10rem] sm:items-center">
+            <div>
+              <p className="text-sm font-bold">{label}</p>
+              <p className="font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground">{hint}</p>
+            </div>
+            <Input value={val(role, "name")} onChange={(e) => set(role, "name", e.target.value)} placeholder="Name" />
+            <Input
+              value={val(role, "slackId")}
+              onChange={(e) => set(role, "slackId", e.target.value)}
+              placeholder="Slack ID (U…)"
+              className="font-mono text-xs"
+            />
+          </div>
+        ))}
+        <div className="flex justify-end">
+          <Button size="sm" disabled={save.isPending || Object.keys(draft).length === 0} onClick={() => save.mutate(draft)}>
+            {save.isPending ? "Saving…" : "Save roster"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
