@@ -291,7 +291,34 @@ Ported from `scout-wandr-app` (raw fetch, no SDK). Setup + safety: **`GOOGLE-SET
   folder** (`TETHR_GDRIVE_FOLDER_ID`); `gating.ts` mirrors every published deliverable there
   (best-effort, never fails a publish). Inert until `TETHR_GDRIVE_SA_KEY[_PATH]` + folder id set.
 
-## Drive as a file manager (phase 12, D1 built)
+## Drive page redesign — 00 Tethr as the main drive (phase 13, 2026-07-13)
+
+The Drive page was reframed so the **Google Drive-synced `00 Tethr` folder is the main view**
+(clean, capitalized `01 Briefs`/`02 Documents`/`07 Debug` — what the team sees), with two
+toggles revealing Tethr's **internal working drive** (the DB) and **other Google Drive folders**
+(an allowlist the user adds). All three render in **one drag-and-drop file manager**.
+- **`fsdrive.ts`** — generic, root-confined fs ops (`listFsChildren`/`fsCreateFolder`/`fsMove`/
+  `fsArchive`) making synced folders human-modifiable; every op guarded by `resolveWithinRoot`
+  (exported from `mirror.ts`), names sanitized, "delete" = soft move to `99 Archive` (never
+  hard). Plus the **mounts allowlist**: add/list/remove folders, stored in
+  `tethr-drive-mounts.json` in the instance dir (`TETHR_MOUNTS_FILE` overrides for tests); each
+  added folder MUST be an existing dir under `dirname(mirrorDir())` (the Google Drive "My
+  Drive" holding 00 Tethr) — only Drive folders the user picks, never arbitrary fs; 00 Tethr
+  itself excluded. Routes: `/fsdrive/list|folder|move|archive` + `/fsdrive/mounts`
+  (GET/POST/DELETE), `mount=mirror|ext:<id>`. **Agents never reach any of this — UI only.**
+- **UI** (`ui/src/pages/tethr/drive/`): `adapters.ts` (`DriveSource` = fs/internal, same verbs)
+  + `FileManager.tsx` (one store-agnostic component: breadcrumbs, new-folder/rename/archive
+  dialogs, **`@dnd-kit` drag-to-move** — drag a row onto a folder or breadcrumb; within a
+  single source only). `TethrDrive.tsx` = 00 Tethr main + two `Switch` toggles + the mounts
+  section (+Add folder). fs sources are manage-only (no in-app content preview yet — open in
+  Drive/Finder); internal keeps its preview via the old panel (still in git history).
+- Tests: `tethr-fsdrive.test.ts` (11 — confinement, soft-delete, mount-under-Drive guard).
+  Verified live: created a folder in 00 Tethr (hit disk), added "10 Partnerships & Programs"
+  (showed real Drive contents scoped to it), move endpoint relocates on disk. **v2 (Google
+  API / service-account "folders shared with Tethr") still deferred** — this uses the local
+  desktop-sync mount, no Google setup.
+
+## Drive as a file manager (phase 12, D1 built — internal DB drive)
 
 The Drive page is now a real file manager, not a read-only browser. `drive.ts` adds
 **human-only** ops — `createFolder`, `moveNode` (reparent + rename; a folder move rewrites
