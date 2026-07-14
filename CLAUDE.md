@@ -227,7 +227,10 @@ A third way to reach Tethr besides Console + Slack, for terminal-native engineer
 REPL commands: `/queue`, `/approve <n|id>`, `/reject <n|id>`, `/agents`, `/status`, `/runs`,
 `/new`, `/help`, `/exit`. Thread continuity in-session (keeps `threadId`). **Zero server/engine/
 UI changes, no deps, no migrations** (merge-safe). Auto-finds the local port (`:3100`/`:5173`)
-when `TETHR_URL` is unset. Pure formatters locked by `server/src/__tests__/tethr-cli.test.ts` (18).
+when `TETHR_URL` is unset. **No npm package** — the single zero-dep file with a `#!/usr/bin/env
+node` shebang IS the executable; `scripts/tethr-cli-install.sh` symlinks it onto PATH as `tethr`
+(the run-directly guard is realpath-aware so it fires through the symlink). Pure formatters
+locked by `server/src/__tests__/tethr-cli.test.ts` (18).
 - **Security:** adds no new privilege (same surface as the UI). `TETHR_TOKEN` is env-only, never
   printed/logged; **nothing is written to disk** (thread state in memory only); `/approve`/`/reject`
   need an explicit id/index and echo the item (no bulk mutation); errors strip headers. The real

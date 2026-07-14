@@ -123,18 +123,25 @@ through the **same engine**. Good for an engineer who lives in the terminal — 
 bugs do I need to fix?` streams the hops and prints the answer, pulling from the Drive and the
 debug agent (Patch).
 
+**There is nothing to `npm install`.** `scripts/tethr-cli.mjs` is a single file with **zero
+dependencies** — it uses only Node built-ins and has its own `#!/usr/bin/env node` shebang, so
+the file itself *is* the executable. You need exactly two things: the file on your machine, and
+Node 20+. Run it directly, or install it as a `tethr` command:
+
 ```bash
-# one-shot
-node scripts/tethr-cli.mjs "what bugs do I need to fix?"
+# run it directly (no install)
+node scripts/tethr-cli.mjs "what bugs do I need to fix?"   # one-shot
+node scripts/tethr-cli.mjs                                  # interactive REPL
 
-# interactive REPL (thread continuity within the session)
-node scripts/tethr-cli.mjs
+# OR make `tethr` a real command on your PATH (symlinks the one file — no npm)
+./scripts/tethr-cli-install.sh          # -> ~/.local/bin/tethr
+tethr /status                           # llm mode + mirror
+tethr /queue                            # items awaiting approval
+tethr "what bugs do I need to fix?"     # a message to @tethr
+tethr                                   # drop into the REPL
 
-# a nice alias
+# OR, if you'd rather not install, just alias it
 alias tethr='node ~/git/paperclip/scripts/tethr-cli.mjs'
-tethr /status         # llm mode + mirror
-tethr /queue          # items awaiting approval
-tethr                 # drop into the REPL
 ```
 
 REPL commands: `/queue`, `/approve <n|id> [note]`, `/reject <n|id> [note]`, `/agents`,

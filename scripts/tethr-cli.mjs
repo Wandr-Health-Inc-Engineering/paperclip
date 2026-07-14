@@ -32,7 +32,8 @@
 
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout, stderr } from "node:process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { realpathSync } from "node:fs";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -524,6 +525,18 @@ async function main() {
 }
 
 // Only launch when run directly — importing for tests must not start the REPL.
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+// realpath-aware so it still fires when invoked through a symlink on PATH
+// (e.g. installed as `tethr`), where argv[1] is the link, not the real file.
+function isMainModule() {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return realpathSync(entry) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule()) {
   main();
 }
