@@ -277,6 +277,44 @@ export const readFailuresTool: TethrTool = {
   },
 };
 
+export const proposeAgentTool: TethrTool = {
+  name: "propose_agent",
+  description:
+    "Propose ONE new agent for a capability the organization is missing. Describe the role/job in the brief; a full agent spec is drafted and staged for human approval (or auto-applied if you're on auto). The new agent is always created PAUSED, reporting to the CEO. Use sparingly — never propose a duplicate of an existing agent, and only when the org genuinely lacks a needed capability.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      brief: {
+        type: "string",
+        description:
+          "What the agent is for — the capability/role and why the org needs it (e.g. 'an engineering agent that owns applying the bug fixes Patch diagnoses').",
+      },
+    },
+    required: ["brief"],
+  },
+  // Side-effect tool (like notify): it stages a gated agent_proposal directly.
+  async execute(ctx, input) {
+    const brief = String(input.brief ?? "").trim();
+    if (!brief) {
+      return { output: "Provide a brief describing the agent to propose.", summary: "propose_agent: (empty)" };
+    }
+    try {
+      const { proposeAgent } = await import("../proposals.js");
+      const { spec } = await proposeAgent(ctx.db, ctx.companyId, { brief, autonomous: true });
+      return {
+        output: `Proposed a new agent: ${spec.codename} (${spec.role}). It is staged for human approval and, once approved, is created PAUSED reporting to the CEO. Mention this to the requester briefly.`,
+        summary: `proposed agent: ${spec.codename}`,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        output: `Could not propose that agent: ${msg}. (It may duplicate an existing agent, or the spec was unbuildable.) Do not retry blindly — refine the brief.`,
+        summary: `propose_agent failed: ${msg.slice(0, 60)}`,
+      };
+    }
+  },
+};
+
 export const notifyTool: TethrTool = {
   name: "notify",
   description:

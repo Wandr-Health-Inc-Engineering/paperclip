@@ -14,6 +14,7 @@ import {
 } from "@paperclipai/shared";
 import { logger } from "../middleware/logger.js";
 import { routineService } from "../services/routines.js";
+import { inferOverseerRole } from "./overseers.js";
 
 // The agent factory: turn a validated agent spec (proposed by the CEO, approved
 // by a human) into a real, working agent — reporting to the CEO, seeded PAUSED,
@@ -191,6 +192,9 @@ export async function instantiateAgentFromSpec(
     codename: spec.codename,
     mission: spec.mission,
     approvalGate: "internal",
+    // Route this agent's alerts to the overseer for its domain — a tech agent
+    // goes to Frank, a growth agent to Mark — no flat default.
+    overseerRole: inferOverseerRole(`${spec.role} ${spec.mission}`),
     heartbeatNote: spec.heartbeatCron
       ? `${spec.heartbeatNote ?? "Scheduled"} (seeded paused until enabled)`
       : "On request",

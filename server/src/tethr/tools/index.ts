@@ -5,6 +5,7 @@ import {
   driveWriteTool,
   escalateTool,
   notifyTool,
+  proposeAgentTool,
   readFailuresTool,
   recallMemoryTool,
   stageOrgChangeTool,
@@ -35,6 +36,7 @@ const ALL_TOOLS: Record<string, TethrTool> = Object.fromEntries(
     keywordIdeasTool,
     stageOrgChangeTool,
     readFailuresTool,
+    proposeAgentTool,
   ].map((t) => [t.name, t]),
 );
 
@@ -57,6 +59,9 @@ const ALLOWLIST: Record<string, string[]> = {
   // Patch — the debug agent (Phase 12). Reads the failure log (read-only) and
   // writes a Claude-Code-ready fix. read_failures is granted ONLY here.
   "patch.diagnose": ["read_failures", "drive_write"],
+  // CEO — head of the agent org (Phase 14). Can propose new agents it recommends
+  // during planning; the proposal is gated (or auto-applied if the CEO is on auto).
+  "ceo.plan": ["propose_agent"],
   // Sonar — the scout
   "sonar.leads": ["reddit_scan", "web_fetch", "notify"],
   "sonar.reply": ["reddit_scan"],

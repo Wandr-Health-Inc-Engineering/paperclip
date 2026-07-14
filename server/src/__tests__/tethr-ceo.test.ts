@@ -13,6 +13,10 @@ import {
 } from "@paperclipai/db";
 import { seedTethrCore } from "../tethr/seed/tethr-core.ts";
 import { seedCeoAgent } from "../tethr/seed/ceo.ts";
+import { proposeAgentTool } from "../tethr/tools/internal.ts";
+import { gatingService } from "../tethr/gating.ts";
+import { tethrOutputs } from "@paperclipai/db";
+import type { TethrToolContext } from "../tethr/tools/types.ts";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -162,5 +166,94 @@ describeEmbeddedPostgres("tethr AI CEO", () => {
       (r) => r.to === "@ceo",
     );
     expect(ceoRows).toHaveLength(1);
+  });
+
+  it("the CEO can propose an agent — propose_agent stages a gated agent_proposal", async () => {
+    const [ceo] = await db
+      .select()
+      .from(tethrAgentProfiles)
+      .where(and(eq(tethrAgentProfiles.companyId, companyId), eq(tethrAgentProfiles.tag, "@ceo")))
+      .limit(1);
+    const ctx: TethrToolContext = {
+      db,
+      companyId,
+      agentId: ceo.agentId,
+      agentTag: "@ceo",
+      subagentTag: "@ceo.plan",
+    };
+    const before = (
+      await db
+        .select()
+        .from(tethrOutputs)
+        .where(and(eq(tethrOutputs.companyId, companyId), eq(tethrOutputs.kind, "agent_proposal")))
+    ).length;
+
+    const res = await proposeAgentTool.execute(ctx, {
+      brief: "an engineering agent that owns applying the bug fixes Patch diagnoses",
+    });
+    expect(res.summary).toMatch(/proposed agent/);
+
+    const proposals = await db
+      .select()
+      .from(tethrOutputs)
+      .where(and(eq(tethrOutputs.companyId, companyId), eq(tethrOutputs.kind, "agent_proposal")))
+      .orderBy(tethrOutputs.createdAt);
+    expect(proposals.length).toBe(before + 1);
+    const latest = proposals[proposals.length - 1];
+    expect(latest.status).toBe("gated"); // manual by default — waits for approval
+    expect((latest.meta as { spec?: unknown }).spec).toBeTruthy();
+  });
+
+  it("with the CEO on auto, a proposal auto-builds a PAUSED agent (overseer inferred by domain)", async () => {
+    await db
+      .update(tethrAgentProfiles)
+      .set({ autoApprove: true })
+      .where(and(eq(tethrAgentProfiles.companyId, companyId), eq(tethrAgentProfiles.tag, "@ceo")));
+
+    const gating = gatingService(db);
+    const [ceo] = await db
+      .select()
+      .from(tethrAgentProfiles)
+      .where(and(eq(tethrAgentProfiles.companyId, companyId), eq(tethrAgentProfiles.tag, "@ceo")))
+      .limit(1);
+    // Stage a tech-flavored proposal directly and let auto-approve build it.
+    const spec = {
+      codename: "Forge",
+      role: "Engineering",
+      mission: "Own applying the bug fixes and technical debugging tasks.",
+      rationale: "Diagnosed bugs have no owner to fix them.",
+      tools: [],
+      budgetMonthlyCents: 2000,
+      heartbeatCron: null,
+      subagents: [
+        { key: "fix", name: "Fixer", job: "Apply fixes.", routeWhen: ["fix"], steps: ["do"], output: "a fix", guardrails: ["read-only recs"], sensitivity: "internal" as const },
+      ],
+    };
+    const output = await gating.createOutput({
+      companyId,
+      agentId: ceo.agentId,
+      agentTag: "@ceo",
+      kind: "agent_proposal",
+      title: "New agent: Forge — Engineering",
+      body: "engineering agent",
+      sensitivity: "org",
+      meta: { spec, autonomous: true },
+    });
+    expect(output?.status).toBe("published"); // auto-approved
+
+    const [built] = await db
+      .select()
+      .from(tethrAgentProfiles)
+      .where(and(eq(tethrAgentProfiles.companyId, companyId), eq(tethrAgentProfiles.tag, "@forge")))
+      .limit(1);
+    expect(built).toBeTruthy();
+    expect(built.overseerRole).toBe("tech"); // engineering → Frank
+    const [forgeAgent] = await db.select().from(agents).where(eq(agents.id, built.agentId)).limit(1);
+    expect(forgeAgent.status).toBe("idle"); // paused, never auto-running
+
+    await db
+      .update(tethrAgentProfiles)
+      .set({ autoApprove: false })
+      .where(and(eq(tethrAgentProfiles.companyId, companyId), eq(tethrAgentProfiles.tag, "@ceo")));
   });
 });
