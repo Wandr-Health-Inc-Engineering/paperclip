@@ -330,7 +330,7 @@ function RowAction({ title, onClick, children }: { title: string; onClick: () =>
   );
 }
 
-function FolderDialog({
+export function FolderDialog({
   title,
   confirmLabel,
   initial,

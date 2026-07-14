@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cloud, HardDrive, Info, Plus, Trash2, X } from "lucide-react";
+import { Cloud, HardDrive, Info, Maximize2, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
@@ -10,6 +10,7 @@ import { useCompany } from "../../context/CompanyContext";
 import { cn } from "@/lib/utils";
 import { tethrApi, tethrKeys } from "@/api/tethr";
 import { FileManager } from "./drive/FileManager";
+import { DriveViewer } from "./drive/DriveViewer";
 import { fsSource, internalSource } from "./drive/adapters";
 
 // The Drive page. The Google Drive-synced "00 Tethr" folder is the main view —
@@ -22,6 +23,7 @@ export function TethrDrive() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const [showInternal, setShowInternal] = useState(false);
   const [showOther, setShowOther] = useState(false);
+  const [viewer, setViewer] = useState(false);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Drive" }]);
@@ -80,11 +82,20 @@ export function TethrDrive() {
 
       {/* Main: 00 Tethr */}
       <section className="space-y-2">
-        <SectionHeader
-          icon={<Cloud className="h-4 w-4" />}
-          title="00 Tethr"
-          note={mirrorOn ? `synced · ${status?.mirror?.dir ?? ""}` : "not connected"}
-        />
+        <div className="flex items-center gap-2">
+          <SectionHeader
+            icon={<Cloud className="h-4 w-4" />}
+            title="00 Tethr"
+            note={mirrorOn ? `synced · ${status?.mirror?.dir ?? ""}` : "not connected"}
+          />
+          <div className="flex-1" />
+          {mirrorOn && mirror ? (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setViewer(true)}>
+              <Maximize2 className="h-3.5 w-3.5" />
+              Open viewer
+            </Button>
+          ) : null}
+        </div>
         {mirrorOn && mirror ? (
           <FileManager source={mirror} />
         ) : (
@@ -106,6 +117,8 @@ export function TethrDrive() {
 
       {/* Toggle: other Google Drive folders */}
       {showOther ? <MountsSection companyId={selectedCompanyId} /> : null}
+
+      {viewer && mirror ? <DriveViewer source={mirror} onClose={() => setViewer(false)} /> : null}
     </div>
   );
 }
