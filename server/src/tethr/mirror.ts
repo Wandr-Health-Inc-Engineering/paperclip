@@ -209,7 +209,7 @@ export function composeMirrorDoc(input: MirrorInput): string {
 
 /** Resolved path must stay under the root — belt-and-suspenders on top of the
  * sanitizers (pattern: storage/local-disk-provider resolveWithin). */
-function resolveWithinRoot(root: string, rel: string): string {
+export function resolveWithinRoot(root: string, rel: string): string {
   const resolved = path.resolve(root, rel);
   const base = path.resolve(root);
   if (resolved !== base && !resolved.startsWith(base + path.sep)) {

@@ -346,6 +346,22 @@ export interface TethrMirrorTree {
   tree?: TethrMirrorTreeNode[];
 }
 
+/** One entry in a filesystem-backed drive source (00 Tethr or an added folder). */
+export interface TethrFsEntry {
+  name: string;
+  kind: "folder" | "file";
+  path: string; // relative to the source root
+  size?: number;
+  modifiedAt?: string;
+}
+
+/** An extra Google Drive folder the user added to the file manager. */
+export interface TethrDriveMount {
+  id: string;
+  label: string;
+  path: string;
+}
+
 export interface TethrMemory {
   id: string;
   agentId: string | null;
@@ -390,6 +406,9 @@ export const tethrKeys = {
   status: (c: string) => ["tethr", c, "status"] as const,
   orgChanges: (c: string) => ["tethr", c, "org-changes"] as const,
   mirrorTree: (c: string) => ["tethr", c, "mirror-tree"] as const,
+  fsList: (c: string, mount: string, path: string) =>
+    ["tethr", c, "fsdrive", mount, path] as const,
+  fsMounts: (c: string) => ["tethr", c, "fsdrive-mounts"] as const,
 };
 
 export const tethrApi = {
@@ -508,4 +527,21 @@ export const tethrApi = {
       skippedUnmapped: number;
       failed: number;
     }>(`/tethr/${c}/mirror/backfill${force ? "?force=true" : ""}`, {}),
+  // Filesystem-backed drive sources (00 Tethr = "mirror", added folder = "ext:<id>").
+  fsList: (c: string, mount: string, path: string) =>
+    api.get<{ entries: TethrFsEntry[] }>(
+      `/tethr/${c}/fsdrive/list?mount=${encodeURIComponent(mount)}&path=${encodeURIComponent(path)}`,
+    ),
+  fsCreateFolder: (c: string, mount: string, path: string, name: string) =>
+    api.post<{ path: string }>(`/tethr/${c}/fsdrive/folder`, { mount, path, name }),
+  fsMove: (c: string, mount: string, from: string, toDir: string, newName?: string) =>
+    api.post<{ path: string }>(`/tethr/${c}/fsdrive/move`, { mount, from, toDir, newName }),
+  fsArchive: (c: string, mount: string, path: string) =>
+    api.post<{ path: string }>(`/tethr/${c}/fsdrive/archive`, { mount, path }),
+  fsMounts: (c: string) =>
+    api.get<{ mounts: TethrDriveMount[]; driveRoot: string | null }>(`/tethr/${c}/fsdrive/mounts`),
+  fsAddMount: (c: string, path: string, label?: string) =>
+    api.post<{ mount: TethrDriveMount }>(`/tethr/${c}/fsdrive/mounts`, { path, label }),
+  fsRemoveMount: (c: string, id: string) =>
+    api.delete<{ removed: boolean }>(`/tethr/${c}/fsdrive/mounts/${id}`),
 };

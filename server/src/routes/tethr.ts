@@ -1254,6 +1254,98 @@ export function tethrRoutes(db: Db) {
     res.json(await mirrorTree());
   });
 
+  // Human-modifiable file-manager ops over a synced folder (00 Tethr = "mirror",
+  // or an added folder = "ext:<id>"). Agents never reach these — UI only.
+  const resolveFsRoot = async (companyId: string, mount: unknown) => {
+    const { resolveMountRoot } = await import("../tethr/fsdrive.js");
+    return resolveMountRoot(companyId, String(mount ?? "mirror"));
+  };
+
+  router.get("/tethr/:companyId/fsdrive/list", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const root = await resolveFsRoot(companyId, req.query.mount);
+    if (!root) {
+      res.status(404).json({ error: "That drive isn't connected." });
+      return;
+    }
+    const { listFsChildren } = await import("../tethr/fsdrive.js");
+    res.json({ entries: await listFsChildren(root, req.query.path ? String(req.query.path) : "") });
+  });
+
+  router.post("/tethr/:companyId/fsdrive/folder", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const root = await resolveFsRoot(companyId, req.body?.mount);
+    if (!root) return void res.status(404).json({ error: "That drive isn't connected." });
+    try {
+      const { fsCreateFolder } = await import("../tethr/fsdrive.js");
+      const path = await fsCreateFolder(root, String(req.body?.path ?? ""), String(req.body?.name ?? ""));
+      res.json({ path });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  router.post("/tethr/:companyId/fsdrive/move", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const root = await resolveFsRoot(companyId, req.body?.mount);
+    if (!root) return void res.status(404).json({ error: "That drive isn't connected." });
+    try {
+      const { fsMove } = await import("../tethr/fsdrive.js");
+      const path = await fsMove(
+        root,
+        String(req.body?.from ?? ""),
+        String(req.body?.toDir ?? ""),
+        typeof req.body?.newName === "string" ? req.body.newName : undefined,
+      );
+      res.json({ path });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  router.post("/tethr/:companyId/fsdrive/archive", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const root = await resolveFsRoot(companyId, req.body?.mount);
+    if (!root) return void res.status(404).json({ error: "That drive isn't connected." });
+    try {
+      const { fsArchive } = await import("../tethr/fsdrive.js");
+      const path = await fsArchive(root, String(req.body?.path ?? ""));
+      res.json({ path });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // The "other Google Drive folders" allowlist — add/list/remove folders the
+  // user chooses (each validated to live under their Google Drive mount).
+  router.get("/tethr/:companyId/fsdrive/mounts", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { listMounts, driveMountRoot } = await import("../tethr/fsdrive.js");
+    res.json({ mounts: await listMounts(companyId), driveRoot: driveMountRoot() });
+  });
+
+  router.post("/tethr/:companyId/fsdrive/mounts", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { addMount } = await import("../tethr/fsdrive.js");
+    const result = await addMount(companyId, { label: req.body?.label, path: String(req.body?.path ?? "") });
+    if (!result.ok) return void res.status(400).json({ error: result.error });
+    res.json({ mount: result.mount });
+  });
+
+  router.delete("/tethr/:companyId/fsdrive/mounts/:id", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { removeMount } = await import("../tethr/fsdrive.js");
+    const removed = await removeMount(companyId, req.params.id as string);
+    res.json({ removed });
+  });
+
   // One-time (idempotent) projection of already-published deliverables into
   // the shared folder. Human deletions are final — re-running does not
   // resurrect them (tracked via meta.mirror) unless ?force=true.
