@@ -217,6 +217,25 @@ Both directions run through `server/src/tethr/`, gated on env so local dev stays
   Cloud Slack app: gate **A2** in `MANUAL-STEPS.md`; local: `LOCAL.md`.
 - **Manual outbound test:** `SLACK_BOT_TOKEN=… node scripts/tethr-slack-send.mjs` (gate A3).
 
+## Terminal client — CLI (phase 14, 2026-07-14)
+
+A third way to reach Tethr besides Console + Slack, for terminal-native engineers:
+**`scripts/tethr-cli.mjs`** — a single-file, **zero-dependency** Node ≥20 client (plain `fetch`
++ `node:readline`). One-shot (`node scripts/tethr-cli.mjs "what bugs do I need to fix?"`) or REPL
+(no args). Routes through the SAME REST surface the Console uses (`POST /route` → poll
+`/route-runs/:id`), streams hops live, renders the answer with a light markdown→ANSI pass.
+REPL commands: `/queue`, `/approve <n|id>`, `/reject <n|id>`, `/agents`, `/status`, `/runs`,
+`/new`, `/help`, `/exit`. Thread continuity in-session (keeps `threadId`). **Zero server/engine/
+UI changes, no deps, no migrations** (merge-safe). Auto-finds the local port (`:3100`/`:5173`)
+when `TETHR_URL` is unset. Pure formatters locked by `server/src/__tests__/tethr-cli.test.ts` (18).
+- **Security:** adds no new privilege (same surface as the UI). `TETHR_TOKEN` is env-only, never
+  printed/logged; **nothing is written to disk** (thread state in memory only); `/approve`/`/reject`
+  need an explicit id/index and echo the item (no bulk mutation); errors strip headers. The real
+  boundary is network reach — server binds loopback by default; remote access = **Tailscale**
+  (recommended) or `authenticated` mode + board API key; the CLI prints a warning on any
+  non-loopback `TETHR_URL`. `medical/public/spend/pr` stay hard-gated regardless of caller.
+  Full run + remote-access guide: **`LOCAL.md` §6**.
+
 ## Live mode (Claude) & budgets
 
 - **Flip live:** set `ANTHROPIC_API_KEY` (+ optional `TETHR_CLAUDE_MODEL`, default

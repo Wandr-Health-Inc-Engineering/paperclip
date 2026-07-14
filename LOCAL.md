@@ -115,3 +115,53 @@ make compose-up      # Postgres 17 + server + bundled UI on :3100
 Data is in Postgres (embedded dev dir, or the compose volume), so restarts are safe. When you're
 ready for the cloud, `docs/tethr-buildout/MANUAL-STEPS.md` Group A is the same setup pointed at
 Railway — nothing you do locally is throwaway.
+
+## 6. Talk to Tethr from your terminal (for engineers)
+
+A third way to reach Tethr, alongside the Console and Slack: a zero-dependency CLI that routes
+through the **same engine**. Good for an engineer who lives in the terminal — e.g. `@tethr what
+bugs do I need to fix?` streams the hops and prints the answer, pulling from the Drive and the
+debug agent (Patch).
+
+```bash
+# one-shot
+node scripts/tethr-cli.mjs "what bugs do I need to fix?"
+
+# interactive REPL (thread continuity within the session)
+node scripts/tethr-cli.mjs
+
+# a nice alias
+alias tethr='node ~/git/paperclip/scripts/tethr-cli.mjs'
+tethr /status         # llm mode + mirror
+tethr /queue          # items awaiting approval
+tethr                 # drop into the REPL
+```
+
+REPL commands: `/queue`, `/approve <n|id> [note]`, `/reject <n|id> [note]`, `/agents`,
+`/status`, `/runs`, `/new` (fresh thread), `/help`, `/exit`. Anything else is a message to
+`@tethr`. With `pnpm dev` running, no config is needed — the CLI auto-finds the local port
+(`:3100` or `:5173`).
+
+### Reaching it from another machine (Frank on his laptop)
+
+The server binds **loopback (`127.0.0.1`) by default**, so the CLI only works on the same
+machine out of the box. To let a teammate reach it, in order of preference:
+
+1. **Tailscale (recommended).** Put both laptops on the same tailnet (WireGuard-encrypted,
+   device-authenticated). Mark starts the server bound to the tailnet
+   (`PAPERCLIP_TAILNET_BIND_HOST=…` — see `config.ts`), Frank sets
+   `TETHR_URL=http://<mark-tailscale-ip>:5173` (or `:3100`). Traffic is encrypted end-to-end.
+2. **`authenticated` mode + a board API key.** The real multi-user answer: run the server in
+   `authenticated` mode and give Frank a board API key via `TETHR_TOKEN` (env only — never a
+   flag, so it stays out of shell history). The CLI sends it as a bearer token and never prints
+   it.
+3. **LAN (`HOST=0.0.0.0`) — only on a trusted network.** ⚠ In the default `local_trusted` mode
+   **anyone who can reach the port is an instance admin** (no login). Do this only on a network
+   you fully trust; prefer Tailscale. The CLI prints this warning whenever `TETHR_URL` is not a
+   loopback address.
+
+**Security notes:** the CLI adds no new privilege — it calls the same REST surface the Console
+uses. It writes nothing to disk (thread state is in memory for the session only), never prints
+or logs `TETHR_TOKEN`, and requires an explicit id/index for `/approve` and `/reject` (no bulk
+approve). Gated `medical/public/spend/pr` outputs are still hard-gated behind approvals no
+matter who calls.
