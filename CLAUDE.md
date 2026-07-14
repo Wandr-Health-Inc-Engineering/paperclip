@@ -118,7 +118,7 @@ code (Sentry, Pulse, Google Ads, Keyword Planner) stays live and allowlisted.
 - `server/src/tethr/**` — the whole L2 engine: `routing.ts`, `worker.ts`, `gating.ts`, `drive.ts`, `org.ts`, `memory.ts`, `notify.ts`, `digest.ts`, `state.ts`, `export.ts`, `adapter.ts`, `index.ts`, plus `llm/` (mock ↔ claude), `tools/` (allowlisted registry), `seed/` (`wandr-growth.ts`).
 - `server/src/routes/tethr.ts` — the Tethr REST surface. (`routes/health.ts` = the existing `/health` + `/api/health` health endpoints — reuse, don't add another.)
 - `ui/src/pages/tethr/**` + `ui/src/components/tethr/**` — the 10 pages.
-- `packages/db/src/schema/tethr_*.ts` — 8 tables (`tethr_divisions`, `tethr_agent_profiles`, `tethr_subagents`, `tethr_route_runs`, `tethr_outputs`, `tethr_drive*`, `tethr_memories`, `tethr_notifications`). Migrations through **0093**.
+- `packages/db/src/schema/tethr_*.ts` — 8 tables (`tethr_divisions`, `tethr_agent_profiles`, `tethr_subagents`, `tethr_route_runs`, `tethr_outputs`, `tethr_drive*`, `tethr_memories`, `tethr_notifications`). Migrations through **0094**.
 
 ## Merge-safe rule (non-negotiable)
 
@@ -290,6 +290,40 @@ Ported from `scout-wandr-app` (raw fetch, no SDK). Setup + safety: **`GOOGLE-SET
 - **Google Drive** (`tools/google-drive.ts`) — service-account writer scoped to **one shared
   folder** (`TETHR_GDRIVE_FOLDER_ID`); `gating.ts` mirrors every published deliverable there
   (best-effort, never fails a publish). Inert until `TETHR_GDRIVE_SA_KEY[_PATH]` + folder id set.
+
+## Agent autonomy — auto/manual approval, a CEO that acts, cofounder alerts (phase 14, 2026-07-14)
+
+Agents can now operate with real autonomy, safely bounded. Migration **0094** adds
+`auto_approve` + `overseer_role` to `tethr_agent_profiles`.
+
+- **Per-agent auto/manual approval.** Each agent has an Auto/Manual toggle (agent page,
+  `TethrAgentPage.tsx` Approvals card; PATCH `/agents/:id/profile`). In **auto**, the agent's
+  gated `org` decisions (agent_proposal, org_change) apply without a human — via the hook in
+  `gating.createOutput` (calls the in-closure `decide({reviewer:"auto:@tag"})`, logs
+  `actorType:"system"`). **HARD boundary, enforced structurally:** auto-approve fires ONLY for
+  `sensitivity === "org"`, so **spend/medical/public/pr can NEVER auto-approve**; **budget-change
+  org_changes are carved out too** (`op === "update_budget"` → always manual, Mark's rule).
+  Auto-created/modified agents still **start paused** — enabling a heartbeat stays a human action.
+  Locked by `tethr-autoapprove.test.ts`.
+- **The CEO can act.** `propose_agent` tool (`tools/internal.ts`, granted only to `@ceo.plan`)
+  → `proposals.proposeAgent` → gated `agent_proposal`. So the CEO proposes the agents its brief
+  recommends; approved (or auto-approved) → `instantiateAgentFromSpec` builds it PAUSED reporting
+  to the CEO. `@ceo.plan` guidance updated (propose one agent per genuine gap, never a duplicate).
+- **Role-based overseer roster** (`overseers.ts`): `tech`→Frank, `exec`→Alec, `growth`→Mark, a
+  per-company JSON in the instance dir (`TETHR_OVERSEERS_FILE` test override; env-seedable via
+  `TETHR_OVERSEER_{TECH,EXEC,GROWTH}_{NAME,SLACK_ID}`). Each agent has an `overseerRole`; `@ceo`
+  seeded exec, `@patch` seeded tech; **new agents auto-route by domain** (`inferOverseerRole`
+  keyword match on role/mission, wired into `instantiateAgentFromSpec`). Roster edited on Settings;
+  role picked per-agent on the agent page. `resolveOverseer` now = roster[overseerRole] (per-agent
+  `overseerSlackId` override still wins). **No flat Mark default.**
+- **Slack alerts** (`slack.ts` `dmOverseer` → `postSlackMessage` to a `U…` id, no-op without
+  id/token): `gating.createOutput` DMs the agent's overseer — a gated item that still needs a human
+  ("needs your approval"), or a heartbeat deliverable ("filed: <title>" — the silent-CEO-brief gap).
+  Auto-approved items don't nag. Manual gate: set the 3 Slack member IDs in Settings (MANUAL-STEPS
+  C6a); add the Slack `im:write` scope if proactive DMs bounce.
+- **00 Tethr full-screen viewer** (`drive/DriveViewer.tsx`): an "Open viewer" launcher on the
+  00 Tethr section → a portaled full-screen reader (folder tree + large MD-first file pane +
+  new-folder/rename/archive), reusing the fs source + `readFsFile` (no new backend).
 
 ## Drive page redesign — 00 Tethr as the main drive (phase 13, 2026-07-13)
 
