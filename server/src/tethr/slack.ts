@@ -21,6 +21,7 @@ import { matchMetaCommand, renderHelpMessage } from "./commands.js";
 import type { LLMImageAttachment } from "./llm/types.js";
 import { memoryService } from "./memory.js";
 import { mirrorDir } from "./mirror.js";
+import { getRoster, normalizeOverseerRole } from "./overseers.js";
 
 const SLACK_API = "https://slack.com/api";
 
@@ -371,9 +372,10 @@ export interface Overseer {
 }
 
 /**
- * The human who oversees an agent: the agent's assigned overseer, else the org
- * default (TETHR_DEFAULT_OVERSEER_SLACK_ID / _NAME). This is who gets tagged in
- * the originating thread when the agent stages work for approval or escalates.
+ * The human who oversees an agent: resolved from the company overseer roster by
+ * the agent's `overseerRole` (tech → Frank, exec → Alec, growth → Mark). A
+ * per-agent overseerSlackId override still wins if one is set. This is who gets
+ * tagged/DM'd when the agent stages work, escalates, or files a deliverable.
  */
 export async function resolveOverseer(
   db: Db,
@@ -384,15 +386,40 @@ export async function resolveOverseer(
     .select({
       slackId: tethrAgentProfiles.overseerSlackId,
       name: tethrAgentProfiles.overseerName,
+      role: tethrAgentProfiles.overseerRole,
     })
     .from(tethrAgentProfiles)
     .where(and(eq(tethrAgentProfiles.companyId, companyId), eq(tethrAgentProfiles.tag, agentTag)))
     .limit(1);
+  const fromRoster = getRoster(companyId)[normalizeOverseerRole(profile?.role)];
   const slackId =
-    profile?.slackId?.trim() || process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID?.trim() || undefined;
+    profile?.slackId?.trim() ||
+    fromRoster.slackId ||
+    process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID?.trim() ||
+    undefined;
   const name =
-    profile?.name?.trim() || process.env.TETHR_DEFAULT_OVERSEER_NAME?.trim() || "the overseer";
+    profile?.name?.trim() || fromRoster.name || process.env.TETHR_DEFAULT_OVERSEER_NAME?.trim() || "the overseer";
   return { slackId, name };
+}
+
+/**
+ * Send a direct Slack DM to an agent's overseer (the person for its role).
+ * Best-effort: no-op when there's no Slack id, no token, or under test.
+ * postSlackMessage accepts a `U…` user id — Slack routes it to the 1:1 DM.
+ */
+export async function dmOverseer(
+  db: Db,
+  companyId: string,
+  agentTag: string,
+  text: string,
+): Promise<void> {
+  try {
+    const overseer = await resolveOverseer(db, companyId, agentTag);
+    if (!overseer.slackId) return;
+    await postSlackMessage({ channel: overseer.slackId, text });
+  } catch (err) {
+    logger.warn({ err, agentTag }, "tethr slack: overseer DM failed");
+  }
 }
 
 /** Slack @-mention when we have a user id, otherwise the plain display name. */

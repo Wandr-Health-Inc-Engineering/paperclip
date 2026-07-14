@@ -275,12 +275,13 @@ describeEmbeddedPostgres("tethr clean-slate org (@tethr coordinator)", () => {
       expect(o.slackId).toBe("U_MARK");
       expect(overseerMention(o)).toBe("<@U_MARK>");
 
-      // With no default set → the mention degrades to a plain name (never crashes).
+      // With nothing configured → no Slack id, and the mention degrades to the
+      // role's roster label (@tethr's role is "growth") — never crashes.
       delete process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID;
       delete process.env.TETHR_DEFAULT_OVERSEER_NAME;
       const noDefault = await resolveOverseer(db, companyId, "@tethr");
       expect(noDefault.slackId).toBeUndefined();
-      expect(overseerMention(noDefault)).toBe("the overseer");
+      expect(overseerMention(noDefault)).toBe("Growth & Ops");
     } finally {
       if (saved === undefined) delete process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID;
       else process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID = saved;

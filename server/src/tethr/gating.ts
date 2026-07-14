@@ -154,6 +154,7 @@ export function gatingService(db: Db) {
     // sensitivity "org" (agent_proposal / org_change) — spend, medical, public,
     // and pr can never reach here — and budget-change org_changes are carved out
     // (always manual, Mark's rule). Auto-created agents still seed paused.
+    let autoApproved = false;
     if (gated && input.sensitivity === "org") {
       const change = (input.meta?.change ?? null) as { op?: string } | null;
       const isBudgetChange = input.kind === "org_change" && change?.op === "update_budget";
@@ -170,8 +171,32 @@ export function gatingService(db: Db) {
             decision: "approve",
             reviewer: `auto:${input.agentTag}`,
           });
+          autoApproved = true;
         }
       }
+    }
+
+    // Buzz the responsible agent's overseer on Slack (heartbeat FYIs + things
+    // that still need a human). Best-effort; dynamic import dodges a cycle.
+    try {
+      const { dmOverseer } = await import("./slack.js");
+      if (gated && !autoApproved) {
+        await dmOverseer(
+          db,
+          input.companyId,
+          input.agentTag,
+          `${input.agentTag} needs your approval: *${input.title}*. Review it in the Tethr Queue.`,
+        );
+      } else if (input.heartbeatRunId) {
+        await dmOverseer(
+          db,
+          input.companyId,
+          input.agentTag,
+          `${input.agentTag} filed: *${input.title}* — open it in the Drive (00 Tethr).`,
+        );
+      }
+    } catch (err) {
+      logger.warn({ err }, "[tethr] overseer buzz failed");
     }
 
     return getOutput(input.companyId, output.id);

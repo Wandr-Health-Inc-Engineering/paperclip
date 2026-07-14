@@ -185,6 +185,16 @@ running throughout — it *is* the rollback.
 Scout repo, clone it to `/Users/markkaram/git/scout` before revisiting Phase 2 so working code
 can be reused instead of rewritten. (`docs/tethr-buildout/scout-audit.md`.)
 
+### C6a · Overseer roster — buzz the right cofounder (~2 min, in-app)
+
+Slack alerts (heartbeat deliverables + things needing approval) route by an
+agent's role. Set the three people once, in **Settings → overseer roster**:
+**Tech = Frank**, **Exec = Alec**, **Growth & Ops = Mark**. For each, enter their
+**Slack member ID** (Slack → their profile → ⋯ → **Copy member ID**, looks like
+`U0…`). New agents auto-route by domain (a tech agent → Frank). Until IDs are
+set, alerts stay in the in-app bell only. If proactive DMs don't deliver, add the
+**`im:write`** scope to the Slack app (OAuth & Permissions → reinstall).
+
 ### C6b · AI image generation into the shared workspace (deferred; needs your account)
 
 The shared-folder mirror (2026-07-13) can already carry any file bytes; what's missing is a
