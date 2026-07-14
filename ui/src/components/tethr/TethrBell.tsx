@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, Check, ExternalLink, X } from "lucide-react";
+import { Bell, Check, ExternalLink, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useCompany } from "../../context/CompanyContext";
@@ -176,6 +176,24 @@ function NotificationDetail({
     onError: (e) => setResult(e instanceof Error ? e.message : "This may have already been handled."),
   });
 
+  // "Ask Tethr to handle this" — hand the alert to the coordinator as a task and
+  // open the Console on the live run. The generic way to act on any notification.
+  const dispatch = useMutation({
+    mutationFn: () => {
+      const context = `${n.title}${n.body ? ` — ${n.body}` : ""}`;
+      const ask = note.trim()
+        ? note.trim()
+        : "Can you look into this and tell me how you'd handle it?";
+      return tethrApi.route(companyId, `I got this alert: "${context}". ${ask}`);
+    },
+    onSuccess: (ids) => {
+      onActed();
+      onClose();
+      navigate(`/console?run=${ids.routeRunId}&thread=${ids.threadId}`);
+    },
+    onError: (e) => setResult(e instanceof Error ? e.message : "Couldn't reach Tethr — try the Console."),
+  });
+
   const go = (to: string) => {
     onClose();
     navigate(to);
@@ -228,10 +246,25 @@ function NotificationDetail({
                 Open the full Queue <ExternalLink className="h-3 w-3" />
               </button>
             </div>
-          ) : null}
+          ) : (
+            // Informational: hand it to Tethr as a task, or just dismiss.
+            <div className="mt-4 space-y-2">
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Tell Tethr what to do about this (optional) — e.g. 'check if it's really a duplicate and advise'…"
+                rows={2}
+                className="w-full resize-none border-2 border-foreground bg-background px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground/60"
+              />
+              <Button size="sm" className="w-full gap-1.5" disabled={dispatch.isPending} onClick={() => dispatch.mutate()}>
+                <Sparkles className="h-3.5 w-3.5" />
+                {dispatch.isPending ? "Handing to Tethr…" : "Ask Tethr to handle this"}
+              </Button>
+            </div>
+          )}
         </div>
 
-        {/* Footer actions for non-approval notifications (or after a decision). */}
+        {/* Footer: secondary navigation + dismiss. */}
         <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
           {result ? (
             <Button size="sm" onClick={onClose}>
@@ -246,7 +279,7 @@ function NotificationDetail({
                 </Button>
               ) : null}
               {!pendingOutputId ? (
-                <Button size="sm" onClick={onClose}>
+                <Button variant="outline" size="sm" onClick={onClose}>
                   Dismiss
                 </Button>
               ) : null}

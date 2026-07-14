@@ -12,7 +12,7 @@ import {
 } from "@/components/tethr/primitives";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
-import { Link } from "../../lib/router";
+import { Link, useSearchParams } from "../../lib/router";
 import { cn } from "@/lib/utils";
 import { tethrApi, tethrKeys, type TethrRouteRun } from "@/api/tethr";
 
@@ -43,10 +43,23 @@ export function TethrConsole() {
   } | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Console" }]);
   }, [setBreadcrumbs]);
+
+  // Opened from a notification's "Ask Tethr to handle this" — pick up the run
+  // that was just dispatched and show it live, then clear the params.
+  useEffect(() => {
+    const runParam = searchParams.get("run");
+    if (!runParam) return;
+    setActive({ request: searchParams.get("q") ?? "", runId: runParam, live: true });
+    const thread = searchParams.get("thread");
+    if (thread) setThreadId(thread);
+    setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const { data: history } = useQuery({
     queryKey: tethrKeys.routeRuns(selectedCompanyId!),
