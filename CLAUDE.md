@@ -239,6 +239,20 @@ locked by `server/src/__tests__/tethr-cli.test.ts` (18).
   non-loopback `TETHR_URL`. `medical/public/spend/pr` stay hard-gated regardless of caller.
   Full run + remote-access guide: **`LOCAL.md` §6**.
 
+## Folder Command Center — local 00 Tethr viewer (phase 14, 2026-07-15)
+
+A double-clickable local app to read + organize the **00 Tethr** Google Drive folder WITHOUT
+opening the Tethr web app — modeled on Mark's Wandr Social Command Center (local server + static
+UI, operates directly on the synced folder). **`scripts/tethr-command-center/`**: `server.mjs`
+(zero-dep Node http server over `TETHR_MIRROR_DIR`), `public/` (vanilla JS UI — folder tree +
+Markdown reader with an inlined safe MD→HTML renderer + new-folder/rename/move/archive),
+`start.command` (launcher → opens `http://localhost:4848`). **Independent of the Tethr server/DB**
+— pure fs. **Safety = fsdrive parity:** loopback-only bind, every path confined to the 00 Tethr
+root (traversal stripped), archive = soft-move to `99 Archive` (never hard-delete), names
+sanitized, single-writer port guard, MD content HTML-escaped before render. Verified live: tree,
+MD/table/front-matter render, create/rename/archive, traversal blocked. Merge-safe (new files
+only). Run/README: `scripts/tethr-command-center/README.md`.
+
 ## Live mode (Claude) & budgets
 
 - **Flip live:** set `ANTHROPIC_API_KEY` (+ optional `TETHR_CLAUDE_MODEL`, default
