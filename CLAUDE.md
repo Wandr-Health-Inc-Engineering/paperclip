@@ -253,6 +253,26 @@ sanitized, single-writer port guard, MD content HTML-escaped before render. Veri
 MD/table/front-matter render, create/rename/archive, traversal blocked. Merge-safe (new files
 only). Run/README: `scripts/tethr-command-center/README.md`.
 
+## Claude subscription backend — run the org on Claude Pro/Max (phase 14, 2026-07-15)
+
+A third LLM backend besides mock + API key: **`server/src/tethr/llm/claude-code.ts`**
+(`ClaudeCodeProvider`) drives the local **Claude Code CLI** headless
+(`claude -p --output-format json --system-prompt … --allowedTools "" --model …`), which is
+authenticated with the operator's **personal Claude Pro/Max subscription** — so @tethr and the
+org bill to the subscription, not per-token API. **Flip:** set `TETHR_LLM_BACKEND=claude-code`
+(+ optional `TETHR_CLAUDE_CODE_MODEL`/`_FAST_MODEL`, default work=sonnet/fast=haiku) and restart.
+Selection is in `llm/index.ts` (`getTethrLlmBackend`, `tethrLiveAvailable`); status exposes
+`llm.backend`. classify/generate/plan/proposeAgent are single-shot; **runAgentic uses a text-only
+`ACTION <name> {json}` protocol** (the CLI won't call Tethr's tools natively, and its own tool
+machinery hijacks "tool" framing — so the model writes an ACTION line, Tethr executes it via
+`callTool`, feeds the result back; read-only allowlist unchanged). **Tradeoffs:** per-call
+latency + a few thousand tokens of Claude Code overhead → hits subscription rate limits faster
+(pair with the throttle); cost is subscription-metered so no marginal dollars (token usage +
+`total_cost_usd` still reported for the usage gauge). Flipping the whole instance to subscription
+billing is a **go-live decision (Mark's flip)**, like setting the API key. Verified live in
+isolation (classify/generate/runAgentic all run on the subscription). Merge-safe: new provider +
+selection wiring only.
+
 ## Live mode (Claude) & budgets
 
 - **Flip live:** set `ANTHROPIC_API_KEY` (+ optional `TETHR_CLAUDE_MODEL`, default

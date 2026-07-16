@@ -21,6 +21,7 @@ import { logger } from "../middleware/logger.js";
 import { logActivity } from "../services/activity-log.js";
 import {
   getTethrLLMProvider,
+  getTethrLlmBackend,
   getTethrLlmMode,
   setTethrLlmMode,
   tethrLiveKeyPresent,
@@ -1220,6 +1221,7 @@ export function tethrRoutes(db: Db) {
         provider: provider.id,
         model: provider.model,
         mode: getTethrLlmMode(),
+        backend: getTethrLlmBackend(),
         liveKeyPresent: tethrLiveKeyPresent(),
       },
       storage: {
