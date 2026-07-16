@@ -423,8 +423,13 @@ Agents can now operate with real autonomy, safely bounded. Migration **0094** ad
   `actorType:"system"`). **HARD boundary, enforced structurally:** auto-approve fires ONLY for
   `sensitivity === "org"`, so **spend/medical/public/pr can NEVER auto-approve**; **budget-change
   org_changes are carved out too** (`op === "update_budget"` → always manual, Mark's rule).
+  **A budget change is now stamped `sensitivity: "spend"` at both org_change createOutput sites
+  (`worker.ts` staging + the `/org-changes/:id/revert` route)**, so it rides the financial gate
+  (exec-overseer DM, spend label) AND is structurally excluded from auto-approve — defense in depth
+  over the `update_budget` carve-out. The apply is keyed on `kind === "org_change"`, not
+  sensitivity, so this doesn't change how an approved budget change is applied.
   Auto-created/modified agents still **start paused** — enabling a heartbeat stays a human action.
-  Locked by `tethr-autoapprove.test.ts`.
+  Locked by `tethr-autoapprove.test.ts` + `tethr-tinkr.test.ts` ("update_budget … sensitivity=spend").
 - **The CEO can act.** `propose_agent` tool (`tools/internal.ts`, granted only to `@ceo.plan`)
   → `proposals.proposeAgent` → gated `agent_proposal`. So the CEO proposes the agents its brief
   recommends; approved (or auto-approved) → `instantiateAgentFromSpec` builds it PAUSED reporting

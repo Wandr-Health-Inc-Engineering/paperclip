@@ -1169,7 +1169,9 @@ export function tethrRoutes(db: Db) {
       body:
         renderChangeBody(validated.spec, before, validated.target) +
         `\n\n_Reverts change ${change.id.slice(0, 8)} (${change.summary})._`,
-      sensitivity: "org",
+      // Reverting a budget change is still a budget change — gate it as spend
+      // (parity with the staging path in worker.ts).
+      sensitivity: validated.spec.op === "update_budget" ? "spend" : "org",
       meta: { change: validated.spec, revertOfChangeId: change.id },
     });
     res.json({ outputId: output?.id });

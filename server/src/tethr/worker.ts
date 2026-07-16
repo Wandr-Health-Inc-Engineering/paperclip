@@ -243,6 +243,12 @@ export function workerService(db: Db) {
         title = `Org change: ${changeSummary(validated.spec, before)}`;
         body = renderChangeBody(validated.spec, before, validated.target);
         changeMeta = { change: validated.spec };
+        // A budget change is a financial decision — route it through the SPEND
+        // gate, not the lighter org gate: it hits the financial approval track
+        // and DMs the exec overseer. Structural defense-in-depth on top of the
+        // update_budget auto-approve carve-out — "spend" can never auto-approve
+        // (only "org" can), so a budget cap can never move without a human.
+        if (validated.spec.op === "update_budget") sensitivity = "spend";
       } else {
         // No applicable change — this is conversation, not an org mutation.
         effectiveKind = "answer";

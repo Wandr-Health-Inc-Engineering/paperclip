@@ -350,4 +350,51 @@ describeEmbeddedPostgres("tethr Tinkr (org mechanic)", () => {
     expect(result.status).toBe("done"); // inline answer, nothing gated
     expect(result.resultText).toMatch(/exact change/i);
   });
+
+  it("update_budget org_change has sensitivity=spend and blocks auto-approve", async () => {
+    // Put Tinkr on auto-approve. A plain `org` change would then apply with no
+    // human. A budget change must NOT: it is routed through the SPEND gate, and
+    // spend can never auto-approve (only "org" can). This is the financial track.
+    const tinkr = await profileByTag("@tinkr");
+    await db
+      .update(tethrAgentProfiles)
+      .set({ autoApprove: true })
+      .where(eq(tethrAgentProfiles.id, tinkr!.id));
+
+    const radar = await profileByTag("@radar");
+    const [agentBefore] = await db
+      .select()
+      .from(agents)
+      .where(eq(agents.id, radar!.agentId))
+      .limit(1);
+    const budgetBefore = agentBefore.budgetMonthlyCents;
+
+    const routing = routingService(db);
+    const result = await routing.routeRequest({
+      companyId,
+      requestText: "set @radar budget to $90",
+    });
+    // Held for a human despite Tinkr being on auto — proof spend never auto-applies.
+    expect(result.status).toBe("gated");
+
+    const output = await latestOrgChangeOutput();
+    expect((output?.meta as { change?: { op: string } }).change?.op).toBe("update_budget");
+    expect(output?.sensitivity).toBe("spend"); // the whole point: spend, not org
+    expect(output?.status).toBe("gated");
+    expect(output?.approvalId).toBeTruthy(); // a blocking approvals row exists
+
+    // Nothing applied: the cap is unchanged until a human approves.
+    const [agentAfter] = await db
+      .select()
+      .from(agents)
+      .where(eq(agents.id, radar!.agentId))
+      .limit(1);
+    expect(agentAfter.budgetMonthlyCents).toBe(budgetBefore);
+
+    // Reset so the auto flag doesn't leak into any later test.
+    await db
+      .update(tethrAgentProfiles)
+      .set({ autoApprove: false })
+      .where(eq(tethrAgentProfiles.id, tinkr!.id));
+  });
 });
