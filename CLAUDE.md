@@ -253,6 +253,23 @@ sanitized, single-writer port guard, MD content HTML-escaped before render. Veri
 MD/table/front-matter render, create/rename/archive, traversal blocked. Merge-safe (new files
 only). Run/README: `scripts/tethr-command-center/README.md`.
 
+**Native macOS app (phase 14, 2026-07-16, Mark's ask — "standalone lightweight app… hybrid
+preview + finder window holding the Tethr aesthetic").** A real `Tethr Command Center.app` that
+opens in **its own window, no browser**. `macapp/main.swift` (~200 lines, AppKit + WebKit, zero
+deps) puts a `WKWebView` in an `NSWindow` (transparent black titlebar, `.topbar` inset 34px so the
+traffic lights clear the app's own top bar), boots the SAME `server.mjs` as a hidden child on a
+**private freePort()** (not 4848 — no collision), polls it, then loads. **Adds no privilege** (same
+loopback server, just wrapped). **Child lifecycle is leak-proof:** stopped on quit; Swift traps
+SIGTERM/SIGINT to kill it; and the server self-exits if the parent app vanishes (SIGKILL/crash) via
+the new `TETHR_CC_PARENT_PID` liveness watch in server.mjs (guarded → inert for the browser path).
+`build-app.sh` compiles (`swiftc`, needs Xcode CLT), bundles server+UI into Resources
+(self-contained → draggable to /Applications), renders an on-brand `.icns` via `make-icon.swift`
+(CoreGraphics, best-effort), ad-hoc-signs + clears quarantine. Built app is **gitignored**
+(`scripts/tethr-command-center/build/`). Node ≥20 still required at run time (auto-finds
+Homebrew/nvm/Volta). The **00 Tethr** Drive launcher (`Open Tethr Command Center.command`) opens the
+`.app` if built, else the browser version. Verified live: boots, serves the real tree (200), clean
+titlebar chrome (screenshotted), SIGTERM+SIGKILL both clean up the child.
+
 ## Claude subscription backend — run the org on Claude Pro/Max (phase 14, 2026-07-15)
 
 A third LLM backend besides mock + API key: **`server/src/tethr/llm/claude-code.ts`**

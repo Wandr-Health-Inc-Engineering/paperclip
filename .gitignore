@@ -69,5 +69,9 @@ terraform/*.tfvars
 # Tethr local data
 .tethr-data/
 
+# Tethr Command Center — the compiled native macOS app (built via build-app.sh)
+scripts/tethr-command-center/build/
+scripts/tethr-command-center/*.log
+
 # The public marketing site — its own repo nested at the root, never tracked here
 tethr-site/

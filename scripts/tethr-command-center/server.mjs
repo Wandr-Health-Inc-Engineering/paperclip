@@ -274,6 +274,21 @@ if (!existsSync(ROOT)) {
   process.exit(1);
 }
 
+// When launched by the native app shell, exit if the parent app goes away — this
+// covers a hard kill/crash that can't run the app's own cleanup, so no orphaned
+// server survives. Inert unless TETHR_CC_PARENT_PID is set (the browser path is
+// unaffected). `.unref()` keeps this from holding the process open on its own.
+const PARENT_PID = Number(process.env.TETHR_CC_PARENT_PID) || 0;
+if (PARENT_PID > 0) {
+  setInterval(() => {
+    try {
+      process.kill(PARENT_PID, 0); // signal 0 = liveness probe, doesn't kill
+    } catch {
+      process.exit(0); // parent gone
+    }
+  }, 1500).unref();
+}
+
 server.listen(PORT, HOST, () => {
   console.log(`Tethr Command Center → http://${HOST}:${PORT}`);
   console.log(`Folder: ${ROOT}`);
