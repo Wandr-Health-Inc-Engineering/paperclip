@@ -53,6 +53,7 @@ export function TethrSettings() {
       </div>
 
       <div className="space-y-3" data-tethr-stagger>
+        <ThrottleCard companyId={selectedCompanyId} />
         <LlmModeCard companyId={selectedCompanyId} llm={data.llm} />
         <ProviderCard
           name="Drive storage"
@@ -117,6 +118,64 @@ export function TethrSettings() {
       <p className="text-xs leading-relaxed text-muted-foreground">
         Secrets never appear here. Keys live in env files outside version control;
         see .env.example for every knob.
+      </p>
+    </div>
+  );
+}
+
+// The usage throttle: one switch that pauses EVERY agent — heartbeats and
+// requests both stop doing LLM work until resumed. The kill switch for
+// subscription usage. Inverted styling when paused so it can't be missed.
+function ThrottleCard({ companyId }: { companyId: string }) {
+  const queryClient = useQueryClient();
+  const { data } = useQuery({
+    queryKey: tethrKeys.throttle(companyId),
+    queryFn: () => tethrApi.throttle(companyId),
+  });
+  const mutation = useMutation({
+    mutationFn: (paused: boolean) => tethrApi.setThrottle(companyId, paused),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: tethrKeys.throttle(companyId) });
+    },
+  });
+  const paused = data?.paused === true;
+
+  return (
+    <div
+      className={
+        "border-2 border-foreground p-4 " + (paused ? "bg-foreground text-background" : "bg-card")
+      }
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-extrabold tracking-tight">
+            {paused ? "Agents paused" : "Agents active"}
+          </p>
+          <p className={"mt-1.5 text-sm " + (paused ? "text-background/80" : "text-muted-foreground")}>
+            {paused
+              ? "Every agent is paused — no heartbeats, no requests, no LLM usage. Resume when you're ready."
+              : "Pause every agent instantly (usage throttle) when you're near your Claude limits. Heartbeats + requests both stop."}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-col items-center gap-1.5">
+          <Switch
+            on={!paused}
+            disabled={mutation.isPending}
+            onToggle={() => mutation.mutate(!paused)}
+            label={paused ? "Paused" : "Active"}
+          />
+          <span className="font-mono text-[9px] font-bold uppercase tracking-[0.14em]">
+            {paused ? "paused" : "active"}
+          </span>
+        </div>
+      </div>
+      <p
+        className={
+          "mt-3 font-mono text-[10px] uppercase tracking-[0.12em] " +
+          (paused ? "text-background/70" : "text-muted-foreground/70")
+        }
+      >
+        also toggle from Slack — say “pause agents” / “resume agents”
       </p>
     </div>
   );

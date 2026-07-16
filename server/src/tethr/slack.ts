@@ -22,6 +22,7 @@ import type { LLMImageAttachment } from "./llm/types.js";
 import { memoryService } from "./memory.js";
 import { mirrorDir } from "./mirror.js";
 import { getRoster, normalizeOverseerRole } from "./overseers.js";
+import { setThrottle } from "./throttle.js";
 
 const SLACK_API = "https://slack.com/api";
 
@@ -801,6 +802,20 @@ export async function routeInboundKickoff(
       channel: interp.channel,
       threadTs: interp.threadTs,
       text: await renderAgentsMessage(db, companyId),
+    });
+    return null;
+  }
+  // Usage throttle: pause/resume all agents. Handled here — never routed to the
+  // LLM — so it still works when you're at your subscription limit.
+  if (meta === "pause" || meta === "resume") {
+    const paused = meta === "pause";
+    await setThrottle(companyId, paused, { by: "slack", reason: paused ? "Paused from Slack" : undefined });
+    await postSlackMessage({
+      channel: interp.channel,
+      threadTs: interp.threadTs,
+      text: paused
+        ? "Agents *paused*. Heartbeats and requests will do no LLM work until you resume — say “resume agents” or flip it on the Tethr Providers page."
+        : "Agents *resumed*. The org is live again.",
     });
     return null;
   }

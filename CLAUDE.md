@@ -273,6 +273,23 @@ billing is a **go-live decision (Mark's flip)**, like setting the API key. Verif
 isolation (classify/generate/runAgentic all run on the subscription). Merge-safe: new provider +
 selection wiring only.
 
+## Usage throttle — global pause/resume (phase 14, 2026-07-15)
+
+The kill switch for subscription usage: a per-company **"agents paused"** flag that stops ALL
+LLM work — heartbeats AND routed requests (Console/Slack/CLI/API) — until resumed.
+**`server/src/tethr/throttle.ts`**: persistent instance-dir JSON (`tethr-paused.json`, same
+pattern as the overseer roster) — `isAgentsPaused` (fast sync hot-path check), `getThrottleState`,
+`setThrottle`. Checked at two choke points: `routing.ts` routeRequest (right after `onStarted` —
+records the run as done with `PAUSED_MESSAGE`, no LLM call) and `adapter.ts` execute top (heartbeat
+skips before any mode). Control surfaces: **Slack** — `pause`/`resume` commands in `commands.ts`
+(aliases "pause agents"/"resume agents"/"throttle"…), dispatched in `slack.ts` `routeInboundKickoff`
+BEFORE the LLM so it works even at your limit; **UI** — a toggle on the Providers page
+(`TethrSettings.tsx` `ThrottleCard`, inverts to black when paused) + a global **"● AGENTS PAUSED"**
+pill by the bell (`TethrBell.tsx`, polls every 30s, click → Providers); **REST** — `GET`/`POST
+/tethr/:companyId/throttle`. Verified live: pause blocks a route with no LLM call, UI inverts, pill
+appears, resume clears. Merge-safe: new module + additive hooks (no core edits). Budget-change and
+compliance gates are unaffected.
+
 ## Live mode (Claude) & budgets
 
 - **Flip live:** set `ANTHROPIC_API_KEY` (+ optional `TETHR_CLAUDE_MODEL`, default

@@ -1409,6 +1409,23 @@ export function tethrRoutes(db: Db) {
     res.json({ roster: await setRoster(companyId, req.body?.roster ?? {}) });
   });
 
+  // Usage throttle: the global "agents paused" switch. GET reads it; POST flips it.
+  router.get("/tethr/:companyId/throttle", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { getThrottleState } = await import("../tethr/throttle.js");
+    res.json(getThrottleState(companyId));
+  });
+
+  router.post("/tethr/:companyId/throttle", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    const { setThrottle } = await import("../tethr/throttle.js");
+    const paused = Boolean(req.body?.paused);
+    res.json(await setThrottle(companyId, paused, { by: actor.actorId, reason: req.body?.reason }));
+  });
+
   // Flip the instance between live Claude and the deterministic mock at runtime.
   // In-memory (resets to the env default on restart); "live" needs a key present.
   router.post("/tethr/:companyId/llm-mode", async (req, res) => {

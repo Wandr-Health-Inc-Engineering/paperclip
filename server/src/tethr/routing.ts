@@ -9,6 +9,7 @@ import type { LLMImageAttachment, LLMUsage } from "./llm/types.js";
 import { notificationService } from "./notify.js";
 import { orgService } from "./org.js";
 import { isContentRequest, publishedDuplicateWarning } from "./published-memory.js";
+import { isAgentsPaused, PAUSED_MESSAGE } from "./throttle.js";
 import { workerService } from "./worker.js";
 
 // The routing engine — ROUTING-MODEL.md as code.
@@ -109,6 +110,30 @@ export function routingService(db: Db) {
         .where(eq(tethrRouteRuns.id, run.id));
     }
     input.onStarted?.({ routeRunId: run.id, threadId });
+
+    // Usage throttle: when the operator has paused agents (subscription control),
+    // skip ALL LLM work — record the run as done with a short note and return.
+    // Resume happens via the UI toggle or the Slack "resume agents" command, both
+    // of which are handled without ever calling the model.
+    if (isAgentsPaused(input.companyId)) {
+      const durationMs = Date.now() - startedAt;
+      await db
+        .update(tethrRouteRuns)
+        .set({ status: "done", resultText: PAUSED_MESSAGE, durationMs, updatedAt: new Date() })
+        .where(eq(tethrRouteRuns.id, run.id));
+      return {
+        routeRunId: run.id,
+        threadId,
+        status: "done",
+        hops,
+        resultText: PAUSED_MESSAGE,
+        outputs: [],
+        escalations: [],
+        usage,
+        llmProvider: provider.id,
+        durationMs,
+      };
+    }
 
     // Phase 6: flag a duplicate content topic (advisory — never blocks routing).
     if (isContentRequest(input.requestText)) {

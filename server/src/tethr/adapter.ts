@@ -10,6 +10,7 @@ import { getTethrLLMProvider } from "./llm/index.js";
 import { priceUsd } from "./llm/pricing.js";
 import { orgService } from "./org.js";
 import { routingService } from "./routing.js";
+import { isAgentsPaused } from "./throttle.js";
 
 // The tethr_llm server adapter. Registering through the adapter seam means
 // heartbeats, cron routines, "run now", run logs, and cost events all flow
@@ -35,6 +36,21 @@ async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionRe
     throw new Error(`Agent ${ctx.agent.name} has no Tethr profile`);
   }
   const tag = profileRow.profile.tag;
+
+  // Usage throttle: when agents are paused, no heartbeat does any LLM work.
+  if (isAgentsPaused(companyId)) {
+    await ctx.onLog("stdout", `[tethr] ${tag} heartbeat skipped — agents paused (usage throttle)\n`);
+    return {
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      provider: provider.id,
+      model: provider.model,
+      billingType: "fixed",
+      usage: { inputTokens: 0, outputTokens: 0 },
+      summary: `${tag} heartbeat skipped — agents paused (usage throttle).`,
+    };
+  }
 
   const heartbeatRequest =
     typeof config.heartbeatRequest === "string" && config.heartbeatRequest.trim()

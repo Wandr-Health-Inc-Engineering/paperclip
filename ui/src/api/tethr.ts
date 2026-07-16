@@ -418,7 +418,15 @@ export const tethrKeys = {
   fsList: (c: string, mount: string, path: string) =>
     ["tethr", c, "fsdrive", mount, path] as const,
   fsMounts: (c: string) => ["tethr", c, "fsdrive-mounts"] as const,
+  throttle: (c: string) => ["tethr", c, "throttle"] as const,
 };
+
+export interface ThrottleState {
+  paused: boolean;
+  reason?: string;
+  at?: string;
+  by?: string;
+}
 
 export const tethrApi = {
   overview: (c: string) => api.get<TethrOverview>(`/tethr/${c}/overview`),
@@ -517,6 +525,9 @@ export const tethrApi = {
       `/tethr/${c}/memories${agentId ? `?agentId=${agentId}` : ""}`,
     ),
   status: (c: string) => api.get<TethrStatus>(`/tethr/${c}/status`),
+  throttle: (c: string) => api.get<ThrottleState>(`/tethr/${c}/throttle`),
+  setThrottle: (c: string, paused: boolean) =>
+    api.post<ThrottleState>(`/tethr/${c}/throttle`, { paused }),
   orgChanges: (c: string) => api.get<TethrOrgChange[]>(`/tethr/${c}/org-changes`),
   revertOrgChange: (c: string, changeId: string) =>
     api.post<{ outputId: string }>(`/tethr/${c}/org-changes/${changeId}/revert`, {}),

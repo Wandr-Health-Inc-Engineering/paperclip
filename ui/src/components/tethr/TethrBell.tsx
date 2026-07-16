@@ -50,6 +50,14 @@ export function TethrBell() {
     onSuccess: invalidate,
   });
 
+  const navigate = useNavigate();
+  const { data: throttle } = useQuery({
+    queryKey: tethrKeys.throttle(selectedCompanyId!),
+    queryFn: () => tethrApi.throttle(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+    refetchInterval: 30_000,
+  });
+
   if (!selectedCompanyId) return null;
   const unread = notifications?.filter((n) => !n.readAt) ?? [];
 
@@ -61,6 +69,16 @@ export function TethrBell() {
 
   return (
     <>
+      {throttle?.paused ? (
+        <button
+          onClick={() => navigate("/tethr-settings")}
+          title="Agents are paused (usage throttle) — click to manage"
+          className="mr-1 flex items-center gap-1.5 border-2 border-foreground bg-foreground px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-background"
+        >
+          <span className="h-1.5 w-1.5 rounded-full bg-background" />
+          agents paused
+        </button>
+      ) : null}
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button

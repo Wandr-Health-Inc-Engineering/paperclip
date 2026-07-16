@@ -8,7 +8,7 @@
 // These are TEXT commands: "/help" and "help" both work, so they behave like
 // slash commands without needing Slack's native slash-command registration.
 
-export type TethrCommandKind = "help" | "agents" | "reset";
+export type TethrCommandKind = "help" | "agents" | "reset" | "pause" | "resume";
 
 export interface TethrCommand {
   /** Canonical name (also the primary keyword). */
@@ -45,6 +45,20 @@ export const TETHR_COMMANDS: TethrCommand[] = [
     usage: "/reset",
     summary: "Clear our current conversation — I confirm before wiping",
     kind: "reset",
+  },
+  {
+    name: "pause",
+    aliases: ["pause agents", "stop agents", "throttle", "pause all", "halt", "freeze agents"],
+    usage: "/pause",
+    summary: "Pause every agent (usage throttle) — heartbeats + requests stop until resumed",
+    kind: "pause",
+  },
+  {
+    name: "resume",
+    aliases: ["resume agents", "unpause", "start agents", "unthrottle", "unfreeze agents"],
+    usage: "/resume",
+    summary: "Resume agents after a pause",
+    kind: "resume",
   },
 ];
 
