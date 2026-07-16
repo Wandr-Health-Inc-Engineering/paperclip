@@ -43,6 +43,7 @@ import {
   verifySlackSignature,
 } from "../tethr/slack.js";
 import { workerService } from "../tethr/worker.js";
+import { toolsetForSubagent } from "../tethr/tools/index.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 const execFileAsync = promisify(execFile);
@@ -219,7 +220,17 @@ export function tethrRoutes(db: Db) {
     res.json({
       agent: row.agent,
       profile: row.profile,
-      subagents,
+      // Resolve each subagent's EFFECTIVE toolset (its "skills") — the DB `tools`
+      // grant is null for the hand-built agents, which fall back to the static
+      // allowlist, so the raw column reads empty. This surfaces what each one can
+      // actually do at run time.
+      subagents: subagents.map((s) => ({
+        ...s,
+        effectiveTools: toolsetForSubagent(s).map((t) => ({
+          name: t.name,
+          description: t.description,
+        })),
+      })),
       outputs: outputs.map((o) => ({ ...o, body: o.body.slice(0, 400) })),
       runs: runs.map((r) => ({
         id: r.id,

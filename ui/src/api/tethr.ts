@@ -64,6 +64,8 @@ export interface TethrSubagent extends TethrSubagentSummary {
   doneWhen: string | null;
   escalation: string | null;
   status: string;
+  /** The resolved toolset ("skills") this subagent can actually use at run time. */
+  effectiveTools?: Array<{ name: string; description: string }>;
 }
 
 export interface TethrOverviewAgent {

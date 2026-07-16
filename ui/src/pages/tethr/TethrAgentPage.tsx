@@ -424,6 +424,28 @@ function SubagentCard({ subagent }: { subagent: TethrSubagent }) {
       </button>
       {open ? (
         <div className="space-y-3 border-t border-border px-4 py-3 text-xs leading-relaxed">
+          {subagent.effectiveTools && subagent.effectiveTools.length ? (
+            <div>
+              <MonoTag>skills · tools</MonoTag>
+              <div className="mt-1.5 space-y-1">
+                {subagent.effectiveTools.map((t) => (
+                  <div key={t.name} className="flex gap-2">
+                    <span className="shrink-0 border border-foreground bg-foreground px-1.5 py-0.5 font-mono text-[10px] font-bold text-background">
+                      {t.name}
+                    </span>
+                    <span className="text-muted-foreground">{t.description}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <MonoTag>skills · tools</MonoTag>
+              <p className="mt-1 text-muted-foreground">
+                Baseline only — reads/writes the Drive + memory, escalates to a human. No external tools.
+              </p>
+            </div>
+          )}
           <SpecBlock label="route here when" items={subagent.routeWhen.map((w) => `“${w}”`)} />
           {subagent.notHere.length ? (
             <SpecBlock
