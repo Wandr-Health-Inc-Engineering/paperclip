@@ -273,6 +273,17 @@ billing is a **go-live decision (Mark's flip)**, like setting the API key. Verif
 isolation (classify/generate/runAgentic all run on the subscription). Merge-safe: new provider +
 selection wiring only.
 
+## Company page: System vs Organization divider (phase 14, 2026-07-15)
+
+The Company page (`ui/src/pages/tethr/TethrCompany.tsx`) now splits the roster into two
+labeled, divider-separated sections: **Organization** (the mission org — the @ceo tier-0 banner,
+its specialists like @radar, and divisions) and **System · infrastructure** (the tooling that
+runs the org — @tethr conductor, @tinkr mechanic, @patch debug — beside the command chain, not in
+it). `SYSTEM_ORDER = ["@tethr","@tinkr","@patch"]` classifies by `profile.tag`; system agents are
+excluded from ceoReports + divisions and rendered in their own 3-card section, and a division that
+only existed to host a system agent (Operations/@tethr) is dropped (`orgDivisions` filter). Pure
+UI grouping — no API/schema change. Verified live.
+
 ## Usage throttle — global pause/resume (phase 14, 2026-07-15)
 
 The kill switch for subscription usage: a per-company **"agents paused"** flag that stops ALL

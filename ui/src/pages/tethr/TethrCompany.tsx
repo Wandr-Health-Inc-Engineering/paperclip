@@ -79,12 +79,38 @@ export function TethrCompany() {
 
   const ceo = data.agents.find((a) => a.profile.tag === "@ceo");
   const byId = new Map(data.agents.map((a) => [a.agent.id, a]));
+  // System agents: the tooling that RUNS the org rather than staffing it — the
+  // conductor (@tethr), the mechanic (@tinkr), the debugger (@patch). They sit
+  // beside the command chain, not in it, so they get their own section below.
+  const SYSTEM_ORDER = ["@tethr", "@tinkr", "@patch"];
+  const isSystem = (tag: string) => SYSTEM_ORDER.includes(tag);
+  const systemAgents = data.agents
+    .filter((a) => isSystem(a.profile.tag))
+    .sort((a, b) => SYSTEM_ORDER.indexOf(a.profile.tag) - SYSTEM_ORDER.indexOf(b.profile.tag));
   // Specialists the CEO built (report to it, not slotted into a division).
   const ceoReports = ceo
     ? data.agents.filter(
-        (a) => a.agent.reportsTo === ceo.agent.id && !a.profile.divisionId,
+        (a) =>
+          a.agent.reportsTo === ceo.agent.id &&
+          !a.profile.divisionId &&
+          !isSystem(a.profile.tag),
       )
     : [];
+  // Organization divisions, minus any that only existed to host a system agent
+  // (e.g. Operations, whose only head is @tethr — now shown under System).
+  const orgDivisions = data.divisions.filter((division) => {
+    if (division.status === "shell") return true;
+    const head = division.headAgentId ? byId.get(division.headAgentId) : null;
+    const headIsSystem = Boolean(head && isSystem(head.profile.tag));
+    const memberCount = data.agents.filter(
+      (a) =>
+        a.profile.divisionId === division.id &&
+        a.agent.id !== division.headAgentId &&
+        a.profile.tag !== "@ceo" &&
+        !isSystem(a.profile.tag),
+    ).length;
+    return !(headIsSystem && memberCount === 0);
+  });
 
   return (
     <div className="space-y-8">
@@ -111,8 +137,15 @@ export function TethrCompany() {
         </div>
       </div>
 
+      {/* ── Organization: the mission org (CEO + specialists + divisions) ── */}
+      <div className="flex items-center gap-3">
+        <div className="h-0.5 flex-1 bg-foreground" />
+        <MonoTag className="text-foreground">organization</MonoTag>
+        <div className="h-0.5 flex-1 bg-foreground" />
+      </div>
+
       {/* CEO — head of the agent org (tier 0). @tethr, the conductor, sits
-          separately as its own root; see its card in Operations. */}
+          separately in the System section below, beside the command chain. */}
       {ceo ? (
         <div className="flex justify-center">
           <Link
@@ -150,13 +183,15 @@ export function TethrCompany() {
 
       {/* Divisions */}
       <div className="grid gap-5 xl:grid-cols-2" data-tethr-stagger>
-        {data.divisions.map((division) => {
-          const head = division.headAgentId ? byId.get(division.headAgentId) : null;
+        {orgDivisions.map((division) => {
+          const rawHead = division.headAgentId ? byId.get(division.headAgentId) : null;
+          const head = rawHead && !isSystem(rawHead.profile.tag) ? rawHead : null;
           const members = data.agents.filter(
             (a) =>
               a.profile.divisionId === division.id &&
               a.agent.id !== division.headAgentId &&
-              a.profile.tag !== "@ceo", // shown in the tier-0 banner, not as a member
+              a.profile.tag !== "@ceo" && // shown in the tier-0 banner, not as a member
+              !isSystem(a.profile.tag), // system agents live in their own section
           );
           const DivisionIcon = tethrIcon(division.icon);
           const isShell = division.status === "shell";
@@ -246,6 +281,26 @@ export function TethrCompany() {
           );
         })}
       </div>
+
+      {/* ── System: the tooling that runs the org (beside the command chain) ── */}
+      {systemAgents.length ? (
+        <div>
+          <div className="mb-3 flex items-center gap-3">
+            <div className="h-0.5 flex-1 bg-foreground" />
+            <MonoTag className="text-foreground">system · infrastructure</MonoTag>
+            <div className="h-0.5 flex-1 bg-foreground" />
+          </div>
+          <p className="mx-auto mb-3 max-w-2xl text-center text-xs text-muted-foreground">
+            Built to run the org, not staff it — the conductor, the mechanic, the debugger. They
+            sit beside the command chain, not in it.
+          </p>
+          <div className="mx-auto grid max-w-3xl gap-2 md:grid-cols-3">
+            {systemAgents.map((entry) => (
+              <AgentRow key={entry.agent.id} entry={entry} />
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <OrgChangeLog companyId={selectedCompanyId} />
 
