@@ -24,6 +24,46 @@ const API_URL = "https://api.anthropic.com/v1/messages";
 const DEFAULT_MODEL = "claude-sonnet-5";
 const DEFAULT_FAST_MODEL = "claude-haiku-4-5";
 
+// Prompt caching (GA, no beta header). We cache only where a prefix genuinely
+// REPEATS — the agentic tool loop re-sends the same system + tools + growing
+// history every turn, and an agent's stable identity is reused across its
+// generate calls. One-shot, per-request-varying prompts (classify/plan) are NOT
+// cached: you'd pay the 1.25x write with no read. Set TETHR_CLAUDE_CACHE=false to disable.
+const CACHE_ENABLED = process.env.TETHR_CLAUDE_CACHE !== "false";
+const EPHEMERAL = { type: "ephemeral" as const };
+
+/** Shape a system string as a cacheable block (caches tools+system before it). */
+function systemParam(system: string, cache: boolean): unknown {
+  return cache && CACHE_ENABLED
+    ? [{ type: "text", text: system, cache_control: EPHEMERAL }]
+    : system;
+}
+
+/**
+ * Move the message-prefix cache breakpoint to the tail of the conversation so
+ * each agentic turn re-reads the prior turns cheaply. Clears older message
+ * breakpoints first so we never exceed the 4-breakpoint cap.
+ */
+function markMessagePrefixCache(messages: Array<{ role: string; content: unknown }>): void {
+  if (!CACHE_ENABLED) return;
+  for (const m of messages) {
+    if (Array.isArray(m.content)) {
+      for (const b of m.content) {
+        if (b && typeof b === "object" && "cache_control" in b) {
+          delete (b as Record<string, unknown>).cache_control;
+        }
+      }
+    }
+  }
+  const last = messages[messages.length - 1];
+  if (last && Array.isArray(last.content) && last.content.length) {
+    const block = last.content[last.content.length - 1];
+    if (block && typeof block === "object") {
+      (block as Record<string, unknown>).cache_control = EPHEMERAL;
+    }
+  }
+}
+
 interface ClaudeContentBlock {
   type: string;
   text?: string;
@@ -107,11 +147,12 @@ export class ClaudeProvider implements LLMProvider {
     prompt: string,
     maxTokens: number,
     model = this.model,
+    cache = false,
   ): Promise<{ text: string; usage: LLMUsage }> {
     const data = await this.post({
       model,
       max_tokens: maxTokens,
-      system,
+      system: systemParam(system, cache),
       messages: [{ role: "user", content: prompt }],
     });
     const text = data.content
@@ -160,6 +201,8 @@ export class ClaudeProvider implements LLMProvider {
       input.system,
       `${input.prompt}\n\nReturn the work product as markdown. First line: a short title prefixed with "TITLE: ".`,
       2000,
+      this.model,
+      true, // cache the agent's stable identity system prompt across its calls
     );
     const lines = text.split("\n");
     let title = `Output — ${input.kind}`;
@@ -229,6 +272,7 @@ export class ClaudeProvider implements LLMProvider {
       `Company mission: ${input.companyMission}\n\nPropose an agent for: ${input.brief}`,
       1500,
       this.model, // a real design decision — use the capable work model
+      true, // the CEO's proposer system prompt is stable — cache it
     );
     return { spec: safeJson(text) ?? {}, usage };
   }
@@ -264,10 +308,14 @@ export class ClaudeProvider implements LLMProvider {
     ];
 
     for (let turn = 0; turn < maxTurns; turn++) {
+      // Cache the repeated prefix: the system block breakpoint caches tools +
+      // system (unchanged every turn), and a moving breakpoint on the message
+      // tail re-reads the growing history at ~0.1x instead of full price.
+      markMessagePrefixCache(messages);
       const data = await this.post({
         model: this.model,
         max_tokens: 3000,
-        system: input.system,
+        system: systemParam(input.system, true),
         tools,
         messages,
       });

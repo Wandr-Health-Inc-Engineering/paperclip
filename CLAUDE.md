@@ -284,6 +284,25 @@ excluded from ceoReports + divisions and rendered in their own 3-card section, a
 only existed to host a system agent (Operations/@tethr) is dropped (`orgDivisions` filter). Pure
 UI grouping — no API/schema change. Verified live.
 
+## Token-saving strategies (phase 14, 2026-07-15)
+
+Implemented cost/token reductions across both LLM backends (researched via the claude-api skill):
+- **Prompt caching on the API provider** (`llm/claude.ts`, GA `cache_control:{type:"ephemeral"}`, no
+  beta header). Cached ONLY where a prefix repeats: **`runAgentic`** caches system+tools (one
+  breakpoint) + a moving message-tail breakpoint so each tool-loop turn re-reads the growing history
+  at ~0.1× instead of full price; **`generate`/`proposeAgent`** cache the agent's stable identity
+  system prompt across its calls. Classify/plan are NOT cached (one-shot + per-request-varying → the
+  1.25× write would never be read). Helpers `systemParam`/`markMessagePrefixCache`; kill switch
+  `TETHR_CLAUDE_CACHE=false`.
+- **Claude Code backend auto-caches** (verified: `cache_creation`/`cache_read` in the CLI JSON) — the
+  lever there is overhead, so `claude-code.ts` passes **`--strict-mcp-config`** (loads no MCP servers:
+  cuts ~16k tokens of MCP-tool context per call, verified 15945→0, and isolates the provider from the
+  operator's personal MCP config) + `--exclude-dynamic-system-prompt-sections`.
+- **Model tiering** (both backends): cheap **Haiku** for classify/plan hops, **Sonnet** for
+  generate/agentic work (env: `TETHR_CLAUDE_MODEL`/`_FAST_MODEL`, `TETHR_CLAUDE_CODE_MODEL`/`_FAST_MODEL`;
+  bump work→opus for quality). **runAgentic turn caps** (CLI default 5, API 8) bound loop spend.
+- The **usage throttle** (below) is the hard cost ceiling when subscription usage runs high.
+
 ## Usage throttle — global pause/resume (phase 14, 2026-07-15)
 
 The kill switch for subscription usage: a per-company **"agents paused"** flag that stops ALL

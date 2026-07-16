@@ -63,6 +63,9 @@ function runClaude(system: string, prompt: string, model: string): Promise<CliCa
     "",
     // Strip Claude Code's default dynamic context to cut per-call token overhead.
     "--exclude-dynamic-system-prompt-sections",
+    // Load NO MCP servers: cuts ~16k tokens of MCP-tool context per call (verified)
+    // AND isolates the Tethr provider from the operator's personal MCP config.
+    "--strict-mcp-config",
     prompt,
   ];
   return new Promise((resolve, reject) => {
