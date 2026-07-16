@@ -26,6 +26,10 @@ let override: TethrLlmMode | null = null;
  * Code CLI (personal subscription). Defaults to `api`. */
 export type TethrLlmBackend = "api" | "claude-code";
 export function getTethrLlmBackend(): TethrLlmBackend {
+  // Never spawn the Claude Code CLI under test — the instance .env can leak
+  // TETHR_LLM_BACKEND into the test process (same defense slack.ts uses for a
+  // leaked SLACK token). The suite stays offline + deterministic on the mock.
+  if (process.env.VITEST || process.env.NODE_ENV === "test") return "api";
   return process.env.TETHR_LLM_BACKEND?.trim() === "claude-code" ? "claude-code" : "api";
 }
 
