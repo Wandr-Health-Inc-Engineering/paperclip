@@ -102,6 +102,20 @@ code (Sentry, Pulse, Google Ads, Keyword Planner) stays live and allowlisted.
   **no heartbeat**, on-request only; @tethr routing row for error/broke/failed/debug keywords).
   Wired into `maybeAutoSeed` + `/seed`. Tests: `tethr-patch.test.ts`. `KIND_BY_SUBAGENT_KEY.diagnose
   = "document"`.
+- **Filer (`@filer`) = the file archivist** (phase 15, 2026-07-19). The ONLY way an agent can
+  "delete" a file: ask @tethr ("delete the file …") → routes to `@filer.archive` → the
+  **`stage_file_archive`** tool (granted solely to @filer.archive) validates and stages a gated
+  **`drive_change`** output with the new **`destructive`** sensitivity → the human confirms in the
+  Queue or by replying "approve"/"confirm" in the Slack thread → `gating.approveDriveChange` applies
+  a SOFT archive (shared 00 Tethr → `99 Archive` via `fsArchive`; internal Drive → `/archive` via
+  `archiveNode`) — **never a hard delete** (grep-proofed). `destructive` is gated AND structurally
+  excluded from auto-approve (only `org` auto-approves), so a deletion can never happen without an
+  explicit human yes. Validation (`drive-changes.ts`): root-confined, files-only, protected paths
+  (99 Archive, /archive, root, root-level "00 " docs + the launcher), unique-basename fuzzy
+  resolution in the shared store; apply re-validates — a vanished file closes the output
+  `rejected` + `meta.applyError` (Queue never wedges) and Slack says so honestly. Seed:
+  `seed/filer.ts` (reports to CEO, $10/mo hard-stop, no heartbeat) in `maybeAutoSeed` + `/seed`.
+  Tests: `tethr-filer.test.ts` (11). No DB migration (kind/sensitivity are text columns).
 - **Slack images (2026-07-13 fix):** every inbound Slack image is normalized through **sharp**
   (`fetchSlackImageAttachments` in slack.ts) — decode + EXIF-rotate + resize ≤1568px + re-encode
   JPEG — so iPhone HEIC and oversized photos work, and a non-image (a Slack login page returned
@@ -296,7 +310,7 @@ The Company page (`ui/src/pages/tethr/TethrCompany.tsx`) now splits the roster i
 labeled, divider-separated sections: **Organization** (the mission org — the @ceo tier-0 banner,
 its specialists like @radar, and divisions) and **System · infrastructure** (the tooling that
 runs the org — @tethr conductor, @tinkr mechanic, @patch debug — beside the command chain, not in
-it). `SYSTEM_ORDER = ["@tethr","@tinkr","@patch"]` classifies by `profile.tag`; system agents are
+it). `SYSTEM_ORDER = ["@tethr","@tinkr","@patch","@filer"]` classifies by `profile.tag`; system agents are
 excluded from ceoReports + divisions and rendered in their own 3-card section, and a division that
 only existed to host a system agent (Operations/@tethr) is dropped (`orgDivisions` filter). Pure
 UI grouping — no API/schema change. Verified live.
@@ -336,6 +350,25 @@ pill by the bell (`TethrBell.tsx`, polls every 30s, click → Providers); **REST
 /tethr/:companyId/throttle`. Verified live: pause blocks a route with no LLM call, UI inverts, pill
 appears, resume clears. Merge-safe: new module + additive hooks (no core edits). Budget-change and
 compliance gates are unaffected.
+
+## Phase 15 fixes — previews, Inbox retirement, cogs (2026-07-19)
+
+- **Content previews in completion messages.** `preview.ts` `contentPreview(body)` → first ~3
+  prose lines ("> "-quoted, caps 3 lines/280 chars) + word count; null for bodies <20 words.
+  Applied to worker.ts published + gated summaries (answers and org/drive-change diffs excluded)
+  and the Slack "Filed to your shared Drive" message (snippet + "~N words" per file) — so Slack/
+  Console show what actually landed without opening Drive. Locked in `tethr-slack.test.ts`.
+- **The core Inbox is retired — the Queue is the ONLY approval surface.** Root cause: the Inbox's
+  Approve called core `POST /approvals/:id/approve`, which flips the approvals row but never calls
+  `gating.decide` — the item vanished from the Inbox while the output silently stayed gated (and
+  desynced approved-row/gated-output pairs). Fix: nav entries removed (Sidebar/MobileBottomNav gets
+  a Queue tab/CommandPalette — all already-forked, logged in DECISIONS.md), `/inbox*` →
+  redirect `/queue` (core Inbox page file untouched — it's actively developed upstream), and a boot
+  heal (`healInboxApprovedOutputs` in `tethr/index.ts`) re-decides any past desynced pair through
+  the real path. **Never edit core Inbox/approvals files to "fix" Tethr approvals.**
+- **Working cogs.** `CogDuo` (primitives.tsx — meshed lucide Cogs, counter-rotating via
+  `.tethr-cog-spin`/`-reverse` in tethr-theme.css, reduced-motion-guarded) at the Console working
+  fallback + RouteFlow pending hop ONLY (Mark's pick) — brand stays quiet elsewhere.
 
 ## Live mode (Claude) & budgets
 
