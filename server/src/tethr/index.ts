@@ -32,6 +32,7 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
   const seed = await import("./seed/seed.js");
   await seed.maybeAutoSeed(db);
   await reapOrphanedRouteRuns(db);
+  await healInboxApprovedOutputs(db);
   // Start Slack Socket Mode if configured (SLACK_APP_TOKEN) — lets tag/DM reach
   // a local server with no public URL. No-op when the token is unset.
   const { startSlackSocketMode } = await import("./slack.js");
@@ -45,6 +46,52 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
  * it would otherwise hang forever at "working" in the Console. Mark such runs
  * failed with a clear reason. Best-effort — never blocks boot.
  */
+/**
+ * Heal outputs approved through the (now retired) core Inbox. Its Approve
+ * button flipped the core `approvals` row to "approved" without ever calling
+ * gating.decide — so the human's decision landed in the DB but the output
+ * stayed "gated" and never published/applied. Re-run the decision through the
+ * real path. Idempotent: a healed output leaves "gated", so it never matches
+ * again. Best-effort — never blocks boot.
+ */
+async function healInboxApprovedOutputs(db: Db): Promise<void> {
+  try {
+    const { approvals, tethrOutputs } = await import("@paperclipai/db");
+    const { and, eq, isNotNull } = await import("drizzle-orm");
+    const desynced = await db
+      .select({ id: tethrOutputs.id, companyId: tethrOutputs.companyId, title: tethrOutputs.title })
+      .from(tethrOutputs)
+      .innerJoin(approvals, eq(approvals.id, tethrOutputs.approvalId))
+      .where(
+        and(
+          eq(tethrOutputs.status, "gated"),
+          isNotNull(tethrOutputs.approvalId),
+          eq(approvals.status, "approved"),
+        ),
+      );
+    if (!desynced.length) return;
+    const { gatingService } = await import("./gating.js");
+    const { logger } = await import("../middleware/logger.js");
+    const gating = gatingService(db);
+    for (const output of desynced) {
+      try {
+        await gating.decide({
+          companyId: output.companyId,
+          outputId: output.id,
+          decision: "approve",
+          reviewer: "reconciler:inbox-heal",
+          note: "Approved earlier via the core Inbox (which never applied); re-run through gating.",
+        });
+        logger.info({ outputId: output.id, title: output.title }, "tethr: healed inbox-approved output");
+      } catch (err) {
+        logger.warn({ err, outputId: output.id }, "tethr: inbox-heal failed for output");
+      }
+    }
+  } catch {
+    // best-effort cleanup — a failure here must not block startup
+  }
+}
+
 async function reapOrphanedRouteRuns(db: Db): Promise<void> {
   try {
     const { tethrRouteRuns } = await import("@paperclipai/db");

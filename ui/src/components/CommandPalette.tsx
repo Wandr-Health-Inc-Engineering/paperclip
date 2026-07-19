@@ -23,7 +23,6 @@ import {
   Hexagon,
   Target,
   LayoutDashboard,
-  Inbox,
   DollarSign,
   History,
   SquarePen,
@@ -243,10 +242,6 @@ export function CommandPalette() {
           <CommandItem onSelect={() => go("/memory")}>
             <Brain className="mr-2 h-4 w-4" />
             Memory
-          </CommandItem>
-          <CommandItem onSelect={() => go("/inbox")}>
-            <Inbox className="mr-2 h-4 w-4" />
-            Inbox
           </CommandItem>
           <CommandItem onSelect={() => go("/issues")}>
             <CircleDot className="mr-2 h-4 w-4" />

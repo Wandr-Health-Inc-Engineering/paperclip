@@ -5,13 +5,11 @@ import {
   CircleDot,
   SquarePen,
   Users,
-  Inbox,
+  ShieldCheck,
 } from "lucide-react";
-import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
 import { cn } from "../lib/utils";
-import { useInboxBadge } from "../hooks/useInboxBadge";
 
 interface MobileBottomNavProps {
   visible: boolean;
@@ -36,9 +34,7 @@ type MobileNavItem = MobileNavLinkItem | MobileNavActionItem;
 
 export function MobileBottomNav({ visible }: MobileBottomNavProps) {
   const location = useLocation();
-  const { selectedCompanyId } = useCompany();
   const { openNewIssue } = useDialogActions();
-  const inboxBadge = useInboxBadge(selectedCompanyId);
 
   const items = useMemo<MobileNavItem[]>(
     () => [
@@ -46,15 +42,10 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
       { type: "link", to: "/issues", label: "Issues", icon: CircleDot },
       { type: "action", label: "Create", icon: SquarePen, onClick: () => openNewIssue() },
       { type: "link", to: "/agents/all", label: "Agents", icon: Users },
-      {
-        type: "link",
-        to: "/inbox",
-        label: "Inbox",
-        icon: Inbox,
-        badge: inboxBadge.inbox,
-      },
+      // Inbox removed (see DECISIONS.md): the Queue is the single approval surface.
+      { type: "link", to: "/queue", label: "Queue", icon: ShieldCheck },
     ],
-    [openNewIssue, inboxBadge.inbox],
+    [openNewIssue],
   );
 
   return (
