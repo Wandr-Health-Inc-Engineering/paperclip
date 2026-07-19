@@ -432,6 +432,10 @@ export function gatingService(db: Db) {
       if (output.kind === "org_change") {
         return approveOrgChange(output, input.companyId, input.reviewer);
       }
+      // Approving a drive change doesn't "publish" — it ARCHIVES the file.
+      if (output.kind === "drive_change") {
+        return approveDriveChange(output, input.companyId, input.reviewer);
+      }
       const published = await publishToDrive(output.id, input.companyId, input.reviewer);
       await notify.send({
         companyId: input.companyId,
@@ -545,6 +549,86 @@ export function gatingService(db: Db) {
     return updated;
   }
 
+  // Approving a `drive_change` archives the staged file (Filer) — a soft move
+  // to the store's archive folder, never a hard delete. Re-validated at apply
+  // time: a vanished/moved target closes the output cleanly instead of wedging
+  // the Queue (status rejected + meta.applyError; nothing on disk changes).
+  async function approveDriveChange(
+    output: typeof tethrOutputs.$inferSelect,
+    companyId: string,
+    reviewer: string,
+  ) {
+    const meta = output.meta as {
+      driveChange?: import("./drive-changes.js").DriveChangeSpec;
+    } | null;
+    if (!meta?.driveChange) throw new Error("This output has no staged file archive to apply");
+    const { applyDriveChange } = await import("./drive-changes.js");
+    const applied = await applyDriveChange(db, {
+      companyId,
+      spec: meta.driveChange,
+      actorTag: reviewer,
+    });
+    if (!applied.ok) {
+      const [updated] = await db
+        .update(tethrOutputs)
+        .set({
+          status: "rejected",
+          updatedAt: new Date(),
+          meta: { ...((output.meta as Record<string, unknown>) ?? {}), applyError: applied.error },
+        })
+        .where(eq(tethrOutputs.id, output.id))
+        .returning();
+      await logActivity(db, {
+        companyId,
+        actorType: "user",
+        actorId: reviewer,
+        action: "tethr_drive_change_failed",
+        entityType: "tethr_output",
+        entityId: output.id,
+        agentId: output.agentId,
+        details: { error: applied.error, spec: meta.driveChange },
+      });
+      await notify.send({
+        companyId,
+        kind: "approval",
+        title: `Couldn't archive: ${output.title}`,
+        body: `${applied.error}. Nothing was changed.`,
+        href: `/queue/${output.id}`,
+      });
+      return updated;
+    }
+    const [updated] = await db
+      .update(tethrOutputs)
+      .set({
+        status: "published",
+        updatedAt: new Date(),
+        meta: {
+          ...((output.meta as Record<string, unknown>) ?? {}),
+          applied: { from: applied.from, to: applied.to, at: new Date().toISOString() },
+        },
+      })
+      .where(eq(tethrOutputs.id, output.id))
+      .returning();
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: reviewer,
+      action: "tethr_drive_change_applied",
+      entityType: "tethr_output",
+      entityId: output.id,
+      agentId: output.agentId,
+      details: { store: meta.driveChange.store, from: applied.from, to: applied.to },
+    });
+    await notify.send({
+      companyId,
+      kind: "approval",
+      title: `Archived: ${output.title}`,
+      body: `Moved to ${applied.to} — recoverable any time.`,
+      href: `/queue/${output.id}`,
+    });
+    return updated;
+  }
+
   async function listOutputs(
     companyId: string,
     opts: { status?: string; limit?: number } = {},
@@ -596,6 +680,8 @@ function labelForSensitivity(s: TethrSensitivity): string {
       return "spend-sensitive";
     case "pr":
       return "PR-sensitive";
+    case "destructive":
+      return "destructive (file archive)";
     default:
       return s;
   }

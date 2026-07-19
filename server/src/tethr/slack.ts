@@ -680,6 +680,8 @@ function approvedMessage(output: typeof tethrOutputs.$inferSelect): string {
       return `Approved and applied — ${output.title}. It's live now; you can revert it on the Company page.`;
     case "agent_proposal":
       return `Approved — creating the agent now (${output.title}). It starts paused; enable its schedule when you're ready.`;
+    case "drive_change":
+      return `Approved — ${output.title} moved to the archive folder. It's recoverable any time; nothing is ever hard-deleted.`;
     default:
       return `Approved and published — ${output.title}.`;
   }
@@ -883,18 +885,26 @@ export async function routeInboundKickoff(
       if (pending) {
         const { gatingService } = await import("./gating.js");
         try {
-          await gatingService(db).decide({
+          const decided = await gatingService(db).decide({
             companyId,
             outputId: pending.id,
             decision,
             reviewer: "mark (Slack)",
           });
+          // A drive_change apply can fail cleanly (file moved/vanished since
+          // staging) — say so instead of claiming the archive happened.
+          const applyError =
+            pending.kind === "drive_change"
+              ? ((decided?.meta as Record<string, unknown> | null)?.applyError as string | undefined)
+              : undefined;
           await postSlackMessage({
             channel: interp.channel,
             threadTs: interp.threadTs,
             text:
               decision === "approve"
-                ? approvedMessage(pending)
+                ? applyError
+                  ? `Couldn't archive — ${applyError}. Nothing was changed.`
+                  : approvedMessage(pending)
                 : `Rejected — "${pending.title}" discarded. Nothing changed.`,
           });
         } catch (err) {

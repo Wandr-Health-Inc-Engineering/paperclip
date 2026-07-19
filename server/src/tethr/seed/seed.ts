@@ -996,6 +996,9 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
     // Patch, the debug agent — tag @tethr when something breaks (reports to CEO).
     const { seedPatchAgent } = await import("./patch.js");
     const patch = await seedPatchAgent(db, result.companyId);
+    // Filer, the file archivist — staged soft-deletes, human-confirmed (reports to CEO).
+    const { seedFilerAgent } = await import("./filer.js");
+    const filer = await seedFilerAgent(db, result.companyId);
     // Heal any factory agent created before per-subagent tool grants existed
     // (migration 0093) so a created "research" agent can actually fetch.
     const { backfillFactoryAgentTools } = await import("./backfill-tools.js");
@@ -1006,6 +1009,7 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
       ceo.created ||
       tinkr.created ||
       patch.created ||
+      filer.created ||
       healed
     ) {
       logger.info(
@@ -1016,8 +1020,9 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
           ceoAdded: ceo.created,
           tinkrAdded: tinkr.created,
           patchAdded: patch.created,
+          filerAdded: filer.created,
         },
-        "[tethr] auto-seeded the clean-slate org (@tethr + CEO + Tinkr + Patch)",
+        "[tethr] auto-seeded the clean-slate org (@tethr + CEO + Tinkr + Patch + Filer)",
       );
     }
   } catch (err) {

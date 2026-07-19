@@ -12,6 +12,10 @@ export const TETHR_SENSITIVITIES = [
   // Phase 12: a change to the org itself (e.g. the CEO proposing a new agent) —
   // gated so a human approves before anything is created.
   "org",
+  // Phase 15: an action that removes/moves user-visible content (file archive).
+  // Gated AND structurally excluded from auto-approve (which fires only for
+  // "org"), so a deletion can never happen without an explicit human yes.
+  "destructive",
   "internal",
   "safe",
 ] as const;
@@ -24,6 +28,7 @@ export const TETHR_GATED_SENSITIVITIES: readonly TethrSensitivity[] = [
   "spend",
   "pr",
   "org",
+  "destructive",
 ];
 
 export const TETHR_OUTPUT_STATUSES = [
@@ -59,6 +64,10 @@ export const TETHR_OUTPUT_KINDS = [
   // mission/budget/subagent/status/schedule). Carries the change spec in
   // `meta.change`; approving it applies the change and logs it revertibly.
   "org_change",
+  // Phase 15: Filer staging a file archive (soft delete). Carries the target in
+  // `meta.driveChange`; approving it moves the file to the archive folder —
+  // never a hard delete. Never mirrors (not in MIRROR_FOLDERS).
+  "drive_change",
 ] as const;
 export type TethrOutputKind = (typeof TETHR_OUTPUT_KINDS)[number];
 

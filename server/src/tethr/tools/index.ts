@@ -8,6 +8,7 @@ import {
   proposeAgentTool,
   readFailuresTool,
   recallMemoryTool,
+  stageFileArchiveTool,
   stageOrgChangeTool,
 } from "./internal.js";
 import { googleAdsReportTool } from "./google-ads.js";
@@ -35,6 +36,7 @@ const ALL_TOOLS: Record<string, TethrTool> = Object.fromEntries(
     googleAdsReportTool,
     keywordIdeasTool,
     stageOrgChangeTool,
+    stageFileArchiveTool,
     readFailuresTool,
     proposeAgentTool,
   ].map((t) => [t.name, t]),
@@ -56,6 +58,9 @@ const ALLOWLIST: Record<string, string[]> = {
   // Tinkr — the org mechanic (Phase 12). The ONLY subagent that can stage
   // agent modifications; nothing applies without a human approval in the Queue.
   "tinkr.change": ["stage_org_change"],
+  // Filer — the file archivist (Phase 15). The ONLY subagent that can stage a
+  // file archive (soft delete); nothing moves without a human approval.
+  "filer.archive": ["stage_file_archive"],
   // Patch — the debug agent (Phase 12). Reads the failure log (read-only) and
   // writes a Claude-Code-ready fix. read_failures is granted ONLY here.
   "patch.diagnose": ["read_failures", "drive_write"],

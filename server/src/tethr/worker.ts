@@ -46,6 +46,9 @@ const KIND_BY_SUBAGENT_KEY: Record<string, TethrOutputKind> = {
   change: "org_change",
   // @patch, the debug agent (Phase 12): a fix report, internal → auto-published.
   diagnose: "document",
+  // @filer, the archivist (Phase 15): staged file archives (soft deletes) that
+  // gate to the Queue and apply on approval. Never a hard delete.
+  archive: "drive_change",
 };
 
 // Per-subagent agentic turn budget. Chat stays snappy; plan gets room to
@@ -256,6 +259,31 @@ export function workerService(db: Db) {
         sensitivity = "safe";
       }
     }
+
+    // Filer (kind drive_change): the staged archive — not the LLM prose — is
+    // the work product. Re-validate the LAST stage_file_archive call and render
+    // the deterministic will-archive body. Nothing valid staged → answer inline.
+    if (kind === "drive_change") {
+      const { validateDriveChange, renderDriveChangeBody, driveChangeSummary } =
+        await import("./drive-changes.js");
+      const stageCall = [...generated.toolCalls].reverse().find((t) => t.name === "stage_file_archive");
+      const validated = stageCall
+        ? await validateDriveChange(db, input.companyId, stageCall.input)
+        : null;
+      if (validated?.ok && validated.spec && validated.target) {
+        title = `Archive file: ${validated.target.name}`;
+        body = renderDriveChangeBody(validated.spec, validated.target);
+        changeMeta = { driveChange: validated.spec, driveChangeSummary: driveChangeSummary(validated.spec, validated.target) };
+        // Structural defense-in-depth: only "org" can ever auto-approve, so a
+        // "destructive" output always waits for a human — even if @filer is
+        // someday flipped to auto.
+        sensitivity = "destructive";
+      } else {
+        // No valid archive staged — conversation, not a deletion.
+        effectiveKind = "answer";
+        sensitivity = "safe";
+      }
+    }
     const output = await gating.createOutput({
       companyId: input.companyId,
       agentId: input.agentId,
@@ -308,8 +336,11 @@ export function workerService(db: Db) {
 
     // A short body preview rides along in the summary so a human can
     // sanity-check the content from Slack/Console without opening the Drive.
-    // org_change bodies are already deterministic diffs — no preview needed.
-    const preview = effectiveKind === "answer" || effectiveKind === "org_change" ? null : contentPreview(output.body);
+    // org_change/drive_change bodies are already deterministic — no preview.
+    const preview =
+      effectiveKind === "answer" || effectiveKind === "org_change" || effectiveKind === "drive_change"
+        ? null
+        : contentPreview(output.body);
     const withPreview = (lead: string) =>
       preview ? `${lead.replace(/\.$/, "")} (${wordCountLabel(preview.wordCount)}).\n${preview.snippet}` : lead;
 
@@ -323,7 +354,9 @@ export function workerService(db: Db) {
       summary: gated
         ? effectiveKind === "org_change"
           ? `${output.title} — waiting for your approval in the Queue. Nothing is changed until you approve.`
-          : withPreview(`${output.title} — staged in the Queue for human review (${sensitivity}-sensitive).`)
+          : effectiveKind === "drive_change"
+            ? `${output.title} — moving to the archive folder. Reply "approve" to archive it or "reject" to keep it — nothing moves until you confirm.`
+            : withPreview(`${output.title} — staged in the Queue for human review (${sensitivity}-sensitive).`)
         : effectiveKind === "answer"
           ? `${input.subagent.tag} answered.`
           : withPreview(`${output.title} — published to the Drive.`),

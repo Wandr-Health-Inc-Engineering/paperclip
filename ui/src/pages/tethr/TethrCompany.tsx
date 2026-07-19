@@ -82,7 +82,7 @@ export function TethrCompany() {
   // System agents: the tooling that RUNS the org rather than staffing it — the
   // conductor (@tethr), the mechanic (@tinkr), the debugger (@patch). They sit
   // beside the command chain, not in it, so they get their own section below.
-  const SYSTEM_ORDER = ["@tethr", "@tinkr", "@patch"];
+  const SYSTEM_ORDER = ["@tethr", "@tinkr", "@patch", "@filer"];
   const isSystem = (tag: string) => SYSTEM_ORDER.includes(tag);
   const systemAgents = data.agents
     .filter((a) => isSystem(a.profile.tag))

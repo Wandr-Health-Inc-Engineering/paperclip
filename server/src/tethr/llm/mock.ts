@@ -19,6 +19,18 @@ import type {
 // templates per output kind. No randomness: the same input always produces
 // the same output, which keeps the demo loop and the tests stable offline.
 
+/** Deterministic request → file-archive spec for the mock Filer path. */
+function parseFileArchiveRequest(prompt: string): Record<string, unknown> | null {
+  const p = prompt.trim();
+  // internal: a leading slash means the DB Drive — delete /scratch/old-notes.md
+  let m = p.match(/\b(?:delete|archive|remove|trash)\s+(?:the\s+)?(?:file\s+)?(\/\S+)/i);
+  if (m) return { store: "internal", path: m[1] };
+  // shared: quoted rel path — delete "01 Briefs/2026-07-14 Zanzibar.md"
+  m = p.match(/\b(?:delete|archive|remove|trash)\s+(?:the\s+)?(?:file\s+)?["“]([^"”]+)["”]/i);
+  if (m) return { store: "shared", path: m[1] };
+  return null;
+}
+
 /** Deterministic request → org-change spec parse for the mock Tinkr path. */
 function parseOrgChangeRequest(prompt: string): Record<string, unknown> | null {
   const p = prompt.trim();
@@ -260,6 +272,30 @@ export class MockProvider implements LLMProvider {
       const generated = approxUsage(input.system + input.prompt, body);
       return {
         title: "Org change request",
+        body,
+        usage: {
+          inputTokens: usage.inputTokens + generated.inputTokens,
+          outputTokens: usage.outputTokens + generated.outputTokens,
+        },
+        toolCalls,
+      };
+    }
+
+    // Filer (deterministic): parse the request into exactly one staged archive.
+    // Only ever fires for @filer.archive — the sole holder of the tool.
+    if (available.has("stage_file_archive")) {
+      const spec = parseFileArchiveRequest(input.prompt);
+      let body: string;
+      if (spec) {
+        const staged = await call("stage_file_archive", spec);
+        body = staged.output;
+      } else {
+        body =
+          'Tell me the exact file — e.g. delete "01 Briefs/2026-07-14 Zanzibar.md" (shared workspace) or delete /scratch/old-notes.md (internal Drive). I archive one file at a time, and it always waits for your approval.';
+      }
+      const generated = approxUsage(input.system + input.prompt, body);
+      return {
+        title: "File archive request",
         body,
         usage: {
           inputTokens: usage.inputTokens + generated.inputTokens,

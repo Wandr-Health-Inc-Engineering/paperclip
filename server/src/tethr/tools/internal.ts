@@ -4,6 +4,7 @@ import { driveService } from "../drive.js";
 import { memoryService } from "../memory.js";
 import { notificationService } from "../notify.js";
 import { validateOrgChange, ORG_CHANGE_OPS } from "../org-changes.js";
+import { validateDriveChange, DRIVE_CHANGE_STORES } from "../drive-changes.js";
 import type { TethrTool } from "./types.js";
 
 // Internal tools: the Drive, memory, and notifications. Drive writes are
@@ -197,6 +198,41 @@ export const stageOrgChangeTool: TethrTool = {
     return {
       output: `Change staged for ${result.target!.codename} (${result.target!.tag}) — op ${result.spec!.op}. It is NOT applied yet: it now waits for a human to approve it in the Queue. Tell the requester that, briefly.`,
       summary: `staged ${result.spec!.op} on ${result.target!.tag}`,
+    };
+  },
+};
+
+export const stageFileArchiveTool: TethrTool = {
+  name: "stage_file_archive",
+  description:
+    'Stage a file for archiving (the ONLY way to "delete"). NOTHING is deleted by this call: the archive is validated, then waits as a gated item for the human to confirm ("approve"/"confirm") or keep the file ("reject"/"cancel"). Archiving is always a soft move to the store\'s archive folder — recoverable, never permanent. One file at a time; folders can\'t be archived. Paths come from the human, a "filed:" message, or drive_list (internal store).',
+  inputSchema: {
+    type: "object",
+    properties: {
+      store: {
+        type: "string",
+        enum: [...DRIVE_CHANGE_STORES],
+        description:
+          'shared = the "00 Tethr" workspace folder the team sees (paths like "01 Briefs/2026-07-14 Brief.md"); internal = Tethr\'s working Drive (paths like "/scratch/notes.md").',
+      },
+      path: { type: "string", description: "The file to archive. Exact path preferred; a unique filename also resolves in the shared store." },
+      reason: { type: "string", description: "Why, in the requester's words (shown in the approval)." },
+    },
+    required: ["store", "path"],
+  },
+  // Validation only — the worker turns the staged spec into a gated
+  // drive_change output; archiving happens exclusively on human approval.
+  async execute(ctx, input) {
+    const result = await validateDriveChange(ctx.db, ctx.companyId, input);
+    if (!result.ok) {
+      return {
+        output: `Cannot stage that archive: ${result.errors.join("; ")}. Relay this to the requester and ask for the exact filename — never guess.`,
+        summary: `archive refused: ${result.errors[0]}`,
+      };
+    }
+    return {
+      output: `Archive staged for "${result.target.from}" → ${result.target.dest}. It is NOT moved yet: it waits for the human to confirm in this thread or the Queue. Tell the requester that, briefly — and that it stays recoverable.`,
+      summary: `staged archive of ${result.target.name}`,
     };
   },
 };
