@@ -7,6 +7,7 @@ import type { LLMImageAttachment, LLMUsage } from "./llm/types.js";
 import { gatingService } from "./gating.js";
 import { memoryService } from "./memory.js";
 import { MIRROR_FOLDERS } from "./mirror.js";
+import { contentPreview, wordCountLabel } from "./preview.js";
 import { toolsetForSubagent, type TethrToolContext } from "./tools/index.js";
 
 // The "do" step of classify → route → do. Renders the subagent's fine-tuned
@@ -305,6 +306,13 @@ export function workerService(db: Db) {
       });
     }
 
+    // A short body preview rides along in the summary so a human can
+    // sanity-check the content from Slack/Console without opening the Drive.
+    // org_change bodies are already deterministic diffs — no preview needed.
+    const preview = effectiveKind === "answer" || effectiveKind === "org_change" ? null : contentPreview(output.body);
+    const withPreview = (lead: string) =>
+      preview ? `${lead.replace(/\.$/, "")} (${wordCountLabel(preview.wordCount)}).\n${preview.snippet}` : lead;
+
     return {
       outputId: output.id,
       title: output.title,
@@ -315,10 +323,10 @@ export function workerService(db: Db) {
       summary: gated
         ? effectiveKind === "org_change"
           ? `${output.title} — waiting for your approval in the Queue. Nothing is changed until you approve.`
-          : `${output.title} — staged in the Queue for human review (${sensitivity}-sensitive).`
+          : withPreview(`${output.title} — staged in the Queue for human review (${sensitivity}-sensitive).`)
         : effectiveKind === "answer"
           ? `${input.subagent.tag} answered.`
-          : `${output.title} — published to the Drive.`,
+          : withPreview(`${output.title} — published to the Drive.`),
       body: output.body,
       escalation,
       usage: generated.usage,

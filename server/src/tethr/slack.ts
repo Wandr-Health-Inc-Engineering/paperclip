@@ -22,6 +22,7 @@ import type { LLMImageAttachment } from "./llm/types.js";
 import { memoryService } from "./memory.js";
 import { mirrorDir } from "./mirror.js";
 import { getRoster, normalizeOverseerRole } from "./overseers.js";
+import { contentPreview, wordCountLabel } from "./preview.js";
 import { setThrottle } from "./throttle.js";
 
 const SLACK_API = "https://slack.com/api";
@@ -1051,12 +1052,16 @@ export interface FiledFile {
   kind: string;
   agent?: string;
   path: string;
+  /** "> "-quoted opening lines of the content (from contentPreview). */
+  snippet?: string;
+  wordCount?: number;
 }
 
 /**
- * The "here's what I filed" message: a detail line (title · type · agent) and
- * the file path in a copyable code block, per file. Pure — returns null when
- * nothing was filed so the caller posts nothing.
+ * The "here's what I filed" message: a detail line (title · type · agent), a
+ * short content snippet so the human can sanity-check without opening Drive,
+ * and the file path in a copyable code block, per file. Pure — returns null
+ * when nothing was filed so the caller posts nothing.
  */
 export function buildFiledFilesMessage(files: FiledFile[]): string | null {
   if (!files.length) return null;
@@ -1065,9 +1070,11 @@ export function buildFiledFilesMessage(files: FiledFile[]): string | null {
       ? "*Filed to your shared Drive*"
       : `*Filed ${files.length} files to your shared Drive*`;
   const blocks = files.map((f) => {
-    const detail = `• *${f.title}*  ·  ${kindLabel(f.kind)}${f.agent ? `  ·  ${f.agent}` : ""}`;
+    const words = f.wordCount ? `  ·  ${wordCountLabel(f.wordCount)}` : "";
+    const detail = `• *${f.title}*  ·  ${kindLabel(f.kind)}${f.agent ? `  ·  ${f.agent}` : ""}${words}`;
+    const snippet = f.snippet ? `\n${f.snippet}` : "";
     // Fenced code block → one-tap copy of the exact path in the folder.
-    return `${detail}\n\`\`\`\n${f.path}\n\`\`\``;
+    return `${detail}${snippet}\n\`\`\`\n${f.path}\n\`\`\``;
   });
   return `${header}\n${blocks.join("\n")}`;
 }
@@ -1086,7 +1093,7 @@ async function postFiledFilesToThread(
 ): Promise<void> {
   try {
     const rows = await db
-      .select({ title: tethrOutputs.title, kind: tethrOutputs.kind, meta: tethrOutputs.meta })
+      .select({ title: tethrOutputs.title, kind: tethrOutputs.kind, body: tethrOutputs.body, meta: tethrOutputs.meta })
       .from(tethrOutputs)
       .where(
         and(
@@ -1105,11 +1112,14 @@ async function postFiledFilesToThread(
       const meta = (r.meta ?? {}) as Record<string, unknown>;
       const mirror = meta.mirror as { relPath?: string } | undefined;
       if (!mirror?.relPath) continue; // only files that actually reached a folder
+      const preview = contentPreview(r.body ?? "");
       files.push({
         title: r.title,
         kind: r.kind,
         agent: typeof meta.agentTag === "string" ? meta.agentTag : undefined,
         path: base ? `${base}/${mirror.relPath}` : mirror.relPath,
+        snippet: preview?.snippet,
+        wordCount: preview?.wordCount,
       });
     }
 

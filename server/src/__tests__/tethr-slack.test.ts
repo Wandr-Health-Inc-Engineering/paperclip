@@ -18,6 +18,7 @@ import {
   toSlackMrkdwn,
   verifySlackSignature,
 } from "../tethr/slack.js";
+import { contentPreview } from "../tethr/preview.js";
 
 describe("recommendation builder", () => {
   const built = buildRecommendation({
@@ -211,6 +212,55 @@ describe("buildFiledFilesMessage", () => {
     expect(msg).toContain("*Filed 2 files to your shared Drive*");
     expect(msg).toContain("Blog Draft");
     expect(msg).toContain("ICP Profile"); // icp normalized to uppercase
+  });
+
+  it("includes the content snippet + word count when provided", () => {
+    const msg = buildFiledFilesMessage([
+      {
+        title: "Weekly Market Brief",
+        kind: "brief",
+        path: "00 Tethr/01 Briefs/x.md",
+        snippet: "> Zanzibar bookings are up 40% quarter over quarter.\n> Malaria prophylaxis demand follows.",
+        wordCount: 1860,
+      },
+    ]);
+    expect(msg).toContain("~1,860 words");
+    expect(msg).toContain("> Zanzibar bookings are up 40% quarter over quarter.");
+    // Snippet sits between the detail line and the copyable path block.
+    expect(msg!.indexOf("> Zanzibar")).toBeLessThan(msg!.indexOf("```"));
+  });
+});
+
+describe("contentPreview", () => {
+  it("returns opening lines as a quote block + a word count", () => {
+    const body = [
+      "# Cusco Altitude Guide",
+      "",
+      "Cusco sits at 11,152 feet, and most travelers feel it on day one.",
+      "Acetazolamide taken the day before arrival cuts symptom rates roughly in half.",
+      "This guide covers dosing, timing, and when to descend instead of medicate, plus the practical questions travelers actually ask before a Sacred Valley trip.",
+    ].join("\n");
+    const p = contentPreview(body);
+    expect(p).not.toBeNull();
+    expect(p!.snippet.split("\n").every((l) => l.startsWith("> "))).toBe(true);
+    expect(p!.snippet).toContain("Cusco Altitude Guide");
+    expect(p!.snippet).toContain("11,152 feet");
+    expect(p!.wordCount).toBeGreaterThan(20);
+  });
+
+  it("returns null for empty or trivially short bodies", () => {
+    expect(contentPreview("")).toBeNull();
+    expect(contentPreview("Done.")).toBeNull();
+  });
+
+  it("caps line length and line count", () => {
+    const long = `${"word ".repeat(120)}\n${"x".repeat(400)}\nthird line here\nfourth line never shows`;
+    const p = contentPreview(long);
+    expect(p).not.toBeNull();
+    const lines = p!.snippet.split("\n");
+    expect(lines.length).toBeLessThanOrEqual(3);
+    for (const l of lines) expect(l.length).toBeLessThanOrEqual(122); // "> " + 120
+    expect(p!.snippet).not.toContain("fourth line");
   });
 });
 
