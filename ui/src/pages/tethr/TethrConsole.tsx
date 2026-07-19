@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import { RouteFlow } from "@/components/tethr/RouteFlow";
 import {
+  CogDuo,
   MonoTag,
   OutputStatusBadge,
   formatRelative,
@@ -267,7 +268,8 @@ export function TethrConsole() {
                 ) : null}
               </div>
             ) : (
-              <div className="border-2 border-dashed border-foreground/30 p-5">
+              <div className="flex items-center gap-3 border-2 border-dashed border-foreground/30 p-5">
+                <CogDuo className="h-6 w-6" />
                 <span className="shimmer-text text-sm font-semibold">
                   {run?.hops.length
                     ? `${run.hops[run.hops.length - 1].actorTag} is working…`

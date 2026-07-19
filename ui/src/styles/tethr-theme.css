@@ -453,6 +453,28 @@ a[role="button"]:active {
   }
 }
 
+/* ===== Working cogs (phase 15) — the machinery-at-work indicator. Monochrome
+   line-art only (lucide Cog via currentColor); slow steady spin, meshed pair
+   counter-rotates. Used at the Console/RouteFlow processing states. ===== */
+@keyframes tethr-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.tethr-cog-spin {
+  animation: tethr-spin 3.5s linear infinite;
+}
+.tethr-cog-spin-reverse {
+  animation: tethr-spin 3.5s linear infinite reverse;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tethr-cog-spin,
+  .tethr-cog-spin-reverse {
+    animation: none !important;
+  }
+}
+
 /* Branded selection: ink-on-paper inversion in both themes. */
 ::selection {
   background: var(--foreground);

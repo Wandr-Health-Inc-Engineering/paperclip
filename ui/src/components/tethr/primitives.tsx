@@ -88,6 +88,20 @@ export function AgentGlyph({
   return <Icon className={cn("h-4 w-4", className)} />;
 }
 
+/**
+ * The machinery-at-work indicator: two meshed line-art cogs counter-rotating
+ * (phase 15). Monochrome via currentColor; spin lives in the theme
+ * (.tethr-cog-spin, reduced-motion-guarded). Size via h/w classes on className.
+ */
+export function CogDuo({ className }: { className?: string }) {
+  return (
+    <span className={cn("relative inline-block h-5 w-5 shrink-0", className)} aria-hidden="true">
+      <Cog className="tethr-cog-spin absolute left-0 top-0 h-[68%] w-[68%]" />
+      <Cog className="tethr-cog-spin-reverse absolute bottom-0 right-0 h-[52%] w-[52%]" />
+    </span>
+  );
+}
+
 /** Mono uppercase eyebrow tag — the brand's TIER · 01 voice. */
 export function MonoTag({
   children,

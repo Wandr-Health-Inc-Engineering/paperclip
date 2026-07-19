@@ -1,7 +1,7 @@
-import { ArrowDown, CircleUser, Lock, Radio, Wrench } from "lucide-react";
+import { ArrowDown, CircleUser, Radio, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { TethrRouteHop } from "@/api/tethr";
-import { MonoTag } from "./primitives";
+import { CogDuo, MonoTag } from "./primitives";
 
 // The hero visualization: a request travelling down the chain.
 //   you → @helm (classify) → @agent (route) → @agent.subagent (do).
@@ -111,7 +111,7 @@ export function RouteFlow({
           <Connector animate={animate} delay={baseDelay + hops.length * step} />
           <div className="flex items-start gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center border-2 border-dashed border-foreground/40">
-              <Lock className="h-4 w-4 animate-pulse text-muted-foreground" />
+              <CogDuo className="h-5 w-5 text-muted-foreground" />
             </div>
             <div className="pt-1.5">
               <span className="shimmer-text text-sm font-semibold">
