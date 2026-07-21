@@ -370,6 +370,26 @@ compliance gates are unaffected.
   `.tethr-cog-spin`/`-reverse` in tethr-theme.css, reduced-motion-guarded) at the Console working
   fallback + RouteFlow pending hop ONLY (Mark's pick) — brand stays quiet elsewhere.
 
+## Routing fix — conversational asks stop briefing (2026-07-21)
+
+A plain chat ("what do you do?") was misrouted at the **helm** level to `@ceo` — whose only
+subagent (`plan`) maps to kind `brief` (internal → auto-published), with no answer-inline escape —
+so every conversational/meta question produced a Drive brief. Root cause was routing-table copy the
+classifier reads: `@tethr`'s catch-all row was stale ("no specialist agents exist yet") and never
+claimed conversational/meta questions, and `@ceo`'s row was too broad ("direction", "what should we
+focus on") and sat FIRST (the no-signal default). Fix (all in `seed/**`, additive): rewrote
+`TETHR_AGENT.routing` (tethr-core.ts) to claim conversational/meta/status/greeting asks, narrowed
+`CEO_ROUTING_ROW` (ceo.ts) to specific business-strategy phrases, and made `linkTethrToCeo` **append**
+`@ceo` so `@tethr` stays the first/default row. **The routing table lives in the DB and the seed is
+idempotent**, so already-seeded orgs need `healTethrRoutingCopy(db)` (tethr-core.ts, wired into
+`maybeAutoSeed` after the inbox heal): it rewrites the `@tethr`/`@ceo` rows to canonical copy and puts
+`@tethr` first — idempotent, best-effort. Affects ALL surfaces (they share `routeRequest`). Watch the
+mock keyword scorer (`llm/mock.ts`: `tokenize` keeps tokens len>2, so common words like "the"/"org"
+leak score) — keep routing copy free of stopword noise or you'll perturb `@tinkr`/`@patch` routing
+tests. Locked by `tethr-core.test.ts` (meta→`@tethr.chat`, strategy→`@ceo`, heal repairs a stale
+table). Verified live: heal fired on boot; two different conversational asks routed `@tethr →
+@tethr.chat` with kind `answer` (no brief).
+
 ## Live mode (Claude) & budgets
 
 - **Flip live:** set `ANTHROPIC_API_KEY` (+ optional `TETHR_CLAUDE_MODEL`, default

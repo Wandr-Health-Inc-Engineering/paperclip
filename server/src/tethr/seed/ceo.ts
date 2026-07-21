@@ -36,11 +36,22 @@ export const CEO_AGENT = {
     "Set today's priorities: review the mission, recent work in the Drive, and what's queued, then write a short priorities brief.",
 };
 
-// When @tethr is asked about strategy/direction, it routes to the CEO.
-const CEO_ROUTING_ROW = {
-  when: ["strategy", "priorities", "goals", "roadmap", "direction", "what should we focus on"],
+// When @tethr is asked about BUSINESS strategy, it routes to the CEO. Kept to
+// specific multi-word phrases so it no longer grabs meta/conversational asks
+// like "what do you do?" (those stay on the default @tethr row → @tethr.chat).
+export const CEO_ROUTING_ROW = {
+  when: [
+    "set our priorities",
+    "company strategy",
+    "business strategy",
+    "quarterly goals",
+    "product roadmap",
+    "what should the business focus on",
+    "prioritize our roadmap",
+  ],
   to: "@ceo",
-  description: "Strategy, priorities, goals, roadmap — the CEO holds the mission and sets direction.",
+  description:
+    "Business strategy and company priorities — deciding direction and what to focus on next. Not questions about Tethr itself, greetings, or simple asks.",
 };
 
 // The CEO's one subagent. key "plan" reuses the existing "brief" output kind
@@ -226,7 +237,9 @@ async function linkTethrToCeo(db: Db, companyId: string): Promise<void> {
     await db
       .update(tethrAgentProfiles)
       .set({
-        routingTable: [CEO_ROUTING_ROW, ...rows],
+        // Append (not prepend) so the @tethr default row stays FIRST — a
+        // no-signal request should fall through to @tethr, never to @ceo.
+        routingTable: [...rows, CEO_ROUTING_ROW],
         mission: TETHR_CONDUCTOR_MISSION,
       })
       .where(eq(tethrAgentProfiles.id, tethrProfile.id));

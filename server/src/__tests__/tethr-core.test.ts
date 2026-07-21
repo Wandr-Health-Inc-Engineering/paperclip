@@ -440,3 +440,88 @@ describeEmbeddedPostgres("tethr clean-slate org (@tethr coordinator)", () => {
     expect(result.escalations[0].note.length).toBeGreaterThan(0);
   });
 });
+
+// Regression: with @ceo seeded, a plain conversational/meta question used to be
+// misrouted to @ceo, whose only subagent drafts a brief that auto-published to
+// the Drive. It must stay on @tethr.chat (answered inline, no artifact). Real
+// business-strategy asks still go to @ceo. Isolated org so @ceo doesn't perturb
+// the shared-company tests above.
+describeEmbeddedPostgres("tethr routing: conversational asks stay on @tethr.chat (with @ceo)", () => {
+  let db!: ReturnType<typeof createDb>;
+  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+  let storageDir!: string;
+  let companyId!: string;
+
+  beforeAll(async () => {
+    storageDir = fs.mkdtempSync(path.join(os.tmpdir(), "tethr-route-test-storage-"));
+    process.env.PAPERCLIP_STORAGE_PROVIDER = "local_disk";
+    process.env.PAPERCLIP_STORAGE_LOCAL_DIR = storageDir;
+    delete process.env.TETHR_BUNDLE_PATH;
+    delete process.env.ANTHROPIC_API_KEY; // force the mock provider
+    process.env.TETHR_LIVE_FETCH = "false";
+
+    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-tethr-route-");
+    db = createDb(tempDb.connectionString);
+    const core = await seedTethrCore(db);
+    companyId = core.companyId;
+    const { seedCeoAgent } = await import("../tethr/seed/ceo.ts");
+    await seedCeoAgent(db, companyId); // adds @ceo + its routing row
+  }, 60_000);
+
+  afterAll(async () => {
+    await tempDb?.cleanup();
+    fs.rmSync(storageDir, { recursive: true, force: true });
+  });
+
+  it("answers a meta question inline via @tethr.chat — never @ceo → brief", async () => {
+    const result = await routingService(db).routeRequest({
+      companyId,
+      requestText: "In one short sentence, what do you do?",
+    });
+    expect(result.status).toBe("done");
+    expect(result.hops.some((h) => h.actorTag === "@tethr.chat")).toBe(true);
+    expect(result.hops.some((h) => h.actorTag === "@ceo")).toBe(false);
+    expect(result.resultText).not.toContain("published to the Drive");
+  });
+
+  it("still routes a real business-strategy request to @ceo", async () => {
+    const result = await routingService(db).routeRequest({
+      companyId,
+      requestText: "What should the business focus on next quarter? Set our priorities.",
+    });
+    expect(result.hops.some((h) => h.actorTag === "@ceo")).toBe(true);
+  });
+
+  it("healTethrRoutingCopy repairs a stale already-seeded routing table", async () => {
+    // Simulate the pre-fix live state: @ceo FIRST with broad triggers, @tethr stale.
+    const [profile] = await db
+      .select({ id: tethrAgentProfiles.id })
+      .from(tethrAgentProfiles)
+      .where(and(eq(tethrAgentProfiles.companyId, companyId), eq(tethrAgentProfiles.tag, "@tethr")))
+      .limit(1);
+    await db
+      .update(tethrAgentProfiles)
+      .set({
+        routingTable: [
+          { when: ["strategy", "direction", "what should we focus on"], to: "@ceo", description: "old" },
+          { when: ["everything"], to: "@tethr", description: "Everything — no specialist agents exist yet." },
+        ],
+      })
+      .where(eq(tethrAgentProfiles.id, profile.id));
+
+    const { healTethrRoutingCopy } = await import("../tethr/seed/tethr-core.ts");
+    await healTethrRoutingCopy(db);
+
+    const [healed] = await db
+      .select({ routingTable: tethrAgentProfiles.routingTable })
+      .from(tethrAgentProfiles)
+      .where(eq(tethrAgentProfiles.id, profile.id));
+    const rows = healed.routingTable as Array<{ to: string; when: string[] }>;
+    expect(rows[0]?.to).toBe("@tethr"); // @tethr is now the default (first)
+    expect(rows[0]?.when).toContain("what do you do");
+
+    // And a meta question routes to chat again on the healed table.
+    const result = await routingService(db).routeRequest({ companyId, requestText: "who are you?" });
+    expect(result.hops.some((h) => h.actorTag === "@tethr.chat")).toBe(true);
+  });
+});

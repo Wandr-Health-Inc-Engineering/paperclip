@@ -43,10 +43,29 @@ export const TETHR_AGENT = {
   budgetMonthlyCents: 2500, // $25/mo, hard-stop on
   routing: [
     {
-      when: ["everything"],
+      // The DEFAULT front door. Conversational / informational / meta requests —
+      // and anything that doesn't clearly belong to a specialist below — stay
+      // here and get answered directly via @tethr.chat (no Drive artifact).
+      when: [
+        "what do you do",
+        "who are you",
+        "what are you",
+        "what can you do",
+        "what can you help with",
+        "how do you work",
+        "hi",
+        "hello",
+        "hey there",
+        "thanks",
+        "thank you",
+        "question",
+        "status",
+        "summary",
+        "explain",
+      ],
       to: "@tethr",
       description:
-        "Everything — no specialist agents exist yet. Tethr handles requests directly (answer or plan).",
+        "The default front door — anything conversational, informational, or about Tethr itself (what it does, who it is, greetings, status, quick questions, small talk). Tethr answers directly via chat. Route here unless the request clearly belongs to a specialist row below.",
     },
   ],
 };
@@ -321,4 +340,53 @@ export async function seedTethrCore(
 
   logger.info({ companyId, agents: 1, subagents: SUBAGENTS.length }, "[tethr] clean-slate org seeded");
   return { companyId, created: true, archivedOldCompany };
+}
+
+type RoutingRow = { when: string[]; to: string; description?: string };
+
+/**
+ * Heal the @tethr routing copy on ALREADY-SEEDED orgs (the seed is idempotent
+ * and won't rewrite an existing routingTable). Two things were wrong and made a
+ * plain conversational question ("what do you do?") get misrouted to @ceo, whose
+ * only subagent drafts a brief that auto-publishes to the Drive:
+ *   1. the @tethr catch-all row was stale ("no specialist agents exist yet") and
+ *      never claimed conversational/meta questions, so the classifier leaked them;
+ *   2. @ceo was FIRST in the table, so a no-signal request defaulted to it.
+ * This rewrites the @tethr row (and @ceo row) to the canonical copy and puts
+ * @tethr FIRST as the safe default. Idempotent (only writes when it differs);
+ * best-effort — never blocks boot.
+ */
+export async function healTethrRoutingCopy(db: Db): Promise<void> {
+  try {
+    const { CEO_ROUTING_ROW } = await import("./ceo.js");
+    const tethrRow = TETHR_AGENT.routing[0] as RoutingRow;
+    const profiles = await db
+      .select({ id: tethrAgentProfiles.id, routingTable: tethrAgentProfiles.routingTable })
+      .from(tethrAgentProfiles)
+      .where(eq(tethrAgentProfiles.tag, "@tethr"));
+    for (const p of profiles) {
+      const rows = Array.isArray(p.routingTable) ? (p.routingTable as RoutingRow[]) : [];
+      if (!rows.length) continue;
+      const hasCeo = rows.some((r) => r.to === "@ceo");
+      const others = rows.filter((r) => r.to !== "@tethr" && r.to !== "@ceo");
+      // @tethr first (safe default), @ceo next, specialists after — canonical copy.
+      const updated: RoutingRow[] = [
+        { ...tethrRow },
+        ...(hasCeo ? [{ ...CEO_ROUTING_ROW }] : []),
+        ...others,
+      ];
+      if (JSON.stringify(updated) !== JSON.stringify(rows)) {
+        await db
+          .update(tethrAgentProfiles)
+          .set({ routingTable: updated })
+          .where(eq(tethrAgentProfiles.id, p.id));
+        logger.info(
+          { profileId: p.id },
+          "[tethr] healed @tethr routing copy — conversational/meta questions stay on @tethr.chat",
+        );
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, "[tethr] routing-copy heal skipped");
+  }
 }

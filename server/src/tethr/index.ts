@@ -33,6 +33,8 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
   await seed.maybeAutoSeed(db);
   await reapOrphanedRouteRuns(db);
   await healInboxApprovedOutputs(db);
+  const { healTethrRoutingCopy } = await import("./seed/tethr-core.js");
+  await healTethrRoutingCopy(db);
   // Start Slack Socket Mode if configured (SLACK_APP_TOKEN) — lets tag/DM reach
   // a local server with no public URL. No-op when the token is unset.
   const { startSlackSocketMode } = await import("./slack.js");
