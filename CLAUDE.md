@@ -388,7 +388,11 @@ mock keyword scorer (`llm/mock.ts`: `tokenize` keeps tokens len>2, so common wor
 leak score) — keep routing copy free of stopword noise or you'll perturb `@tinkr`/`@patch` routing
 tests. Locked by `tethr-core.test.ts` (meta→`@tethr.chat`, strategy→`@ceo`, heal repairs a stale
 table). Verified live: heal fired on boot; two different conversational asks routed `@tethr →
-@tethr.chat` with kind `answer` (no brief).
+@tethr.chat` with kind `answer` (no brief). `CEO_ROUTING_ROW` also gained explicit
+agent-creation triggers ("create an agent", "add an agent", …) so a terminal/Console request to
+build an agent reaches `@ceo.plan`'s `propose_agent` (staged as a gated `agent_proposal` →
+Queue); the heal propagates these to the live org too. Verified live: "create a market research
+agent" → `@ceo` → `propose_agent` → gated proposal → approved → `@radar` instantiated (paused).
 
 ## Live mode (Claude) & budgets
 

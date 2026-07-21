@@ -48,10 +48,15 @@ export const CEO_ROUTING_ROW = {
     "product roadmap",
     "what should the business focus on",
     "prioritize our roadmap",
+    "create an agent",
+    "add an agent",
+    "spin up an agent",
+    "we need an agent",
+    "propose an agent",
   ],
   to: "@ceo",
   description:
-    "Business strategy and company priorities — deciding direction and what to focus on next. Not questions about Tethr itself, greetings, or simple asks.",
+    "Business strategy, company priorities, and building the agent org — deciding direction, what to focus on next, and proposing NEW agents (staged for approval). Not questions about Tethr itself, greetings, or modifying existing agents (that's a specialist).",
 };
 
 // The CEO's one subagent. key "plan" reuses the existing "brief" output kind

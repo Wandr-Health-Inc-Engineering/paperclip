@@ -492,6 +492,14 @@ describeEmbeddedPostgres("tethr routing: conversational asks stay on @tethr.chat
     expect(result.hops.some((h) => h.actorTag === "@ceo")).toBe(true);
   });
 
+  it("routes an explicit agent-creation request to @ceo (who can propose one)", async () => {
+    const result = await routingService(db).routeRequest({
+      companyId,
+      requestText: "create an agent for market research",
+    });
+    expect(result.hops.some((h) => h.actorTag === "@ceo")).toBe(true);
+  });
+
   it("healTethrRoutingCopy repairs a stale already-seeded routing table", async () => {
     // Simulate the pre-fix live state: @ceo FIRST with broad triggers, @tethr stale.
     const [profile] = await db
