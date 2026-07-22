@@ -93,10 +93,12 @@ export async function seedFilerAgent(db: Db, companyId: string): Promise<FilerSe
 
   logger.info({ companyId }, "[tethr] seeding Filer (@filer), the file archivist");
 
-  const [ceo] = await db
+  // System/admin agents sit BESIDE the org under @tethr (the conductor/system
+  // hub) — not inside the CEO's command chain.
+  const [parent] = await db
     .select()
     .from(tethrAgentProfiles)
-    .where(and(eq(tethrAgentProfiles.companyId, companyId), eq(tethrAgentProfiles.tag, "@ceo")))
+    .where(and(eq(tethrAgentProfiles.companyId, companyId), eq(tethrAgentProfiles.tag, "@tethr")))
     .limit(1);
 
   const [filer] = await db
@@ -108,7 +110,7 @@ export async function seedFilerAgent(db: Db, companyId: string): Promise<FilerSe
       title: FILER_AGENT.title,
       icon: "archive",
       status: "idle",
-      reportsTo: ceo?.agentId ?? null,
+      reportsTo: parent?.agentId ?? null,
       capabilities: FILER_AGENT.mission,
       adapterType: TETHR_ADAPTER_TYPE,
       adapterConfig: { agentTag: FILER_AGENT.tag, subagentChain: ["archive"] },

@@ -36,7 +36,11 @@ import type {
 const WORK_MODEL = process.env.TETHR_CLAUDE_CODE_MODEL || "sonnet";
 const FAST_MODEL = process.env.TETHR_CLAUDE_CODE_FAST_MODEL || "haiku";
 const CLI_BIN = process.env.TETHR_CLAUDE_CODE_BIN || "claude";
-const CALL_TIMEOUT_MS = Number(process.env.TETHR_CLAUDE_CODE_TIMEOUT_MS) || 120_000;
+// Per-CLI-call ceiling. Multi-step agentic runs (e.g. the CEO's planning
+// heartbeat — read the Drive, plan, draft a brief) routinely exceed 2 minutes
+// on the subscription backend, so 120s was too tight and timed them out
+// (adapter_failed). 300s gives real headroom; override with the env var.
+const CALL_TIMEOUT_MS = Number(process.env.TETHR_CLAUDE_CODE_TIMEOUT_MS) || 300_000;
 // runAgentic re-sends the transcript each turn, so keep the loop short to bound
 // subscription usage (the API path defaults to 8).
 const DEFAULT_MAX_TURNS = Number(process.env.TETHR_CLAUDE_CODE_MAX_TURNS) || 5;

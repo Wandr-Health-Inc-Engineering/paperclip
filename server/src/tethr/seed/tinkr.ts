@@ -91,10 +91,13 @@ export async function seedTinkrAgent(db: Db, companyId: string): Promise<TinkrSe
 
   logger.info({ companyId }, "[tethr] seeding Tinkr (@tinkr), the org mechanic");
 
-  const [ceo] = await db
+  // System/admin agents sit BESIDE the org under @tethr (the conductor/system
+  // hub) — not inside the CEO's command chain. @ceo branches down to the org
+  // roles; @tinkr/@patch/@filer are infrastructure that complements it.
+  const [parent] = await db
     .select()
     .from(tethrAgentProfiles)
-    .where(and(eq(tethrAgentProfiles.companyId, companyId), eq(tethrAgentProfiles.tag, "@ceo")))
+    .where(and(eq(tethrAgentProfiles.companyId, companyId), eq(tethrAgentProfiles.tag, "@tethr")))
     .limit(1);
 
   const [tinkr] = await db
@@ -106,7 +109,7 @@ export async function seedTinkrAgent(db: Db, companyId: string): Promise<TinkrSe
       title: TINKR_AGENT.title,
       icon: "wrench",
       status: "idle",
-      reportsTo: ceo?.agentId ?? null,
+      reportsTo: parent?.agentId ?? null,
       capabilities: TINKR_AGENT.mission,
       adapterType: TETHR_ADAPTER_TYPE,
       adapterConfig: { agentTag: TINKR_AGENT.tag, subagentChain: ["change"] },

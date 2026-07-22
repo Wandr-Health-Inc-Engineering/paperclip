@@ -394,6 +394,23 @@ build an agent reaches `@ceo.plan`'s `propose_agent` (staged as a gated `agent_p
 Queue); the heal propagates these to the live org too. Verified live: "create a market research
 agent" → `@ceo` → `propose_agent` → gated proposal → approved → `@radar` instantiated (paused).
 
+## Org hierarchy + claude-code timeout fixes (2026-07-21)
+
+- **System agents sit BESIDE the org, under @tethr — not under @ceo.** `@tinkr`/`@patch`/`@filer`
+  were seeded `reportsTo: @ceo`, so the org chart nested them inside the CEO's command chain. They're
+  infrastructure that complements the CEO (the "System · infrastructure" group), so they now
+  `reportsTo: @tethr` (the conductor/system hub); `@ceo` branches down only to the org roles
+  (`@radar`/`@remedy`/`@cgo`). Fixed in `seed/tinkr.ts`/`patch.ts`/`filer.ts` (look up `@tethr`, not
+  `@ceo`) + a boot heal `healSystemAgentParents(db)` (tethr-core.ts, wired into `maybeAutoSeed`) that
+  re-parents already-seeded orgs — idempotent, best-effort. `reportsTo` is org-chart-only (routing is
+  table-based), so this is purely structural. Locked by `tethr-core.test.ts` (+ the tinkr/patch/filer
+  seed tests updated to assert `@tethr`). Verified live: org chart shows two roots (`@tethr` →
+  tinkr/patch/filer, `@ceo` → radar/remedy/cgo).
+- **claude-code per-call timeout 120s → 300s.** The CEO's planning heartbeat (read Drive → plan →
+  draft brief) runs >2 min on the subscription backend and was hitting the 120s `CALL_TIMEOUT_MS`
+  ceiling in `llm/claude-code.ts` → `adapter_failed`. Bumped the default to 300s (still overridable
+  via `TETHR_CLAUDE_CODE_TIMEOUT_MS`). The error clears on the next successful heartbeat/retry.
+
 ## Live mode (Claude) & budgets
 
 - **Flip live:** set `ANTHROPIC_API_KEY` (+ optional `TETHR_CLAUDE_MODEL`, default

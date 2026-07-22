@@ -64,7 +64,7 @@ describeEmbeddedPostgres("tethr Patch (debug agent)", () => {
     return p ?? null;
   };
 
-  it("seeds Patch: reports to the CEO, no heartbeat, routed from @tethr — idempotent", async () => {
+  it("seeds Patch: reports to @tethr (system agent, beside the org), no heartbeat, routed from @tethr — idempotent", async () => {
     const first = await seedPatchAgent(db, companyId);
     expect(first.created).toBe(true);
     const second = await seedPatchAgent(db, companyId);
@@ -75,7 +75,9 @@ describeEmbeddedPostgres("tethr Patch (debug agent)", () => {
     expect(profile).toBeTruthy();
 
     const [agent] = await db.select().from(agents).where(eq(agents.id, first.agentId)).limit(1);
-    expect(agent.reportsTo).toBe(ceoAgentId);
+    // System/admin agents sit under @tethr (the conductor), NOT in the CEO's chain.
+    expect(agent.reportsTo).not.toBe(ceoAgentId);
+    expect(agent.reportsTo).toBe((await profileByTag("@tethr"))!.agentId);
     expect(agent.budgetMonthlyCents).toBe(1000);
 
     // No heartbeat — Patch works on request only.

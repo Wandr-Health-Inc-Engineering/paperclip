@@ -111,17 +111,19 @@ describeEmbeddedPostgres("tethr Filer (file archivist)", () => {
     delete process.env.TETHR_MIRROR_ALLOW_TEST;
   });
 
-  it("seeds Filer idempotently — reports to the CEO, routed from @tethr, no heartbeat", async () => {
+  it("seeds Filer idempotently — reports to @tethr (system agent, beside the org), no heartbeat", async () => {
     const again = await seedFilerAgent(db, companyId);
     expect(again.created).toBe(false);
 
     const profile = await profileByTag("@filer");
     expect(profile?.codename).toBe(FILER_AGENT.codename);
     const [agent] = await db.select().from(agents).where(eq(agents.id, profile!.agentId)).limit(1);
+    // System/admin agents sit under @tethr (the conductor), NOT in the CEO's chain.
     const ceo = await profileByTag("@ceo");
-    expect(agent.reportsTo).toBe(ceo?.agentId);
-
     const tethr = await profileByTag("@tethr");
+    expect(agent.reportsTo).not.toBe(ceo?.agentId);
+    expect(agent.reportsTo).toBe(tethr?.agentId);
+
     const rows = tethr!.routingTable as Array<{ to: string }>;
     expect(rows.some((r) => r.to === "@filer")).toBe(true);
   });

@@ -1,4 +1,4 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents,
@@ -388,5 +388,50 @@ export async function healTethrRoutingCopy(db: Db): Promise<void> {
     }
   } catch (err) {
     logger.warn({ err }, "[tethr] routing-copy heal skipped");
+  }
+}
+
+const SYSTEM_AGENT_TAGS = ["@tinkr", "@patch", "@filer"];
+
+/**
+ * Re-parent the SYSTEM/admin agents (@tinkr, @patch, @filer) onto @tethr for
+ * already-seeded orgs. They were originally seeded reporting to @ceo, which put
+ * them INSIDE the CEO's command chain in the org chart — but they're
+ * infrastructure that sits BESIDE the org (the "System" group), complementing
+ * the CEO, not reporting up to it. @ceo should branch down only to the org roles.
+ * Idempotent (only repoints agents not already under @tethr); best-effort.
+ */
+export async function healSystemAgentParents(db: Db): Promise<void> {
+  try {
+    const tethrProfiles = await db
+      .select({ companyId: tethrAgentProfiles.companyId, agentId: tethrAgentProfiles.agentId })
+      .from(tethrAgentProfiles)
+      .where(eq(tethrAgentProfiles.tag, "@tethr"));
+    for (const t of tethrProfiles) {
+      const sys = await db
+        .select({ agentId: tethrAgentProfiles.agentId })
+        .from(tethrAgentProfiles)
+        .where(
+          and(
+            eq(tethrAgentProfiles.companyId, t.companyId),
+            inArray(tethrAgentProfiles.tag, SYSTEM_AGENT_TAGS),
+          ),
+        );
+      const ids = sys.map((s) => s.agentId);
+      if (!ids.length) continue;
+      const moved = await db
+        .update(agents)
+        .set({ reportsTo: t.agentId, updatedAt: new Date() })
+        .where(and(inArray(agents.id, ids), ne(agents.reportsTo, t.agentId)))
+        .returning({ id: agents.id });
+      if (moved.length) {
+        logger.info(
+          { companyId: t.companyId, moved: moved.length },
+          "[tethr] re-parented system agents (@tinkr/@patch/@filer) onto @tethr, beside the CEO",
+        );
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, "[tethr] system-agent parent heal skipped");
   }
 }

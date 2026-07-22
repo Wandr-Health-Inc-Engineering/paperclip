@@ -97,10 +97,12 @@ export async function seedPatchAgent(db: Db, companyId: string): Promise<PatchSe
 
   logger.info({ companyId }, "[tethr] seeding Patch (@patch), the debug agent");
 
-  const [ceo] = await db
+  // System/admin agents sit BESIDE the org under @tethr (the conductor/system
+  // hub) — not inside the CEO's command chain.
+  const [parent] = await db
     .select()
     .from(tethrAgentProfiles)
-    .where(and(eq(tethrAgentProfiles.companyId, companyId), eq(tethrAgentProfiles.tag, "@ceo")))
+    .where(and(eq(tethrAgentProfiles.companyId, companyId), eq(tethrAgentProfiles.tag, "@tethr")))
     .limit(1);
 
   const [patch] = await db
@@ -112,7 +114,7 @@ export async function seedPatchAgent(db: Db, companyId: string): Promise<PatchSe
       title: PATCH_AGENT.title,
       icon: "bug",
       status: "idle",
-      reportsTo: ceo?.agentId ?? null,
+      reportsTo: parent?.agentId ?? null,
       capabilities: PATCH_AGENT.mission,
       adapterType: TETHR_ADAPTER_TYPE,
       adapterConfig: { agentTag: PATCH_AGENT.tag, subagentChain: ["diagnose"] },

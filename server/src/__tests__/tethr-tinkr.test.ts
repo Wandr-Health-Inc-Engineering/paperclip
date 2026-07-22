@@ -95,14 +95,16 @@ describeEmbeddedPostgres("tethr Tinkr (org mechanic)", () => {
     fs.rmSync(storageDir, { recursive: true, force: true });
   });
 
-  it("seeds Tinkr idempotently — reports to the CEO, routed from @tethr, no heartbeat", async () => {
+  it("seeds Tinkr idempotently — reports to @tethr (system agent, beside the org), no heartbeat", async () => {
     const again = await seedTinkrAgent(db, companyId);
     expect(again.created).toBe(false);
 
     const profile = await profileByTag("@tinkr");
     expect(profile).toBeTruthy();
     const [agent] = await db.select().from(agents).where(eq(agents.id, profile!.agentId)).limit(1);
-    expect(agent.reportsTo).toBe(ceoAgentId);
+    // System/admin agents sit under @tethr (the conductor), NOT in the CEO's chain.
+    expect(agent.reportsTo).not.toBe(ceoAgentId);
+    expect(agent.reportsTo).toBe((await profileByTag("@tethr"))!.agentId);
 
     const tethr = await profileByTag("@tethr");
     const rows = tethr!.routingTable as Array<{ to: string }>;

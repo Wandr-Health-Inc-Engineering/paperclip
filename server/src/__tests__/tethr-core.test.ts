@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { companies, costEvents, createDb, routines, routineTriggers, tethrAgentProfiles, tethrDriveNodes, tethrMemories } from "@paperclipai/db";
+import { agents, companies, costEvents, createDb, routines, routineTriggers, tethrAgentProfiles, tethrDriveNodes, tethrMemories } from "@paperclipai/db";
 import { orgService } from "../tethr/org.ts";
 import { routingService } from "../tethr/routing.ts";
 import { seedWandrGrowth } from "../tethr/seed/seed.ts";
@@ -498,6 +498,38 @@ describeEmbeddedPostgres("tethr routing: conversational asks stay on @tethr.chat
       requestText: "create an agent for market research",
     });
     expect(result.hops.some((h) => h.actorTag === "@ceo")).toBe(true);
+  });
+
+  const parentOf = async (tag: string) => {
+    const [prof] = await db
+      .select({ agentId: tethrAgentProfiles.agentId })
+      .from(tethrAgentProfiles)
+      .where(and(eq(tethrAgentProfiles.companyId, companyId), eq(tethrAgentProfiles.tag, tag)))
+      .limit(1);
+    const [ag] = await db.select().from(agents).where(eq(agents.id, prof.agentId)).limit(1);
+    return { agentId: prof.agentId, reportsTo: ag.reportsTo };
+  };
+
+  it("seeds a system agent (@tinkr) under @tethr, not @ceo", async () => {
+    const { seedTinkrAgent } = await import("../tethr/seed/tinkr.ts");
+    await seedTinkrAgent(db, companyId);
+    const tethr = await parentOf("@tethr");
+    const ceo = await parentOf("@ceo");
+    const tinkr = await parentOf("@tinkr");
+    expect(tinkr.reportsTo).toBe(tethr.agentId); // beside the org, under the conductor
+    expect(tinkr.reportsTo).not.toBe(ceo.agentId);
+  });
+
+  it("healSystemAgentParents re-parents a @ceo-parented system agent onto @tethr", async () => {
+    const tethr = await parentOf("@tethr");
+    const ceo = await parentOf("@ceo");
+    const tinkr = await parentOf("@tinkr");
+    // Simulate the old state: @tinkr reporting up to @ceo.
+    await db.update(agents).set({ reportsTo: ceo.agentId }).where(eq(agents.id, tinkr.agentId));
+    const { healSystemAgentParents } = await import("../tethr/seed/tethr-core.ts");
+    await healSystemAgentParents(db);
+    const healed = await parentOf("@tinkr");
+    expect(healed.reportsTo).toBe(tethr.agentId);
   });
 
   it("healTethrRoutingCopy repairs a stale already-seeded routing table", async () => {
