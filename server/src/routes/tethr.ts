@@ -1487,6 +1487,8 @@ export function tethrRoutes(db: Db) {
     const patch = await seedPatchAgent(db, result.companyId);
     const { seedFilerAgent } = await import("../tethr/seed/filer.js");
     const filer = await seedFilerAgent(db, result.companyId);
+    const { seedRankAgent } = await import("../tethr/seed/rank.js");
+    const rank = await seedRankAgent(db, result.companyId);
     const { backfillFactoryAgentTools } = await import("../tethr/seed/backfill-tools.js");
     const toolsHealed = await backfillFactoryAgentTools(db, result.companyId);
     res.json({
@@ -1495,6 +1497,7 @@ export function tethrRoutes(db: Db) {
       tinkrAdded: tinkr.created,
       patchAdded: patch.created,
       filerAdded: filer.created,
+      rankAdded: rank.created,
       toolsHealed,
     });
   });

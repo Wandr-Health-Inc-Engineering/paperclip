@@ -64,6 +64,10 @@ const ALLOWLIST: Record<string, string[]> = {
   // Patch — the debug agent (Phase 12). Reads the failure log (read-only) and
   // writes a Claude-Code-ready fix. read_failures is granted ONLY here.
   "patch.diagnose": ["read_failures", "drive_write"],
+  // Rank — the SEO / search-demand analyst. Read-only research: real Google
+  // search volume + web fetch. Authoritative grant is on the subagent row (DB);
+  // this is the fallback for the built-in agent.
+  "rank.keywords": ["keyword_ideas", "web_fetch"],
   // CEO — head of the agent org (Phase 14). Can propose new agents it recommends
   // during planning; the proposal is gated (or auto-applied if the CEO is on auto).
   "ceo.plan": ["propose_agent"],
