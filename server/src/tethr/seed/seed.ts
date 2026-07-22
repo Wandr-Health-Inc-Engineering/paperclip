@@ -1002,6 +1002,9 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
     // Rank, the SEO / search-demand analyst — an org role under the CEO.
     const { seedRankAgent } = await import("./rank.js");
     const rank = await seedRankAgent(db, result.companyId);
+    // Tank, the GEO / LLM-visibility analyst — an org role under the CEO.
+    const { seedTankAgent } = await import("./tank.js");
+    const tank = await seedTankAgent(db, result.companyId);
     // Heal any factory agent created before per-subagent tool grants existed
     // (migration 0093) so a created "research" agent can actually fetch.
     const { backfillFactoryAgentTools } = await import("./backfill-tools.js");
@@ -1014,6 +1017,7 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
       patch.created ||
       filer.created ||
       rank.created ||
+      tank.created ||
       healed
     ) {
       logger.info(
@@ -1026,8 +1030,9 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
           patchAdded: patch.created,
           filerAdded: filer.created,
           rankAdded: rank.created,
+          tankAdded: tank.created,
         },
-        "[tethr] auto-seeded the clean-slate org (@tethr + CEO + Tinkr + Patch + Filer + Rank)",
+        "[tethr] auto-seeded the clean-slate org (@tethr + CEO + Tinkr + Patch + Filer + Rank + Tank)",
       );
     }
   } catch (err) {

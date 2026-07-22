@@ -411,6 +411,30 @@ agent" → `@ceo` → `propose_agent` → gated proposal → approved → `@rada
   ceiling in `llm/claude-code.ts` → `adapter_failed`. Bumped the default to 300s (still overridable
   via `TETHR_CLAUDE_CODE_TIMEOUT_MS`). The error clears on the next successful heartbeat/retry.
 
+## Marketing agents — Rank (SEO) + Tank (GEO) (2026-07-21)
+
+Two ORG ROLES under `@ceo` (org specialists, not system agents), both seeded on-request (no
+heartbeat — Mark enables schedules), $15/mo hard-stop, read-only research tools, output → 02
+Documents. Personas grounded in Wandr's actual marketing docs (`05 Marketing /Claude Marketing/`)
++ current 2025-26 GEO best practices, extracted by subagents.
+- **`@rank`** (`seed/rank.ts`) — SEO / search-demand strategist. Subagent `@rank.keywords` (key
+  `keywords` → document kind), tools `keyword_ideas` + `web_fetch`. Encodes Wandr's method: a hard
+  **catalog-fit gate** (only topics that route to a real Wandr Rx — Malarone/Azithromycin/Cipro/
+  Acetazolamide/Scopolamine…; Doxycycline/Mefloquine are comparison-only), intent/funnel scoring,
+  pillar-cluster mapping, first-person clinical-provider voice, primary-source citations. **Google
+  Ads keyword_ideas token is live/working** (verified: 361 real ideas returned).
+- **`@tank`** (`seed/tank.ts`) — GEO / LLM-visibility analyst (getting cited by ChatGPT/Perplexity/
+  AI Overviews/Claude, where Wandr is barely seen). Subagent `@tank.geo` (key `geo` → document
+  kind), tools `web_fetch` + `keyword_ideas`. Read-only **audits → scored readiness rubric + P1-P4
+  fix backlog**; it INFERS citation-likelihood from auditable signals (crawlability, answer capsules,
+  fact density, E-E-A-T/schema, freshness, third-party corroboration) and recommends a human/live-
+  engine spot-check — it has no tool to query the engines. Never touches medical-content correctness.
+- Both wired into `maybeAutoSeed` + `POST /tethr/seed` + `ALLOWLIST` + a `@tethr` routing row (SEO→
+  `@rank`, GEO→`@tank`, disambiguated). Locked by `tethr-rank.test.ts` + `tethr-tank.test.ts`.
+- **PostHog is NOT configured** (`POSTHOG_API_KEY` unset) — Tank recommends AI-referral traffic
+  tracking (chatgpt.com/perplexity.ai referrers) as the proxy metric; wiring the key later lets
+  Tank/Pulse read analytics directly.
+
 ## Live mode (Claude) & budgets
 
 - **Flip live:** set `ANTHROPIC_API_KEY` (+ optional `TETHR_CLAUDE_MODEL`, default

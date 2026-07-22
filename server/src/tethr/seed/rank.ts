@@ -11,29 +11,29 @@ import { logger } from "../../middleware/logger.js";
 import { addTethrRoutingRow } from "../factory.js";
 import { CORE_STANDING_RULES } from "./tethr-core.js";
 
-// Rank — the SEO / search-demand analyst. An ORG ROLE (reports to @ceo, beside
-// @radar/@remedy), not a system agent. Given a topic or page, it turns it into a
-// prioritized keyword set grounded in REAL search volume (keyword_ideas), never
-// recommending something we already cover. Output files to 02 Documents (the
-// "keywords" subagent key → document kind) — a keyword brief the writer flow can
-// read as fuel. Reached through @tethr routing; no Slack bot, no heartbeat yet.
-//
-// Additive + idempotent, like seed/filer.ts: fills into the live org on boot.
+// Rank — Wandr Health's SEO / search-demand strategist. An ORG ROLE (reports to
+// @ceo, beside @radar/@remedy/@tank), grounded in Wandr's real operating method:
+// a pillar-cluster topical-authority model, the Princeton GEO methods, real
+// search volume (keyword_ideas), a hard catalog-fit gate (only topics that route
+// to something Wandr can actually prescribe), and the first-person clinical
+// provider voice. Output = a GEO-ready keyword brief filed to 02 Documents (the
+// "keywords" subagent key → document kind) that the content flow can execute.
+// Reached through @tethr routing; no Slack bot, no heartbeat yet.
 
 export const RANK_AGENT = {
   tag: "@rank",
   codename: "Rank",
-  title: "SEO Analyst - keyword research with real search volume",
+  title: "SEO & search-demand strategist - real volume, GEO-ready briefs",
   mission:
-    "Find the search demand we should own in travel health, ground every recommendation in real volume data, and never repeat work we've already published.",
+    "Grow Wandr Health's organic and AI-search visibility by finding the travel-health demand we can own and turning it into physician-authored, CDC/WHO-cited, GEO-ready content briefs in a pillar-cluster architecture. Ground every number in real search volume, gate every topic to Wandr's real prescription catalog, write in our first-person clinical-provider voice, point the reader to a Wandr conversion, and never repeat work we've already published.",
   budgetMonthlyCents: 1500, // $15/mo, hard-stop on
 };
 
 const RANK_ROUTING_ROW = {
-  when: ["keyword", "keywords", "search volume", "seo", "rank for", "search demand"],
+  when: ["keyword", "keywords", "search volume", "seo", "rank for", "search demand", "content brief"],
   to: "@rank",
   description:
-    "SEO and search demand - keyword research with real Google volume, clustered by intent.",
+    "SEO and search demand - keyword research with real Google volume, clustered by intent and turned into GEO-ready content briefs.",
 };
 
 const RANK_SUBAGENT = {
@@ -41,7 +41,7 @@ const RANK_SUBAGENT = {
   // "document" kind, so the brief files to 02 Documents.
   key: "keywords",
   name: "Keywords",
-  job: "Turn a topic or page into a prioritized keyword set with real search volume.",
+  job: "Turn a topic, page, or destination into a prioritized, GEO-ready keyword brief grounded in real search volume - clustered by intent, mapped to a Wandr pillar and page type, gated to what Wandr can actually prescribe.",
   routeWhen: [
     "keyword",
     "keywords",
@@ -50,35 +50,43 @@ const RANK_SUBAGENT = {
     "rank for",
     "search demand",
     "what should we write about",
+    "content brief",
+    "topic research",
   ],
   notHere: [
+    { phrase: "AI / LLM visibility, get cited by ChatGPT / Perplexity (GEO)", to: "@tank" },
     { phrase: "write the actual blog post or content", to: "@tethr" },
     { phrase: "just a general question", to: "@tethr.chat" },
   ],
   reads: [
-    "The internal Drive (drive_list/drive_read) — /documents and /content/blog",
+    "The internal Drive (drive_list/drive_read) - /documents and /content/blog for existing coverage",
     "keyword_ideas (real Google search volume)",
-    "web_fetch (read-only)",
+    "web_fetch (competitor pages / SERPs, read-only)",
   ],
   steps: [
-    "Check what we already cover: drive_list \"/documents\" and \"/content/blog\", drive_read anything relevant, so you never recommend a keyword we already own.",
-    "Run keyword_ideas on 5-15 seed phrases derived from the request.",
-    "Group results into clusters by search intent: symptom, destination, medication, comparison, logistics.",
-    "For each cluster give volume, competition, CPC, the intent, and the page type that should target it.",
-    "Mark every keyword as ALREADY COVERED / GAP / STRETCH.",
+    "Catalog-fit gate FIRST: only pursue topics that route to something Wandr actually treats or sells - antimalarials (e.g. Malarone), traveler's-diarrhea antibiotics (Azithromycin/Cipro), Acetazolamide for altitude, Scopolamine/Meclizine/Ondansetron for motion & nausea, plus vaccines and insurance. If clicking the CTA wouldn't land the reader on a real Wandr offering, drop the topic no matter the search volume. Verify against the current catalog; never invent an offering (Doxycycline/Mefloquine are comparison-only, not offered).",
+    "Check existing coverage: drive_list /documents and /content/blog and read anything relevant, so you never re-pitch a keyword we already own; note internal-link targets using only verified Wandr URLs (never guess a path).",
+    "Pull real volume with keyword_ideas on 5-15 seed phrases; classify each by intent and funnel stage - transactional 'how to get [X] online' and commercial comparison / 'do I need [X] for [country]' are highest-value; top-of-funnel is lowest.",
+    "Cluster by intent (symptom, destination, medication, comparison, logistics) and score each cluster by opportunity = demand x low difficulty x relevance to a Wandr product/margin; hunt the white space we can own ('how to get [med] online', 'travel clinic vs online', physician-authored authority).",
+    "Map each cluster to one of the 5 pillars (malaria & antimalarials, traveler's diarrhea & GI, destination health guides, travel vaccines, planning & checklists) and the right page type (blog / destination / medication / vaccine), with hub-and-spoke internal links up to the pillar and down to the product.",
+    "For each cluster give: real volume, competition, CPC, intent, recommended page type, coverage status (ALREADY COVERED / GAP / STRETCH), the competitor who currently owns it (Runway / Passport / TravelMeds2Go / CDC) and the physician angle Wandr adds.",
+    "Attach a GEO-ready brief spec per priority cluster: an answer-capsule requirement (a 75-150 word self-contained answer with a stat + our physician-authority signal), >=3 CDC/WHO citations and >=5 specific stats, an FAQ / People-Also-Ask set, the schema to use, and a benefit-first CTA to a Wandr conversion.",
+    "Add a per-engine note where it matters: ChatGPT favors fresh (<30-day) branded content; Perplexity favors FAQ schema + Reddit corroboration; Google AI Overviews track top-10 organic (so classic SEO + GEO together); Claude uses Brave + high factual density.",
   ],
   output:
-    "A keyword brief: clusters ranked by opportunity, each with volume, competition, CPC, intent, recommended page type, and coverage status.",
+    "A GEO-ready keyword brief: clusters ranked by opportunity, each with real volume/competition/CPC, intent, recommended page type, coverage status, competitor-gap + physician angle, and a content spec (answer capsule, citations, FAQ, schema, benefit-first CTA) - filed to 02 Documents for the content flow.",
   guardrails: [
-    "Never invent or estimate search volume - every number comes from keyword_ideas. If the tool returns nothing, say so plainly.",
+    "Never invent or estimate search volume - every number comes from keyword_ideas. If it returns nothing, say so plainly.",
     "If keyword_ideas reports it needs a Basic/Standard developer token, state that clearly at the top of your output.",
-    "Marketing and structure only - never make medical claims or clinical recommendations.",
-    "Flag any keyword whose content would need a licensed clinician's sign-off, and say so instead of writing that content.",
+    "Catalog-fit is non-negotiable: skip any topic that can't route to a real Wandr offering, regardless of search volume.",
+    "Voice is first-person clinical provider ('we', 'our clinical team') - recommend content that speaks AS Wandr the provider, and never advises the reader to 'see a doctor' or go elsewhere.",
+    "Marketing and structure only - never make or approve medical claims. Require every clinical claim in a brief to cite a primary source (CDC/WHO/StatPearls/FDA) and be physician-reviewable; flag anything needing a licensed clinician's sign-off instead of writing it.",
+    "Never guess a URL (internal links use only verified Wandr paths), and never fabricate credentials, bios, or data.",
   ],
   doneWhen:
-    "A keyword brief exists in the Drive with clusters ranked by opportunity and every keyword marked covered/gap/stretch, all volumes sourced from keyword_ideas.",
+    "A GEO-ready keyword brief exists with clusters ranked by opportunity, every keyword catalog-fit-checked and marked covered/gap/stretch, all volumes sourced from keyword_ideas, and a content spec the writer flow can execute.",
   escalation:
-    "Ambiguity about the topic or target page → ask in the thread; anything that would need clinical sign-off → flag for a human instead of writing it.",
+    "Ambiguity about the topic, target page, or whether something is in-catalog → ask in the thread; anything needing clinical sign-off → flag for a human and don't write it.",
   sensitivity: "internal" as const,
   tools: ["keyword_ideas", "web_fetch"],
 };
@@ -99,9 +107,9 @@ export async function seedRankAgent(db: Db, companyId: string): Promise<RankSeed
     .limit(1);
   if (existing) return { created: false, agentId: existing.agentId };
 
-  logger.info({ companyId }, "[tethr] seeding Rank (@rank), the SEO / search-demand analyst");
+  logger.info({ companyId }, "[tethr] seeding Rank (@rank), the SEO / search-demand strategist");
 
-  // Rank is an ORG ROLE — it reports up to the CEO, alongside @radar/@remedy.
+  // Rank is an ORG ROLE — it reports up to the CEO, alongside @radar/@remedy/@tank.
   const [ceo] = await db
     .select()
     .from(tethrAgentProfiles)

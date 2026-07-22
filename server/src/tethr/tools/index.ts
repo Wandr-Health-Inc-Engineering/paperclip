@@ -68,6 +68,9 @@ const ALLOWLIST: Record<string, string[]> = {
   // search volume + web fetch. Authoritative grant is on the subagent row (DB);
   // this is the fallback for the built-in agent.
   "rank.keywords": ["keyword_ideas", "web_fetch"],
+  // Tank — the GEO / LLM-visibility analyst. Read-only: fetch live pages/robots/
+  // schema/SERPs (web_fetch) + the real questions to optimize for (keyword_ideas).
+  "tank.geo": ["web_fetch", "keyword_ideas"],
   // CEO — head of the agent org (Phase 14). Can propose new agents it recommends
   // during planning; the proposal is gated (or auto-applied if the CEO is on auto).
   "ceo.plan": ["propose_agent"],
