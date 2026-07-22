@@ -29,14 +29,14 @@ export const RANK_AGENT = {
   budgetMonthlyCents: 1500, // $15/mo, hard-stop on
 };
 
-const RANK_ROUTING_ROW = {
+export const RANK_ROUTING_ROW = {
   when: ["keyword", "keywords", "search volume", "seo", "rank for", "search demand", "content brief"],
   to: "@rank",
   description:
     "SEO and search demand - keyword research with real Google volume, clustered by intent and turned into GEO-ready content briefs.",
 };
 
-const RANK_SUBAGENT = {
+export const RANK_SUBAGENT = {
   // key "keywords" is load-bearing: KIND_BY_SUBAGENT_KEY maps it to the
   // "document" kind, so the brief files to 02 Documents.
   key: "keywords",
@@ -82,6 +82,7 @@ const RANK_SUBAGENT = {
     "Voice is first-person clinical provider ('we', 'our clinical team') - recommend content that speaks AS Wandr the provider, and never advises the reader to 'see a doctor' or go elsewhere.",
     "Marketing and structure only - never make or approve medical claims. Require every clinical claim in a brief to cite a primary source (CDC/WHO/StatPearls/FDA) and be physician-reviewable; flag anything needing a licensed clinician's sign-off instead of writing it.",
     "Never guess a URL (internal links use only verified Wandr paths), and never fabricate credentials, bios, or data.",
+    "Keep each brief focused enough to finish in one run: cover the requested topic or cluster thoroughly, and if handed a huge scope, prioritize the top clusters and list the rest as follow-ups rather than trying to cover everything at once.",
   ],
   doneWhen:
     "A GEO-ready keyword brief exists with clusters ranked by opportunity, every keyword catalog-fit-checked and marked covered/gap/stretch, all volumes sourced from keyword_ideas, and a content spec the writer flow can execute.",

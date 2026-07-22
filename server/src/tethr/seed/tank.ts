@@ -34,7 +34,7 @@ export const TANK_AGENT = {
   budgetMonthlyCents: 1500, // $15/mo, hard-stop on
 };
 
-const TANK_ROUTING_ROW = {
+export const TANK_ROUTING_ROW = {
   when: [
     "geo",
     "llm visibility",
@@ -55,7 +55,7 @@ const TANK_ROUTING_ROW = {
     "LLM / AI-search visibility (GEO) - audits and fixes to get Wandr cited by ChatGPT, Perplexity, Google AI Overviews, and Claude.",
 };
 
-const TANK_SUBAGENT = {
+export const TANK_SUBAGENT = {
   // key "geo" is load-bearing: KIND_BY_SUBAGENT_KEY maps it to the "document"
   // kind, so the audit files to 02 Documents.
   key: "geo",
@@ -102,6 +102,7 @@ const TANK_SUBAGENT = {
     "Never assert 'Wandr is (or isn't) cited in ChatGPT/Perplexity' as observed fact - you infer citation-likelihood from auditable on-page and off-page signals, and you recommend a human/live-engine spot-check for true verification (there is no tool here that queries the engines).",
     "Every clinical claim you recommend surfacing must cite a primary source (CDC/WHO/NIH/FDA) and be physician-reviewable; recommend content that speaks AS Wandr the provider (first-person clinical voice), never 'see your doctor'.",
     "Ground recommendations in evidence, not hype: skip overhyped non-levers (llms.txt has no measured citation lift), optimize per-engine (a win on one rarely transfers), and remember GEO amplifies strong SEO for health - it doesn't replace ranking.",
+    "Keep each audit focused enough to finish in one run: if pointed at a large site, audit the highest-priority pages/templates first (home, top destination & medication pages, the FAQ) and list the rest as a follow-up batch - never attempt an exhaustive crawl in a single pass.",
     "Minimize em-dashes; be specific and page-level - every fix names the page, the change, and the source.",
   ],
   doneWhen:
