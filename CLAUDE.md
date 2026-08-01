@@ -208,12 +208,20 @@ runbook: `tasks/phase-1.md`; the account-linked steps are gate **A1** in `MANUAL
   first visit creates the admin login (better-auth, stored in Postgres). Fallback for the
   shakedown: `PAPERCLIP_DEPLOYMENT_MODE=local_trusted`. Real multi-user logins land in Phase 9.
 
-## Slack (#scout)
+## Slack (#tethr)
 
 Both directions run through `server/src/tethr/`, gated on env so local dev stays offline.
 
+**One channel: `#tethr` (`C0BGK29482J`, private — the bot must be invited).** Consolidated
+2026-07-24 (Mark's call): everything Tethr says in Slack lands here — agent recommendations,
+gated-approval nudges, overseer DMs' channel posts, the weekly spend digest, and the desktop
+launcher's server up/down posts. `#scout` (`C0AE02FJR5Y`) is retired as a Tethr target; older
+docs/phase files below still say "#scout" where they describe the loop's *shape* — the channel
+id is the only thing that moved. The env knob keeps its name (`SLACK_SCOUT_CHANNEL`) so existing
+deploys don't break; the code default is `DEFAULT_TETHR_CHANNEL` in `slack.ts`.
+
 - **Outbound:** the `Notifier` `slack` channel (`notify.ts`) posts real `chat.postMessage`
-  when `SLACK_BOT_TOKEN` is set, else logs. Default channel `C0AE02FJR5Y` (override
+  when `SLACK_BOT_TOKEN` is set, else logs. Default channel **#tethr** `C0BGK29482J` (override
   `SLACK_SCOUT_CHANNEL`). Attach Block Kit via a notification's `slackBlocks`.
 - **Recommendation format** (`recommendation.ts`): `buildRecommendation()` → `{ text, body,
   blocks }`. The standard agent post — what's wrong / why it matters / affected

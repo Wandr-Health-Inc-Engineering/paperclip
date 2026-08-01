@@ -27,8 +27,12 @@ import { setThrottle } from "./throttle.js";
 
 const SLACK_API = "https://slack.com/api";
 
-/** Default #scout channel from the bundle. Override with SLACK_SCOUT_CHANNEL. */
-export const DEFAULT_SCOUT_CHANNEL = "C0AE02FJR5Y";
+/** The one channel all Tethr traffic lands in: **#tethr** (private; the bot is a
+ * member). Was #scout (`C0AE02FJR5Y`) through Phase 14 — consolidated 2026-07-24
+ * on Mark's call, so agent recommendations, approval nudges, digests, and the
+ * launcher's up/down posts all share one place. Override with SLACK_SCOUT_CHANNEL
+ * (env name kept for continuity with existing deploys). */
+export const DEFAULT_TETHR_CHANNEL = "C0BGK29482J";
 
 /** Legacy company-name fallback (pre-Phase-11 orgs). */
 const LEGACY_COMPANY_NAME = "Wandr Growth";
@@ -50,7 +54,7 @@ export function slackConfigured(): boolean {
 }
 
 export function slackChannel(): string {
-  return process.env.SLACK_SCOUT_CHANNEL?.trim() || DEFAULT_SCOUT_CHANNEL;
+  return process.env.SLACK_SCOUT_CHANNEL?.trim() || DEFAULT_TETHR_CHANNEL;
 }
 
 export interface PostMessageInput {
