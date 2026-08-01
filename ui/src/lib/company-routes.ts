@@ -19,6 +19,17 @@ const BOARD_ROUTE_ROOTS = new Set([
   "u",
   "design-guide",
   "search",
+  // Tethr operate screens (see DECISIONS.md "Core changes")
+  "console",
+  "company-view",
+  "queue",
+  "drive",
+  "runs",
+  "budgets",
+  "audit",
+  "crew",
+  "tethr-settings",
+  "memory",
 ]);
 
 const GLOBAL_ROUTE_ROOTS = new Set(["auth", "invite", "board-claim", "cli-auth", "docs", "instance"]);

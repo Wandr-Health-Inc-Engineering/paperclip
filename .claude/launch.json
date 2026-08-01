@@ -1,0 +1,25 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "tethr-ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "ui",
+      "port": 5173
+    },
+    {
+      "name": "tethr-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
+      "port": 5173
+    },
+    {
+      "name": "tethr-site",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
+      "cwd": "tethr-site",
+      "port": 4321
+    }
+  ]
+}

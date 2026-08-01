@@ -1,0 +1,3 @@
+ALTER TABLE "tethr_outputs" ADD COLUMN "revision_of_id" uuid;--> statement-breakpoint
+ALTER TABLE "tethr_outputs" ADD COLUMN "revision_number" integer DEFAULT 1 NOT NULL;--> statement-breakpoint
+ALTER TABLE "tethr_outputs" ADD CONSTRAINT "tethr_outputs_revision_of_id_tethr_outputs_id_fk" FOREIGN KEY ("revision_of_id") REFERENCES "public"."tethr_outputs"("id") ON DELETE set null ON UPDATE no action;

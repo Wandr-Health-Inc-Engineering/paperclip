@@ -24,6 +24,8 @@ import { approvalRoutes } from "./routes/approvals.js";
 import { secretRoutes } from "./routes/secrets.js";
 import { costRoutes } from "./routes/costs.js";
 import { activityRoutes } from "./routes/activity.js";
+import { tethrRoutes } from "./routes/tethr.js";
+import { initTethr } from "./tethr/index.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { userProfileRoutes } from "./routes/user-profiles.js";
 import { sidebarBadgeRoutes } from "./routes/sidebar-badges.js";
@@ -205,6 +207,9 @@ export async function createApp(
   api.use(secretRoutes(db));
   api.use(costRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(activityRoutes(db));
+  // Tethr add-on layer (see DECISIONS.md "Core changes"): adapter + routes.
+  initTethr(db);
+  api.use(tethrRoutes(db));
   api.use(dashboardRoutes(db));
   api.use(userProfileRoutes(db));
   api.use(sidebarBadgeRoutes(db));

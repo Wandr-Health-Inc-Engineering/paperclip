@@ -1,0 +1,8 @@
+{
+  "_comment": "Pulse (Phase 8) config. Replace every FILL_ME with real PostHog event names from project 361561 before enabling Pulse. Marketing-analytics events ONLY — anything that could carry patient/clinical context is rejected by the PHI denylist in tools/posthog.ts. Pulse stays inert until the placeholders are gone.",
+  "errorEvent": "$exception",
+  "criticalEvents": ["FILL_ME_e.g_checkout_started", "FILL_ME_e.g_lead_submitted"],
+  "funnels": [
+    { "step1": "FILL_ME_e.g_pageview", "step2": "FILL_ME_e.g_consult_booked" }
+  ]
+}

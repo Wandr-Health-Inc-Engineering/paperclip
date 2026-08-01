@@ -1,0 +1,2 @@
+ALTER TABLE "tethr_route_runs" ADD COLUMN "source_key" text;--> statement-breakpoint
+CREATE INDEX "tethr_route_runs_company_source_key_idx" ON "tethr_route_runs" USING btree ("company_id","source_key","created_at");

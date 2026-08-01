@@ -1,0 +1,419 @@
+import { eq } from "drizzle-orm";
+import type { Db } from "@paperclipai/db";
+import { agents, tethrSubagents, type TethrRouteHop } from "@paperclipai/db";
+import type { TethrOutputKind, TethrSensitivity } from "@paperclipai/shared";
+import { getTethrLLMProvider } from "./llm/index.js";
+import type { LLMImageAttachment, LLMUsage } from "./llm/types.js";
+import { gatingService } from "./gating.js";
+import { memoryService } from "./memory.js";
+import { MIRROR_FOLDERS } from "./mirror.js";
+import { contentPreview, wordCountLabel } from "./preview.js";
+import { toolsetForSubagent, type TethrToolContext } from "./tools/index.js";
+
+// The "do" step of classify → route → do. Renders the subagent's fine-tuned
+// spec as the system prompt, generates the work product, and hands it to the
+// gating service (which decides hard-gate vs immediate publish).
+
+const KIND_BY_SUBAGENT_KEY: Record<string, TethrOutputKind> = {
+  blog: "blog_draft",
+  geo: "document",
+  keywords: "document",
+  brief: "brief",
+  draft: "itinerary",
+  health: "itinerary",
+  leads: "lead_digest",
+  reply: "reply_draft",
+  news: "news_digest",
+  analyze: "analytics_report",
+  bids: "ads_recommendation",
+  copy: "ads_recommendation",
+  negatives: "ads_recommendation",
+  guardrails: "analytics_report",
+  modeler: "analytics_report",
+  reporter: "analytics_report",
+  press: "press_release",
+  pickup: "press_release",
+  announce: "press_release",
+  icp: "icp_profile",
+  messaging: "messaging",
+  brand: "document",
+  // @tethr, the coordinator (Phase 12): chat answers inline into the
+  // conversation; plans are internal briefs that gate to the Queue.
+  chat: "answer",
+  plan: "brief",
+  // @tinkr, the org mechanic (Phase 12): staged agent modifications that gate
+  // to the Queue and apply on approval.
+  change: "org_change",
+  // @patch, the debug agent (Phase 12): a fix report, internal → auto-published.
+  diagnose: "document",
+  // @filer, the archivist (Phase 15): staged file archives (soft deletes) that
+  // gate to the Queue and apply on approval. Never a hard delete.
+  archive: "drive_change",
+};
+
+// Per-subagent agentic turn budget. Chat stays snappy; plan gets room to
+// research before writing. Everything else keeps the provider default.
+const MAX_TURNS_BY_SUBAGENT_KEY: Record<string, number> = {
+  chat: 8,
+  plan: 12,
+};
+
+export interface SubagentJobInput {
+  companyId: string;
+  agentId: string;
+  agentTag: string;
+  subagent: typeof tethrSubagents.$inferSelect;
+  request: string;
+  standingRules: string[];
+  routeRunId?: string | null;
+  heartbeatRunId?: string | null;
+  /** Records tool hops on the route run as they happen. */
+  onHop?: (hop: TethrRouteHop) => Promise<void>;
+  /** Extra system-prompt context (revision notes, prior sequence results). */
+  extraContext?: string;
+  /** Images shared with the request (e.g. Slack screenshots) for the model. */
+  attachments?: LLMImageAttachment[];
+  /** Revision lineage when re-running after "request changes". */
+  revisionOfId?: string | null;
+  revisionNumber?: number;
+}
+
+export interface SubagentJobResult {
+  outputId: string;
+  title: string;
+  status: string;
+  sensitivity: TethrSensitivity;
+  kind: TethrOutputKind;
+  gated: boolean;
+  summary: string;
+  /** The full generated body — lets routing inline chat answers (kind "answer"). */
+  body: string;
+  /** Set when the agent called `escalate` — a question for its human overseer. */
+  escalation?: { note: string; urgency: string };
+  usage: LLMUsage;
+}
+
+export interface ReviseOutputInput {
+  companyId: string;
+  outputId: string;
+  /** Reviewer note; falls back to the approval's decision note. */
+  note?: string;
+}
+
+export function buildSubagentSystemPrompt(
+  subagent: typeof tethrSubagents.$inferSelect,
+  standingRules: string[],
+  memories: string[],
+): string {
+  const lines = [
+    `You are ${subagent.tag} (${subagent.name}), a specialist subagent at Wandr Health.`,
+    `Job: ${subagent.job}`,
+  ];
+  if (subagent.reads.length) lines.push(`You read: ${subagent.reads.join("; ")}`);
+  if (subagent.steps.length)
+    lines.push(`Workflow:\n${subagent.steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`);
+  if (subagent.output) lines.push(`Output contract: ${subagent.output}`);
+  if (subagent.guardrails.length)
+    lines.push(`Guardrails (hard rules):\n- ${subagent.guardrails.join("\n- ")}`);
+  if (standingRules.length)
+    lines.push(`Company standing rules:\n- ${standingRules.join("\n- ")}`);
+  if (memories.length) lines.push(`Recall:\n- ${memories.join("\n- ")}`);
+  if (subagent.doneWhen) lines.push(`Done when: ${subagent.doneWhen}`);
+  return lines.join("\n\n");
+}
+
+export function workerService(db: Db) {
+  const gating = gatingService(db);
+  const memory = memoryService(db);
+
+  async function runSubagentJob(input: SubagentJobInput): Promise<SubagentJobResult> {
+    const provider = getTethrLLMProvider();
+    const recalled = await memory.recall(input.companyId, input.agentId, undefined, 6);
+    let system = buildSubagentSystemPrompt(
+      input.subagent,
+      input.standingRules,
+      recalled.map((m) => m.content),
+    );
+    if (input.extraContext) {
+      system += `\n\nAdditional context for this run:\n${input.extraContext}`;
+    }
+    const kind = KIND_BY_SUBAGENT_KEY[input.subagent.key] ?? "document";
+    // Deliverables land in the shared team workspace on approval — tell the
+    // agent how to file them (destination folder + format directives).
+    if (MIRROR_FOLDERS[kind]) {
+      system += [
+        "\n\nFiling: when approved, this deliverable is filed into the shared team workspace",
+        `(default folder: "${MIRROR_FOLDERS[kind]}"). To file it elsewhere or in another format,`,
+        "start your response with directives, each on its own line, then a blank line:",
+        "[file-under: <folder name, e.g. 07 Competitor Analysis>]",
+        "[format: md|pdf|pptx|docx]",
+        "Omit them to accept the defaults. Choose folders a business partner would find sensible.",
+      ].join("\n");
+    }
+
+    // The subagent's hands: its allowlisted tools, every call recorded as a
+    // hop so the Console shows the work, not just the result.
+    const toolCtx: TethrToolContext = {
+      db,
+      companyId: input.companyId,
+      agentId: input.agentId,
+      agentTag: input.agentTag,
+      subagentTag: input.subagent.tag,
+    };
+    const tools = toolsetForSubagent(input.subagent);
+    const toolByName = new Map(tools.map((t) => [t.name, t]));
+
+    const generated = await provider.runAgentic({
+      system,
+      prompt: input.request,
+      kind,
+      maxTurns: MAX_TURNS_BY_SUBAGENT_KEY[input.subagent.key],
+      attachments: input.attachments,
+      context: { agentTag: input.agentTag, subagentTag: input.subagent.tag },
+      tools: tools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+      })),
+      callTool: async (name, args) => {
+        const tool = toolByName.get(name);
+        if (!tool) {
+          return {
+            output: `Unknown or disallowed tool: ${name}. Available: ${tools.map((t) => t.name).join(", ")}`,
+            summary: `blocked: ${name}`,
+          };
+        }
+        return tool.execute(toolCtx, args);
+      },
+      onToolEvent: async (event) => {
+        await input.onHop?.({
+          layer: "tool",
+          actorTag: input.subagent.tag,
+          decision: event.name,
+          reason: event.summary,
+          at: new Date().toISOString(),
+        });
+      },
+    });
+
+    // Did the agent raise a hand? The escalate tool-call carries the question;
+    // routing/Slack tag the overseer in the originating thread.
+    const escalateCall = generated.toolCalls.find((t) => t.name === "escalate");
+    const escalation = escalateCall
+      ? {
+          note: String((escalateCall.input as Record<string, unknown>)?.question ?? "").slice(0, 500),
+          urgency: String((escalateCall.input as Record<string, unknown>)?.urgency ?? "normal"),
+        }
+      : undefined;
+
+    let sensitivity = input.subagent.sensitivity as TethrSensitivity;
+    let effectiveKind = kind;
+    let title = generated.title;
+    let body = generated.body;
+    let changeMeta: Record<string, unknown> = {};
+
+    // Shared-workspace filing (phase 12): agents may lead their deliverable
+    // with [file-under: …] / [format: …] directives. Parse + strip them; the
+    // values ride in meta so the overseer approves the destination along with
+    // the content, and the mirror files it there on publish.
+    let mirrorMeta: Record<string, unknown> = {};
+    if (kind !== "answer" && kind !== "org_change") {
+      const { parseMirrorDirectives, sanitizeFolderHint } = await import("./mirror.js");
+      const parsed = parseMirrorDirectives(body);
+      const folder = sanitizeFolderHint(parsed.folder);
+      if (folder || parsed.format) {
+        body = parsed.body;
+        mirrorMeta = {
+          ...(folder ? { mirrorFolder: folder } : {}),
+          ...(parsed.format ? { mirrorFormat: parsed.format } : {}),
+        };
+      }
+    }
+
+    // Tinkr (kind org_change): the staged change — not the LLM prose — is the
+    // work product. Re-validate the last stage_org_change call and render a
+    // deterministic before→after diff as the gated body. If nothing valid was
+    // staged (a clarifying question, a refused change), answer inline instead
+    // of littering the Queue.
+    if (kind === "org_change") {
+      const { validateOrgChange, computeBefore, renderChangeBody, changeSummary } =
+        await import("./org-changes.js");
+      const stageCall = [...generated.toolCalls].reverse().find((t) => t.name === "stage_org_change");
+      const validated = stageCall
+        ? await validateOrgChange(db, input.companyId, stageCall.input)
+        : null;
+      if (validated?.ok && validated.spec && validated.target) {
+        const before = await computeBefore(db, input.companyId, validated.spec);
+        title = `Org change: ${changeSummary(validated.spec, before)}`;
+        body = renderChangeBody(validated.spec, before, validated.target);
+        changeMeta = { change: validated.spec };
+        // A budget change is a financial decision — route it through the SPEND
+        // gate, not the lighter org gate: it hits the financial approval track
+        // and DMs the exec overseer. Structural defense-in-depth on top of the
+        // update_budget auto-approve carve-out — "spend" can never auto-approve
+        // (only "org" can), so a budget cap can never move without a human.
+        if (validated.spec.op === "update_budget") sensitivity = "spend";
+      } else {
+        // No applicable change — this is conversation, not an org mutation.
+        effectiveKind = "answer";
+        sensitivity = "safe";
+      }
+    }
+
+    // Filer (kind drive_change): the staged archive — not the LLM prose — is
+    // the work product. Re-validate the LAST stage_file_archive call and render
+    // the deterministic will-archive body. Nothing valid staged → answer inline.
+    if (kind === "drive_change") {
+      const { validateDriveChange, renderDriveChangeBody, driveChangeSummary } =
+        await import("./drive-changes.js");
+      const stageCall = [...generated.toolCalls].reverse().find((t) => t.name === "stage_file_archive");
+      const validated = stageCall
+        ? await validateDriveChange(db, input.companyId, stageCall.input)
+        : null;
+      if (validated?.ok && validated.spec && validated.target) {
+        title = `Archive file: ${validated.target.name}`;
+        body = renderDriveChangeBody(validated.spec, validated.target);
+        changeMeta = { driveChange: validated.spec, driveChangeSummary: driveChangeSummary(validated.spec, validated.target) };
+        // Structural defense-in-depth: only "org" can ever auto-approve, so a
+        // "destructive" output always waits for a human — even if @filer is
+        // someday flipped to auto.
+        sensitivity = "destructive";
+      } else {
+        // No valid archive staged — conversation, not a deletion.
+        effectiveKind = "answer";
+        sensitivity = "safe";
+      }
+    }
+    const output = await gating.createOutput({
+      companyId: input.companyId,
+      agentId: input.agentId,
+      agentTag: input.agentTag,
+      subagentId: input.subagent.id,
+      routeRunId: input.routeRunId ?? null,
+      heartbeatRunId: input.heartbeatRunId ?? null,
+      kind: effectiveKind,
+      title,
+      body,
+      sensitivity,
+      meta: {
+        request: input.request.slice(0, 500),
+        provider: provider.id,
+        toolCalls: generated.toolCalls.map((t) => t.summary),
+        ...mirrorMeta,
+        ...changeMeta,
+      },
+      revisionOfId: input.revisionOfId ?? null,
+      revisionNumber: input.revisionNumber ?? 1,
+    });
+    if (!output) throw new Error("Output creation failed");
+
+    const now = new Date();
+    await db
+      .update(tethrSubagents)
+      .set({ lastRunAt: now, updatedAt: now })
+      .where(eq(tethrSubagents.id, input.subagent.id));
+    await db
+      .update(agents)
+      .set({ lastHeartbeatAt: now, updatedAt: now })
+      .where(eq(agents.id, input.agentId));
+
+    const gated = output.status === "gated";
+    // Chat answers are ephemeral conversation, not org history — recording them
+    // would make recent chatter bleed into future recall (recency-ordered).
+    // They're already audit-logged to the Drive chat-log; skip the memory.
+    if (effectiveKind !== "answer") {
+      const memoryNote = gated
+        ? `${input.subagent.tag} staged "${output.title}" for human review (${sensitivity}).`
+        : `${input.subagent.tag} produced "${output.title}".`;
+      await memory.record({
+        companyId: input.companyId,
+        agentId: input.agentId,
+        kind: "history",
+        content: memoryNote,
+        source: input.subagent.tag,
+      });
+    }
+
+    // A short body preview rides along in the summary so a human can
+    // sanity-check the content from Slack/Console without opening the Drive.
+    // org_change/drive_change bodies are already deterministic — no preview.
+    const preview =
+      effectiveKind === "answer" || effectiveKind === "org_change" || effectiveKind === "drive_change"
+        ? null
+        : contentPreview(output.body);
+    const withPreview = (lead: string) =>
+      preview ? `${lead.replace(/\.$/, "")} (${wordCountLabel(preview.wordCount)}).\n${preview.snippet}` : lead;
+
+    return {
+      outputId: output.id,
+      title: output.title,
+      status: output.status,
+      sensitivity,
+      kind: effectiveKind,
+      gated,
+      summary: gated
+        ? effectiveKind === "org_change"
+          ? `${output.title} — waiting for your approval in the Queue. Nothing is changed until you approve.`
+          : effectiveKind === "drive_change"
+            ? `${output.title} — moving to the archive folder. Reply "approve" to archive it or "reject" to keep it — nothing moves until you confirm.`
+            : withPreview(`${output.title} — staged in the Queue for human review (${sensitivity}-sensitive).`)
+        : effectiveKind === "answer"
+          ? `${input.subagent.tag} answered.`
+          : withPreview(`${output.title} — published to the Drive.`),
+      body: output.body,
+      escalation,
+      usage: generated.usage,
+    };
+  }
+
+  /**
+   * The revision loop: after "request changes", re-run the producing
+   * subagent with the original draft + the reviewer's note, producing v(n+1)
+   * linked to the original through the same gate.
+   */
+  async function reviseOutput(input: ReviseOutputInput): Promise<SubagentJobResult> {
+    const original = await gating.getOutput(input.companyId, input.outputId);
+    if (!original) throw new Error("Output not found");
+    if (!original.subagentId) throw new Error("Output has no producing subagent");
+    const [subagent] = await db
+      .select()
+      .from(tethrSubagents)
+      .where(eq(tethrSubagents.id, original.subagentId));
+    if (!subagent) throw new Error("Producing subagent not found");
+
+    let note = input.note ?? null;
+    if (!note && original.approvalId) {
+      const { approvals } = await import("@paperclipai/db");
+      const [approval] = await db
+        .select()
+        .from(approvals)
+        .where(eq(approvals.id, original.approvalId));
+      note = approval?.decisionNote ?? null;
+    }
+
+    const meta = original.meta as Record<string, unknown>;
+    const agentTag = String(meta.agentTag ?? subagent.tag.split(".")[0]);
+    const originalRequest = String(meta.request ?? original.title);
+
+    return runSubagentJob({
+      companyId: input.companyId,
+      agentId: original.agentId,
+      agentTag,
+      subagent,
+      request: `Revise your previous draft per the reviewer's note. Original request: ${originalRequest}`,
+      standingRules: [],
+      revisionOfId: original.id,
+      revisionNumber: (original.revisionNumber ?? 1) + 1,
+      extraContext: [
+        `You are revising a draft a human reviewer sent back.`,
+        `Reviewer's note: ${note ?? "(no note recorded — tighten and improve the draft)"}`,
+        `Your previous draft (v${original.revisionNumber ?? 1}):\n---\n${original.body.slice(0, 4000)}\n---`,
+        `Address the note directly. Keep what was right.`,
+      ].join("\n\n"),
+    });
+  }
+
+  return { runSubagentJob, reviseOutput };
+}
+
+export type WorkerService = ReturnType<typeof workerService>;

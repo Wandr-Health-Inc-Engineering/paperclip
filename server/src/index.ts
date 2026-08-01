@@ -39,6 +39,7 @@ import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-sh
 import { buildRuntimeApiCandidateUrls, choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
+import { maybeAutoSeed } from "./tethr/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
@@ -618,6 +619,8 @@ export async function startServer(): Promise<StartedServer> {
     resolveSession,
     pluginWorkerManager,
   });
+  // Tethr: seed the Wandr Growth company on first boot (see DECISIONS.md).
+  void maybeAutoSeed(db as any);
   const server = createServer(app as unknown as Parameters<typeof createServer>[0]);
 
   // Increase keep-alive timeouts to safely outlive default idle timeouts

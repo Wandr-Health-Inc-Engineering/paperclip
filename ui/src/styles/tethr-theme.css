@@ -1,0 +1,482 @@
+@import url("https://fonts.googleapis.com/css2?family=Urbanist:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+
+/*
+ * tethr brand theme — overrides layered on top of index.css.
+ *
+ * Imported AFTER index.css in main.tsx so it wins the cascade for any
+ * tokens it redefines. Upstream changes to index.css merge cleanly
+ * because we never edit it directly.
+ *
+ * See BRANDING.md at the repo root for the post-upstream-merge checklist.
+ */
+
+/* Fonts and radius as plain CSS variables — not @theme inline — so the
+   cascade applies at runtime regardless of build pipeline. */
+:root {
+  --font-sans:
+    "Urbanist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /* Slight softening — sharp enough to feel deliberate, not harsh. */
+  --radius: 0.5rem;
+}
+
+/* ===== Light mode: pure black + white, hairline grey only for dividers ===== */
+:root {
+  /* Brand palette — direct hex, not oklch, so the values match the kit
+     exactly when sampled. */
+  --background: #ffffff;
+  --foreground: #000000;
+
+  --card: #ffffff;
+  --card-foreground: #000000;
+  --popover: #ffffff;
+  --popover-foreground: #000000;
+
+  --primary: #000000;
+  --primary-foreground: #ffffff;
+
+  --secondary: #f2f2f2;
+  --secondary-foreground: #000000;
+
+  --muted: #f2f2f2;
+  --muted-foreground: #5c5c5c;
+
+  --accent: #f2f2f2;
+  --accent-foreground: #000000;
+
+  --border: #1a1a1a;
+  --input: #c9c9c9;
+  --ring: #000000;
+
+  /* Sidebar mirrors the page — same restraint. */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #000000;
+  --sidebar-primary: #000000;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f2f2f2;
+  --sidebar-accent-foreground: #000000;
+  --sidebar-border: #1a1a1a;
+  --sidebar-ring: #000000;
+}
+
+/* ===== Dark mode: pure black + white, inverted ===== */
+.dark {
+  --background: #000000;
+  --foreground: #ffffff;
+
+  --card: #1a1a1a;
+  --card-foreground: #ffffff;
+  --popover: #1a1a1a;
+  --popover-foreground: #ffffff;
+
+  --primary: #ffffff;
+  --primary-foreground: #000000;
+
+  --secondary: #1a1a1a;
+  --secondary-foreground: #ffffff;
+
+  --muted: #1a1a1a;
+  --muted-foreground: #c9c9c9;
+
+  --accent: #1a1a1a;
+  --accent-foreground: #ffffff;
+
+  --border: #d4d4d4;
+  --input: #5c5c5c;
+  --ring: #ffffff;
+
+  --sidebar: #000000;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: #1a1a1a;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #d4d4d4;
+  --sidebar-ring: #ffffff;
+}
+
+/* ===== Typography — apply the brand font everywhere via inheritance.
+   Weight 600 gives body text enough presence in Urbanist; weight 500
+   was too thin against the geometric letterforms. ===== */
+html,
+body {
+  font-family: var(--font-sans);
+}
+
+body {
+  font-weight: 600;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-sans);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+h1 {
+  letter-spacing: -0.025em;
+}
+
+code,
+pre,
+kbd,
+samp,
+[class*="font-mono"] {
+  font-family: var(--font-mono);
+}
+
+/* Override Tailwind's font-medium / font-normal where they fight Urbanist's
+   weight choices. Keeps the brand voice at body weight unless something
+   explicitly asks for bolder. */
+.font-normal {
+  font-weight: 500 !important;
+}
+.font-medium {
+  font-weight: 600 !important;
+}
+
+/* ===== Borders — beef up the slot frames so cards and panels read like
+   intentional containers, not afterthoughts. ===== */
+
+[data-slot="card"] {
+  border-width: 2px;
+  border-color: var(--foreground);
+  box-shadow: none;
+}
+
+[data-slot="popover-content"],
+[data-slot="dialog-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="alert-dialog-content"] {
+  border-width: 2px;
+  border-color: var(--foreground);
+}
+
+[data-slot="badge"] {
+  border-radius: calc(var(--radius) - 4px);
+}
+
+/* Sidebar divider — bumped from 1px to 2px so the shell columns feel
+   architected. */
+aside.border-r {
+  border-right-width: 2px;
+  border-color: var(--border);
+}
+
+/* ===== Motion — framer-style entrance for the app shell on first load.
+   No JS dep needed; pure CSS keyframes with reduced-motion respect.
+   Animations target the major regions independently so the eye picks up
+   layered movement instead of one block sliding. ===== */
+
+@keyframes tethr-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(6px);
+  }
+  60% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes tethr-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes tethr-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+aside {
+  animation: tethr-slide-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+main,
+[role="main"] {
+  animation: tethr-rise 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 80ms;
+}
+
+[data-slot="card"],
+[data-slot="dialog-content"],
+[data-slot="popover-content"] {
+  animation: tethr-rise 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Stagger card entries when a list of them mounts together. */
+[data-slot="card"]:nth-child(1) { animation-delay: 60ms; }
+[data-slot="card"]:nth-child(2) { animation-delay: 120ms; }
+[data-slot="card"]:nth-child(3) { animation-delay: 180ms; }
+[data-slot="card"]:nth-child(4) { animation-delay: 240ms; }
+[data-slot="card"]:nth-child(5) { animation-delay: 300ms; }
+
+button,
+a[role="button"] {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    transform 120ms ease;
+}
+
+button:active,
+a[role="button"]:active {
+  transform: translateY(1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  aside,
+  main,
+  [role="main"],
+  [data-slot="card"],
+  [data-slot="dialog-content"],
+  [data-slot="popover-content"],
+  button,
+  a[role="button"] {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ===== Brand accent — remap upstream cyan "live / running" colour to
+   wandr blue (#2D63B5 from travelwithwandr.com). Override Tailwind v4's
+   --color-cyan-* theme tokens directly so every utility — including
+   arbitrary-opacity variants like bg-cyan-500/[0.04] — picks up the new
+   colour via color-mix(). Far more robust than overriding individual
+   utility classes. ===== */
+
+:root {
+  /* Wandr blue, full saturation -> graded lighter, mirroring how tailwind
+     palettes step. The 500 step is the canonical wandr blue. */
+  --color-cyan-50:  oklch(96.5% 0.02 250);
+  --color-cyan-100: oklch(93%   0.04 250);
+  --color-cyan-200: oklch(86%   0.07 250);
+  --color-cyan-300: oklch(78%   0.10 250);
+  --color-cyan-400: oklch(66%   0.13 250);
+  --color-cyan-500: oklch(50%   0.15 256);  /* ≈ #2D63B5 */
+  --color-cyan-600: oklch(44%   0.15 256);
+  --color-cyan-700: oklch(38%   0.14 256);
+  --color-cyan-800: oklch(32%   0.12 256);
+  --color-cyan-900: oklch(26%   0.10 256);
+  --color-cyan-950: oklch(20%   0.07 256);
+}
+
+.dark {
+  /* In dark mode we want the accent to read as light-blue / near-white,
+     so the gradient runs inverted — 500 is a pale wandr blue. */
+  --color-cyan-50:  oklch(96.5% 0.02 250);
+  --color-cyan-100: oklch(93%   0.03 250);
+  --color-cyan-200: oklch(88%   0.05 250);
+  --color-cyan-300: oklch(83%   0.07 250);
+  --color-cyan-400: oklch(80%   0.08 250);
+  --color-cyan-500: oklch(82%   0.07 250);  /* pale wandr blue */
+  --color-cyan-600: oklch(75%   0.09 250);
+  --color-cyan-700: oklch(68%   0.10 250);
+  --color-cyan-800: oklch(60%   0.11 250);
+  --color-cyan-900: oklch(52%   0.12 256);
+  --color-cyan-950: oklch(44%   0.13 256);
+}
+
+/* The "Live now" card in ActiveAgentsPanel uses a literal rgba shadow
+   (rgba(6,182,212,…)) baked into a Tailwind arbitrary-value utility —
+   the token override above can't reach it. Target the card by the
+   classes that mark it active and replace the shadow with a wandr-blue
+   glow. The shadow utility itself stays in the class list (harmless),
+   our rule wins via specificity + !important. */
+.shadow-\[0_16px_40px_rgba\(6\,182\,212\,0\.08\)\] {
+  box-shadow: 0 16px 40px rgba(45, 99, 181, 0.12) !important;
+}
+
+.dark .shadow-\[0_16px_40px_rgba\(6\,182\,212\,0\.08\)\] {
+  box-shadow: 0 16px 40px rgba(176, 204, 236, 0.18) !important;
+}
+
+/* LiveRunWidget uses a slightly heavier shadow with the same RGB. */
+.shadow-\[0_18px_50px_rgba\(6\,182\,212\,0\.08\)\] {
+  box-shadow: 0 18px 50px rgba(45, 99, 181, 0.14) !important;
+}
+
+.dark .shadow-\[0_18px_50px_rgba\(6\,182\,212\,0\.08\)\] {
+  box-shadow: 0 18px 50px rgba(176, 204, 236, 0.20) !important;
+}
+
+/* ===== Chart bars (Dashboard cards). The bars are plain divs marked
+   with data-tethr-chart-bar; round the top, animate on first paint. ===== */
+
+@keyframes tethr-bar-rise {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+[data-tethr-chart-bar] {
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+  transform-origin: bottom;
+  animation: tethr-bar-rise 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Stagger the day columns left → right so the chart "draws in". */
+.flex.items-end > div:nth-child(1)  [data-tethr-chart-bar] { animation-delay: 20ms; }
+.flex.items-end > div:nth-child(2)  [data-tethr-chart-bar] { animation-delay: 60ms; }
+.flex.items-end > div:nth-child(3)  [data-tethr-chart-bar] { animation-delay: 100ms; }
+.flex.items-end > div:nth-child(4)  [data-tethr-chart-bar] { animation-delay: 140ms; }
+.flex.items-end > div:nth-child(5)  [data-tethr-chart-bar] { animation-delay: 180ms; }
+.flex.items-end > div:nth-child(6)  [data-tethr-chart-bar] { animation-delay: 220ms; }
+.flex.items-end > div:nth-child(7)  [data-tethr-chart-bar] { animation-delay: 260ms; }
+.flex.items-end > div:nth-child(8)  [data-tethr-chart-bar] { animation-delay: 300ms; }
+.flex.items-end > div:nth-child(9)  [data-tethr-chart-bar] { animation-delay: 340ms; }
+.flex.items-end > div:nth-child(10) [data-tethr-chart-bar] { animation-delay: 380ms; }
+.flex.items-end > div:nth-child(11) [data-tethr-chart-bar] { animation-delay: 420ms; }
+.flex.items-end > div:nth-child(12) [data-tethr-chart-bar] { animation-delay: 460ms; }
+.flex.items-end > div:nth-child(13) [data-tethr-chart-bar] { animation-delay: 500ms; }
+.flex.items-end > div:nth-child(14) [data-tethr-chart-bar] { animation-delay: 540ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-tethr-chart-bar] {
+    animation: none !important;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Tethr operate screens: routing flow + console choreography          */
+/* ------------------------------------------------------------------ */
+
+@keyframes tethr-hop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.tethr-hop-animate {
+  opacity: 0;
+  animation: tethr-hop-in 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes tethr-connector-grow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+.tethr-connector-animate {
+  transform-origin: top;
+  animation: tethr-connector-grow 260ms cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+
+/* Result panel lands after the chain finishes drawing. */
+@keyframes tethr-result-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+.tethr-result-animate {
+  opacity: 0;
+  animation: tethr-result-in 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Division / stat cards: rise in with a subtle stagger on operate pages. */
+@keyframes tethr-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+[data-tethr-stagger] > * {
+  opacity: 0;
+  animation: tethr-card-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+[data-tethr-stagger] > *:nth-child(1) { animation-delay: 40ms; }
+[data-tethr-stagger] > *:nth-child(2) { animation-delay: 100ms; }
+[data-tethr-stagger] > *:nth-child(3) { animation-delay: 160ms; }
+[data-tethr-stagger] > *:nth-child(4) { animation-delay: 220ms; }
+[data-tethr-stagger] > *:nth-child(5) { animation-delay: 280ms; }
+[data-tethr-stagger] > *:nth-child(6) { animation-delay: 340ms; }
+[data-tethr-stagger] > *:nth-child(7) { animation-delay: 400ms; }
+[data-tethr-stagger] > *:nth-child(8) { animation-delay: 460ms; }
+[data-tethr-stagger] > *:nth-child(9) { animation-delay: 520ms; }
+[data-tethr-stagger] > *:nth-child(n + 10) { animation-delay: 580ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tethr-hop-animate,
+  .tethr-connector-animate,
+  .tethr-result-animate,
+  [data-tethr-stagger] > * {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+}
+
+/* ===== Working cogs (phase 15) — the machinery-at-work indicator. Monochrome
+   line-art only (lucide Cog via currentColor); slow steady spin, meshed pair
+   counter-rotates. Used at the Console/RouteFlow processing states. ===== */
+@keyframes tethr-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.tethr-cog-spin {
+  animation: tethr-spin 3.5s linear infinite;
+}
+.tethr-cog-spin-reverse {
+  animation: tethr-spin 3.5s linear infinite reverse;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tethr-cog-spin,
+  .tethr-cog-spin-reverse {
+    animation: none !important;
+  }
+}
+
+/* Branded selection: ink-on-paper inversion in both themes. */
+::selection {
+  background: var(--foreground);
+  color: var(--background);
+}

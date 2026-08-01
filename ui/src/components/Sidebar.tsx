@@ -1,9 +1,7 @@
 import {
-  Inbox,
   CircleDot,
   Target,
   LayoutDashboard,
-  DollarSign,
   History,
   Search,
   SquarePen,
@@ -12,6 +10,12 @@ import {
   Repeat,
   GitBranch,
   Settings,
+  Send,
+  ShieldCheck,
+  HardDrive,
+  Wallet,
+  Plug,
+  Brain,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { NavLink } from "@/lib/router";
@@ -24,7 +28,6 @@ import { useCompany } from "../context/CompanyContext";
 import { heartbeatsApi } from "../api/heartbeats";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
-import { useInboxBadge } from "../hooks/useInboxBadge";
 import { Button } from "@/components/ui/button";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
@@ -32,7 +35,6 @@ import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
 export function Sidebar() {
   const { openNewIssue } = useDialogActions();
   const { selectedCompanyId, selectedCompany } = useCompany();
-  const inboxBadge = useInboxBadge(selectedCompanyId);
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
@@ -81,14 +83,8 @@ export function Sidebar() {
             <span className="truncate">New Issue</span>
           </button>
           <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
-          <SidebarNavItem
-            to="/inbox"
-            label="Inbox"
-            icon={Inbox}
-            badge={inboxBadge.inbox}
-            badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "default"}
-            alert={inboxBadge.failedRuns > 0}
-          />
+          {/* Inbox removed (see DECISIONS.md): its Approve bypassed Tethr gating —
+              the Queue is the single approval surface. /inbox redirects there. */}
           <PluginSlotOutlet
             slotTypes={["sidebar"]}
             context={pluginContext}
@@ -97,6 +93,18 @@ export function Sidebar() {
             missingBehavior="placeholder"
           />
         </div>
+
+        {/* Tethr operate surfaces (see DECISIONS.md "Core changes") */}
+        <SidebarSection label="Operate">
+          <SidebarNavItem to="/console" label="Console" icon={Send} />
+          <SidebarNavItem to="/company-view" label="Company" icon={Network} />
+          <SidebarNavItem to="/queue" label="Queue" icon={ShieldCheck} />
+          <SidebarNavItem to="/drive" label="Drive" icon={HardDrive} />
+          <SidebarNavItem to="/budgets" label="Budgets" icon={Wallet} />
+          <SidebarNavItem to="/audit" label="Activity" icon={History} />
+          <SidebarNavItem to="/memory" label="Memory" icon={Brain} />
+          <SidebarNavItem to="/tethr-settings" label="Providers" icon={Plug} />
+        </SidebarSection>
 
         <SidebarSection label="Work">
           <SidebarNavItem to="/issues" label="Issues" icon={CircleDot} />
@@ -112,10 +120,7 @@ export function Sidebar() {
         <SidebarAgents />
 
         <SidebarSection label="Company">
-          <SidebarNavItem to="/org" label="Org" icon={Network} />
           <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
-          <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
-          <SidebarNavItem to="/activity" label="Activity" icon={History} />
           <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
         </SidebarSection>
 

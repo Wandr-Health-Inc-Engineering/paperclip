@@ -1,9 +1,11 @@
 import { Link } from "@/lib/router";
-import { Menu } from "lucide-react";
+import { Menu, Moon, Sun } from "lucide-react";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useCompany } from "../context/CompanyContext";
+import { useTheme } from "../context/ThemeContext";
 import { Button } from "@/components/ui/button";
+import { TethrBell } from "@/components/tethr/TethrBell";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -17,6 +19,23 @@ import { PluginSlotOutlet, usePluginSlots } from "@/plugins/slots";
 import { PluginLauncherOutlet, usePluginLaunchers } from "@/plugins/launchers";
 
 type GlobalToolbarContext = { companyId: string | null; companyPrefix: string | null };
+
+function ThemeToggleButton() {
+  const { theme, toggleTheme } = useTheme();
+  const label = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className="shrink-0 text-muted-foreground"
+      onClick={toggleTheme}
+      aria-label={label}
+      title={label}
+    >
+      {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+    </Button>
+  );
+}
 
 function GlobalToolbarPlugins({ context }: { context: GlobalToolbarContext }) {
   const { slots } = usePluginSlots({ slotTypes: ["globalToolbarButton"], companyId: context.companyId });
@@ -56,6 +75,8 @@ export function BreadcrumbBar() {
   if (breadcrumbs.length === 0) {
     return (
       <div className="border-b border-border px-4 md:px-6 h-12 shrink-0 flex items-center justify-end">
+        <TethrBell />
+      <ThemeToggleButton />
         {globalToolbarSlots}
       </div>
     );
@@ -83,6 +104,8 @@ export function BreadcrumbBar() {
             {breadcrumbs[0].label}
           </h1>
         </div>
+        <TethrBell />
+        <ThemeToggleButton />
         {globalToolbarSlots}
       </div>
     );
@@ -115,6 +138,8 @@ export function BreadcrumbBar() {
           </BreadcrumbList>
         </Breadcrumb>
       </div>
+      <TethrBell />
+      <ThemeToggleButton />
       {globalToolbarSlots}
     </div>
   );

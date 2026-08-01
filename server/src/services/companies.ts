@@ -28,6 +28,20 @@ import {
   companyMemberships,
   companySkills,
   documents,
+  routines,
+  routineRuns,
+  routineTriggers,
+  routineRevisions,
+  budgetPolicies,
+  tethrNotifications,
+  tethrMemories,
+  tethrOutputs,
+  tethrRouteRuns,
+  tethrDriveVersions,
+  tethrDriveNodes,
+  tethrSubagents,
+  tethrAgentProfiles,
+  tethrDivisions,
 } from "@paperclipai/db";
 import { notFound, unprocessable } from "../errors.js";
 import { environmentService } from "./environments.js";
@@ -264,16 +278,34 @@ export function companyService(db: Db) {
 
     remove: (id: string) =>
       db.transaction(async (tx) => {
-        // Delete from child tables in dependency order
+        // Delete from child tables in dependency order.
+        // Note: cost_events references heartbeat_runs, and routine tables
+        // reference agents — both must clear before their parents. Tethr
+        // tables clear first: mixing their ON DELETE CASCADE + SET NULL
+        // actions inside the agents delete trips Postgres RI checks.
+        await tx.delete(tethrNotifications).where(eq(tethrNotifications.companyId, id));
+        await tx.delete(tethrMemories).where(eq(tethrMemories.companyId, id));
+        await tx.delete(tethrOutputs).where(eq(tethrOutputs.companyId, id));
+        await tx.delete(tethrRouteRuns).where(eq(tethrRouteRuns.companyId, id));
+        await tx.delete(tethrDriveVersions).where(eq(tethrDriveVersions.companyId, id));
+        await tx.delete(tethrDriveNodes).where(eq(tethrDriveNodes.companyId, id));
+        await tx.delete(tethrSubagents).where(eq(tethrSubagents.companyId, id));
+        await tx.delete(tethrAgentProfiles).where(eq(tethrAgentProfiles.companyId, id));
+        await tx.delete(tethrDivisions).where(eq(tethrDivisions.companyId, id));
         await tx.delete(heartbeatRunEvents).where(eq(heartbeatRunEvents.companyId, id));
         await tx.delete(agentTaskSessions).where(eq(agentTaskSessions.companyId, id));
         await tx.delete(activityLog).where(eq(activityLog.companyId, id));
+        await tx.delete(costEvents).where(eq(costEvents.companyId, id));
+        await tx.delete(routineRuns).where(eq(routineRuns.companyId, id));
+        await tx.delete(routineTriggers).where(eq(routineTriggers.companyId, id));
+        await tx.delete(routineRevisions).where(eq(routineRevisions.companyId, id));
+        await tx.delete(routines).where(eq(routines.companyId, id));
+        await tx.delete(budgetPolicies).where(eq(budgetPolicies.companyId, id));
         await tx.delete(heartbeatRuns).where(eq(heartbeatRuns.companyId, id));
         await tx.delete(agentWakeupRequests).where(eq(agentWakeupRequests.companyId, id));
         await tx.delete(agentApiKeys).where(eq(agentApiKeys.companyId, id));
         await tx.delete(agentRuntimeState).where(eq(agentRuntimeState.companyId, id));
         await tx.delete(issueComments).where(eq(issueComments.companyId, id));
-        await tx.delete(costEvents).where(eq(costEvents.companyId, id));
         await tx.delete(financeEvents).where(eq(financeEvents.companyId, id));
         await tx.delete(approvalComments).where(eq(approvalComments.companyId, id));
         await tx.delete(approvals).where(eq(approvals.companyId, id));

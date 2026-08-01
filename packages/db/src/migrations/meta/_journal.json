@@ -603,6 +603,69 @@
       "when": 1778787362162,
       "tag": "0085_tranquil_the_executioner",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1781243625428,
+      "tag": "0086_military_sway",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1781245321065,
+      "tag": "0087_lumpy_vision",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1781268241240,
+      "tag": "0088_cold_vampiro",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1781268527838,
+      "tag": "0089_even_ironclad",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1783891901888,
+      "tag": "0090_gigantic_freak",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1783892313914,
+      "tag": "0091_lyrical_rawhide_kid",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1783950508570,
+      "tag": "0092_famous_dexter_bennett",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1783961961202,
+      "tag": "0093_rich_onslaught",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1784012013391,
+      "tag": "0094_smart_kulan_gath",
+      "breakpoints": true
     }
   ]
 }
