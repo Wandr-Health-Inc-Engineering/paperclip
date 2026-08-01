@@ -43,7 +43,8 @@ You don't need a public URL or a tunnel: outbound is a normal API call, and inbo
    `app_mention`, `message.im` (DMs), `message.channels` (channel posts). Save.
 5. **App Home** → enable **Messages Tab** and check **"Allow users to send Slash commands and
    messages from the messages tab"** so you can DM the bot.
-6. Invite the bot to your channel: `/invite @<app>` in **#scout** (`C0AE02FJR5Y`).
+6. Invite the bot to your channel: `/invite @<app>` in **#tethr** (`C0BGK29482J`) — the one
+   channel all Tethr traffic lands in (it's private, so the bot must be invited).
 
 ### 2b. Set the tokens locally
 
@@ -52,7 +53,7 @@ In `~/.paperclip/instances/default/.env`:
 ```
 SLACK_BOT_TOKEN=xoxb-…      # send + receive
 SLACK_APP_TOKEN=xapp-…      # Socket Mode (inbound, no public URL)
-# optional: SLACK_SCOUT_CHANNEL=C0AE02FJR5Y   # default is already #scout
+# optional: SLACK_SCOUT_CHANNEL=C0BGK29482J   # default is already #tethr
 ```
 
 Restart `pnpm dev`. You'll see `tethr slack: Socket Mode connected` in the log. Now:

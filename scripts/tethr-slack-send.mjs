@@ -7,12 +7,12 @@
 // import) but mirrors server/src/tethr/recommendation.ts exactly.
 //
 //   SLACK_BOT_TOKEN=xoxb-... node scripts/tethr-slack-send.mjs
-//   SLACK_BOT_TOKEN=xoxb-... SLACK_SCOUT_CHANNEL=C0AE02FJR5Y node scripts/tethr-slack-send.mjs
+//   SLACK_BOT_TOKEN=xoxb-... SLACK_SCOUT_CHANNEL=C0BGK29482J node scripts/tethr-slack-send.mjs
 //
 // Prints the Slack API response. Nothing is posted if the token is missing.
 
 const token = (process.env.SLACK_BOT_TOKEN ?? "").trim();
-const channel = (process.env.SLACK_SCOUT_CHANNEL ?? "C0AE02FJR5Y").trim();
+const channel = (process.env.SLACK_SCOUT_CHANNEL ?? "C0BGK29482J").trim();
 
 if (!token) {
   console.error(

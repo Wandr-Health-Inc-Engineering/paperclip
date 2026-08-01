@@ -9,7 +9,7 @@
 //   SLACK_BOT_TOKEN=xoxb-... node scripts/tethr-slack-cleanup.mjs --apply  # delete
 
 const token = (process.env.SLACK_BOT_TOKEN ?? "").trim();
-const channel = (process.env.SLACK_SCOUT_CHANNEL ?? "C0AE02FJR5Y").trim();
+const channel = (process.env.SLACK_SCOUT_CHANNEL ?? "C0BGK29482J").trim();
 const apply = process.argv.includes("--apply");
 if (!token) {
   console.error("Set SLACK_BOT_TOKEN (temporarily) to run the cleanup.");

@@ -129,6 +129,7 @@ Every core file touched, with reason. Everything else Tethr lives in new files.
 | `ui/src/styles/tethr-theme.css` | + routing-flow / stagger animation section | the brand layer is designed to be extended here |
 | `.gitignore` | + `.tethr-data/` | local data dir |
 | `.env.example` | + Tethr vars (commented, blank) | 12-factor |
+| `README.md` | + a 5-line fork banner above the upstream header pointing at `TETHR-ENGINEERING.md` + `CLAUDE.md` | an engineer landing on the repo has to be told this is a fork and where the map is; upstream's README body is untouched below it |
 
 Verified with `git diff --diff-filter=M --stat 436dc2b7..HEAD`: 12 modified files,
 230 insertions / 1 deletion — everything else is new files.

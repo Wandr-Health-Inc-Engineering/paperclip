@@ -36,7 +36,7 @@ three small provider implementations — no caller changes anywhere.
 - Seam: `Notifier` in `server/src/tethr/notify.ts` (`channel` + `send()`).
 - In-app is the live local implementation (DB-backed; keep it in cloud).
 - Slack / SMS / email are mocks that log. Replace each `send()` body with the real
-  call (Slack `chat.postMessage` to `#scout` C0AE02FJR5Y per the bundle; Twilio; SES).
+  call (Slack `chat.postMessage` to `#tethr` C0BGK29482J; Twilio; SES).
   Fan-out logic already calls all channels.
 
 ## 5. Secrets

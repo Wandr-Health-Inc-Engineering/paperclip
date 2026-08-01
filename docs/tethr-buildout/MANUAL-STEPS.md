@@ -73,7 +73,7 @@ At **api.slack.com/apps** (uses the Events API against your Railway URL — no S
 3. **Basic Information → App Credentials:** copy the **Signing Secret**.
 4. **Event Subscriptions:** on → Request URL `https://<railway-url>/api/tethr/slack/events`
    (auto-answers Slack's challenge) → subscribe to bot events `app_mention`, `message.channels`.
-5. `/invite @<app>` into **#scout** (`C0AE02FJR5Y`).
+5. `/invite @<app>` into **#tethr** (`C0BGK29482J`) — private, so the invite is required.
 6. `railway variables --set SLACK_BOT_TOKEN=xoxb-… --set SLACK_SIGNING_SECRET=…` (secrets).
 
 ### A3 · Say "go" for the first #scout post — ~1 min
