@@ -6,7 +6,9 @@ import { PageSkeleton } from "@/components/PageSkeleton";
 import {
   AgentGlyph,
   BudgetBar,
+  BudgetRing,
   MonoTag,
+  StatusDot,
   formatCents,
 } from "@/components/tethr/primitives";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
@@ -62,29 +64,27 @@ export function TethrBudgets() {
   const maxDay = Math.max(...daily.map((d) => d.costCents), 1);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
-        <MonoTag className="text-foreground">● tethr · budgets</MonoTag>
-        <h1 className="mt-2 text-3xl font-extrabold tracking-tight">the growth line</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <MonoTag>tethr · budgets</MonoTag>
+        <h1 className="tethr-display mt-2 text-[34px] md:text-[40px]">the growth line</h1>
+        <p className="mt-2 max-w-[62ch] text-sm text-muted-foreground">
           One combined monthly line for the company. Each agent has its own cap,
           enforced as a hard stop.
         </p>
       </div>
 
       {/* Combined line */}
-      <div className="border-2 border-foreground bg-card p-5">
+      <div className="tethr-panel p-5 md:p-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <MonoTag>combined growth line · this month</MonoTag>
-            <p className="mt-1 text-4xl font-extrabold tracking-tight">
-              {formatCents(totalSpent)}
-              <span className="ml-2 text-base font-bold text-muted-foreground">
-                of {formatCents(totalCap)}
-              </span>
+            <p className="mt-2 flex flex-wrap items-baseline gap-x-2">
+              <span className="tethr-figure text-[44px] md:text-[56px]">{formatCents(totalSpent)}</span>
+              <span className="text-sm text-muted-foreground">of {formatCents(totalCap)}</span>
             </p>
           </div>
-          <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+          <p className="tethr-eyebrow">
             held by {helm ? "@helm" : "the company line"} · warn at {data.companyPolicy?.warnPercent ?? 80}%
           </p>
         </div>
@@ -92,13 +92,13 @@ export function TethrBudgets() {
           spentCents={totalSpent}
           capCents={totalCap}
           warnPercent={data.companyPolicy?.warnPercent ?? 80}
-          className="mt-4 h-2.5"
+          className="mt-5"
         />
 
         {/* 30-day spend chart */}
-        <div className="mt-6">
+        <div className="mt-7">
           <MonoTag>spend · last 30 days</MonoTag>
-          <div className="mt-2 flex h-24 items-end gap-[3px]">
+          <div className="mt-3 flex h-24 items-end gap-[3px]">
             {daily.map((point) => (
               <div
                 key={point.day}
@@ -108,71 +108,77 @@ export function TethrBudgets() {
                 {point.costCents > 0 ? (
                   <div
                     data-tethr-chart-bar
-                    className="w-full bg-foreground transition-colors group-hover:bg-cyan-500"
+                    className="w-full bg-[var(--tethr-text-3)] transition-colors group-hover:bg-foreground"
                     style={{
                       height: `${Math.max(4, (point.costCents / maxDay) * 100)}%`,
                     }}
                   />
                 ) : (
-                  <div className="h-0.5 w-full bg-muted" />
+                  <div className="h-px w-full bg-[var(--tethr-rim-strong)]" />
                 )}
               </div>
             ))}
           </div>
-          <div className="mt-1 flex justify-between font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground">
+          <div className="mt-2 flex justify-between tethr-eyebrow text-[9.5px]">
             <span>30 days ago</span>
             <span>today</span>
           </div>
         </div>
       </div>
 
-      {/* Per-agent caps */}
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" data-tethr-stagger>
+      {/* Per-agent caps — Oura-style rings */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-tethr-stagger>
         {crew.map((agent) => {
+          const warnPercent = agent.policy?.warnPercent ?? 80;
           const pct =
             agent.budgetMonthlyCents > 0
               ? Math.round((agent.spentMonthlyCents / agent.budgetMonthlyCents) * 100)
               : 0;
-          const hot = pct >= (agent.policy?.warnPercent ?? 80);
+          const over =
+            agent.budgetMonthlyCents > 0 && agent.spentMonthlyCents >= agent.budgetMonthlyCents;
+          const hot = pct >= warnPercent;
           return (
             <Link
               key={agent.agentId}
               to={`/crew/${agent.agentId}`}
-              className="block border-2 border-border bg-card p-4 transition-colors hover:border-foreground"
+              className="tethr-panel tethr-panel-hover flex flex-col gap-5 p-5"
             >
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center border border-foreground">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[var(--tethr-frost-strong)] shadow-[inset_0_0_0_1px_var(--tethr-rim-strong)]">
                     <AgentGlyph icon={agent.icon} className="h-3.5 w-3.5" />
                   </div>
-                  <div>
-                    <p className="text-sm font-extrabold leading-tight">{agent.name}</p>
-                    <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                      {agent.tag}
+                  <div className="min-w-0">
+                    <p className="truncate text-[15px] font-medium leading-tight tracking-[-0.01em]">
+                      {agent.name}
                     </p>
+                    <p className="tethr-eyebrow mt-0.5 text-[9.5px]">{agent.tag}</p>
                   </div>
                 </div>
                 {agent.policy?.hardStopEnabled ? (
-                  <span className="flex items-center gap-1 border border-foreground bg-foreground px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-background">
+                  <span className="tethr-pill shrink-0 px-2 py-0.5 text-[9.5px] leading-4">
                     <OctagonAlert className="h-2.5 w-2.5" />
                     hard stop
                   </span>
                 ) : null}
               </div>
-              <p className="mt-3 text-xl font-extrabold tracking-tight">
-                {formatCents(agent.spentMonthlyCents)}
-                <span className="ml-1.5 text-xs font-bold text-muted-foreground">
-                  / {formatCents(agent.budgetMonthlyCents)}
-                </span>
-              </p>
-              <BudgetBar
-                spentCents={agent.spentMonthlyCents}
-                capCents={agent.budgetMonthlyCents}
-                warnPercent={agent.policy?.warnPercent ?? 80}
-                className="mt-2"
-              />
-              <p className="mt-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
-                {pct}% used{hot ? " · over warn threshold" : ""}
+              <div className="flex justify-center">
+                <BudgetRing
+                  spentCents={agent.spentMonthlyCents}
+                  capCents={agent.budgetMonthlyCents}
+                  warnPercent={warnPercent}
+                  size={140}
+                  label={`${agent.tag}: ${formatCents(agent.spentMonthlyCents)} of ${formatCents(agent.budgetMonthlyCents)}, ${pct}%`}
+                >
+                  <span className="tethr-figure text-[26px]">{formatCents(agent.spentMonthlyCents)}</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    of {formatCents(agent.budgetMonthlyCents)}
+                  </span>
+                </BudgetRing>
+              </div>
+              <p className="tethr-eyebrow flex items-center justify-center gap-2">
+                <StatusDot tone={over ? "bad" : hot ? "warn" : "ok"} />
+                {pct}% used{over ? " · at cap" : hot ? " · near cap" : ""}
               </p>
             </Link>
           );

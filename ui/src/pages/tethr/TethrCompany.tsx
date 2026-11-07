@@ -26,6 +26,8 @@ import {
   AgentStatusDot,
   BudgetBar,
   MonoTag,
+  StatusDot,
+  describeCron,
   formatCents,
   formatRelative,
   tethrIcon,
@@ -111,14 +113,18 @@ export function TethrCompany() {
     ).length;
     return !(headIsSystem && memberCount === 0);
   });
+  const reportsToTag = (entry: TethrOverviewAgent): string | null => {
+    const parent = entry.agent.reportsTo ? byId.get(entry.agent.reportsTo) : null;
+    return parent ? parent.profile.tag : null;
+  };
 
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <MonoTag className="text-foreground">● tethr · company</MonoTag>
-          <h1 className="mt-2 text-3xl font-extrabold tracking-tight">the org</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <MonoTag>● tethr · company</MonoTag>
+          <h1 className="tethr-display mt-2 text-[34px] md:text-[40px]">the org</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
             One company, many divisions. Click an agent to see its routing table, crew,
             and recent work.
           </p>
@@ -139,9 +145,9 @@ export function TethrCompany() {
 
       {/* ── Organization: the mission org (CEO + specialists + divisions) ── */}
       <div className="flex items-center gap-3">
-        <div className="h-0.5 flex-1 bg-foreground" />
-        <MonoTag className="text-foreground">organization</MonoTag>
-        <div className="h-0.5 flex-1 bg-foreground" />
+        <div className="h-px flex-1 bg-[var(--tethr-rim)]" />
+        <MonoTag>organization</MonoTag>
+        <div className="h-px flex-1 bg-[var(--tethr-rim)]" />
       </div>
 
       {/* CEO — head of the agent org (tier 0). @tethr, the conductor, sits
@@ -150,19 +156,27 @@ export function TethrCompany() {
         <div className="flex justify-center">
           <Link
             to={`/crew/${ceo.agent.id}`}
-            className="group flex items-center gap-3 border-2 border-foreground bg-foreground px-5 py-3 text-background transition-colors hover:bg-foreground/90"
+            className="tethr-panel tethr-panel-hover group flex w-full max-w-xl items-center gap-4 px-5 py-4"
           >
-            <Crown className="h-4 w-4" />
-            <div className="min-w-0">
-              <span className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] opacity-70">
-                tier · 00 · head of the agent org
-              </span>
-              <p className="flex items-center gap-1.5 text-sm font-extrabold leading-tight">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-primary text-primary-foreground">
+              <Crown className="h-[18px] w-[18px]" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <MonoTag>tier · 00 · head of the agent org</MonoTag>
+              <p className="mt-1 flex items-center gap-2 text-[20px] font-light leading-tight tracking-[-0.02em]">
                 {ceo.profile.codename}
-                <AgentStatusDot status={ceo.agent.status} />
+                <span className="flex items-center gap-1.5 text-[12px] font-normal tracking-normal text-muted-foreground">
+                  <AgentStatusDot status={ceo.agent.status} />
+                  {statusLabel(ceo.agent.status)}
+                </span>
               </p>
+              {ceo.profile.mission ? (
+                <p className="mt-1 line-clamp-1 text-[13px] text-muted-foreground">
+                  {ceo.profile.mission}
+                </p>
+              ) : null}
             </div>
-            <ChevronRight className="h-3.5 w-3.5 opacity-70 transition-transform group-hover:translate-x-0.5" />
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
           </Link>
         </div>
       ) : null}
@@ -170,19 +184,17 @@ export function TethrCompany() {
       {/* The CEO's crew — specialists it proposed and you approved into being. */}
       {ceoReports.length ? (
         <div>
-          <p className="mb-2 text-center font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
-            reports to the CEO
-          </p>
-          <div className="mx-auto grid max-w-3xl gap-2 md:grid-cols-2">
+          <MonoTag className="mb-3 block text-center">reports to the CEO</MonoTag>
+          <div className="mx-auto grid max-w-4xl grid-cols-1 gap-3 md:grid-cols-2">
             {ceoReports.map((entry) => (
-              <AgentRow key={entry.agent.id} entry={entry} />
+              <AgentRow key={entry.agent.id} entry={entry} reportsToTag={reportsToTag(entry)} />
             ))}
           </div>
         </div>
       ) : null}
 
       {/* Divisions */}
-      <div className="grid gap-5 xl:grid-cols-2" data-tethr-stagger>
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2" data-tethr-stagger>
         {orgDivisions.map((division) => {
           const rawHead = division.headAgentId ? byId.get(division.headAgentId) : null;
           const head = rawHead && !isSystem(rawHead.profile.tag) ? rawHead : null;
@@ -198,22 +210,20 @@ export function TethrCompany() {
           return (
             <section
               key={division.id}
-              className={cn(
-                "border-2 bg-card",
-                isShell ? "border-dashed border-foreground/40" : "border-foreground",
-              )}
+              className={cn(isShell ? "tethr-empty" : "tethr-panel")}
             >
-              <header className="flex items-start justify-between gap-3 border-b-2 border-inherit px-4 py-3">
+              <header className="flex items-start justify-between gap-3 border-b tethr-rule px-4 py-3">
                 <div className="flex items-center gap-2.5">
-                  <DivisionIcon className="h-4 w-4" />
+                  <DivisionIcon className="h-4 w-4 text-muted-foreground" />
                   <div>
-                    <h2 className="text-base font-extrabold tracking-tight">
+                    <h2 className="text-[15px] font-medium tracking-[-0.01em]">
                       {division.name}
                     </h2>
                     <p className="text-xs text-muted-foreground">{division.description}</p>
                   </div>
                 </div>
-                <MonoTag className={cn(!isShell && "text-foreground")}>
+                <MonoTag className="flex shrink-0 items-center gap-1.5">
+                  <StatusDot tone={isShell ? "paused" : "ok"} />
                   {isShell ? "ready to fill" : "division · live"}
                 </MonoTag>
               </header>
@@ -228,10 +238,10 @@ export function TethrCompany() {
                         isHead: true,
                       })
                     }
-                    className="flex w-full items-center gap-3 border border-dashed border-foreground/40 px-3 py-2.5 text-left transition-colors hover:border-foreground"
+                    className="flex w-full items-center gap-3 rounded-[10px] border border-dashed border-[var(--tethr-rim-strong)] px-3 py-2.5 text-left transition-colors hover:border-[var(--ring)] hover:bg-[var(--tethr-frost)]"
                   >
                     <Plus className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-semibold text-muted-foreground">
+                    <span className="text-sm font-medium text-muted-foreground">
                       Head slot open — click to fill
                     </span>
                   </button>
@@ -239,11 +249,9 @@ export function TethrCompany() {
                     {[0, 1].map((i) => (
                       <div
                         key={i}
-                        className="flex h-12 items-center justify-center border border-dashed border-foreground/25"
+                        className="flex h-12 items-center justify-center rounded-[10px] border border-dashed border-[var(--tethr-rim)]"
                       >
-                        <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/60">
-                          agent slot
-                        </span>
+                        <MonoTag className="opacity-70">agent slot</MonoTag>
                       </div>
                     ))}
                   </div>
@@ -254,10 +262,10 @@ export function TethrCompany() {
                 </div>
               ) : (
                 <div className="px-4 py-4">
-                  {head ? <AgentRow entry={head} isHead /> : null}
-                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  {head ? <AgentRow entry={head} isHead reportsToTag={reportsToTag(head)} /> : null}
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                     {members.map((entry) => (
-                      <AgentRow key={entry.agent.id} entry={entry} />
+                      <AgentRow key={entry.agent.id} entry={entry} reportsToTag={reportsToTag(entry)} />
                     ))}
                     <button
                       onClick={() =>
@@ -267,12 +275,10 @@ export function TethrCompany() {
                           isHead: false,
                         })
                       }
-                      className="flex min-h-16 items-center justify-center gap-2 border border-dashed border-foreground/30 text-muted-foreground transition-colors hover:border-foreground hover:text-foreground"
+                      className="flex min-h-16 items-center justify-center gap-2 rounded-[14px] border border-dashed border-[var(--tethr-rim-strong)] text-muted-foreground transition-colors hover:border-[var(--ring)] hover:bg-[var(--tethr-frost)] hover:text-foreground"
                     >
                       <Plus className="h-3.5 w-3.5" />
-                      <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em]">
-                        add agent
-                      </span>
+                      <span className="tethr-eyebrow text-inherit">add agent</span>
                     </button>
                   </div>
                 </div>
@@ -286,17 +292,17 @@ export function TethrCompany() {
       {systemAgents.length ? (
         <div>
           <div className="mb-3 flex items-center gap-3">
-            <div className="h-0.5 flex-1 bg-foreground" />
-            <MonoTag className="text-foreground">system · infrastructure</MonoTag>
-            <div className="h-0.5 flex-1 bg-foreground" />
+            <div className="h-px flex-1 bg-[var(--tethr-rim)]" />
+            <MonoTag>system · infrastructure</MonoTag>
+            <div className="h-px flex-1 bg-[var(--tethr-rim)]" />
           </div>
-          <p className="mx-auto mb-3 max-w-2xl text-center text-xs text-muted-foreground">
+          <p className="mx-auto mb-4 max-w-2xl text-center text-xs text-muted-foreground">
             Built to run the org, not staff it — the conductor, the mechanic, the debugger. They
             sit beside the command chain, not in it.
           </p>
-          <div className="mx-auto grid max-w-3xl gap-2 md:grid-cols-3">
+          <div className="mx-auto grid max-w-5xl grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {systemAgents.map((entry) => (
-              <AgentRow key={entry.agent.id} entry={entry} />
+              <AgentRow key={entry.agent.id} entry={entry} reportsToTag={reportsToTag(entry)} />
             ))}
           </div>
         </div>
@@ -410,60 +416,59 @@ function OrgChangeLog({ companyId }: { companyId: string }) {
     <section>
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <MonoTag className="text-foreground">change log</MonoTag>
+          <MonoTag>change log</MonoTag>
           <p className="mt-1 text-xs text-muted-foreground">
             Every applied change to the org — revert stages the inverse for your approval.
           </p>
         </div>
       </div>
-      <div className="border-2 border-foreground bg-card">
+      <div className="tethr-panel overflow-hidden">
         {changes.map((change, i) => (
           <div
             key={change.id}
             className={cn(
               "flex flex-wrap items-center gap-3 px-4 py-2.5",
-              i < changes.length - 1 && "border-b border-border",
+              i < changes.length - 1 && "border-b tethr-rule",
             )}
           >
-            <span className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-              {formatRelative(change.appliedAt)}
-            </span>
-            <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+            <MonoTag className="w-16 shrink-0">{formatRelative(change.appliedAt)}</MonoTag>
+            <span className="min-w-0 flex-1 truncate text-sm font-medium">
               {change.summary}
             </span>
-            <span className="font-mono text-[10px] text-muted-foreground">
+            <span className="font-mono text-[11px] text-muted-foreground">
               {change.appliedBy}
             </span>
             {change.status === "reverted" ? (
-              <span className="border border-border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+              <span className="tethr-pill px-2 py-0.5 text-[9.5px]">
+                <StatusDot tone="paused" />
                 reverted
               </span>
             ) : change.revertOfChangeId ? (
-              <span className="border border-foreground px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em]">
+              <span className="tethr-pill px-2 py-0.5 text-[9.5px] text-foreground">
                 revert
               </span>
             ) : (
               <button
                 onClick={() => revert.mutate(change.id)}
                 disabled={revert.isPending}
-                className="border border-foreground px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] transition-colors hover:bg-foreground hover:text-background disabled:opacity-40"
+                className="tethr-btn tethr-btn-glass h-7 px-3 text-[12px]"
               >
-                revert
+                Revert
               </button>
             )}
           </div>
         ))}
         {revert.isSuccess ? (
-          <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
+          <p className="border-t tethr-rule px-4 py-2 text-xs text-muted-foreground">
             Revert staged —{" "}
-            <Link to="/queue" className="font-semibold underline">
+            <Link to="/queue" className="font-medium text-foreground underline underline-offset-2">
               approve it in the Queue
             </Link>{" "}
             to apply.
           </p>
         ) : null}
         {revert.isError ? (
-          <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
+          <p className="border-t tethr-rule px-4 py-2 text-xs text-muted-foreground">
             {(revert.error as Error).message}
           </p>
         ) : null}
@@ -505,14 +510,14 @@ function ProposeAgentDialog({
           </DialogDescription>
         </DialogHeader>
         {propose.data ? (
-          <div className="space-y-2 border-2 border-foreground bg-card p-4">
-            <p className="text-sm font-bold">
+          <div className="tethr-panel space-y-2 p-4">
+            <p className="text-sm font-medium">
               Proposed: {propose.data.codename}{" "}
               <span className="font-mono text-xs text-muted-foreground">{propose.data.tag}</span>
             </p>
             <p className="text-sm text-muted-foreground">
               Review and approve it in the{" "}
-              <Link to="/queue" className="font-semibold underline" onClick={close}>
+              <Link to="/queue" className="font-medium text-foreground underline underline-offset-2" onClick={close}>
                 Queue
               </Link>{" "}
               (it also posted to Slack).
@@ -644,7 +649,19 @@ function AddAgentDialog({
   );
 }
 
-function AgentRow({ entry, isHead }: { entry: TethrOverviewAgent; isHead?: boolean }) {
+function statusLabel(status: string): string {
+  return status.replace(/_/g, " ");
+}
+
+function AgentRow({
+  entry,
+  isHead,
+  reportsToTag,
+}: {
+  entry: TethrOverviewAgent;
+  isHead?: boolean;
+  reportsToTag?: string | null;
+}) {
   const { agent, profile, subagents, pendingApprovals, lastRunAt } = entry;
   const pct =
     agent.budgetMonthlyCents > 0
@@ -654,44 +671,53 @@ function AgentRow({ entry, isHead }: { entry: TethrOverviewAgent; isHead?: boole
     <Link
       to={`/crew/${agent.id}`}
       className={cn(
-        "group block border bg-background transition-colors hover:border-foreground",
-        isHead ? "border-2 border-foreground" : "border-border",
+        "tethr-panel tethr-panel-hover group flex min-w-0 flex-col gap-3.5 p-4",
+        isHead && "tethr-panel-active",
       )}
     >
-      <div className="flex items-center justify-between gap-3 px-3 py-2.5">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div
-            className={cn(
-              "flex h-8 w-8 shrink-0 items-center justify-center border",
-              isHead
-                ? "border-foreground bg-foreground text-background"
-                : "border-foreground",
-            )}
-          >
-            <AgentGlyph icon={agent.icon} />
-          </div>
-          <div className="min-w-0">
-            <p className="flex items-center gap-1.5 text-sm font-bold leading-tight">
-              {agent.name}
-              <AgentStatusDot status={agent.status} />
-            </p>
-            <p className="truncate font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-              {profile.tag} · {agent.title}
-            </p>
-          </div>
+      <div className="flex items-center gap-3">
+        <span
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]",
+            isHead
+              ? "bg-primary text-primary-foreground"
+              : "bg-[var(--tethr-frost-strong)] shadow-[inset_0_0_0_1px_var(--tethr-rim-strong)]",
+          )}
+        >
+          <AgentGlyph icon={agent.icon} className="h-[17px] w-[17px]" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[15px] font-medium leading-tight tracking-[-0.01em]">
+            {profile.tag}
+          </p>
+          <p className="truncate text-[12.5px] text-muted-foreground">
+            {agent.name}
+            {agent.title ? ` · ${agent.title}` : ""}
+          </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {pendingApprovals > 0 ? (
-            <span className="border border-amber-600 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-amber-700 dark:border-amber-400 dark:text-amber-300">
-              {pendingApprovals} in queue
-            </span>
-          ) : null}
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-        </div>
+        <span className="flex shrink-0 items-center gap-1.5 self-start pt-0.5 text-[12px] text-muted-foreground">
+          <AgentStatusDot status={agent.status} />
+          {statusLabel(agent.status)}
+        </span>
       </div>
-      <div className="space-y-1.5 border-t border-border px-3 py-2">
-        <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
-          <span>last run {formatRelative(lastRunAt)}</span>
+
+      {profile.mission ? (
+        <p className="line-clamp-2 text-[13px] leading-snug text-muted-foreground">
+          {profile.mission}
+        </p>
+      ) : null}
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground tabular-nums">
+          <span className="flex items-center gap-2">
+            last run {formatRelative(lastRunAt)}
+            {pendingApprovals > 0 ? (
+              <span className="tethr-pill px-1.5 py-0.5 text-[9px] text-foreground">
+                <StatusDot tone="warn" />
+                {pendingApprovals} in queue
+              </span>
+            ) : null}
+          </span>
           {agent.budgetMonthlyCents > 0 ? (
             <span>
               {formatCents(agent.spentMonthlyCents)} / {formatCents(agent.budgetMonthlyCents)} ·{" "}
@@ -707,19 +733,37 @@ function AgentRow({ entry, isHead }: { entry: TethrOverviewAgent; isHead?: boole
             capCents={agent.budgetMonthlyCents}
           />
         ) : null}
-        {subagents.length > 0 ? (
-          <div className="flex flex-wrap gap-1 pt-0.5">
-            {subagents.map((s) => (
-              <span
-                key={s.id}
-                className="border border-border px-1.5 py-0.5 font-mono text-[9px] font-semibold text-muted-foreground"
-              >
-                .{s.key}
-              </span>
-            ))}
-          </div>
-        ) : null}
       </div>
+
+      {subagents.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {subagents.map((s) => (
+            <span
+              key={s.id}
+              className="tethr-pill px-1.5 py-0.5 text-[10px] normal-case tracking-normal"
+            >
+              .{s.key}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      <dl className="mt-auto grid grid-cols-3 gap-2 border-t tethr-rule pt-3">
+        <div className="min-w-0">
+          <dt className="tethr-eyebrow text-[9px]">reports to</dt>
+          <dd className="mt-1 truncate text-[12.5px]">{reportsToTag ?? "none"}</dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="tethr-eyebrow text-[9px]">cap</dt>
+          <dd className="mt-1 truncate text-[12.5px] tabular-nums">
+            {agent.budgetMonthlyCents > 0 ? `${formatCents(agent.budgetMonthlyCents)} / mo` : "none"}
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="tethr-eyebrow text-[9px]">heartbeat</dt>
+          <dd className="mt-1 truncate text-[12.5px]">{describeCron(profile.heartbeatCron)}</dd>
+        </div>
+      </dl>
     </Link>
   );
 }

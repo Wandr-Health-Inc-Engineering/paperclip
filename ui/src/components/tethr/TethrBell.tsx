@@ -7,7 +7,7 @@ import { useCompany } from "../../context/CompanyContext";
 import { useNavigate } from "../../lib/router";
 import { cn } from "@/lib/utils";
 import { tethrApi, tethrKeys, type TethrNotification } from "@/api/tethr";
-import { MonoTag, formatRelative } from "./primitives";
+import { MonoTag, StatusDot, formatRelative } from "./primitives";
 
 // The notification bell: the in-app channel of the Notifier interface. Clicking
 // a notification opens a detail popup with the actions that fit it — approve or
@@ -73,9 +73,9 @@ export function TethrBell() {
         <button
           onClick={() => navigate("/tethr-settings")}
           title="Agents are paused (usage throttle) — click to manage"
-          className="mr-1 flex items-center gap-1.5 border-2 border-foreground bg-foreground px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-background"
+          className="tethr-pill tethr-pill-solid mr-1 h-6 px-2.5 text-[9.5px]"
         >
-          <span className="h-1.5 w-1.5 rounded-full bg-background" />
+          <span className="tethr-dot bg-primary-foreground" />
           agents paused
         </button>
       ) : null}
@@ -89,19 +89,19 @@ export function TethrBell() {
           >
             <Bell className="h-4 w-4" />
             {unread.length > 0 ? (
-              <span className="absolute right-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-foreground px-0.5 font-mono text-[8px] font-bold text-background">
+              <span className="absolute right-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 font-mono text-[8px] font-medium text-primary-foreground">
                 {unread.length > 9 ? "9+" : unread.length}
               </span>
             ) : null}
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-96 p-0">
-          <div className="flex items-center justify-between border-b-2 border-foreground px-3 py-2">
-            <MonoTag className="text-foreground">beacon · notifications</MonoTag>
+        <PopoverContent align="end" className="w-96 overflow-hidden p-0">
+          <div className="tethr-rule flex items-center justify-between border-b px-4 py-2.5">
+            <MonoTag>beacon · notifications</MonoTag>
             {unread.length > 0 ? (
               <button
                 onClick={() => markAllRead.mutate()}
-                className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground"
+                className="tethr-eyebrow transition-colors hover:text-foreground"
               >
                 mark all read
               </button>
@@ -116,19 +116,21 @@ export function TethrBell() {
                     key={n.id}
                     onClick={() => openDetail(n)}
                     className={cn(
-                      "block w-full border-b border-border px-3 py-2.5 text-left transition-colors hover:bg-accent/50",
-                      !n.readAt && "bg-secondary/60",
+                      "tethr-rule block w-full border-b px-4 py-3 text-left transition-colors hover:bg-accent",
+                      !n.readAt && "bg-[var(--tethr-frost-strong)]",
                     )}
                   >
-                    <p className="flex items-start gap-2">
+                    <p className="flex items-start gap-2.5">
                       {!n.readAt ? (
-                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-foreground" />
-                      ) : null}
+                        <StatusDot tone={pendingOutputId ? "warn" : "live"} className="mt-[7px] animate-none" />
+                      ) : (
+                        <span className="mt-[7px] h-1.5 w-1.5 shrink-0" />
+                      )}
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-2">
-                          <span className="block flex-1 text-sm font-semibold leading-snug">{n.title}</span>
+                          <span className="block flex-1 text-sm font-medium leading-snug">{n.title}</span>
                           {pendingOutputId ? (
-                            <span className="shrink-0 border border-foreground px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.1em]">
+                            <span className="tethr-pill shrink-0 px-2 py-0.5 text-[9px]">
                               needs you
                             </span>
                           ) : null}
@@ -138,7 +140,7 @@ export function TethrBell() {
                             {n.body}
                           </span>
                         ) : null}
-                        <span className="mt-1 block font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/70">
+                        <span className="tethr-eyebrow mt-1.5 block text-[9.5px] tracking-[0.14em]">
                           {n.agentTag ? `${n.agentTag} · ` : ""}
                           {n.kind} · {formatRelative(n.createdAt)}
                         </span>
@@ -148,7 +150,7 @@ export function TethrBell() {
                 );
               })
             ) : (
-              <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+              <p className="px-4 py-10 text-center text-sm text-muted-foreground">
                 Nothing yet. The crew will let you know when something needs you.
               </p>
             )}
@@ -218,26 +220,29 @@ function NotificationDetail({
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="w-full max-w-md border-2 border-foreground bg-card" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-start justify-between gap-3 border-b-2 border-foreground px-4 py-3">
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--tethr-overlay)] p-4 backdrop-blur-[4px]"
+      onClick={onClose}
+    >
+      <div className="tethr-glass-heavy w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="tethr-rule flex items-start justify-between gap-3 border-b px-5 py-4">
           <div className="min-w-0">
-            <h3 className="text-sm font-bold leading-snug">{n.title}</h3>
-            <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+            <h3 className="text-[15px] font-medium leading-snug tracking-[-0.01em]">{n.title}</h3>
+            <p className="tethr-eyebrow mt-1 text-[9.5px] tracking-[0.14em]">
               {n.agentTag ? `${n.agentTag} · ` : ""}
               {n.kind} · {formatRelative(n.createdAt)}
             </p>
           </div>
-          <button onClick={onClose} aria-label="Close" className="shrink-0 text-muted-foreground hover:text-foreground">
+          <button onClick={onClose} aria-label="Close" className="tethr-btn tethr-btn-ghost h-7 w-7 shrink-0">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="px-4 py-3">
+        <div className="px-5 py-4">
           {n.body ? <p className="text-sm leading-relaxed text-muted-foreground">{n.body}</p> : null}
 
           {result ? (
-            <p className="mt-3 border-2 border-foreground px-3 py-2 text-sm font-semibold">{result}</p>
+            <p className="tethr-inset mt-3 px-3 py-2 text-sm font-medium">{result}</p>
           ) : pendingOutputId ? (
             <div className="mt-4 space-y-2">
               <textarea
@@ -245,21 +250,31 @@ function NotificationDetail({
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="Optional note (e.g. why you're rejecting, or a tweak to make)…"
                 rows={2}
-                className="w-full resize-none border-2 border-foreground bg-background px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground/60"
+                className="tethr-field w-full resize-none px-3 py-2 text-sm"
               />
               <div className="flex gap-2">
-                <Button size="sm" className="flex-1 gap-1.5" disabled={decide.isPending} onClick={() => decide.mutate("approve")}>
+                <button
+                  type="button"
+                  className="tethr-btn tethr-btn-primary h-9 flex-1 px-4 text-[13px]"
+                  disabled={decide.isPending}
+                  onClick={() => decide.mutate("approve")}
+                >
                   <Check className="h-3.5 w-3.5" />
                   Approve
-                </Button>
-                <Button variant="outline" size="sm" className="flex-1 gap-1.5" disabled={decide.isPending} onClick={() => decide.mutate("reject")}>
+                </button>
+                <button
+                  type="button"
+                  className="tethr-btn tethr-btn-glass h-9 flex-1 px-4 text-[13px]"
+                  disabled={decide.isPending}
+                  onClick={() => decide.mutate("reject")}
+                >
                   <X className="h-3.5 w-3.5" />
                   Reject
-                </Button>
+                </button>
               </div>
               <button
                 onClick={() => go("/queue")}
-                className="flex w-full items-center justify-center gap-1.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground"
+                className="tethr-eyebrow flex w-full items-center justify-center gap-1.5 py-1.5 transition-colors hover:text-foreground"
               >
                 Open the full Queue <ExternalLink className="h-3 w-3" />
               </button>
@@ -272,38 +287,45 @@ function NotificationDetail({
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="Tell Tethr what to do about this (optional) — e.g. 'check if it's really a duplicate and advise'…"
                 rows={2}
-                className="w-full resize-none border-2 border-foreground bg-background px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground/60"
+                className="tethr-field w-full resize-none px-3 py-2 text-sm"
               />
-              <Button size="sm" className="w-full gap-1.5" disabled={dispatch.isPending} onClick={() => dispatch.mutate()}>
+              <button
+                type="button"
+                className="tethr-btn tethr-btn-primary h-9 w-full px-4 text-[13px]"
+                disabled={dispatch.isPending}
+                onClick={() => dispatch.mutate()}
+              >
                 <Sparkles className="h-3.5 w-3.5" />
                 {dispatch.isPending ? "Handing to Tethr…" : "Ask Tethr to handle this"}
-              </Button>
+              </button>
             </div>
           )}
         </div>
 
-        {/* Footer: secondary navigation + dismiss. */}
-        <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+        {/* Footer: secondary navigation + dismiss (hidden when it would be empty). */}
+        {result || viewTo || !pendingOutputId ? (
+        <div className="tethr-rule flex items-center justify-end gap-2 border-t px-5 py-3">
           {result ? (
-            <Button size="sm" onClick={onClose}>
+            <button type="button" className="tethr-btn tethr-btn-primary h-8 px-3.5 text-[13px]" onClick={onClose}>
               Done
-            </Button>
+            </button>
           ) : (
             <>
               {viewTo ? (
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => go(viewTo)}>
+                <button type="button" className="tethr-btn tethr-btn-glass h-8 px-3.5 text-[13px]" onClick={() => go(viewTo)}>
                   <ExternalLink className="h-3.5 w-3.5" />
                   {viewLabel}
-                </Button>
+                </button>
               ) : null}
               {!pendingOutputId ? (
-                <Button variant="outline" size="sm" onClick={onClose}>
+                <button type="button" className="tethr-btn tethr-btn-ghost h-8 px-3.5 text-[13px]" onClick={onClose}>
                   Dismiss
-                </Button>
+                </button>
               ) : null}
             </>
           )}
         </div>
+        ) : null}
       </div>
     </div>
   );

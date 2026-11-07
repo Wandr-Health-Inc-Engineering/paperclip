@@ -46,12 +46,12 @@ export function RouteFlow({
         className={cn("tethr-hop flex items-start gap-3", animate && "tethr-hop-animate")}
         style={animate ? { animationDelay: "0ms" } : undefined}
       >
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center border-2 border-foreground bg-foreground text-background">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
           <CircleUser className="h-4 w-4" />
         </div>
         <div className="min-w-0 pt-0.5">
-          <MonoTag className="text-foreground">request</MonoTag>
-          <p className="mt-0.5 text-sm font-semibold leading-snug">{request}</p>
+          <MonoTag>request</MonoTag>
+          <p className="mt-1 text-sm font-medium leading-snug [overflow-wrap:anywhere]">{request}</p>
         </div>
       </div>
 
@@ -74,11 +74,15 @@ export function RouteFlow({
           >
             <div
               className={cn(
-                "flex shrink-0 items-center justify-center border-2 border-foreground",
-                hop.layer === "tool" ? "ml-1 h-7 w-7 border-dashed" : "h-9 w-9",
+                "flex shrink-0 items-center justify-center rounded-full",
+                hop.layer === "tool"
+                  ? "ml-1 h-7 w-7 border border-dashed border-[var(--tethr-rim-strong)] text-muted-foreground"
+                  : "h-9 w-9",
                 hop.layer === "subagent"
-                  ? "bg-foreground text-background"
-                  : "bg-background text-foreground",
+                  ? "bg-primary text-primary-foreground"
+                  : hop.layer === "tool"
+                    ? "bg-transparent"
+                    : "bg-[var(--tethr-frost-strong)] text-foreground shadow-[inset_0_0_0_1px_var(--tethr-rim-strong)]",
               )}
             >
               {hop.layer === "tool" ? (
@@ -89,11 +93,11 @@ export function RouteFlow({
             </div>
             <div className="min-w-0 pt-0.5">
               <MonoTag>{LAYER_LABEL[hop.layer]}</MonoTag>
-              <p className="mt-0.5 text-sm font-bold">
-                <span className="font-mono text-[13px]">{hop.actorTag}</span>
-                <span className="text-muted-foreground"> · </span>
+              <p className="mt-1 text-sm font-medium [overflow-wrap:anywhere]">
+                <span className="font-mono text-[12.5px]">{hop.actorTag}</span>
+                <span className="text-[var(--tethr-text-3)]"> · </span>
                 {hop.layer === "tool" ? (
-                  <span className="font-mono text-[13px]">{hop.decision}</span>
+                  <span className="font-mono text-[12.5px]">{hop.decision}</span>
                 ) : (
                   hop.decision
                 )}
@@ -110,11 +114,11 @@ export function RouteFlow({
         <>
           <Connector animate={animate} delay={baseDelay + hops.length * step} />
           <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center border-2 border-dashed border-foreground/40">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-dashed border-[var(--tethr-rim-strong)]">
               <CogDuo className="h-5 w-5 text-muted-foreground" />
             </div>
             <div className="pt-1.5">
-              <span className="shimmer-text text-sm font-semibold">
+              <span className="shimmer-text text-sm font-medium">
                 classifying…
               </span>
             </div>
@@ -129,12 +133,12 @@ function Connector({ animate, delay }: { animate: boolean; delay: number }) {
   return (
     <div className="ml-[17px] flex h-7 items-center">
       <div
-        className={cn("tethr-connector h-full w-0.5 bg-foreground/80", animate && "tethr-connector-animate")}
+        className={cn("tethr-connector h-full w-px bg-[var(--tethr-rim-strong)]", animate && "tethr-connector-animate")}
         style={animate ? { animationDelay: `${delay}ms` } : undefined}
       />
       <ArrowDown
         className={cn(
-          "-ml-[7px] mt-auto h-3 w-3 text-foreground/80",
+          "-ml-[6.5px] mt-auto h-3 w-3 text-[var(--tethr-text-3)]",
           animate && "tethr-hop tethr-hop-animate",
         )}
         style={animate ? { animationDelay: `${delay + 60}ms` } : undefined}

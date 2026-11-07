@@ -62,9 +62,9 @@ export function TethrMemory() {
   return (
     <div className="space-y-5">
       <div>
-        <MonoTag className="text-foreground">● tethr · memory</MonoTag>
-        <h1 className="mt-2 text-3xl font-extrabold tracking-tight">recall</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <MonoTag>tethr · memory</MonoTag>
+        <h1 className="tethr-display mt-3 text-[34px] md:text-[40px]">recall</h1>
+        <p className="mt-2 max-w-[62ch] text-sm text-muted-foreground">
           What the company remembers. Agents pull from here on every run via
           recall_memory; company-wide rules apply to everyone.
         </p>
@@ -83,10 +83,8 @@ export function TethrMemory() {
             key={option.value}
             onClick={() => setAgentFilter(option.value)}
             className={cn(
-              "border px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] transition-colors",
-              agentFilter === option.value
-                ? "border-foreground bg-foreground text-background"
-                : "border-border text-muted-foreground hover:border-foreground hover:text-foreground",
+              "tethr-btn h-7 px-3 font-mono text-[10.5px] tracking-[0.1em]",
+              agentFilter === option.value ? "tethr-btn-primary" : "tethr-btn-glass text-muted-foreground hover:text-foreground",
             )}
           >
             {option.label}
@@ -101,27 +99,25 @@ export function TethrMemory() {
       </div>
 
       {filtered.length ? (
-        <div className="border-2 border-foreground bg-card">
+        <div className="tethr-panel overflow-hidden">
           {filtered.map((memory, index) => (
             <div
               key={memory.id}
               className={cn(
-                "grid grid-cols-[6rem_minmax(0,1fr)_auto] items-baseline gap-3 px-4 py-2.5 max-md:grid-cols-1 max-md:gap-1",
-                index < filtered.length - 1 && "border-b border-border",
+                "grid grid-cols-[9.5rem_minmax(0,1fr)_auto] items-baseline gap-3 px-4 py-2.5 max-md:grid-cols-1 max-md:gap-1",
+                index < filtered.length - 1 && "tethr-rule border-b",
               )}
             >
               <span
                 className={cn(
-                  "border px-1.5 py-0.5 text-center font-mono text-[9px] font-bold uppercase tracking-[0.12em]",
-                  memory.kind === "rule"
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-border text-muted-foreground",
+                  "tethr-pill justify-center whitespace-nowrap px-2 py-0.5 text-[9.5px] max-md:w-fit",
+                  memory.kind === "rule" && "tethr-pill-solid",
                 )}
               >
                 {memory.kind}
               </span>
               <span className="min-w-0 text-sm leading-relaxed">{memory.content}</span>
-              <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+              <span className="tethr-eyebrow shrink-0 text-[9.5px] tracking-[0.14em]">
                 {memory.agentId ? (agentNameById.get(memory.agentId) ?? "agent") : "company"} ·{" "}
                 {formatRelative(memory.createdAt)}
               </span>
@@ -129,7 +125,7 @@ export function TethrMemory() {
           ))}
         </div>
       ) : (
-        <p className="border border-dashed border-foreground/30 px-4 py-10 text-center text-sm text-muted-foreground">
+        <p className="tethr-empty px-4 py-10 text-center text-sm">
           No memories match.
         </p>
       )}

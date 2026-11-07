@@ -13,7 +13,6 @@ import {
 } from "@dnd-kit/core";
 import {
   Archive,
-  ChevronRight,
   FileText,
   Folder,
   FolderPlus,
@@ -89,9 +88,9 @@ export function FileManager({ source }: { source: DriveSource }) {
 
   return (
     <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-      <div className="border-2 border-foreground bg-card">
+      <div className="tethr-panel overflow-hidden">
         {/* Toolbar: breadcrumbs (droppable to move up) + new folder */}
-        <div className="flex flex-wrap items-center gap-2 border-b-2 border-foreground px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2 border-b tethr-rule px-3 py-2">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
             {crumbs.map((crumb, index) => (
               <CrumbButton
@@ -110,7 +109,7 @@ export function FileManager({ source }: { source: DriveSource }) {
         </div>
 
         {/* Listing */}
-        <div className="p-2">
+        <div>
           {isLoading ? (
             <PageSkeleton variant="list" />
           ) : error ? (
@@ -118,7 +117,7 @@ export function FileManager({ source }: { source: DriveSource }) {
               Couldn't read this folder{source.isFs ? " (is Google Drive mounted?)" : ""}.
             </p>
           ) : items?.length ? (
-            <div className="space-y-1">
+            <div className="divide-y divide-[var(--tethr-rim)]">
               {items.map((item) => (
                 <Row
                   key={item.key}
@@ -137,8 +136,12 @@ export function FileManager({ source }: { source: DriveSource }) {
 
       <DragOverlay>
         {activeItem ? (
-          <div className="flex items-center gap-2 border-2 border-foreground bg-card px-3 py-2 text-sm font-semibold shadow-lg">
-            {activeItem.kind === "folder" ? <Folder className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+          <div className="tethr-glass flex items-center gap-2 px-3 py-2 text-sm font-medium">
+            {activeItem.kind === "folder" ? (
+              <Folder className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <FileText className="h-4 w-4 text-muted-foreground" />
+            )}
             {activeItem.name}
           </div>
         ) : null}
@@ -184,30 +187,35 @@ function PreviewModal({ source, item, onClose }: { source: DriveSource; item: Fm
   });
   const isMarkdown = /\.(md|markdown)$/i.test(item.name);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--tethr-overlay)] p-4 backdrop-blur-[4px]"
+      onClick={onClose}
+    >
       <div
-        className="flex max-h-[85vh] w-full max-w-2xl flex-col border-2 border-foreground bg-card"
+        className="tethr-glass-heavy flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-3 border-b-2 border-foreground px-4 py-2.5">
+        <div className="flex items-center justify-between gap-3 border-b tethr-rule px-4 py-2.5">
           <div className="flex min-w-0 items-center gap-2">
-            <FileText className="h-4 w-4 shrink-0" />
-            <span className="truncate text-sm font-bold">{item.name}</span>
+            <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="truncate text-sm font-medium">{item.name}</span>
           </div>
-          <button onClick={onClose} aria-label="Close" className="shrink-0 text-muted-foreground hover:text-foreground">
+          <button onClick={onClose} aria-label="Close" className="tethr-btn tethr-btn-ghost h-7 w-7 shrink-0">
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="overflow-auto px-5 py-4">
+        <div className="overflow-auto px-6 py-5">
           {isLoading ? (
             <p className="text-sm text-muted-foreground">Reading…</p>
           ) : error || data?.kind === "missing" ? (
             <p className="text-sm text-muted-foreground">Couldn't read this file.</p>
           ) : data?.kind === "text" ? (
             isMarkdown ? (
-              <MarkdownBody className="text-sm leading-relaxed">{data.content ?? ""}</MarkdownBody>
+              <MarkdownBody className="max-w-[65ch] text-sm leading-relaxed">{data.content ?? ""}</MarkdownBody>
             ) : (
-              <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">{data.content}</pre>
+              <pre className="tethr-inset whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed">
+                {data.content}
+              </pre>
             )
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -236,14 +244,14 @@ function CrumbButton({
   const { setNodeRef, isOver } = useDroppable({ id: `up:${crumb.ref}` });
   return (
     <span className="flex items-center gap-1">
-      {showChevron ? <ChevronRight className="h-3 w-3 text-muted-foreground" /> : null}
+      {showChevron ? <span className="text-[13px] text-[var(--tethr-text-3)]">/</span> : null}
       <button
         ref={setNodeRef}
         onClick={onClick}
         className={cn(
-          "px-1.5 py-0.5 font-mono text-[11px] font-bold uppercase tracking-[0.12em]",
-          isOver && "bg-foreground text-background",
-          isLast ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+          "rounded-md px-1.5 py-0.5 text-[13px] transition-colors",
+          isLast ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+          isOver && "bg-primary text-primary-foreground",
         )}
       >
         {crumb.name}
@@ -273,31 +281,31 @@ function Row({
     <div
       ref={setRef}
       className={cn(
-        "group flex items-center gap-2 border bg-card px-3 py-2.5 transition-colors",
+        "group flex items-center gap-2 px-3 py-2.5 transition-colors",
         drag.isDragging ? "opacity-40" : "",
-        isFolder && drop.isOver ? "border-foreground bg-accent" : "border-border hover:border-foreground/60",
+        isFolder && drop.isOver ? "tethr-panel-active" : "hover:bg-[var(--tethr-frost-strong)]",
       )}
     >
       <button
         {...drag.listeners}
         {...drag.attributes}
         aria-label="Drag to move"
-        className="cursor-grab text-muted-foreground/50 hover:text-foreground active:cursor-grabbing"
+        className="cursor-grab text-[var(--tethr-text-3)] opacity-60 hover:text-foreground hover:opacity-100 active:cursor-grabbing"
       >
         <GripVertical className="h-4 w-4" />
       </button>
       <button onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left">
         {isFolder ? (
-          <Folder className="h-4 w-4 shrink-0" />
+          <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
         ) : (
-          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <FileText className="h-4 w-4 shrink-0 text-[var(--tethr-text-3)]" />
         )}
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{item.name}</span>
-        <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+        <span className={cn("min-w-0 flex-1 truncate text-sm", isFolder && "font-medium")}>{item.name}</span>
+        <span className="shrink-0 font-mono text-[10.5px] text-[var(--tethr-text-3)]">
           {item.kind === "file" && item.size != null ? formatBytes(item.size) : ""}
         </span>
         {item.modifiedAt ? (
-          <span className="hidden shrink-0 font-mono text-[10px] text-muted-foreground sm:inline">
+          <span className="hidden shrink-0 font-mono text-[10.5px] text-[var(--tethr-text-3)] sm:inline">
             {formatRelative(item.modifiedAt)}
           </span>
         ) : null}
@@ -323,7 +331,7 @@ function RowAction({ title, onClick, children }: { title: string; onClick: () =>
         e.stopPropagation();
         onClick();
       }}
-      className="border border-transparent p-1 text-muted-foreground hover:border-foreground hover:text-foreground"
+      className="tethr-btn tethr-btn-ghost h-7 w-7"
     >
       {children}
     </button>
@@ -358,11 +366,14 @@ export function FolderDialog({
     }
   };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="w-full max-w-sm border-2 border-foreground bg-card p-4" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--tethr-overlay)] p-4 backdrop-blur-[4px]"
+      onClick={onClose}
+    >
+      <div className="tethr-glass-heavy w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="font-mono text-xs font-bold uppercase tracking-[0.14em]">{title}</h3>
-          <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground">
+          <h3 className="text-[15px] font-medium tracking-[-0.01em]">{title}</h3>
+          <button onClick={onClose} aria-label="Close" className="tethr-btn tethr-btn-ghost h-7 w-7">
             <X className="h-4 w-4" />
           </button>
         </div>

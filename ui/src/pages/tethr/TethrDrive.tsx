@@ -53,17 +53,17 @@ export function TethrDrive() {
   return (
     <div className="space-y-5">
       <div>
-        <MonoTag className="text-foreground">● tethr · drive</MonoTag>
-        <h1 className="mt-2 text-3xl font-extrabold tracking-tight">the drive</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          <span className="font-semibold text-foreground">00 Tethr</span> is your shared workspace —
+        <MonoTag>tethr · drive</MonoTag>
+        <h1 className="tethr-display mt-2 text-[34px] md:text-[40px]">the drive</h1>
+        <p className="mt-2 max-w-[72ch] text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">00 Tethr</span> is your shared workspace —
           it syncs to Google Drive, so it's what your team sees. Drag to move, rename, and organize;
           nothing is ever hard-deleted (archive → 99 Archive).
         </p>
       </div>
 
       {/* Toggles */}
-      <div className="flex flex-col gap-2 border-2 border-foreground bg-card px-4 py-3 sm:flex-row sm:items-center sm:gap-6">
+      <div className="tethr-panel flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:gap-8">
         <ToggleRow
           icon={<HardDrive className="h-4 w-4" />}
           label="Internal working drive"
@@ -139,11 +139,11 @@ function ToggleRow({
   return (
     <div className="flex items-center gap-3">
       <Switch on={on} onToggle={onToggle} label={label} />
-      <div className="flex items-center gap-1.5">
-        {icon}
+      <div className="flex items-center gap-2">
+        <span className="text-muted-foreground">{icon}</span>
         <div>
-          <div className="text-sm font-semibold leading-tight">{label}</div>
-          <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">{hint}</div>
+          <div className="text-sm font-medium leading-tight">{label}</div>
+          <div className="tethr-eyebrow text-[9.5px] tracking-[0.12em]">{hint}</div>
         </div>
       </div>
     </div>
@@ -152,11 +152,11 @@ function ToggleRow({
 
 function SectionHeader({ icon, title, note }: { icon: React.ReactNode; title: string; note?: string }) {
   return (
-    <div className="flex items-center gap-2">
-      {icon}
-      <span className="font-mono text-[11px] font-bold uppercase tracking-[0.14em]">{title}</span>
+    <div className="flex min-w-0 items-center gap-2">
+      <span className="text-muted-foreground">{icon}</span>
+      <span className="text-[15px] font-medium tracking-[-0.01em]">{title}</span>
       {note ? (
-        <span className="hidden truncate font-mono text-[10px] text-muted-foreground sm:inline">· {note}</span>
+        <span className="hidden truncate font-mono text-[10.5px] text-[var(--tethr-text-3)] sm:inline">· {note}</span>
       ) : null}
     </div>
   );
@@ -164,7 +164,7 @@ function SectionHeader({ icon, title, note }: { icon: React.ReactNode; title: st
 
 function NotConnected() {
   return (
-    <div className="border-2 border-dashed border-foreground/30 px-4 py-8 text-center">
+    <div className="tethr-empty tethr-reeds px-4 py-10 text-center">
       <p className="text-sm text-muted-foreground">
         Google Drive isn't connected. Set <code className="font-mono">TETHR_MIRROR_DIR</code> to your
         synced "00 Tethr" folder and make sure Google Drive for desktop is running.
@@ -204,11 +204,11 @@ function MountsSection({ companyId }: { companyId: string }) {
       </div>
 
       {!driveRoot ? (
-        <div className="border-2 border-dashed border-foreground/30 px-4 py-6 text-center text-sm text-muted-foreground">
+        <div className="tethr-empty px-4 py-6 text-center text-sm">
           Connect Google Drive (00 Tethr) first to add other folders.
         </div>
       ) : mounts.length === 0 ? (
-        <div className="flex items-start gap-2 border-2 border-dashed border-foreground/30 px-4 py-6 text-sm text-muted-foreground">
+        <div className="tethr-empty flex items-start gap-2 px-4 py-6 text-sm">
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
             No other folders yet. Add any folder from your Google Drive (e.g. <code className="font-mono">05 Marketing</code>)
@@ -220,11 +220,11 @@ function MountsSection({ companyId }: { companyId: string }) {
           {mounts.map((m) => (
             <div key={m.id} className="space-y-2">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-[11px] font-bold uppercase tracking-[0.12em]">{m.label}</span>
+                <span className="text-sm font-medium">{m.label}</span>
                 <button
                   onClick={() => removeMut.mutate(m.id)}
                   title="Remove from view (folder stays in Google Drive)"
-                  className="border border-transparent p-0.5 text-muted-foreground hover:border-foreground hover:text-foreground"
+                  className="tethr-btn tethr-btn-ghost h-6 w-6"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -278,11 +278,14 @@ function AddFolderDialog({
     }
   };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="w-full max-w-md border-2 border-foreground bg-card p-4" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--tethr-overlay)] p-4 backdrop-blur-[4px]"
+      onClick={onClose}
+    >
+      <div className="tethr-glass-heavy w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="font-mono text-xs font-bold uppercase tracking-[0.14em]">Add a Google Drive folder</h3>
-          <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground">
+          <h3 className="text-[15px] font-medium tracking-[-0.01em]">Add a Google Drive folder</h3>
+          <button onClick={onClose} aria-label="Close" className="tethr-btn tethr-btn-ghost h-7 w-7">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -328,14 +331,17 @@ function Switch({ on, onToggle, label }: { on: boolean; onToggle: () => void; la
       aria-label={label}
       onClick={onToggle}
       className={cn(
-        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 border-foreground transition-colors",
-        on ? "bg-foreground" : "bg-background",
+        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        on
+          ? "bg-primary"
+          : "bg-[var(--tethr-frost-strong)] shadow-[inset_0_0_0_1px_var(--tethr-rim-strong)]",
       )}
     >
       <span
         className={cn(
-          "inline-block h-4 w-4 rounded-full transition-transform",
-          on ? "translate-x-[1.375rem] bg-background" : "translate-x-0.5 bg-foreground",
+          "inline-block h-[18px] w-[18px] rounded-full shadow-[0_1px_3px_rgba(0,0,0,0.25)] transition-transform duration-200",
+          on ? "translate-x-[1.4rem] bg-primary-foreground" : "translate-x-[3px] bg-[var(--tethr-text-3)]",
         )}
       />
     </button>

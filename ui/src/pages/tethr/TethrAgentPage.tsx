@@ -13,10 +13,11 @@ import { PageSkeleton } from "@/components/PageSkeleton";
 import {
   AgentGlyph,
   AgentStatusDot,
-  BudgetBar,
+  BudgetRing,
   MonoTag,
   OutputStatusBadge,
   SensitivityBadge,
+  StatusDot,
   describeCron,
   formatCents,
   formatRelative,
@@ -88,16 +89,19 @@ export function TethrAgentPage() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-4">
-          <div className="flex h-14 w-14 items-center justify-center border-2 border-foreground bg-foreground text-background">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[14px] bg-[var(--tethr-frost-strong)] shadow-[inset_0_1px_0_var(--tethr-rim-hi),inset_0_0_0_1px_var(--tethr-rim-strong)]">
             <AgentGlyph icon={agent.icon} className="h-6 w-6" />
           </div>
-          <div>
-            <MonoTag className="text-foreground">{profile.tag}</MonoTag>
-            <h1 className="flex items-center gap-2 text-3xl font-extrabold tracking-tight">
+          <div className="min-w-0">
+            <MonoTag>{profile.tag}</MonoTag>
+            <h1 className="tethr-display mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[34px] md:text-[40px]">
               {agent.name}
-              <AgentStatusDot status={agent.status} className="mt-1" />
+              <span className="flex items-center gap-1.5 text-[13px] font-normal tracking-normal text-muted-foreground">
+                <AgentStatusDot status={agent.status} />
+                {agent.status.replace(/_/g, " ")}
+              </span>
             </h1>
-            <p className="text-sm text-muted-foreground">{agent.title}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{agent.title}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -119,13 +123,14 @@ export function TethrAgentPage() {
       </div>
 
       {agent.pauseReason ? (
-        <p className="border-2 border-dashed border-amber-600 px-3 py-2 text-sm font-semibold text-amber-700 dark:border-amber-400 dark:text-amber-300">
-          Paused: {agent.pauseReason}
+        <p className="flex items-center gap-2 rounded-[14px] border border-dashed border-[color-mix(in_srgb,var(--tethr-warn)_55%,transparent)] px-3.5 py-2.5 text-sm">
+          <StatusDot tone="paused" />
+          <span className="tethr-tone-warn font-medium">Paused:</span> {agent.pauseReason}
         </p>
       ) : null}
 
       {/* Facts row */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-tethr-stagger>
+      <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-4" data-tethr-stagger>
         <FactCard label="mission">
           <p className="text-sm leading-relaxed">{profile.mission}</p>
         </FactCard>
@@ -140,27 +145,42 @@ export function TethrAgentPage() {
           </div>
         </FactCard>
         <FactCard label="heartbeat">
-          <p className="text-sm font-bold">{describeCron(profile.heartbeatCron)}</p>
+          <p className="text-sm font-medium">{describeCron(profile.heartbeatCron)}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">{profile.heartbeatNote}</p>
         </FactCard>
         <FactCard label="budget · this month">
-          <p className="text-sm font-bold">
-            {formatCents(agent.spentMonthlyCents)}{" "}
-            <span className="text-muted-foreground">
-              / {formatCents(agent.budgetMonthlyCents)}
-            </span>
-            {policy?.hardStopEnabled ? (
-              <span className="ml-2 border border-foreground bg-foreground px-1 py-0.5 font-mono text-[9px] font-bold uppercase text-background">
-                hard stop
-              </span>
-            ) : null}
-          </p>
-          <BudgetBar
-            spentCents={agent.spentMonthlyCents}
-            capCents={agent.budgetMonthlyCents}
-            warnPercent={policy?.warnPercent ?? 80}
-            className="mt-2"
-          />
+          <div className="flex items-center gap-4">
+            {agent.budgetMonthlyCents > 0 ? (
+              <BudgetRing
+                spentCents={agent.spentMonthlyCents}
+                capCents={agent.budgetMonthlyCents}
+                warnPercent={policy?.warnPercent ?? 80}
+                size={92}
+                label={`${formatCents(agent.spentMonthlyCents)} of ${formatCents(agent.budgetMonthlyCents)} spent this month`}
+              >
+                <span className="tethr-figure text-[19px]">{formatCents(agent.spentMonthlyCents)}</span>
+                <span className="text-[10px] text-muted-foreground">
+                  of {formatCents(agent.budgetMonthlyCents)}
+                </span>
+              </BudgetRing>
+            ) : (
+              <p className="tethr-figure text-[28px]">
+                {formatCents(agent.spentMonthlyCents)}
+              </p>
+            )}
+            <div className="min-w-0 space-y-1.5">
+              <p className="text-xs text-muted-foreground tabular-nums">
+                {agent.budgetMonthlyCents > 0
+                  ? `${Math.round((agent.spentMonthlyCents / agent.budgetMonthlyCents) * 100)}% of the monthly cap`
+                  : "No monthly cap"}
+              </p>
+              {policy?.hardStopEnabled ? (
+                <span className="tethr-pill tethr-pill-solid px-2 py-0.5 text-[9px]">
+                  hard stop
+                </span>
+              ) : null}
+            </div>
+          </div>
         </FactCard>
       </div>
 
@@ -169,9 +189,9 @@ export function TethrAgentPage() {
 
       {/* Routing table */}
       {profile.routingTable.length > 0 ? (
-        <section className="border-2 border-foreground bg-card">
-          <header className="border-b-2 border-foreground px-4 py-2.5">
-            <MonoTag className="text-foreground">routing table</MonoTag>
+        <section className="tethr-panel overflow-hidden">
+          <header className="border-b tethr-rule px-4 py-3">
+            <MonoTag>routing table</MonoTag>
           </header>
           <div>
             {profile.routingTable.map((entry, index) => (
@@ -179,16 +199,18 @@ export function TethrAgentPage() {
                 key={entry.to}
                 className={cn(
                   "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5",
-                  index < profile.routingTable.length - 1 && "border-b border-border",
+                  index < profile.routingTable.length - 1 && "border-b tethr-rule",
                 )}
               >
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold">{entry.description}</p>
-                  <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
+                  <p className="text-sm font-medium">{entry.description}</p>
+                  <p className="mt-0.5 truncate font-mono text-[10.5px] text-muted-foreground">
                     {entry.when.slice(0, 4).join(" · ")}
                   </p>
                 </div>
-                <span className="font-mono text-[12px] font-bold">{entry.to}</span>
+                <span className="tethr-pill px-2.5 py-1 text-[11px] normal-case tracking-normal text-foreground">
+                  {entry.to}
+                </span>
               </div>
             ))}
           </div>
@@ -201,7 +223,7 @@ export function TethrAgentPage() {
           <div className="mb-3">
             <MonoTag>subagents · {subagents.length}</MonoTag>
           </div>
-          <div className="grid gap-3 lg:grid-cols-2" data-tethr-stagger>
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2" data-tethr-stagger>
             {subagents.map((subagent) => (
               <SubagentCard key={subagent.id} subagent={subagent} />
             ))}
@@ -210,7 +232,7 @@ export function TethrAgentPage() {
       ) : null}
 
       {/* Recent work */}
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <section>
           <div className="mb-3">
             <MonoTag>recent outputs</MonoTag>
@@ -221,13 +243,13 @@ export function TethrAgentPage() {
                 <Link
                   key={output.id}
                   to={`/queue/${output.id}`}
-                  className="group flex items-center justify-between gap-3 border border-border bg-card px-3 py-2 transition-colors hover:border-foreground"
+                  className="tethr-panel tethr-panel-hover group flex items-center justify-between gap-3 rounded-[12px] px-3.5 py-2.5"
                 >
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold">
+                    <span className="block truncate text-sm font-medium">
                       {output.title}
                     </span>
-                    <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+                    <span className="tethr-eyebrow text-[9.5px] tracking-[0.14em]">
                       {output.kind.replace(/_/g, " ")} · {formatRelative(output.createdAt)}
                     </span>
                   </span>
@@ -239,7 +261,7 @@ export function TethrAgentPage() {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">No outputs yet.</p>
+            <p className="tethr-empty px-4 py-6 text-center text-sm">No outputs yet.</p>
           )}
         </section>
 
@@ -252,33 +274,25 @@ export function TethrAgentPage() {
               {runs.map((run) => (
                 <div
                   key={run.id}
-                  className="flex items-center justify-between gap-3 border border-border bg-card px-3 py-2"
+                  className="tethr-panel flex items-center justify-between gap-3 rounded-[12px] px-3.5 py-2.5"
                 >
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold">
+                    <span className="block truncate text-sm font-medium">
                       {run.summary ?? run.triggerDetail ?? "Heartbeat"}
                     </span>
-                    <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+                    <span className="tethr-eyebrow text-[9.5px] tracking-[0.14em]">
                       {run.invocationSource} · {formatRelative(run.startedAt)}
                     </span>
                   </span>
-                  <span
-                    className={cn(
-                      "shrink-0 border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em]",
-                      run.status === "succeeded"
-                        ? "border-emerald-700 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300"
-                        : run.status === "failed"
-                          ? "border-destructive text-destructive"
-                          : "border-border text-muted-foreground",
-                    )}
-                  >
+                  <span className="tethr-pill shrink-0 px-2 py-0.5 text-[9.5px]">
+                    <StatusDot status={run.status} />
                     {run.status}
                   </span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">No runs yet.</p>
+            <p className="tethr-empty px-4 py-6 text-center text-sm">No runs yet.</p>
           )}
         </section>
       </div>
@@ -288,9 +302,9 @@ export function TethrAgentPage() {
 
 function FactCard({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="border-2 border-border bg-card p-4">
+    <div className="tethr-panel p-4">
       <MonoTag>{label}</MonoTag>
-      <div className="mt-1.5">{children}</div>
+      <div className="mt-2">{children}</div>
     </div>
   );
 }
@@ -321,19 +335,25 @@ function ApprovalsCard({
   const roster = rosterData?.roster;
 
   return (
-    <section className="grid gap-3 sm:grid-cols-2">
+    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {/* Auto / manual approvals */}
-      <div className="border-2 border-foreground bg-card p-4">
+      <div className="tethr-panel p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <MonoTag className="text-foreground">approvals</MonoTag>
-            <p className="mt-1.5 text-sm font-bold">{profile.autoApprove ? "Auto" : "Manual"}</p>
+            <MonoTag>approvals</MonoTag>
+            <p className="mt-1.5 text-[15px] font-medium tracking-[-0.01em]">
+              {profile.autoApprove ? "Auto" : "Manual"}
+            </p>
           </div>
-          <Switch
-            on={profile.autoApprove}
-            disabled={update.isPending}
-            onToggle={() => update.mutate({ autoApprove: !profile.autoApprove })}
+          <Segmented
             label="Auto-approve"
+            value={profile.autoApprove ? "auto" : "manual"}
+            disabled={update.isPending}
+            options={[
+              { value: "manual", label: "Manual" },
+              { value: "auto", label: "Auto" },
+            ]}
+            onChange={(next) => update.mutate({ autoApprove: next === "auto" })}
           />
         </div>
         <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
@@ -344,24 +364,17 @@ function ApprovalsCard({
       </div>
 
       {/* Who gets buzzed */}
-      <div className="border-2 border-border bg-card p-4">
+      <div className="tethr-panel p-4">
         <MonoTag>overseer · who gets buzzed</MonoTag>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {OVERSEER_ROLES.map((role) => (
-            <button
-              key={role}
-              onClick={() => update.mutate({ overseerRole: role })}
-              disabled={update.isPending}
-              className={cn(
-                "border-2 px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition-colors",
-                profile.overseerRole === role
-                  ? "border-foreground bg-foreground text-background"
-                  : "border-border text-muted-foreground hover:border-foreground hover:text-foreground",
-              )}
-            >
-              {ROLE_LABEL[role]}
-            </button>
-          ))}
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          <Segmented
+            label="Overseer role"
+            value={profile.overseerRole}
+            disabled={update.isPending}
+            reselect
+            options={OVERSEER_ROLES.map((role) => ({ value: role, label: ROLE_LABEL[role] }))}
+            onChange={(role) => update.mutate({ overseerRole: role })}
+          />
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
           {roster
@@ -375,42 +388,68 @@ function ApprovalsCard({
   );
 }
 
-function Switch({ on, disabled, onToggle, label }: { on: boolean; disabled?: boolean; onToggle: () => void; label: string }) {
+/** Frosted pill segmented control (Auto/Manual, overseer role). */
+function Segmented<T extends string>({
+  label,
+  value,
+  options,
+  disabled,
+  reselect,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  disabled?: boolean;
+  /** Fire onChange even when the already-active option is clicked. */
+  reselect?: boolean;
+  onChange: (value: T) => void;
+}) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
+    <div
+      role="radiogroup"
       aria-label={label}
-      disabled={disabled}
-      onClick={onToggle}
-      className={cn(
-        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 border-foreground transition-colors",
-        on ? "bg-foreground" : "bg-background",
-        disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
-      )}
+      className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-[var(--tethr-frost)] p-0.5 shadow-[inset_0_0_0_1px_var(--tethr-rim)]"
     >
-      <span
-        className={cn(
-          "inline-block h-4 w-4 rounded-full transition-transform",
-          on ? "translate-x-[1.375rem] bg-background" : "translate-x-0.5 bg-foreground",
-        )}
-      />
-    </button>
+      {options.map((option) => {
+        const active = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            disabled={disabled}
+            onClick={() => {
+              if (active && !reselect) return;
+              onChange(option.value);
+            }}
+            className={cn(
+              "tethr-btn h-7 px-3 text-[12px]",
+              active
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            )}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
 function SubagentCard({ subagent }: { subagent: TethrSubagent }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="border-2 border-border bg-card transition-colors hover:border-foreground/60">
+    <div className="tethr-panel tethr-panel-hover overflow-hidden">
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left"
       >
         <div className="min-w-0">
-          <p className="font-mono text-[12px] font-bold">{subagent.tag}</p>
-          <p className="mt-0.5 text-sm font-semibold leading-snug">{subagent.job}</p>
+          <p className="font-mono text-[12px] font-medium">{subagent.tag}</p>
+          <p className="mt-0.5 text-sm leading-snug">{subagent.job}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <SensitivityBadge sensitivity={subagent.sensitivity} />
@@ -423,14 +462,14 @@ function SubagentCard({ subagent }: { subagent: TethrSubagent }) {
         </div>
       </button>
       {open ? (
-        <div className="space-y-3 border-t border-border px-4 py-3 text-xs leading-relaxed">
+        <div className="space-y-3 border-t tethr-rule px-4 py-3 text-xs leading-relaxed">
           {subagent.effectiveTools && subagent.effectiveTools.length ? (
             <div>
               <MonoTag>skills · tools</MonoTag>
               <div className="mt-1.5 space-y-1">
                 {subagent.effectiveTools.map((t) => (
                   <div key={t.name} className="flex gap-2">
-                    <span className="shrink-0 border border-foreground bg-foreground px-1.5 py-0.5 font-mono text-[10px] font-bold text-background">
+                    <span className="tethr-pill tethr-pill-solid h-fit shrink-0 px-2 py-0.5 text-[10px] normal-case tracking-normal">
                       {t.name}
                     </span>
                     <span className="text-muted-foreground">{t.description}</span>
@@ -496,7 +535,7 @@ function SpecBlock({
       <ul className="mt-1 space-y-0.5">
         {items.map((item, index) => (
           <li key={index} className="flex gap-2 text-muted-foreground">
-            <span className="shrink-0 font-mono font-bold text-foreground">
+            <span className="tethr-text-3 shrink-0 font-mono">
               {ordered ? `${index + 1}.` : "→"}
             </span>
             {item}

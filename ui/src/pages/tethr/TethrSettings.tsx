@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
 import { PageSkeleton } from "@/components/PageSkeleton";
-import { MonoTag } from "@/components/tethr/primitives";
+import { MonoTag, StatusDot } from "@/components/tethr/primitives";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
 import { cn } from "@/lib/utils";
@@ -44,9 +44,9 @@ export function TethrSettings() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <MonoTag className="text-foreground">● tethr · settings</MonoTag>
-        <h1 className="mt-2 text-3xl font-extrabold tracking-tight">providers</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <MonoTag>tethr · settings</MonoTag>
+        <h1 className="tethr-display mt-2 text-[34px] md:text-[40px]">providers</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
           Everything below sits behind an interface. Moving to the cloud is an env
           change per MIGRATION-NOTES.md, not a rewrite.
         </p>
@@ -105,12 +105,12 @@ export function TethrSettings() {
 
       <OverseerRosterCard companyId={selectedCompanyId} />
 
-      <div className="flex items-center justify-between border-2 border-foreground bg-card px-4 py-3">
+      <div className="tethr-panel flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
-          <GitCommitHorizontal className="h-4 w-4" />
-          <MonoTag className="text-foreground">paperclip engine</MonoTag>
+          <GitCommitHorizontal className="h-4 w-4 text-muted-foreground" />
+          <MonoTag>paperclip engine</MonoTag>
         </div>
-        <span className="font-mono text-xs font-bold">
+        <span className="font-mono text-xs text-muted-foreground">
           {data.paperclipSha.slice(0, 12)}
         </span>
       </div>
@@ -125,7 +125,8 @@ export function TethrSettings() {
 
 // The usage throttle: one switch that pauses EVERY agent — heartbeats and
 // requests both stop doing LLM work until resumed. The kill switch for
-// subscription usage. Inverted styling when paused so it can't be missed.
+// subscription usage. Paused gets the active-panel treatment + a warn dot so
+// it can't be missed (calm, not alarming).
 function ThrottleCard({ companyId }: { companyId: string }) {
   const queryClient = useQueryClient();
   const { data } = useQuery({
@@ -141,17 +142,14 @@ function ThrottleCard({ companyId }: { companyId: string }) {
   const paused = data?.paused === true;
 
   return (
-    <div
-      className={
-        "border-2 border-foreground p-4 " + (paused ? "bg-foreground text-background" : "bg-card")
-      }
-    >
+    <div className={cn("tethr-panel p-4", paused && "tethr-panel-active")}>
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-extrabold tracking-tight">
+          <p className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
+            <StatusDot tone={paused ? "warn" : "ok"} />
             {paused ? "Agents paused" : "Agents active"}
           </p>
-          <p className={"mt-1.5 text-sm " + (paused ? "text-background/80" : "text-muted-foreground")}>
+          <p className="mt-1.5 text-sm text-muted-foreground">
             {paused
               ? "Every agent is paused — no heartbeats, no requests, no LLM usage. Resume when you're ready."
               : "Pause every agent instantly (usage throttle) when you're near your Claude limits. Heartbeats + requests both stop."}
@@ -164,17 +162,12 @@ function ThrottleCard({ companyId }: { companyId: string }) {
             onToggle={() => mutation.mutate(!paused)}
             label={paused ? "Paused" : "Active"}
           />
-          <span className="font-mono text-[9px] font-bold uppercase tracking-[0.14em]">
+          <span className="tethr-eyebrow text-[9px]">
             {paused ? "paused" : "active"}
           </span>
         </div>
       </div>
-      <p
-        className={
-          "mt-3 font-mono text-[10px] uppercase tracking-[0.12em] " +
-          (paused ? "text-background/70" : "text-muted-foreground/70")
-        }
-      >
+      <p className="tethr-eyebrow mt-3 text-[9.5px]">
         also toggle from Slack — say “pause agents” / “resume agents”
       </p>
     </div>
@@ -204,10 +197,13 @@ function LlmModeCard({
   const disabled = mutation.isPending || (!isLive && !canGoLive);
 
   return (
-    <div className="border-2 border-foreground bg-card p-4">
+    <div className="tethr-panel p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-extrabold tracking-tight">Agent intelligence</p>
+          <p className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
+            <StatusDot tone={isLive ? "live" : "idle"} />
+            Agent intelligence
+          </p>
           <p className="mt-1.5 text-sm text-muted-foreground">
             {isLive
               ? `Live Claude · ${llm.model}. Every agent reply is a real API call — it spends.`
@@ -221,18 +217,19 @@ function LlmModeCard({
             onToggle={() => mutation.mutate(isLive ? "mock" : "live")}
             label={isLive ? "Live Claude" : "Mock"}
           />
-          <span className="font-mono text-[9px] font-bold uppercase tracking-[0.14em]">
+          <span className="tethr-eyebrow text-[9px]">
             {isLive ? "live" : "mock"}
           </span>
         </div>
       </div>
-      <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/70">
+      <p className="tethr-eyebrow mt-3 text-[9.5px]">
         {!canGoLive
           ? "set ANTHROPIC_API_KEY to enable live · resets to env default on restart"
           : "instance-wide · takes effect on the next request · resets to env default on restart"}
       </p>
       {mutation.isError ? (
-        <p className="mt-2 border-l-2 border-foreground pl-2 text-xs text-muted-foreground">
+        <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+          <StatusDot tone="bad" />
           {mutation.error instanceof Error ? mutation.error.message : "Could not switch."}
         </p>
       ) : null}
@@ -260,15 +257,18 @@ function Switch({
       disabled={disabled}
       onClick={onToggle}
       className={cn(
-        "relative inline-flex h-6 w-11 items-center rounded-full border-2 border-foreground transition-colors",
-        on ? "bg-foreground" : "bg-background",
+        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        on
+          ? "bg-primary"
+          : "bg-[var(--tethr-frost-strong)] shadow-[inset_0_0_0_1px_var(--tethr-rim-strong)]",
         disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
       )}
     >
       <span
         className={cn(
-          "inline-block h-4 w-4 rounded-full transition-transform",
-          on ? "translate-x-[1.375rem] bg-background" : "translate-x-0.5 bg-foreground",
+          "inline-block h-[18px] w-[18px] rounded-full shadow-[0_1px_3px_rgba(0,0,0,0.25)] transition-transform duration-200",
+          on ? "translate-x-[1.4rem] bg-primary-foreground" : "translate-x-[3px] bg-[var(--tethr-text-3)]",
         )}
       />
     </button>
@@ -288,22 +288,16 @@ function ProviderCard({
 }) {
   const live = state === "live" || state === "linked" || state === "external postgres";
   return (
-    <div className="border-2 border-border bg-card p-4">
+    <div className="tethr-panel p-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-extrabold tracking-tight">{name}</p>
-        <span
-          className={cn(
-            "border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em]",
-            live
-              ? "border-foreground bg-foreground text-background"
-              : "border-border text-muted-foreground",
-          )}
-        >
+        <p className="text-[15px] font-medium tracking-[-0.01em]">{name}</p>
+        <span className={cn("tethr-pill px-2 py-0.5 text-[9.5px] leading-4", live && "text-foreground")}>
+          <StatusDot tone={live ? "ok" : "idle"} />
           {state}
         </span>
       </div>
-      <p className="mt-1.5 text-sm text-muted-foreground">{detail}</p>
-      <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/70">
+      <p className="mt-1.5 break-words text-sm text-muted-foreground">{detail}</p>
+      <p className="tethr-eyebrow mt-2 text-[9.5px]">
         cloud swap: {swap}
       </p>
     </div>
@@ -345,10 +339,10 @@ function OverseerRosterCard({ companyId }: { companyId: string }) {
     }));
 
   return (
-    <div className="border-2 border-foreground bg-card">
-      <div className="flex items-center gap-2 border-b-2 border-foreground px-4 py-2.5">
-        <Users className="h-4 w-4" />
-        <MonoTag className="text-foreground">overseer roster · who gets buzzed</MonoTag>
+    <div className="tethr-panel">
+      <div className="flex items-center gap-2 border-b tethr-rule px-4 py-3">
+        <Users className="h-4 w-4 text-muted-foreground" />
+        <MonoTag>overseer roster · who gets buzzed</MonoTag>
       </div>
       <div className="space-y-3 p-4">
         <p className="text-xs leading-relaxed text-muted-foreground">
@@ -356,10 +350,13 @@ function OverseerRosterCard({ companyId }: { companyId: string }) {
           (Slack profile → ⋯ → Copy member ID) for each. New agents auto-route by domain.
         </p>
         {ROSTER_ROLES.map(({ role, label, hint }) => (
-          <div key={role} className="grid gap-2 sm:grid-cols-[7rem_minmax(0,1fr)_10rem] sm:items-center">
+          <div
+            key={role}
+            className="grid gap-2 border-t tethr-rule pt-3 first-of-type:border-t-0 first-of-type:pt-0 sm:grid-cols-[7rem_minmax(0,1fr)_10rem] sm:items-center"
+          >
             <div>
-              <p className="text-sm font-bold">{label}</p>
-              <p className="font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground">{hint}</p>
+              <p className="text-sm font-medium">{label}</p>
+              <p className="tethr-eyebrow text-[9px] tracking-[0.12em]">{hint}</p>
             </div>
             <Input value={val(role, "name")} onChange={(e) => set(role, "name", e.target.value)} placeholder="Name" />
             <Input
