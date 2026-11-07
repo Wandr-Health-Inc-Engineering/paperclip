@@ -75,8 +75,8 @@
   /* Tethr surface tokens */
   --tethr-glass: rgba(255, 255, 255, 0.55);
   --tethr-glass-solid: #f6f5f3;
-  /* The app sidebar: a hair darker than the ground, never a white slab. */
-  --tethr-sidebar: rgba(22, 20, 18, 0.028);
+  /* The page ground: the reference's app stage, a shade under --background. */
+  --tethr-ground: #d9d6d1;
   /* Windows you work and read in (the Drive Finder, Quick Look): opaque. */
   --tethr-window: #f4f3f0;
   --tethr-window-bar: #eeece8;
@@ -148,7 +148,7 @@
 
   --tethr-glass: rgba(40, 36, 32, 0.55);
   --tethr-glass-solid: #1d1a17;
-  --tethr-sidebar: rgba(255, 244, 230, 0.022);
+  --tethr-ground: #0f0d0b;
   --tethr-window: #171513;
   --tethr-window-bar: #1c1a17;
   --tethr-window-side: #141210;
@@ -244,19 +244,20 @@ samp,
 
 /* ===== L2 — the app shell on glass ===== */
 
-/* Sidebar column (company sidebar + account menu below it). On desktop it sits
-   on the ground as a faint tint, not a white glass slab, and every shell
-   divider uses the same hairline (--border) as the top bar so they meet. */
-aside.border-r,
-div.border-t.border-r.bg-background {
-  background-color: var(--tethr-sidebar);
-  border-color: var(--border);
+/* The page ground is a shade darker than component fills (--background), as in
+   the reference's app stage, so frost panels and glass read as surfaces. */
+body {
+  background-color: var(--tethr-ground);
 }
 
-/* The sidebar's own header row carries the top bar's hairline across, so the
-   line under "DRIVE" continues under the company switcher at the same height. */
-aside.border-r > div.h-12:first-child {
-  border-bottom: 1px solid var(--border);
+/* Sidebar column (company sidebar + account menu below it). The column itself
+   is the panel (below); the aside and account row inside it are see-through,
+   and the only divider inside is the hairline above the account row. */
+aside.border-r,
+div.border-t.border-r.bg-background {
+  background-color: transparent;
+  border-color: var(--tethr-rim);
+  border-right-width: 0;
 }
 
 /* Mobile: the sidebar is a drawer over a dimmed page, so it needs a solid fill. */
@@ -265,6 +266,75 @@ aside.border-r > div.h-12:first-child {
   div.border-t.border-r.bg-background {
     background-color: var(--tethr-glass-solid);
   }
+}
+
+/* Desktop: the floating shell from the Smoked Glass reference. A 12px gutter
+   runs around and between a rounded glass sidebar panel and the page, and the
+   top bar is its own rounded glass bar. Nothing touches the window edge. */
+@media (min-width: 768px) {
+  div.min-h-0.flex-1.flex.overflow-hidden:has(> div.flex.h-full.flex-col.shrink-0) {
+    gap: 12px;
+    padding: 12px;
+  }
+
+  div.min-h-0.flex-1.flex.overflow-hidden > div.flex.h-full.flex-col.shrink-0 {
+    overflow: hidden;
+    border: 1px solid var(--tethr-rim);
+    border-radius: 16px;
+    background-color: var(--tethr-glass);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    backdrop-filter: blur(24px) saturate(140%);
+    box-shadow: inset 0 1px 0 var(--tethr-rim-hi), var(--tethr-shadow-float);
+  }
+
+  /* Top bar: a floating glass bar, sentence-case title like the reference crumb. */
+  div.flex.min-w-0.flex-col.h-full.flex-1 > div:first-child > div.border-b.h-12 {
+    border: 1px solid var(--tethr-rim);
+    border-radius: 14px;
+    padding-inline: 16px 8px;
+    background-color: var(--tethr-glass);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    backdrop-filter: blur(24px) saturate(140%);
+    box-shadow: inset 0 1px 0 var(--tethr-rim-hi), var(--tethr-shadow-float);
+  }
+  /* Page content lines up with the top bar's edges, 12px below it. */
+  #main-content {
+    padding: 12px 4px 4px;
+  }
+}
+
+/* Top-bar page title: sentence case like the reference crumb, at every width. */
+div.border-b.h-12 h1.uppercase.tracking-wider {
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  text-transform: none;
+}
+
+/* Reduced transparency: the floating shell panels go solid. */
+@media (min-width: 768px) and (prefers-reduced-transparency: reduce) {
+  div.min-h-0.flex-1.flex.overflow-hidden > div.flex.h-full.flex-col.shrink-0,
+  div.flex.min-w-0.flex-col.h-full.flex-1 > div:first-child > div.border-b.h-12 {
+    background-color: var(--tethr-glass-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* The workspace switcher reads as the reference's org card. */
+aside.border-r > div.h-12:first-child {
+  height: auto;
+  padding: 12px 10px 4px;
+}
+aside.border-r > div.h-12:first-child > [data-slot="dropdown-menu-trigger"] {
+  height: 40px;
+  border-radius: 12px;
+  padding-inline: 8px 10px;
+  background-color: var(--tethr-frost);
+  box-shadow: inset 0 0 0 1px var(--tethr-rim);
+}
+aside.border-r > div.h-12:first-child > [data-slot="dropdown-menu-trigger"]:hover {
+  background-color: var(--tethr-frost-strong);
 }
 
 /* Sidebar nav items: soft rounded rows; the active row is a frosted pill. */
@@ -278,7 +348,11 @@ aside nav a.bg-accent {
   box-shadow: inset 0 0 0 1px var(--tethr-rim);
 }
 
-/* Top bar: transparent over the ground with a single hairline. */
+/* The account row at the foot of the sidebar panel. */
+div.border-t.border-r.bg-background button {
+  border-radius: 10px;
+}
+
 #main-content {
   scrollbar-gutter: stable;
 }
@@ -422,6 +496,33 @@ nav[aria-label="Mobile navigation"],
     background-color: var(--tethr-glass-solid);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
+  }
+}
+
+/* Radius scale. Upstream index.css pins --radius-lg/--radius-xl to 0px inside
+   `@theme inline`, which bakes a literal 0 into .rounded-lg/.rounded-xl, so
+   ~240 core cards and boxes rendered square. A variable can't reach an inlined
+   value, so the utilities themselves are restated here, in the same
+   `utilities` layer (later in order, same specificity) so `!` overrides and
+   other utilities still behave. Values follow the reference: 12 / 14px. */
+@layer utilities {
+  .rounded-lg {
+    border-radius: 12px;
+  }
+  .rounded-xl {
+    border-radius: var(--tethr-r-md);
+  }
+  .rounded-b-xl {
+    border-bottom-left-radius: var(--tethr-r-md);
+    border-bottom-right-radius: var(--tethr-r-md);
+  }
+
+  /* Core list boxes that ship with a border and no radius at all (Dashboard
+     recent activity, the Agents list). Clip so row hovers follow the corner. */
+  #main-content .border.border-border.divide-y.overflow-hidden,
+  #main-content .border.border-border.py-1 {
+    border-radius: 12px;
+    overflow: hidden;
   }
 }
 

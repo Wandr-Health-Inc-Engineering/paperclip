@@ -716,9 +716,16 @@ Frosted panels floating over warm ink: the Aina glass card + Oura's calm and big
   `tethr-panel` frost (page panels/cards/rows — translucent, hairline, **no blur**) · L2
   `tethr-glass` (blur 24 — ONLY things that float or ask for attention: menus, popovers,
   approval cards, composer) · L3 `tethr-glass-heavy` (dialogs). Reading/working windows (the
-  Drive Finder, Quick Look) use **`tethr-window`** — opaque, never see-through. The app
-  sidebar is a faint `--tethr-sidebar` tint (no glass), and every shell divider uses `--border`
-  so the sidebar header's hairline meets the top bar's. **Never put `backdrop-filter` on a scrim
+  Drive Finder, Quick Look) use **`tethr-window`** — opaque, never see-through. **Floating
+  shell (desktop, matches the reference artifact):** a 12px gutter around and between a
+  rounded (16px) glass sidebar panel — workspace switcher as an org card, account row at its
+  foot — and a rounded (14px) glass top bar with a sentence-case title; page content lines up
+  with the bar. The page ground is `--tethr-ground` (Day `#d9d6d1`, the reference's app stage),
+  a shade under `--background`, so panels read as surfaces. Phones keep the edge-to-edge
+  drawer layout. **Radius scale:** upstream `index.css` pins `--radius-lg/-xl` to 0 inside
+  `@theme inline` (baked into the utilities), so the theme restates `.rounded-lg` (12px) and
+  `.rounded-xl` (14px) in its `utilities` layer — don't remove that block or ~240 core cards
+  go square again. **Never put `backdrop-filter` on a scrim
   whose child is glass** — a blurred parent cuts off the child's blur and the sheet turns
   see-through (the old viewer bug); scrims use `tethr-scrim` (dim only). 1px rims with
   a lit top edge; radius 14px panels, 10px fields, pill buttons (`tethr-btn` + `-primary/-glass/
