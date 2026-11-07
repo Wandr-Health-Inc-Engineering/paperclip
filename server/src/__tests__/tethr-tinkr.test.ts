@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, desc, eq } from "drizzle-orm";
 import {
   agents,
+  approvals,
   budgetPolicies,
   createDb,
   tethrAgentProfiles,
@@ -341,6 +342,41 @@ describeEmbeddedPostgres("tethr Tinkr (org mechanic)", () => {
     const radar = await profileByTag("@radar");
     const [agent] = await db.select().from(agents).where(eq(agents.id, radar!.agentId)).limit(1);
     expect(agent.status).toBe("paused");
+  });
+
+  it("a thread 'approve' only counts from a listed approver, and logs who it was", async () => {
+    process.env.TETHR_OVERSEERS_FILE = path.join(storageDir, "overseers.json");
+    const { setRoster } = await import("../tethr/overseers.ts");
+    await setRoster(companyId, { growth: { name: "Mark", slackId: "UMARK" } });
+
+    const routing = routingService(db);
+    const run = await routing.routeRequest({
+      companyId,
+      requestText: "resume @radar",
+      sourceKey: "slack:im:CAPPROVERS",
+    });
+    expect(run.status).toBe("gated");
+    const staged = await latestOrgChangeOutput();
+    expect(staged?.status).toBe("gated");
+
+    const { routeInboundKickoff } = await import("../tethr/slack.ts");
+    // A stranger in the thread says "approve" → refused, nothing applied.
+    await routeInboundKickoff(db, { requestText: "approve", channel: "CAPPROVERS", isDM: true, userId: "USTRANGER" });
+    const [stillGated] = await db.select().from(tethrOutputs).where(eq(tethrOutputs.id, staged!.id));
+    expect(stillGated.status).toBe("gated");
+
+    // No sender id at all → refused too.
+    await routeInboundKickoff(db, { requestText: "approve", channel: "CAPPROVERS", isDM: true });
+    const [stillGated2] = await db.select().from(tethrOutputs).where(eq(tethrOutputs.id, staged!.id));
+    expect(stillGated2.status).toBe("gated");
+
+    // The roster's growth overseer approves → applied, and the approval names them.
+    await routeInboundKickoff(db, { requestText: "approve", channel: "CAPPROVERS", isDM: true, userId: "UMARK" });
+    const [decided] = await db.select().from(tethrOutputs).where(eq(tethrOutputs.id, staged!.id));
+    expect(decided.status).not.toBe("gated");
+    const [approval] = await db.select().from(approvals).where(eq(approvals.id, decided.approvalId!));
+    expect(approval.decidedByUserId).toBe("Mark (Slack)");
+    delete process.env.TETHR_OVERSEERS_FILE;
   });
 
   it("an unparseable ask answers inline instead of littering the Queue", async () => {

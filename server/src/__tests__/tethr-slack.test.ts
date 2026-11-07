@@ -11,6 +11,7 @@ import {
   isAffirmative,
   isResetPhrase,
   postSlackMessage,
+  resolveSlackApprover,
   slackConfigured,
   slackDecisionIntent,
   slackSourceKey,
@@ -496,5 +497,44 @@ describe("verifySlackSignature", () => {
     } finally {
       if (saved !== undefined) process.env.SLACK_SIGNING_SECRET = saved;
     }
+  });
+});
+
+describe("Slack thread approvals — only approvers can decide", () => {
+  const roster = {
+    tech: { name: "Frank", slackId: "UFRANK" },
+    exec: { name: "Alec", slackId: "UALEC" },
+    growth: { name: "Mark", slackId: "UMARK" },
+  };
+
+  it("carries the sender's Slack member id through interpretation", () => {
+    const interp = interpretSlackEvent({
+      type: "event_callback",
+      event: { type: "message", channel_type: "im", channel: "D1", ts: "1.1", text: "approve", user: "UMARK" },
+    });
+    expect(interp.type).toBe("kickoff");
+    expect(interp.type === "kickoff" && interp.userId).toBe("UMARK");
+  });
+
+  it("recognizes roster members by Slack id and names them", () => {
+    expect(resolveSlackApprover(roster, "UMARK", "")).toEqual({ slackId: "UMARK", name: "Mark" });
+    expect(resolveSlackApprover(roster, "UALEC", "")?.name).toBe("Alec");
+  });
+
+  it("accepts the env allowlist, with or without a name", () => {
+    expect(resolveSlackApprover(roster, "UOPS", "UOPS:Ops lead, UX")).toEqual({ slackId: "UOPS", name: "Ops lead" });
+    expect(resolveSlackApprover(roster, "UX", "UOPS:Ops lead, UX")).toEqual({ slackId: "UX", name: "UX" });
+  });
+
+  it("refuses anyone else, an unknown sender, and never matches blank roster ids", () => {
+    const blank = {
+      tech: { name: "Tech lead", slackId: "" },
+      exec: { name: "Exec", slackId: "" },
+      growth: { name: "Growth & Ops", slackId: "" },
+    };
+    expect(resolveSlackApprover(roster, "USTRANGER", "")).toBeNull();
+    expect(resolveSlackApprover(roster, undefined, "")).toBeNull();
+    expect(resolveSlackApprover(blank, "", "")).toBeNull();
+    expect(resolveSlackApprover(blank, "USTRANGER", undefined)).toBeNull();
   });
 });

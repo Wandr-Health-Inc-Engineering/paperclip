@@ -149,6 +149,11 @@ pnpm install        # once
 pnpm dev            # server :3100 + UI :5173, embedded Postgres, auto-migrate, auto-seed
 ```
 
+**DB tests as root:** embedded Postgres won't start as root, so the DB-backed Tethr suites
+silently skip. Run them as a regular user: `useradd -m tester`, make
+`server/node_modules/.vite-temp` and `.vite` writable, then
+`su tester -c "cd server && HOME=/home/tester npx vitest run src/__tests__/tethr"`.
+
 **Cloud container / running as root:** embedded Postgres refuses to init as root. Use the
 system one instead: `service postgresql start`, set the `postgres` password, `createdb paperclip`,
 then `DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/paperclip PAPERCLIP_MIGRATION_AUTO_APPLY=true pnpm dev:once`.
@@ -241,6 +246,13 @@ deploys don't break; the code default is `DEFAULT_TETHR_CHANNEL` in `slack.ts`.
 - **Env:** `SLACK_BOT_TOKEN` (send/recv), `SLACK_APP_TOKEN` (Socket Mode/local),
   `SLACK_SIGNING_SECRET` (Events API only), optional `SLACK_SCOUT_CHANNEL`, `TETHR_SLACK_COMPANY_ID`.
   Cloud Slack app: gate **A2** in `MANUAL-STEPS.md`; local: `LOCAL.md`.
+- **Thread approvals are approver-only (2026-11-07 fix).** Replying "approve"/"reject" in a Slack
+  thread decides its pending gated item ONLY when the sender's Slack member id is on the overseer
+  roster (Settings → overseers) or in `TETHR_SLACK_APPROVER_IDS` (`U123:Mark,U456`); anyone else
+  gets "decide it in the Queue" and nothing is applied. The approval is logged as "<name> (Slack)"
+  (was a hard-coded "mark (Slack)" for any replier). `resolveSlackApprover` in slack.ts; locked by
+  `tethr-slack.test.ts` + `tethr-tinkr.test.ts`. **Manual step:** set the three Slack IDs in Settings
+  (MANUAL-STEPS C6a) or Slack thread approvals are refused.
 - **Manual outbound test:** `SLACK_BOT_TOKEN=… node scripts/tethr-slack-send.mjs` (gate A3).
 
 ## Terminal client — CLI (phase 14, 2026-07-14)

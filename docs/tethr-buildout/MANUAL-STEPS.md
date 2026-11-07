@@ -195,6 +195,11 @@ agent's role. Set the three people once, in **Settings → overseer roster**:
 set, alerts stay in the in-app bell only. If proactive DMs don't deliver, add the
 **`im:write`** scope to the Slack app (OAuth & Permissions → reinstall).
 
+**Now also required for approving from Slack (2026-11-07).** Replying "approve" in a
+Slack thread only works for people on this roster (or listed in
+`TETHR_SLACK_APPROVER_IDS`). Until your member ID is set, Slack replies "decide it in
+the Queue" and nothing is applied — approve in the Queue in the meantime.
+
 ### C6b · AI image generation into the shared workspace (deferred; needs your account)
 
 The shared-folder mirror (2026-07-13) can already carry any file bytes; what's missing is a

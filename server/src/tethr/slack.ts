@@ -21,7 +21,7 @@ import { matchMetaCommand, renderHelpMessage } from "./commands.js";
 import type { LLMImageAttachment } from "./llm/types.js";
 import { memoryService } from "./memory.js";
 import { mirrorDir } from "./mirror.js";
-import { getRoster, normalizeOverseerRole } from "./overseers.js";
+import { getRoster, normalizeOverseerRole, type OverseerRoster } from "./overseers.js";
 import { contentPreview, wordCountLabel } from "./preview.js";
 import { setThrottle } from "./throttle.js";
 
@@ -167,6 +167,8 @@ export type SlackInterpretation =
       threadTs?: string;
       isDM?: boolean;
       images?: SlackImageRef[];
+      /** Slack member id of the sender (U…) — who is asking / deciding. */
+      userId?: string;
     }
   | { type: "ignore"; reason: string };
 
@@ -248,6 +250,7 @@ export function interpretSlackEvent(
           : undefined,
     isDM,
     images: images.length ? images : undefined,
+    userId: typeof ev.user === "string" ? ev.user : undefined,
   };
 }
 
@@ -655,6 +658,32 @@ export function slackDecisionIntent(text: string): "approve" | "reject" | null {
   return null;
 }
 
+/**
+ * Who may approve/reject a staged item by replying in Slack: the people on the
+ * overseer roster (Settings → overseers, by Slack member id) plus an optional
+ * env allowlist `TETHR_SLACK_APPROVER_IDS` ("U123:Mark,U456"). Anyone else's
+ * "approve" is refused — a thread reply must never be an anonymous approval.
+ * Pure (roster + env passed in) so it's unit-testable.
+ */
+export function resolveSlackApprover(
+  roster: OverseerRoster,
+  userId: string | undefined,
+  envList: string | undefined = process.env.TETHR_SLACK_APPROVER_IDS,
+): { slackId: string; name: string } | null {
+  const id = userId?.trim();
+  if (!id) return null;
+  for (const person of Object.values(roster)) {
+    if (person.slackId && person.slackId.trim() === id) {
+      return { slackId: id, name: person.name || id };
+    }
+  }
+  for (const entry of (envList ?? "").split(",")) {
+    const [rawId, ...rest] = entry.split(":");
+    if (rawId?.trim() === id) return { slackId: id, name: rest.join(":").trim() || id };
+  }
+  return null;
+}
+
 /** The newest still-pending gated output produced in this Slack origin. */
 export async function findPendingGatedForThread(
   db: Db,
@@ -782,6 +811,7 @@ export async function routeInboundKickoff(
     threadTs?: string;
     isDM?: boolean;
     images?: SlackImageRef[];
+    userId?: string;
   },
 ): Promise<{ routeRunId: string; threadId: string } | null> {
   const companyId = await resolveTethrCompanyId(db);
@@ -887,13 +917,28 @@ export async function routeInboundKickoff(
     if (decision) {
       const pending = await findPendingGatedForThread(db, companyId, sourceKey);
       if (pending) {
+        const approver = resolveSlackApprover(getRoster(companyId), interp.userId);
+        if (!approver) {
+          logger.warn(
+            { companyId, outputId: pending.id, slackUser: interp.userId ?? null },
+            "tethr slack: thread decision refused — sender is not an approver",
+          );
+          await postSlackMessage({
+            channel: interp.channel,
+            threadTs: interp.threadTs,
+            text:
+              `Only an approver can ${decision} "${pending.title}" from Slack. ` +
+              "Decide it in the Queue, or ask an admin to add your Slack member ID to the overseer roster in Tethr Settings.",
+          });
+          return null;
+        }
         const { gatingService } = await import("./gating.js");
         try {
           const decided = await gatingService(db).decide({
             companyId,
             outputId: pending.id,
             decision,
-            reviewer: "mark (Slack)",
+            reviewer: `${approver.name} (Slack)`,
           });
           // A drive_change apply can fail cleanly (file moved/vanished since
           // staging) — say so instead of claiming the archive happened.
