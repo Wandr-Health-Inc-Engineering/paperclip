@@ -198,8 +198,8 @@ export function TethrGrowth() {
             Ask tethr to plan a push, for example “plan our spring-break malaria push: delegate keyword research to
             @rank and a GEO audit of the malaria page to @tank”, or switch on a workflow below.
           </p>
-          <Link to="/console" className="tethr-btn tethr-btn-primary mt-5 h-9 px-4 text-sm">
-            Open the Console
+          <Link to="/chat" className="tethr-btn tethr-btn-primary mt-5 h-9 px-4 text-sm">
+            Open the chat
             <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </div>

@@ -10,7 +10,7 @@ import {
   Repeat,
   GitBranch,
   Settings,
-  Send,
+  MessagesSquare,
   TrendingUp,
   ShieldCheck,
   HardDrive,
@@ -98,7 +98,7 @@ export function Sidebar() {
         {/* Tethr operate surfaces (see DECISIONS.md "Core changes") */}
         <SidebarSection label="Operate">
           <SidebarNavItem to="/growth" label="Growth" icon={TrendingUp} />
-          <SidebarNavItem to="/console" label="Console" icon={Send} />
+          <SidebarNavItem to="/chat" label="Chat" icon={MessagesSquare} />
           <SidebarNavItem to="/company-view" label="Company" icon={Network} />
           <SidebarNavItem to="/queue" label="Queue" icon={ShieldCheck} />
           <SidebarNavItem to="/drive" label="Drive" icon={HardDrive} />

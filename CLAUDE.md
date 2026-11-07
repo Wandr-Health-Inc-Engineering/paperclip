@@ -432,12 +432,15 @@ pill by the bell (`TethrBell.tsx`, polls every 30s, click → Providers); **REST
 appears, resume clears. Merge-safe: new module + additive hooks (no core edits). Budget-change and
 compliance gates are unaffected.
 
-## Chat-first Console — one ongoing chat + side chats (phase 17, 2026-11-07)
+## Chat (formerly the Console) — one ongoing chat + side chats (phase 17, 2026-11-07)
 
 Mark's model (after using Claude's chat-style products): the Console is a chat, ChatGPT/
 Hermes-like. **One ONGOING main chat with @tethr** that everything goes into by default, plus
 **side chats** he opens on purpose for a focused task or side project. "Don't rework
 everything yet" — the app shell and other pages are unchanged; only the Console route was rebuilt.
+**Renamed "Chat"** (Mark: "I don't like that it's called console"): route `/chat`
+(`ui/src/pages/tethr/TethrChat.tsx`, export `TethrChat`), `/console` redirects there, nav/palette
+label "Chat". Run records still store `invocationSource: "console"` (data, unchanged).
 - **Main chat = a normal routing thread whose `threadId` is the company id** — stable across
   devices, no storage (a run id can never equal a company id; routing only reads `threadId` to
   load the last 5 turns, trimmed, as context, so cost doesn't grow with the chat).
@@ -449,12 +452,13 @@ everything yet" — the app shell and other pages are unchanged; only the Consol
   `POST /chats {request}` (opens a side chat with its first message), `DELETE /chats/:threadId`
   (main can't be removed), `GET /chats/:threadId/runs?limit=` (newest runs oldest-first, each
   with its outputs). `routing.listThreadRuns` / `threadStats` back them.
-- **UI** (`TethrConsole.tsx`) — **one area, no panel-in-a-panel (Mark's call):** the
-  conversation sits directly on the page and scrolls (fading) under a **floating glass pill** at
-  the top that shows the current chat; click it for a popover with the main chat + side chats
-  (hover X closes one) + New side chat; the pill's + starts one directly. Messages: yours on the
-  right; reply = route chips expandable to the full RouteFlow, status + time, the answer as
-  Markdown, filed outputs as links. Pill composer at the bottom (Enter sends). URL: `/console` = main,
+- **UI** (`TethrChat.tsx`) — **one area, no panel-in-a-panel, no "main chat" label (Mark's
+  calls):** the conversation sits directly on the page and scrolls (fading) to the top. A
+  **sidebar icon** at the top-left (badge = side-chat count) slides out a glass drawer: side chats
+  (hover X removes one from the list), New, and "Back to tethr" when you're in one. In a side
+  chat, a small chip next to the icon shows its title with a back-to-tethr button. Messages:
+  yours on the right; reply = route chips expandable to the full RouteFlow, status + time, the
+  answer as Markdown, filed outputs as links. Pill composer at the bottom (Enter sends). URL: `/chat` = the ongoing chat,
   `?chat=<threadId>` = side, `?chat=new` = a side chat being started. **Gated outputs render as
   inline approval cards (Mark's pick) calling the same `outputs/:id/decide` endpoint as the
   Queue** — same gate, the Queue still lists everything. The bell's "ask tethr" now routes into

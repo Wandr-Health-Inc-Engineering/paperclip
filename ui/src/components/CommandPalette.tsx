@@ -207,9 +207,9 @@ export function CommandPalette() {
             <LayoutDashboard className="mr-2 h-4 w-4" />
             Dashboard
           </CommandItem>
-          <CommandItem onSelect={() => go("/console")}>
+          <CommandItem onSelect={() => go("/chat")}>
             <Send className="mr-2 h-4 w-4" />
-            Console
+            Chat
           </CommandItem>
           <CommandItem onSelect={() => go("/company-view")}>
             <Network className="mr-2 h-4 w-4" />

@@ -64,7 +64,7 @@ async function run() {
     const t = theme;
 
     // 01 — Console idle (hero)
-    await go("/console");
+    await go("/chat");
     await shoot(page, `01-console-${t}.png`, "Console — the hero screen, ask the company");
 
     // 02 — Console with a routed request (replay the latest from history)
@@ -182,7 +182,7 @@ async function run() {
   await mobile.addInitScript(() => localStorage.setItem("paperclip.theme", "dark"));
   const mp = await mobile.newPage();
   for (const [route, file, caption] of [
-    ["/console", "14-mobile-console-dark.png", "Mobile — Console"],
+    ["/chat", "14-mobile-chat-dark.png", "Mobile — Chat"],
     ["/queue", "15-mobile-queue-dark.png", "Mobile — Queue"],
     ["/company-view", "16-mobile-company-dark.png", "Mobile — Company org"],
     ["/budgets", "17-mobile-budgets-dark.png", "Mobile — Budgets"],

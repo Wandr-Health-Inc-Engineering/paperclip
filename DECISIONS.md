@@ -132,6 +132,7 @@ Every core file touched, with reason. Everything else Tethr lives in new files.
 | `ui/src/components/BreadcrumbBar.tsx` | `ThemeToggleButton` now renders `TethrThemeSwitch` (Auto/Day/Night) | global toolbar is the only theme-control mount point |
 | `ui/src/components/SidebarAccountMenu.tsx` (+ test mock) | theme item cycles Auto → Day → Night and shows the current choice | second theme control (mobile) |
 | `ui/src/App.tsx`, `ui/src/components/Sidebar.tsx`, `ui/src/lib/company-routes.ts` | Phase 16 (2026-11-07): + `growth` route, + "Growth" nav item at the top of Operate, + `growth` in `BOARD_ROUTE_ROOTS` (one line each) | the growth board is the COO's home; same registration points as the other Tethr pages |
+| `ui/src/App.tsx`, `ui/src/components/Sidebar.tsx`, `ui/src/components/CommandPalette.tsx`, `ui/src/lib/company-routes.ts` | Phase 17 (2026-11-07): Console renamed **Chat** (Mark's call) — `/chat` route (→ `TethrChat`), `/console` → redirect to `/chat`, nav + palette label "Chat", + `chat` in `BOARD_ROUTE_ROOTS` (one line each) | same registration points; the redirect keeps old links working |
 | `.gitignore` | + `.tethr-data/` | local data dir |
 | `.env.example` | + Tethr vars (commented, blank) | 12-factor |
 | `README.md` | + a 5-line fork banner above the upstream header pointing at `TETHR-ENGINEERING.md` + `CLAUDE.md` | an engineer landing on the repo has to be told this is a fork and where the map is; upstream's README body is untouched below it |

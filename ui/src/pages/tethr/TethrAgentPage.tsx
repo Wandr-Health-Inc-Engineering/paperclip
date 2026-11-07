@@ -63,7 +63,7 @@ export function TethrAgentPage() {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: tethrKeys.agent(selectedCompanyId!, agentId) });
       queryClient.invalidateQueries({ queryKey: ["tethr", selectedCompanyId, "outputs"] });
-      navigate(`/console`);
+      navigate(`/chat`);
       void result;
     },
   });

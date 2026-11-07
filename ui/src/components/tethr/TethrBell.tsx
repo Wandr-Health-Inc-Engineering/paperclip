@@ -210,9 +210,9 @@ function NotificationDetail({
     onSuccess: (ids) => {
       onActed();
       onClose();
-      navigate("/console");
+      navigate("/chat");
     },
-    onError: (e) => setResult(e instanceof Error ? e.message : "Couldn't reach Tethr — try the Console."),
+    onError: (e) => setResult(e instanceof Error ? e.message : "Couldn't reach Tethr — try the Chat."),
   });
 
   const go = (to: string) => {

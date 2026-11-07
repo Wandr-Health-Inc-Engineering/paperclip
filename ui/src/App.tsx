@@ -52,7 +52,7 @@ import { BoardClaimPage } from "./pages/BoardClaim";
 import { CliAuthPage } from "./pages/CliAuth";
 import { InviteLandingPage } from "./pages/InviteLanding";
 import { NotFoundPage } from "./pages/NotFound";
-import { TethrConsole } from "./pages/tethr/TethrConsole";
+import { TethrChat } from "./pages/tethr/TethrChat";
 import { TethrGrowth } from "./pages/tethr/TethrGrowth";
 import { TethrCompany } from "./pages/tethr/TethrCompany";
 import { TethrQueue } from "./pages/tethr/TethrQueue";
@@ -75,7 +75,8 @@ function boardRoutes() {
       <Route path="dashboard/live" element={<DashboardLive />} />
       {/* Tethr operate screens (see DECISIONS.md "Core changes") */}
       <Route path="growth" element={<TethrGrowth />} />
-      <Route path="console" element={<TethrConsole />} />
+      <Route path="chat" element={<TethrChat />} />
+      <Route path="console" element={<Navigate to="/chat" replace />} />
       <Route path="company-view" element={<TethrCompany />} />
       <Route path="queue" element={<TethrQueue />} />
       <Route path="queue/:outputId" element={<TethrQueue />} />
