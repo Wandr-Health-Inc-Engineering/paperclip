@@ -82,6 +82,8 @@ export function Sidebar() {
             <SquarePen className="h-4 w-4 shrink-0" />
             <span className="truncate">New Issue</span>
           </button>
+          {/* Tethr: Chat sits above Dashboard (Mark, 2026-11-07) */}
+          <SidebarNavItem to="/chat" label="Chat" icon={MessagesSquare} />
           <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
           {/* Inbox removed (see DECISIONS.md): its Approve bypassed Tethr gating —
               the Queue is the single approval surface. /inbox redirects there. */}
@@ -97,7 +99,6 @@ export function Sidebar() {
         {/* Tethr operate surfaces (see DECISIONS.md "Core changes") */}
         <SidebarSection label="Operate">
           <SidebarNavItem to="/growth" label="Growth" icon={TrendingUp} />
-          <SidebarNavItem to="/chat" label="Chat" icon={MessagesSquare} />
           <SidebarNavItem to="/company-view" label="Company" icon={Network} />
           <SidebarNavItem to="/queue" label="Queue" icon={ShieldCheck} />
           <SidebarNavItem to="/drive" label="Drive" icon={HardDrive} />
