@@ -53,6 +53,7 @@ import { CliAuthPage } from "./pages/CliAuth";
 import { InviteLandingPage } from "./pages/InviteLanding";
 import { NotFoundPage } from "./pages/NotFound";
 import { TethrConsole } from "./pages/tethr/TethrConsole";
+import { TethrGrowth } from "./pages/tethr/TethrGrowth";
 import { TethrCompany } from "./pages/tethr/TethrCompany";
 import { TethrQueue } from "./pages/tethr/TethrQueue";
 import { TethrDrive } from "./pages/tethr/TethrDrive";
@@ -73,6 +74,7 @@ function boardRoutes() {
       <Route path="dashboard" element={<Dashboard />} />
       <Route path="dashboard/live" element={<DashboardLive />} />
       {/* Tethr operate screens (see DECISIONS.md "Core changes") */}
+      <Route path="growth" element={<TethrGrowth />} />
       <Route path="console" element={<TethrConsole />} />
       <Route path="company-view" element={<TethrCompany />} />
       <Route path="queue" element={<TethrQueue />} />

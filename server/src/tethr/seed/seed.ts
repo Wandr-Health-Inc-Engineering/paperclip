@@ -1005,6 +1005,10 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
     // Tank, the GEO / LLM-visibility analyst — an org role under the CEO.
     const { seedTankAgent } = await import("./tank.js");
     const tank = await seedTankAgent(db, result.companyId);
+    // Phase 16: the growth operating loop — recurring growth workflows, all
+    // PAUSED (Mark switches each on), and the CEO framed as head of growth.
+    const { seedGrowthWorkflows } = await import("./growth-workflows.js");
+    await seedGrowthWorkflows(db, result.companyId);
     // Heal any factory agent created before per-subagent tool grants existed
     // (migration 0093) so a created "research" agent can actually fetch.
     const { backfillFactoryAgentTools } = await import("./backfill-tools.js");

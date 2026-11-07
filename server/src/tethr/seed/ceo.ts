@@ -53,10 +53,16 @@ export const CEO_ROUTING_ROW = {
     "spin up an agent",
     "we need an agent",
     "propose an agent",
+    "growth plan",
+    "plan a growth push",
+    "customer acquisition plan",
+    "go-to-market plan",
+    "plan a campaign",
+    "delegate",
   ],
   to: "@ceo",
   description:
-    "Business strategy, company priorities, and building the agent org — deciding direction, what to focus on next, and proposing NEW agents (staged for approval). Not questions about Tethr itself, greetings, or modifying existing agents (that's a specialist).",
+    "Head of growth: the growth plan, planning a customer-acquisition push or campaign across specialists (delegated as tracked tasks), business strategy and priorities, and proposing NEW agents (staged for approval). Not questions about Tethr itself, greetings, single specialist asks, or modifying existing agents.",
 };
 
 // The CEO's one subagent. key "plan" reuses the existing "brief" output kind

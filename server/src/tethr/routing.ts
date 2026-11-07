@@ -9,6 +9,7 @@ import type { LLMImageAttachment, LLMUsage } from "./llm/types.js";
 import { notificationService } from "./notify.js";
 import { orgService } from "./org.js";
 import { isContentRequest, publishedDuplicateWarning } from "./published-memory.js";
+import { parseDelegations } from "./delegation-parse.js";
 import { newTaskRunState, type TaskRunState } from "./tasks.js";
 import { isAgentsPaused, PAUSED_MESSAGE } from "./throttle.js";
 import { workerService } from "./worker.js";
@@ -383,10 +384,29 @@ export function routingService(db: Db) {
         // step's agent actually exists in this org's routing table — the mock
         // provider can suggest specialists a minimal org doesn't have.
         const knownTags = new Set(helmOptions.map((o) => o.tag));
-        let plan = await provider.plan({
-          request: input.requestText,
-          agents: helmOptions,
-        });
+
+        // Phase 16a: an explicit hand-off ("delegate X to @rank and Y to @tank")
+        // is work for the head of growth, who turns it into tracked tasks —
+        // not something one named specialist should do inline.
+        const handoff = knownTags.has("@ceo") && parseDelegations(input.requestText).length > 0;
+        if (handoff) {
+          await recordHop({
+            layer: "helm",
+            actorTag: routerTag,
+            decision: "route → @ceo",
+            reason: "Explicit hand-off to other agents — the head of growth turns it into tracked tasks.",
+            at: new Date().toISOString(),
+          });
+          const step = await runAgentStep("@ceo", input.requestText);
+          if (!step.ok) return await fail(step.error ?? "Routing failed.");
+        }
+
+        let plan = handoff
+          ? null
+          : await provider.plan({
+              request: input.requestText,
+              agents: helmOptions,
+            });
         if (plan) usage = sumUsage(usage, plan.usage);
         if (plan && !plan.steps.every((s) => knownTags.has(s.agentTag))) plan = null;
 
@@ -417,7 +437,7 @@ export function routingService(db: Db) {
               summaries.push(`Step ${i + 1} (${step.agentTag}) failed: ${ran.error}`);
             }
           }
-        } else {
+        } else if (!handoff) {
           const classified = await provider.classify({
             layer: "helm",
             actorTag: routerTag,

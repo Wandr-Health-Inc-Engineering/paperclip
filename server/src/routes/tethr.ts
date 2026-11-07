@@ -104,6 +104,14 @@ export function tethrRoutes(db: Db) {
   });
 
   // ---- Company overview (org view) ----------------------------------------
+  // Phase 16: the growth board — workflows (on/off) + every agent task by lane.
+  router.get("/tethr/:companyId/growth", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { growthBoard } = await import("../tethr/growth.js");
+    res.json(await growthBoard(db, companyId));
+  });
+
   router.get("/tethr/:companyId/overview", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
@@ -1491,6 +1499,8 @@ export function tethrRoutes(db: Db) {
     const rank = await seedRankAgent(db, result.companyId);
     const { seedTankAgent } = await import("../tethr/seed/tank.js");
     const tank = await seedTankAgent(db, result.companyId);
+    const { seedGrowthWorkflows } = await import("../tethr/seed/growth-workflows.js");
+    const growth = await seedGrowthWorkflows(db, result.companyId);
     const { backfillFactoryAgentTools } = await import("../tethr/seed/backfill-tools.js");
     const toolsHealed = await backfillFactoryAgentTools(db, result.companyId);
     res.json({
@@ -1501,6 +1511,7 @@ export function tethrRoutes(db: Db) {
       filerAdded: filer.created,
       rankAdded: rank.created,
       tankAdded: tank.created,
+      growthWorkflowsAdded: growth.created,
       toolsHealed,
     });
   });

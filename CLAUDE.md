@@ -160,8 +160,29 @@ the weekly growth plan and delegates, specialists do the work as **tasks**, huma
 - **Mock:** `parseDelegations` ("delegate X to @rank and Y to @tank") makes delegation
   deterministic offline. Tests: `tethr-tasks.test.ts` (8, incl. full end-to-end chains through
   core's real wake/run loop).
-- **Next (16b/17):** growth workflows (paused routines) + growth board page; Console "projects" as
-  tasks; the memory layer (kinds, `remember` tool, relevance recall).
+- **Explicit hand-offs go to the head of growth.** A request that names a hand-off ("delegate X
+  to @rank and Y to @tank", `parseDelegations` in `delegation-parse.ts`) is routed `@tethr →
+  @ceo` before planning/classification, so it becomes tracked tasks instead of one named
+  specialist doing it inline. The CEO routing row also claims growth-plan / campaign / delegate
+  phrasing (propagated to live orgs by `healTethrRoutingCopy`).
+
+**Growth workflows + growth board (16, built):**
+- `seed/growth-workflows.ts` — four recurring growth playbooks as core routines, **all seeded
+  PAUSED with their schedule trigger disabled** (Mark switches each on from its routine page):
+  Weekly growth plan (@ceo, Mon) · SEO + AI-search content engine (@ceo → delegates @rank +
+  @tank, Tue) · Seasonal demand scan (@rank, monthly) · Weekly growth review (@tethr, Fri). The
+  routine description IS the playbook — when it fires, core opens a task with that brief and the
+  owner works it in task mode. Also reframes @ceo as **"Head of growth"** (title + mission), only
+  where they're still the seeded defaults. Wired into `maybeAutoSeed` + `POST /tethr/seed`.
+- **Growth board** — `GET /tethr/:companyId/growth` (`growth.ts` `growthBoard`) + page
+  `ui/src/pages/tethr/TethrGrowth.tsx` at `/growth` (top of Operate nav): counts, "waiting on you"
+  glass cards that deep-link to the Queue item, lanes (Working · Waiting on sub-tasks · Up next),
+  done this week, and the workflows with on/paused state. Tests in `tethr-tasks.test.ts` (11).
+- Verified live: "plan our spring-break malaria push: delegate keyword research to @rank and a
+  GEO audit of the malaria page to @tank" → @tethr → @ceo → WD-2 (@rank) + WD-3 (@tank) worked
+  and closed → @ceo roll-up closed WD-1, all visible on the board.
+- **Next:** the memory layer (Phase 17: kinds, `remember` tool, relevance recall, editable Memory
+  page); Hermes as an agent when Mark installs it (`hermes_local` adapter already in the fork).
 
 ## Where the Tethr layer lives (all additive)
 

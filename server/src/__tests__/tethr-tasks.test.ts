@@ -3,7 +3,16 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, asc, eq, isNull, ne } from "drizzle-orm";
-import { createDb, issueComments, issues, tethrAgentProfiles, tethrOutputs } from "@paperclipai/db";
+import {
+  agents,
+  createDb,
+  issueComments,
+  issues,
+  routines,
+  routineTriggers,
+  tethrAgentProfiles,
+  tethrOutputs,
+} from "@paperclipai/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -14,6 +23,8 @@ import { seedRankAgent } from "../tethr/seed/rank.ts";
 import { seedTankAgent } from "../tethr/seed/tank.ts";
 import { seedTinkrAgent } from "../tethr/seed/tinkr.ts";
 import { gatingService } from "../tethr/gating.ts";
+import { CEO_GROWTH_TITLE, GROWTH_WORKFLOWS, seedGrowthWorkflows } from "../tethr/seed/growth-workflows.ts";
+import { growthBoard, growthLane } from "../tethr/growth.ts";
 import { routingService } from "../tethr/routing.ts";
 import { initTethrAdapter } from "../tethr/adapter.ts";
 import { parseDelegations } from "../tethr/llm/mock.ts";
@@ -73,6 +84,15 @@ describe("tethr tasks — pure helpers", () => {
     expect(text).toContain("WD-8 (@rank, done): Keyword research — Top term");
     expect(text).toMatch(/Do not delegate again/);
     expect(buildTaskRequest(ctx, { agentTag: "@ceo" })).not.toMatch(/Do not delegate again/);
+  });
+
+  it("sorts tasks into growth-board lanes; cancelled stays off the board", () => {
+    expect(growthLane("in_review")).toBe("waitingOnYou");
+    expect(growthLane("in_progress")).toBe("working");
+    expect(growthLane("blocked")).toBe("blocked");
+    expect(growthLane("todo")).toBe("queued");
+    expect(growthLane("done")).toBe("doneThisWeek");
+    expect(growthLane("cancelled")).toBeNull();
   });
 
   it("writes a result comment listing outputs and delegations", () => {
@@ -209,9 +229,10 @@ describeEmbeddedPostgres("tethr tasks — delegation on Paperclip issues", () =>
       companyId,
       requestText:
         "Plan our spring-break malaria push: delegate keyword research to @rank and a GEO audit of the malaria page to @tank.",
-      startAtAgentTag: "@ceo",
     });
     expect(result.status).not.toBe("failed");
+    // An explicit hand-off goes to the head of growth, not the first named specialist.
+    expect(result.hops[0]).toMatchObject({ layer: "helm", decision: "route → @ceo" });
 
     // A root task owned by @ceo, parked while its two sub-tasks run.
     const [root] = await db
@@ -289,4 +310,40 @@ describeEmbeddedPostgres("tethr tasks — delegation on Paperclip issues", () =>
     });
     expect(parent.status).toBe("done");
   }, 90_000);
+
+  it("seeds the growth workflows paused with schedules off, idempotently, and frames the CEO as head of growth", async () => {
+    const first = await seedGrowthWorkflows(db, companyId);
+    expect(first.created.sort()).toEqual(GROWTH_WORKFLOWS.map((w) => w.key).sort());
+    expect(first.ceoReframed).toBe(true);
+    const again = await seedGrowthWorkflows(db, companyId);
+    expect(again.created).toEqual([]);
+
+    for (const wf of GROWTH_WORKFLOWS) {
+      const [r] = await db.select().from(routines).where(and(eq(routines.companyId, companyId), eq(routines.title, wf.title)));
+      expect(r.status).toBe("paused");
+      expect(r.assigneeAgentId).toBe(await agentIdByTag(wf.ownerTag));
+      expect(r.description).toBe(wf.description);
+      const trig = await db.select().from(routineTriggers).where(eq(routineTriggers.routineId, r.id));
+      expect(trig).toHaveLength(1);
+      expect(trig[0].enabled).toBe(false);
+      expect(trig[0].cronExpression).toBe(wf.cron);
+    }
+    const [ceo] = await db.select().from(agents).where(eq(agents.id, await agentIdByTag("@ceo")));
+    expect(ceo.title).toBe(CEO_GROWTH_TITLE);
+  });
+
+  it("the growth board shows every workflow (none on) and the week's tasks by lane", async () => {
+    const board = await growthBoard(db, companyId);
+    expect(board.counts.workflowsTotal).toBeGreaterThanOrEqual(GROWTH_WORKFLOWS.length);
+    expect(board.counts.workflowsOn).toBe(0);
+    expect(board.workflows.slice(0, GROWTH_WORKFLOWS.length).map((w) => w.key)).toEqual(GROWTH_WORKFLOWS.map((w) => w.key));
+    // The delegation chains above finished: their tasks are in "done this week".
+    expect(board.lanes.doneThisWeek.length).toBeGreaterThanOrEqual(4);
+    const root = board.lanes.doneThisWeek.find((t) => t.childCount === 2);
+    expect(root?.doneChildCount).toBe(2);
+    expect(board.lanes.doneThisWeek.some((t) => t.parentTitle && t.assigneeTag === "@rank")).toBe(true);
+    // Cancelled (the fan-out cap test) never shows.
+    const all = Object.values(board.lanes).flat();
+    expect(all.every((t) => t.status !== "cancelled")).toBe(true);
+  });
 });

@@ -411,6 +411,7 @@ export const tethrKeys = {
     ["tethr", c, "drive-content", id, v ?? "current"] as const,
   runs: (c: string) => ["tethr", c, "runs"] as const,
   budgets: (c: string) => ["tethr", c, "budgets"] as const,
+  growth: (c: string) => ["tethr", c, "growth"] as const,
   audit: (c: string, kind: string, actor: string) => ["tethr", c, "audit", kind, actor] as const,
   notifications: (c: string) => ["tethr", c, "notifications"] as const,
   memories: (c: string, agentId?: string) => ["tethr", c, "memories", agentId ?? "all"] as const,
@@ -428,6 +429,52 @@ export interface ThrottleState {
   reason?: string;
   at?: string;
   by?: string;
+}
+
+// Phase 16 — the growth board (server/src/tethr/growth.ts).
+export interface TethrGrowthTask {
+  id: string;
+  identifier: string | null;
+  title: string;
+  status: string;
+  priority: string;
+  assigneeTag: string | null;
+  parentId: string | null;
+  parentTitle: string | null;
+  childCount: number;
+  doneChildCount: number;
+  pendingOutputId: string | null;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+export interface TethrGrowthWorkflow {
+  routineId: string;
+  key: string | null;
+  title: string;
+  ownerTag: string | null;
+  status: string;
+  scheduleEnabled: boolean;
+  cadence: string | null;
+  lastTriggeredAt: string | null;
+}
+
+export interface TethrGrowthBoard {
+  workflows: TethrGrowthWorkflow[];
+  lanes: {
+    waitingOnYou: TethrGrowthTask[];
+    working: TethrGrowthTask[];
+    blocked: TethrGrowthTask[];
+    queued: TethrGrowthTask[];
+    doneThisWeek: TethrGrowthTask[];
+  };
+  counts: {
+    open: number;
+    waitingOnYou: number;
+    doneThisWeek: number;
+    workflowsOn: number;
+    workflowsTotal: number;
+  };
 }
 
 export const tethrApi = {
@@ -485,6 +532,7 @@ export const tethrApi = {
       request ? { request } : {},
     ),
   budgets: (c: string) => api.get<TethrBudgets>(`/tethr/${c}/budgets`),
+  growth: (c: string) => api.get<TethrGrowthBoard>(`/tethr/${c}/growth`),
   audit: (c: string, opts: { kind?: string; actor?: string; limit?: number } = {}) => {
     const params = new URLSearchParams();
     if (opts.kind && opts.kind !== "all") params.set("kind", opts.kind);
