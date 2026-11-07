@@ -4,7 +4,12 @@ import { ScrollText, SearchX } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
 import { PageSkeleton } from "@/components/PageSkeleton";
-import { MonoTag, formatRelative } from "@/components/tethr/primitives";
+import {
+  MonoTag,
+  StatusDot,
+  formatRelative,
+  type StatusTone,
+} from "@/components/tethr/primitives";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
 import { cn } from "@/lib/utils";
@@ -33,6 +38,22 @@ const ACTION_LABEL: Record<string, string> = {
   tethr_run_now: "manual run",
   tethr_drive_file_saved: "drive write",
 };
+
+/** Outcome dot per event: what happened to the work, at a glance. */
+const ACTION_TONE: Record<string, StatusTone> = {
+  tethr_output_published: "ok",
+  tethr_output_approved: "ok",
+  tethr_drive_file_saved: "ok",
+  tethr_output_gated: "warn",
+  tethr_output_changes_requested: "changes",
+  tethr_output_rejected: "bad",
+};
+
+function actionTone(action: string): StatusTone {
+  if (ACTION_TONE[action]) return ACTION_TONE[action];
+  if (/fail|error|reject/.test(action)) return "bad";
+  return "idle";
+}
 
 const PER_PAGE = 20;
 
@@ -77,7 +98,7 @@ export function TethrAudit() {
     <div className="space-y-5">
       <div>
         <MonoTag className="text-foreground">● tethr · activity</MonoTag>
-        <h1 className="mt-2 text-3xl font-extrabold tracking-tight">the trail</h1>
+        <h1 className="tethr-display mt-2 text-[34px] md:text-[40px]">the trail</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Every hop, run, output, and decision. A request's full path is always
           reconstructable.
@@ -85,25 +106,29 @@ export function TethrAudit() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        {KINDS.map((option) => (
-          <button
-            key={option.value}
-            onClick={() => setKind(option.value)}
-            className={cn(
-              "border px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] transition-colors",
-              kind === option.value
-                ? "border-foreground bg-foreground text-background"
-                : "border-border text-muted-foreground hover:border-foreground hover:text-foreground",
-            )}
-          >
-            {option.label}
-          </button>
-        ))}
+        <div className="inline-flex max-w-full flex-wrap items-center gap-0.5 rounded-[18px] bg-[var(--tethr-frost)] p-0.5 shadow-[inset_0_0_0_1px_var(--tethr-rim)]">
+          {KINDS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={kind === option.value}
+              onClick={() => setKind(option.value)}
+              className={cn(
+                "tethr-btn h-7 px-3 text-[12.5px]",
+                kind === option.value
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
         <Input
           value={actor}
           onChange={(e) => setActor(e.target.value)}
           placeholder="filter by actor (@sonar, mark…)"
-          className="ml-auto h-8 w-56 font-mono text-xs"
+          className="ml-auto h-8 w-56 px-3 font-mono text-xs max-md:ml-0 max-md:w-full"
         />
       </div>
 
@@ -111,7 +136,7 @@ export function TethrAudit() {
         <PageSkeleton variant="list" />
       ) : total ? (
         <>
-          <div className="border-2 border-foreground bg-card">
+          <div className="tethr-panel overflow-hidden">
             {pageItems.map((event, index) => (
               <AuditRow
                 key={event.id}
@@ -123,7 +148,7 @@ export function TethrAudit() {
 
           {pageCount > 1 ? (
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+              <span className="tethr-eyebrow tabular-nums">
                 {start + 1}–{start + pageItems.length} of {total}
                 {total === 150 ? "+" : ""}
               </span>
@@ -134,7 +159,7 @@ export function TethrAudit() {
                 >
                   ← prev
                 </PagerButton>
-                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                <span className="tethr-eyebrow tabular-nums">
                   {safePage + 1} / {pageCount}
                 </span>
                 <PagerButton
@@ -148,7 +173,7 @@ export function TethrAudit() {
           ) : null}
         </>
       ) : (
-        <div className="flex flex-col items-center border border-dashed border-foreground/30 px-4 py-12">
+        <div className="tethr-empty flex flex-col items-center px-4 py-12">
           <SearchX className="mb-3 h-7 w-7 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">No events match this filter.</p>
         </div>
@@ -168,14 +193,10 @@ function PagerButton({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
-      className={cn(
-        "border px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] transition-colors",
-        disabled
-          ? "cursor-not-allowed border-border text-muted-foreground/40"
-          : "border-foreground text-foreground hover:bg-foreground hover:text-background",
-      )}
+      className="tethr-btn tethr-btn-glass h-7 px-3 text-[12px]"
     >
       {children}
     </button>
@@ -199,15 +220,16 @@ function AuditRow({ event, last }: { event: TethrAuditEvent; last: boolean }) {
     <div
       className={cn(
         "grid grid-cols-[7.5rem_minmax(0,1fr)_auto] items-baseline gap-3 px-4 py-2.5 max-md:grid-cols-1 max-md:gap-1",
-        !last && "border-b border-border",
+        !last && "tethr-rule border-b",
       )}
     >
-      <span className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+      <span className="tethr-eyebrow flex items-center gap-2 text-[10px] tracking-[0.14em]">
+        <StatusDot tone={actionTone(event.action)} className="translate-y-[-1px]" />
         {formatRelative(event.createdAt)}
       </span>
       <span className="min-w-0 text-sm">
-        <span className="font-mono text-[12px] font-bold">{event.actorId}</span>{" "}
-        <span className="font-semibold">
+        <span className="font-mono text-[12px] font-medium">{event.actorId}</span>{" "}
+        <span className="font-medium">
           {ACTION_LABEL[event.action] ?? event.action.replace(/[._]/g, " ")}
         </span>
         {summary ? (
@@ -218,12 +240,12 @@ function AuditRow({ event, last }: { event: TethrAuditEvent; last: boolean }) {
           </span>
         ) : null}
         {reviewer && note ? (
-          <span className="mt-0.5 block border-l-2 border-foreground pl-2 text-xs text-muted-foreground">
+          <span className="mt-1 block border-l-2 border-[var(--tethr-rim-strong)] pl-2 text-xs text-muted-foreground">
             {reviewer}: “{note}”
           </span>
         ) : null}
       </span>
-      <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground/70">
+      <span className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-[var(--tethr-text-3)]">
         {event.entityType.replace("tethr_", "")}
       </span>
     </div>

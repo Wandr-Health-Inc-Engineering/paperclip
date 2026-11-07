@@ -204,13 +204,16 @@ div.bg-background:has(#main-content) {
 
 /* ===== Typography — Geist, set light. Headlines thin and large, body at a
    normal reading weight, Geist Mono for labels, paths and figures. ===== */
-h1,
-h2,
-h3,
-h4 {
-  font-family: var(--font-sans);
-  font-weight: 500;
-  letter-spacing: -0.02em;
+/* In the base layer so tethr-display and Tailwind weight utilities win. */
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-sans);
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
 }
 
 code,
@@ -341,8 +344,14 @@ nav[aria-label="Mobile navigation"],
 [data-slot="select-trigger"] {
   background-color: var(--tethr-frost);
   border-color: var(--tethr-rim-strong);
-  border-radius: var(--tethr-r-sm);
   box-shadow: none;
+}
+
+/* Default field radius, unless the element asks for a pill. */
+[data-slot="input"]:not([class*="rounded-full"]),
+[data-slot="textarea"]:not([class*="rounded-full"]),
+[data-slot="select-trigger"]:not([class*="rounded-full"]) {
+  border-radius: var(--tethr-r-sm);
 }
 
 [data-slot="badge"] {

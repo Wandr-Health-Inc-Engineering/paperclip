@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarClock, ChevronDown, Play, Timer } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import {
   AgentGlyph,
   MonoTag,
+  StatusDot,
   describeCron,
   formatRelative,
 } from "@/components/tethr/primitives";
@@ -52,7 +52,7 @@ export function TethrRuns() {
     <div className="space-y-6">
       <div>
         <MonoTag className="text-foreground">● tethr · runs</MonoTag>
-        <h1 className="mt-2 text-3xl font-extrabold tracking-tight">heartbeats</h1>
+        <h1 className="tethr-display mt-2 text-[34px] md:text-[40px]">heartbeats</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           A heartbeat wakes the agent, routes the standing request down the chain, and
           stages the output — gated work stops in the Queue.
@@ -70,35 +70,27 @@ export function TethrRuns() {
             <div
               key={schedule.routineId}
               className={cn(
-                "border-2 bg-card p-4",
-                schedule.status === "paused"
-                  ? "border-dashed border-foreground/40"
-                  : "border-foreground",
+                "tethr-panel p-4",
+                schedule.status === "paused" && "border-dashed border-[var(--tethr-rim-strong)]",
               )}
             >
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <p className="text-sm font-extrabold tracking-tight">{schedule.title}</p>
-                  <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                  <p className="text-[15px] font-medium tracking-[-0.01em]">{schedule.title}</p>
+                  <p className="tethr-eyebrow mt-1 text-[10px] tracking-[0.14em]">
                     {schedule.agentTag} · {describeCron(schedule.cron)}
                   </p>
                 </div>
-                <span
-                  className={cn(
-                    "border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em]",
-                    schedule.status === "paused"
-                      ? "border-amber-600 text-amber-700 dark:border-amber-400 dark:text-amber-300"
-                      : "border-foreground text-foreground",
-                  )}
-                >
+                <span className="tethr-pill shrink-0 px-2 py-0.5 text-[10px] leading-4">
+                  <StatusDot status={schedule.status} />
                   {schedule.status}
                 </span>
               </div>
               <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                 {schedule.description}
               </p>
-              <div className="mt-3 flex items-center justify-between border-t border-border pt-2.5">
-                <span className="font-mono text-[10px] text-muted-foreground">
+              <div className="tethr-rule mt-3 flex items-center justify-between border-t pt-2.5">
+                <span className="font-mono text-[10.5px] text-[var(--tethr-text-3)]">
                   {schedule.enabled && schedule.nextRunAt
                     ? `next: ${new Date(schedule.nextRunAt).toLocaleString("en-US", {
                         weekday: "short",
@@ -108,15 +100,15 @@ export function TethrRuns() {
                     : "trigger disabled"}
                 </span>
                 {schedule.agentId ? (
-                  <Button
-                    size="xs"
-                    variant="outline"
+                  <button
+                    type="button"
+                    className="tethr-btn tethr-btn-glass h-7 px-3 text-[12px]"
                     onClick={() => runNow.mutate(schedule.agentId!)}
                     disabled={runNow.isPending}
                   >
-                    <Play className="mr-1 h-3 w-3" />
+                    <Play className="h-3 w-3" />
                     Run now
-                  </Button>
+                  </button>
                 ) : null}
               </div>
             </div>
@@ -140,7 +132,7 @@ export function TethrRuns() {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">No runs yet.</p>
+          <div className="tethr-empty px-4 py-10 text-center text-sm">No runs yet.</div>
         )}
       </section>
     </div>
@@ -149,44 +141,32 @@ export function TethrRuns() {
 
 function RunRow({ run }: { run: TethrRunRow }) {
   const [expanded, setExpanded] = useState(false);
-  const tone =
-    run.status === "succeeded"
-      ? "text-emerald-700 border-emerald-700 dark:text-emerald-300 dark:border-emerald-400"
-      : run.status === "failed"
-        ? "text-destructive border-destructive"
-        : run.status === "running"
-          ? "text-cyan-700 border-cyan-700 dark:text-cyan-300 dark:border-cyan-400"
-          : "text-muted-foreground border-border";
   const durationMs =
     run.startedAt && run.finishedAt
       ? new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime()
       : null;
 
   return (
-    <div className="border border-border bg-card">
+    <div className={cn("tethr-panel overflow-hidden", !expanded && "tethr-panel-hover")}>
       <button
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full items-center gap-3 px-3 py-2.5 text-left"
       >
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center border border-foreground">
+        <div className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] bg-[var(--tethr-frost-strong)] shadow-[inset_0_0_0_1px_var(--tethr-rim-strong)]">
           <AgentGlyph icon={run.agentIcon} className="h-3.5 w-3.5" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">
+          <p className="truncate text-sm font-medium">
             {run.summary ?? run.triggerDetail ?? `${run.agentName} heartbeat`}
           </p>
-          <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+          <p className="tethr-eyebrow mt-0.5 truncate text-[10px] tracking-[0.14em]">
             {run.agentTag ?? run.agentName} · {run.invocationSource} ·{" "}
             {formatRelative(run.startedAt)}
             {durationMs != null ? ` · ${(durationMs / 1000).toFixed(1)}s` : ""}
           </p>
         </div>
-        <span
-          className={cn(
-            "shrink-0 border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em]",
-            tone,
-          )}
-        >
+        <span className="tethr-pill shrink-0 px-2 py-0.5 text-[10px] leading-4">
+          <StatusDot status={run.status} />
           {run.status}
         </span>
         <ChevronDown
@@ -197,12 +177,15 @@ function RunRow({ run }: { run: TethrRunRow }) {
         />
       </button>
       {expanded ? (
-        <div className="border-t border-border bg-secondary/40 px-4 py-3">
+        <div className="tethr-rule border-t px-3 py-3">
           {run.error ? (
-            <p className="mb-2 text-xs font-semibold text-destructive">{run.error}</p>
+            <p className="tethr-tone-bad mb-2 flex items-start gap-1.5 text-xs font-medium">
+              <StatusDot tone="bad" className="mt-1" />
+              {run.error}
+            </p>
           ) : null}
           {run.stdoutExcerpt ? (
-            <pre className="overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-muted-foreground">
+            <pre className="tethr-inset overflow-auto whitespace-pre-wrap px-3 py-2.5 font-mono text-[11px] leading-relaxed text-muted-foreground">
               {run.stdoutExcerpt}
             </pre>
           ) : (
