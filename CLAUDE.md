@@ -625,9 +625,8 @@ Agents can now operate with real autonomy, safely bounded. Migration **0094** ad
   ("needs your approval"), or a heartbeat deliverable ("filed: <title>" — the silent-CEO-brief gap).
   Auto-approved items don't nag. Manual gate: set the 3 Slack member IDs in Settings (MANUAL-STEPS
   C6a); add the Slack `im:write` scope if proactive DMs bounce.
-- **00 Tethr full-screen viewer** (`drive/DriveViewer.tsx`): an "Open viewer" launcher on the
-  00 Tethr section → a portaled full-screen reader (folder tree + large MD-first file pane +
-  new-folder/rename/archive), reusing the fs source + `readFsFile` (no new backend).
+- **00 Tethr full-screen viewer**: "Open viewer" now takes the Drive's Finder window full screen
+  (see the Finder note under the Drive page redesign); the old `DriveViewer.tsx` is gone.
 
 ## Drive page redesign — 00 Tethr as the main drive (phase 13, 2026-07-13)
 
@@ -645,11 +644,19 @@ toggles revealing Tethr's **internal working drive** (the DB) and **other Google
   itself excluded. Routes: `/fsdrive/list|folder|move|archive` + `/fsdrive/mounts`
   (GET/POST/DELETE), `mount=mirror|ext:<id>`. **Agents never reach any of this — UI only.**
 - **UI** (`ui/src/pages/tethr/drive/`): `adapters.ts` (`DriveSource` = fs/internal, same verbs)
-  + `FileManager.tsx` (one store-agnostic component: breadcrumbs, new-folder/rename/archive
-  dialogs, **`@dnd-kit` drag-to-move** — drag a row onto a folder or breadcrumb; within a
-  single source only). `TethrDrive.tsx` = 00 Tethr main + two `Switch` toggles + the mounts
-  section (+Add folder). fs sources are manage-only (no in-app content preview yet — open in
-  Drive/Finder); internal keeps its preview via the old panel (still in git history).
+  + **`Finder.tsx` — the Drive is a Finder window (2026-11-07, Mark's note: "look like an actual
+  finder window")**: sidebar of locations (Shared: 00 Tethr · Tethr: Working drive · Google
+  Drive: added folders + "Add folder…", hover-X removes from sidebar only), toolbar (back/forward,
+  list/icon view, new folder, rename, archive, preview pane, search, full screen), sortable
+  columns (Name/Date Modified/Size/Kind, folders on top; columns collapse by the list's own
+  width via container queries), preview pane, Quick Look (Space / double-click), right-click
+  menu, path bar (crumbs are drop targets) + status bar. **`@dnd-kit` drag-to-move** — drag a
+  row onto a folder or path crumb; within a single source only. Keys: arrows, Return/Cmd+Down
+  open, Cmd+Up/Backspace up, Space Quick Look, Cmd+[ ], Esc steps back a layer. Touch: a tap
+  opens. "Open viewer" = the same window full screen (preview pane becomes the reader).
+  `filePreview.tsx` renders Markdown (YAML front matter → small metadata block), HTML in a
+  `sandbox=""` iframe (no scripts), other text as mono. `FolderDialog.tsx` = the name dialog.
+  `TethrDrive.tsx` = header + Finder. Every Finder surface is **opaque** (`tethr-window`).
 - Tests: `tethr-fsdrive.test.ts` (11 — confinement, soft-delete, mount-under-Drive guard).
   Verified live: created a folder in 00 Tethr (hit disk), added "10 Partnerships & Programs"
   (showed real Drive contents scoped to it), move endpoint relocates on disk. **v2 (Google
@@ -707,8 +714,13 @@ Frosted panels floating over warm ink: the Aina glass card + Oura's calm and big
   — never raw amber/emerald/cyan classes.
 - **Surfaces (4 layers):** L0 ground (soft overhead light + grain, `body::before/after`) · L1
   `tethr-panel` frost (page panels/cards/rows — translucent, hairline, **no blur**) · L2
-  `tethr-glass` (blur 24 — ONLY things that float or ask for attention: sidebar, menus, popovers,
-  approval cards, composer) · L3 `tethr-glass-heavy` (dialogs, full-screen viewers). 1px rims with
+  `tethr-glass` (blur 24 — ONLY things that float or ask for attention: menus, popovers,
+  approval cards, composer) · L3 `tethr-glass-heavy` (dialogs). Reading/working windows (the
+  Drive Finder, Quick Look) use **`tethr-window`** — opaque, never see-through. The app
+  sidebar is a faint `--tethr-sidebar` tint (no glass), and every shell divider uses `--border`
+  so the sidebar header's hairline meets the top bar's. **Never put `backdrop-filter` on a scrim
+  whose child is glass** — a blurred parent cuts off the child's blur and the sheet turns
+  see-through (the old viewer bug); scrims use `tethr-scrim` (dim only). 1px rims with
   a lit top edge; radius 14px panels, 10px fields, pill buttons (`tethr-btn` + `-primary/-glass/
   -ghost/-danger`). Wells: `tethr-inset`. Empty states: `tethr-empty`. Budgets: `BudgetRing`
   (Oura ring) / `BudgetBar`.

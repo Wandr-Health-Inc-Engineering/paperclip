@@ -221,7 +221,7 @@ function NotificationDetail({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--tethr-overlay)] p-4 backdrop-blur-[4px]"
+      className="tethr-scrim fixed inset-0 z-[60] flex items-center justify-center p-4"
       onClick={onClose}
     >
       <div className="tethr-glass-heavy w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>

@@ -1,0 +1,175 @@
+import { useQuery } from "@tanstack/react-query";
+import {
+  File as FileIcon,
+  FileCode,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
+  FileType,
+  Folder,
+  Presentation,
+  type LucideIcon,
+} from "lucide-react";
+import { MarkdownBody } from "@/components/MarkdownBody";
+import { cn } from "@/lib/utils";
+import type { DriveSource, FmItem } from "./adapters";
+
+// File-type helpers and the shared preview renderer used by the Finder's
+// preview pane and Quick Look. Monochrome glyphs only (brand lock).
+
+function ext(name: string): string {
+  const i = name.lastIndexOf(".");
+  return i > 0 ? name.slice(i + 1).toLowerCase() : "";
+}
+
+const KINDS: Record<string, { label: string; icon: LucideIcon }> = {
+  md: { label: "Markdown document", icon: FileText },
+  markdown: { label: "Markdown document", icon: FileText },
+  txt: { label: "Plain text", icon: FileText },
+  html: { label: "HTML document", icon: FileCode },
+  htm: { label: "HTML document", icon: FileCode },
+  json: { label: "JSON", icon: FileCode },
+  command: { label: "Terminal script", icon: FileCode },
+  sh: { label: "Shell script", icon: FileCode },
+  csv: { label: "CSV spreadsheet", icon: FileSpreadsheet },
+  xlsx: { label: "Excel workbook", icon: FileSpreadsheet },
+  pdf: { label: "PDF document", icon: FileType },
+  docx: { label: "Word document", icon: FileText },
+  pptx: { label: "PowerPoint deck", icon: Presentation },
+  png: { label: "PNG image", icon: FileImage },
+  jpg: { label: "JPEG image", icon: FileImage },
+  jpeg: { label: "JPEG image", icon: FileImage },
+  gif: { label: "GIF image", icon: FileImage },
+  webp: { label: "WebP image", icon: FileImage },
+  svg: { label: "SVG image", icon: FileImage },
+};
+
+export function fileKind(item: Pick<FmItem, "name" | "kind">): string {
+  if (item.kind === "folder") return "Folder";
+  const e = ext(item.name);
+  return KINDS[e]?.label ?? (e ? `${e.toUpperCase()} file` : "Document");
+}
+
+export function FileGlyph({ item, className }: { item: Pick<FmItem, "name" | "kind">; className?: string }) {
+  const Icon = item.kind === "folder" ? Folder : (KINDS[ext(item.name)]?.icon ?? FileIcon);
+  return <Icon className={cn("shrink-0", className)} strokeWidth={1.5} />;
+}
+
+export function formatBytes(bytes: number | undefined): string {
+  if (bytes == null) return "--";
+  if (bytes < 1024) return `${bytes} bytes`;
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Finder-style date: "Today at 3:12 PM", "Yesterday at …", "Jul 16, 2026 at 4:55 AM". */
+export function formatFinderDate(value: string | undefined): string {
+  if (!value) return "--";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "--";
+  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((startOfDay(new Date()) - startOfDay(d)) / 86_400_000);
+  if (days === 0) return `Today at ${time}`;
+  if (days === 1) return `Yesterday at ${time}`;
+  const date = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return `${date} at ${time}`;
+}
+
+export function previewQueryKey(source: DriveSource, key: string) {
+  return [...source.invalidateKey, "read", key] as const;
+}
+
+/** Render a file's contents: Markdown as a document, HTML in a locked-down
+ * sandbox (no scripts, no same-origin), other text as monospace. */
+export function PreviewBody({
+  source,
+  item,
+  size,
+}: {
+  source: DriveSource;
+  item: FmItem;
+  size: "pane" | "full";
+}) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: previewQueryKey(source, item.key),
+    queryFn: () => source.read(item.key),
+  });
+  const e = ext(item.name);
+  const full = size === "full";
+
+  if (isLoading) {
+    return <p className="px-5 py-6 font-mono text-[11px] tethr-text-3">Reading…</p>;
+  }
+  if (error || data?.kind === "missing") {
+    return <Unpreviewable item={item} text="This file couldn't be read. It may have been moved or renamed." />;
+  }
+  if (data?.kind === "toolarge") {
+    return <Unpreviewable item={item} text="Too large to preview here. Open it in Google Drive or Finder." />;
+  }
+  if (data?.kind !== "text") {
+    return <Unpreviewable item={item} text="No preview for this file type. Open it in Google Drive or Finder." />;
+  }
+
+  const content = data.content ?? "";
+  if (e === "html" || e === "htm") {
+    return (
+      <iframe
+        title={item.name}
+        sandbox=""
+        srcDoc={content}
+        className="block h-full min-h-[320px] w-full flex-1 border-0 bg-white"
+      />
+    );
+  }
+  if (e === "md" || e === "markdown" || !source.isFs) {
+    const { meta, body } = splitFrontMatter(content);
+    return (
+      <div className={cn("mx-auto w-full", full ? "max-w-[70ch] px-6 py-8 md:px-10 md:py-10" : "px-5 py-5")}>
+        {meta.length ? (
+          <dl className="tethr-inset mb-5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 px-3 py-2.5 font-mono text-[11px]">
+            {meta.map(([k, v]) => (
+              <div key={k} className="contents">
+                <dt className="tethr-text-3">{k}</dt>
+                <dd className="truncate" title={v}>
+                  {v}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
+        <MarkdownBody className={cn("leading-relaxed", full ? "text-[15px]" : "text-[13px]")}>{body}</MarkdownBody>
+      </div>
+    );
+  }
+  return (
+    <div className={cn("w-full", full ? "px-6 py-6 md:px-10" : "p-4")}>
+      <pre className="tethr-inset whitespace-pre-wrap break-words p-4 font-mono text-[11.5px] leading-relaxed">{content}</pre>
+    </div>
+  );
+}
+
+/** Split a leading YAML front-matter block ("---" … "---", simple key: value
+ * lines, as the Drive mirror writes) from the Markdown body. Anything that
+ * isn't a clean block is left in the body untouched. */
+export function splitFrontMatter(content: string): { meta: Array<[string, string]>; body: string } {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(content);
+  if (!m) return { meta: [], body: content };
+  const meta: Array<[string, string]> = [];
+  for (const line of m[1].split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const kv = /^([A-Za-z0-9_.-]+):\s*(.*)$/.exec(line);
+    if (!kv) return { meta: [], body: content };
+    meta.push([kv[1], kv[2].replace(/^["']|["']$/g, "")]);
+  }
+  return { meta, body: content.slice(m[0].length) };
+}
+
+function Unpreviewable({ item, text }: { item: FmItem; text: string }) {
+  return (
+    <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-3 px-6 text-center">
+      <FileGlyph item={item} className="h-14 w-14 text-muted-foreground" />
+      <p className="max-w-[36ch] text-[13px] text-muted-foreground">{text}</p>
+    </div>
+  );
+}

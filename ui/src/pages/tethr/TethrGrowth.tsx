@@ -113,12 +113,12 @@ function WorkflowRow({ wf }: { wf: TethrGrowthWorkflow }) {
 
 function Stat({ label, value, tone, sub }: { label: string; value: string; tone?: StatusTone; sub?: string }) {
   return (
-    <div className="tethr-panel flex flex-col gap-2 p-4">
+    <div className="tethr-panel flex flex-col gap-1.5 px-4 py-3.5">
       <div className="flex items-center gap-2">
         {tone ? <StatusDot tone={tone} /> : null}
         <MonoTag>{label}</MonoTag>
       </div>
-      <span className="tethr-figure text-[40px]">{value}</span>
+      <span className="tethr-figure text-[28px]">{value}</span>
       {sub ? <span className="text-[12px] text-muted-foreground">{sub}</span> : null}
     </div>
   );

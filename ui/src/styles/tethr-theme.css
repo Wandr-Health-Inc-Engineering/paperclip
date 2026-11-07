@@ -75,6 +75,16 @@
   /* Tethr surface tokens */
   --tethr-glass: rgba(255, 255, 255, 0.55);
   --tethr-glass-solid: #f6f5f3;
+  /* The app sidebar: a hair darker than the ground, never a white slab. */
+  --tethr-sidebar: rgba(22, 20, 18, 0.028);
+  /* Windows you work and read in (the Drive Finder, Quick Look): opaque. */
+  --tethr-window: #f4f3f0;
+  --tethr-window-bar: #eeece8;
+  --tethr-window-side: #ebe9e5;
+  --tethr-select: #2a2724;
+  --tethr-select-fg: #f6f5f3;
+  --tethr-select-blur: rgba(22, 20, 18, 0.1);
+  --tethr-stripe: rgba(22, 20, 18, 0.022);
   --tethr-frost: rgba(255, 255, 255, 0.42);
   --tethr-frost-strong: rgba(255, 255, 255, 0.72);
   --tethr-inset: rgba(22, 20, 18, 0.035);
@@ -138,6 +148,14 @@
 
   --tethr-glass: rgba(40, 36, 32, 0.55);
   --tethr-glass-solid: #1d1a17;
+  --tethr-sidebar: rgba(255, 244, 230, 0.022);
+  --tethr-window: #171513;
+  --tethr-window-bar: #1c1a17;
+  --tethr-window-side: #141210;
+  --tethr-select: #e4ded4;
+  --tethr-select-fg: #12100e;
+  --tethr-select-blur: rgba(255, 244, 230, 0.1);
+  --tethr-stripe: rgba(255, 244, 230, 0.02);
   --tethr-frost: rgba(255, 244, 230, 0.035);
   --tethr-frost-strong: rgba(255, 244, 230, 0.075);
   --tethr-inset: rgba(0, 0, 0, 0.28);
@@ -226,17 +244,27 @@ samp,
 
 /* ===== L2 — the app shell on glass ===== */
 
-/* Sidebar column (company sidebar + account menu below it). */
+/* Sidebar column (company sidebar + account menu below it). On desktop it sits
+   on the ground as a faint tint, not a white glass slab, and every shell
+   divider uses the same hairline (--border) as the top bar so they meet. */
 aside.border-r,
 div.border-t.border-r.bg-background {
-  background-color: var(--tethr-glass);
-  -webkit-backdrop-filter: blur(24px) saturate(140%);
-  backdrop-filter: blur(24px) saturate(140%);
-  border-color: var(--tethr-rim);
+  background-color: var(--tethr-sidebar);
+  border-color: var(--border);
 }
 
-aside.border-r {
-  box-shadow: inset -1px 0 0 var(--tethr-rim-hi);
+/* The sidebar's own header row carries the top bar's hairline across, so the
+   line under "DRIVE" continues under the company switcher at the same height. */
+aside.border-r > div.h-12:first-child {
+  border-bottom: 1px solid var(--border);
+}
+
+/* Mobile: the sidebar is a drawer over a dimmed page, so it needs a solid fill. */
+@media (max-width: 767px) {
+  aside.border-r,
+  div.border-t.border-r.bg-background {
+    background-color: var(--tethr-glass-solid);
+  }
 }
 
 /* Sidebar nav items: soft rounded rows; the active row is a frosted pill. */
@@ -370,8 +398,6 @@ nav[aria-label="Mobile navigation"],
 
 /* Fallbacks: no backdrop blur, or the viewer asked for less transparency. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  aside.border-r,
-  div.border-t.border-r.bg-background,
   [data-slot="popover-content"],
   [data-slot="dropdown-menu-content"],
   [data-slot="select-content"],
@@ -385,8 +411,6 @@ nav[aria-label="Mobile navigation"],
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  aside.border-r,
-  div.border-t.border-r.bg-background,
   [data-slot="popover-content"],
   [data-slot="dropdown-menu-content"],
   [data-slot="select-content"],
@@ -445,6 +469,50 @@ nav[aria-label="Mobile navigation"],
   border: 1px solid var(--tethr-rim);
   border-radius: var(--tethr-r-md);
   box-shadow: inset 0 1px 0 var(--tethr-rim-hi), var(--tethr-shadow-float);
+}
+
+/* Windows you work and read in (the Drive's Finder, Quick Look). Opaque on
+   purpose: a reading surface never shows the page through it. Bars and the
+   sidebar are slightly different solid tones, like a real Finder window. */
+.tethr-window {
+  background-color: var(--tethr-window);
+  border: 1px solid var(--tethr-rim-strong);
+  border-radius: var(--tethr-r-lg);
+  box-shadow: inset 0 1px 0 var(--tethr-rim-hi), var(--tethr-shadow-float);
+}
+.tethr-window-lifted {
+  box-shadow: inset 0 1px 0 var(--tethr-rim-hi), var(--tethr-shadow-modal);
+}
+.tethr-window-bar {
+  background-color: var(--tethr-window-bar);
+}
+.tethr-window-side {
+  background-color: var(--tethr-window-side);
+}
+/* Finder rows: faint zebra stripes; the selection inverts (ink on Day, bone
+   on Night) and drops to a soft grey when the window loses focus. */
+.tethr-stripe {
+  background-color: var(--tethr-stripe);
+}
+.tethr-selected {
+  background-color: var(--tethr-select-blur);
+  color: var(--foreground);
+}
+.tethr-finder:focus-within .tethr-selected {
+  background-color: var(--tethr-select);
+  color: var(--tethr-select-fg);
+}
+.tethr-finder:focus-within .tethr-selected .tethr-text-3,
+.tethr-finder:focus-within .tethr-selected .text-muted-foreground {
+  color: var(--tethr-select-fg);
+  opacity: 0.75;
+}
+
+/* Scrims under modal surfaces: a dim only. Never put backdrop-filter on a
+   scrim whose child is glass — a blurred parent cuts off the child's own blur
+   and the sheet turns see-through. The child glass does the blurring. */
+.tethr-scrim {
+  background-color: var(--tethr-overlay);
 }
 
 /* L3: full-screen viewers and modal-weight panels. */
