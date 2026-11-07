@@ -239,7 +239,7 @@ export function CommandPalette() {
             <Plug className="mr-2 h-4 w-4" />
             Providers
           </CommandItem>
-          <CommandItem onSelect={() => go("/memory")}>
+          <CommandItem onSelect={() => go("/company/settings/memory")}>
             <Brain className="mr-2 h-4 w-4" />
             Memory
           </CommandItem>

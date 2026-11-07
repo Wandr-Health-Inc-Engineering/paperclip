@@ -593,6 +593,8 @@ to #scout in the standard recommendation format; a human tags `@Cursor` in-threa
 
 ## Memory & published-content dedupe (Phase 6)
 
+**Where it lives in the UI (2026-11-07):** Company → Settings → Memory (`/company/settings/memory`), moved off the main sidebar "for now" (Mark will rework it later); `/memory` redirects there.
+
 `tethr_memories` is keyword (`ilike`) recall. `published-memory.ts` adds a dedup layer:
 `gating.ts` records a company-scoped `published-content` memory on every publish; `routing.ts`
 warns (advisory, never blocks) on a duplicate-topic content request. Backfill the blueprint

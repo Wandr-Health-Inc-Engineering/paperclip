@@ -157,7 +157,7 @@ async function run() {
     );
 
     // 12b — Memory
-    await go("/memory");
+    await go("/company/settings/memory");
     await shoot(
       page,
       `18-memory-${t}.png`,

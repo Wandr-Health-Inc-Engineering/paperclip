@@ -16,7 +16,6 @@ import {
   HardDrive,
   Wallet,
   Plug,
-  Brain,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { NavLink } from "@/lib/router";
@@ -104,7 +103,6 @@ export function Sidebar() {
           <SidebarNavItem to="/drive" label="Drive" icon={HardDrive} />
           <SidebarNavItem to="/budgets" label="Budgets" icon={Wallet} />
           <SidebarNavItem to="/audit" label="Activity" icon={History} />
-          <SidebarNavItem to="/memory" label="Memory" icon={Brain} />
           <SidebarNavItem to="/tethr-settings" label="Providers" icon={Plug} />
         </SidebarSection>
 

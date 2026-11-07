@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, KeyRound, MailPlus, MonitorCog, Settings, Shield, SlidersHorizontal } from "lucide-react";
+import { Brain, ChevronLeft, KeyRound, MailPlus, MonitorCog, Settings, Shield, SlidersHorizontal } from "lucide-react";
 import { sidebarBadgesApi } from "@/api/sidebarBadges";
 import { ApiError } from "@/api/client";
 import { Link } from "@/lib/router";
@@ -69,6 +69,8 @@ export function CompanySettingsSidebar() {
           />
           <SidebarNavItem to="/company/settings/invites" label="Invites" icon={MailPlus} end />
           <SidebarNavItem to="/company/settings/secrets" label="Secrets" icon={KeyRound} end />
+          {/* Tethr: Memory lives here for now (Mark, 2026-11-07); see DECISIONS.md */}
+          <SidebarNavItem to="/company/settings/memory" label="Memory" icon={Brain} end />
         </div>
       </nav>
     </aside>

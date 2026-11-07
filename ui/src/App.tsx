@@ -86,7 +86,7 @@ function boardRoutes() {
       <Route path="audit" element={<TethrAudit />} />
       <Route path="crew/:agentId" element={<TethrAgentPage />} />
       <Route path="tethr-settings" element={<TethrSettings />} />
-      <Route path="memory" element={<TethrMemory />} />
+      <Route path="memory" element={<Navigate to="/company/settings/memory" replace />} />
       <Route path="onboarding" element={<OnboardingRoutePage />} />
       <Route path="companies" element={<Companies />} />
       <Route path="company/settings" element={<CompanySettings />} />
@@ -96,6 +96,7 @@ function boardRoutes() {
       <Route path="company/export/*" element={<CompanyExport />} />
       <Route path="company/import" element={<CompanyImport />} />
       <Route path="company/settings/secrets" element={<Secrets />} />
+      <Route path="company/settings/memory" element={<TethrMemory />} />
       <Route path="skills/*" element={<CompanySkills />} />
       <Route path="settings" element={<LegacySettingsRedirect />} />
       <Route path="settings/*" element={<LegacySettingsRedirect />} />
