@@ -146,15 +146,6 @@ export function TethrGrowth() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <MonoTag>tethr · growth</MonoTag>
-        <h1 className="tethr-display mt-2 text-[34px] md:text-[40px]">the growth board</h1>
-        <p className="mt-2 max-w-[62ch] text-sm text-muted-foreground">
-          Customer acquisition, run as tasks. What each agent is carrying, what's waiting on you, and which
-          growth workflows are switched on.
-        </p>
-      </div>
-
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" data-tethr-stagger>
         <Stat
           label="waiting on you"

@@ -50,15 +50,6 @@ export function TethrRuns() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <MonoTag className="text-foreground">● tethr · runs</MonoTag>
-        <h1 className="tethr-display mt-2 text-[34px] md:text-[40px]">heartbeats</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          A heartbeat wakes the agent, routes the standing request down the chain, and
-          stages the output — gated work stops in the Queue.
-        </p>
-      </div>
-
       {/* Schedule */}
       <section>
         <div className="mb-3 flex items-center gap-2">

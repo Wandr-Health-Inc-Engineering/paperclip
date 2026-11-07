@@ -43,15 +43,6 @@ export function TethrSettings() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div>
-        <MonoTag>tethr · settings</MonoTag>
-        <h1 className="tethr-display mt-2 text-[34px] md:text-[40px]">providers</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Everything below sits behind an interface. Moving to the cloud is an env
-          change per MIGRATION-NOTES.md, not a rewrite.
-        </p>
-      </div>
-
       <div className="space-y-3" data-tethr-stagger>
         <ThrottleCard companyId={selectedCompanyId} />
         <LlmModeCard companyId={selectedCompanyId} llm={data.llm} />

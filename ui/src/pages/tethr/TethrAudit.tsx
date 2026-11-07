@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import {
-  MonoTag,
   StatusDot,
   formatRelative,
   type StatusTone,
@@ -96,15 +95,6 @@ export function TethrAudit() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <MonoTag className="text-foreground">● tethr · activity</MonoTag>
-        <h1 className="tethr-display mt-2 text-[34px] md:text-[40px]">the trail</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Every hop, run, output, and decision. A request's full path is always
-          reconstructable.
-        </p>
-      </div>
-
       <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex max-w-full flex-wrap items-center gap-0.5 rounded-[18px] bg-[var(--tethr-frost)] p-0.5 shadow-[inset_0_0_0_1px_var(--tethr-rim)]">
           {KINDS.map((option) => (

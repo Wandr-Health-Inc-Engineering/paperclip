@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { HardDrive, Maximize2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { HardDrive } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
-import { MonoTag } from "@/components/tethr/primitives";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
 import { tethrApi, tethrKeys } from "@/api/tethr";
@@ -14,7 +12,7 @@ import { fsSource, internalSource } from "./drive/adapters";
 // The Drive page: one Finder window. The Google Drive-synced "00 Tethr" folder
 // is the default location (what the team sees); Tethr's internal working drive
 // and any Google Drive folders the user adds sit beside it in the sidebar. The
-// "Open viewer" button takes the same window full screen for reading.
+// toolbar's Expand button takes the same window full screen for reading.
 
 export function TethrDrive() {
   const { selectedCompanyId } = useCompany();
@@ -87,23 +85,7 @@ export function TethrDrive() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
-        <div className="min-w-0 flex-1">
-          <MonoTag>tethr · drive</MonoTag>
-          <h1 className="tethr-display mt-2 text-[34px] md:text-[40px]">the drive</h1>
-          <p className="mt-2 max-w-[72ch] text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">00 Tethr</span> is your shared workspace. It syncs to Google
-            Drive, so it's what your team sees. Double-click to open, press Space to preview, drag onto a folder to move.
-            Nothing is ever hard-deleted: archived items go to 99 Archive.
-          </p>
-        </div>
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setFullscreen(true)}>
-          <Maximize2 className="h-3.5 w-3.5" />
-          Open viewer
-        </Button>
-      </div>
-
+    <div className="space-y-4">
       {status && !mirrorOn ? (
         <div className="tethr-empty px-4 py-3 text-[13px] text-muted-foreground">
           Google Drive isn't connected, so only the working drive is shown. Set{" "}

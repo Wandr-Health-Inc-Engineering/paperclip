@@ -492,7 +492,7 @@ function FinderWindow({
     <div
       className={cn(
         "tethr-finder tethr-window @container/win flex min-h-0 min-w-0 flex-col overflow-hidden",
-        fullscreen ? "tethr-window-lifted h-full w-full" : "h-[min(74vh,760px)] min-h-[440px]",
+        fullscreen ? "tethr-window-lifted h-full w-full" : "h-[calc(100dvh-10rem)] min-h-[440px] md:h-[calc(100dvh-6rem)]",
       )}
     >
       <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
@@ -534,12 +534,16 @@ function FinderWindow({
             </ToolButton>
           </span>
           {search("ml-1 hidden w-44 @2xl/win:flex")}
-          <ToolButton
-            title={fullscreen ? "Exit full screen (Esc)" : "Full screen"}
+          <button
+            type="button"
+            title={fullscreen ? "Collapse (Esc)" : "Expand to full screen"}
+            aria-label={fullscreen ? "Collapse" : "Expand"}
             onClick={() => onFullscreenChange(!fullscreen)}
+            className="ml-1 inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-full px-2 text-[12.5px] text-foreground/80 shadow-[inset_0_0_0_1px_var(--tethr-rim-strong)] transition-colors hover:bg-[var(--tethr-select-blur)] hover:text-foreground @sm/win:px-3"
           >
             {fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-          </ToolButton>
+            <span className="hidden @sm/win:inline">{fullscreen ? "Collapse" : "Expand"}</span>
+          </button>
         </div>
 
         {/* Narrow windows: the sidebar becomes a location picker beside search. */}
@@ -722,8 +726,8 @@ function FinderWindow({
     <>
       {fullscreen ? (
         <>
-          <div className="tethr-empty flex h-[min(74vh,760px)] min-h-[440px] items-center justify-center text-[13px] text-muted-foreground">
-            Open in full screen. Press Esc to come back.
+          <div className="tethr-empty flex h-[calc(100dvh-10rem)] min-h-[440px] md:h-[calc(100dvh-6rem)] items-center justify-center text-[13px] text-muted-foreground">
+            Expanded to full screen. Press Esc to collapse.
           </div>
           {createPortal(
             <div

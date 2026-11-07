@@ -120,15 +120,7 @@ export function TethrCompany() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <MonoTag>● tethr · company</MonoTag>
-          <h1 className="tethr-display mt-2 text-[34px] md:text-[40px]">the org</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            One company, many divisions. Click an agent to see its routing table, crew,
-            and recent work.
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <div className="flex items-center gap-2">
           {ceo ? (
             <Button size="sm" onClick={() => setProposeOpen(true)}>

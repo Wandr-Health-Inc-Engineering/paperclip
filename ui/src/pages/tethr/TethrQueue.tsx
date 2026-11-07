@@ -81,16 +81,7 @@ export function TethrQueue() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <MonoTag className="text-foreground">● tethr · queue</MonoTag>
-          <h1 className="tethr-display mt-2 text-[34px] md:text-[40px]">the queue</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {pendingCount > 0
-              ? `${pendingCount} item${pendingCount === 1 ? "" : "s"} awaiting review. Gated output cannot ship without a decision here.`
-              : "Nothing waiting. The crew will let you know when something needs you."}
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center gap-3">
         <PillTabs
           value={tab}
           onValueChange={(v) => setTab(v as typeof tab)}

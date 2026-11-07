@@ -65,15 +65,6 @@ export function TethrBudgets() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <MonoTag>tethr · budgets</MonoTag>
-        <h1 className="tethr-display mt-2 text-[34px] md:text-[40px]">the growth line</h1>
-        <p className="mt-2 max-w-[62ch] text-sm text-muted-foreground">
-          One combined monthly line for the company. Each agent has its own cap,
-          enforced as a hard stop.
-        </p>
-      </div>
-
       {/* Combined line */}
       <div className="tethr-panel p-5 md:p-6">
         <div className="flex flex-wrap items-end justify-between gap-3">

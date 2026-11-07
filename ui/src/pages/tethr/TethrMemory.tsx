@@ -4,7 +4,7 @@ import { Brain } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
 import { PageSkeleton } from "@/components/PageSkeleton";
-import { MonoTag, formatRelative } from "@/components/tethr/primitives";
+import { formatRelative } from "@/components/tethr/primitives";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
 import { cn } from "@/lib/utils";
@@ -61,15 +61,6 @@ export function TethrMemory() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <MonoTag>tethr · memory</MonoTag>
-        <h1 className="tethr-display mt-3 text-[34px] md:text-[40px]">recall</h1>
-        <p className="mt-2 max-w-[62ch] text-sm text-muted-foreground">
-          What the company remembers. Agents pull from here on every run via
-          recall_memory; company-wide rules apply to everyone.
-        </p>
-      </div>
-
       <div className="flex flex-wrap items-center gap-2">
         {[
           { value: "all", label: "everything" },

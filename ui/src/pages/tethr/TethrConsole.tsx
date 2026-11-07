@@ -125,27 +125,14 @@ export function TethrConsole() {
     <div className="mx-auto max-w-5xl space-y-8">
       {/* Hero input — sits on the reeded light (the Aina streaks). */}
       <div className="tethr-reeds -mx-4 space-y-5 rounded-[20px] px-4 pb-4 pt-2 md:-mx-6 md:px-6">
-        <div className="flex items-end justify-between gap-3">
-          <div>
-            <MonoTag className="inline-flex items-center gap-2">
-              <StatusDot tone="live" />
-              tethr · console
-            </MonoTag>
-            <h1 className="tethr-display mt-3 text-[34px] md:text-[44px]">
-              ask the company
-            </h1>
-            <p className="mt-2 max-w-[62ch] text-sm text-muted-foreground">
-              Tethr reads every request — it answers directly, drafts plans, and
-              routes to specialists as they come online. Gated work stops in the Queue.
-            </p>
-          </div>
-          {threadId ? (
+        {threadId ? (
+          <div className="flex justify-end">
             <button type="button" className="tethr-btn tethr-btn-glass h-8 shrink-0 px-3.5 text-[13px]" onClick={newThread}>
               <MessageSquarePlus className="h-3.5 w-3.5" />
               New thread
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
 
         <div className="tethr-glass rounded-[18px]">
           <textarea
