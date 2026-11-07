@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import { RouteFlow } from "@/components/tethr/RouteFlow";
 import { CogDuo, OutputStatusBadge, StatusDot, formatRelative } from "@/components/tethr/primitives";
@@ -172,233 +173,209 @@ export function TethrConsole() {
   const visibleRuns = runs ?? [];
   const showPending = pending && (pending.threadId === threadId || (isDraft && !pending.threadId));
   const empty = !isLoading && !visibleRuns.length && !showPending;
-  const anyRunning = (isMain ? visibleRuns : []).some((r) => !TERMINAL.has(r.status));
 
   return (
-    <div className="flex h-[calc(100dvh-10rem)] min-h-[480px] gap-3 md:h-[calc(100dvh-6rem)]">
-      <ChatRail
-        mainActive={isMain}
-        mainRunning={anyRunning}
+    <div className="relative flex h-[calc(100dvh-10rem)] min-h-[480px] flex-col md:h-[calc(100dvh-6rem)]">
+      <ChatSwitcher
+        isMain={isMain}
+        isDraft={isDraft}
+        title={isMain ? "tethr" : isDraft ? "New side chat" : (sideChat?.title ?? "Side chat")}
+        running={visibleRuns.some((r) => !TERMINAL.has(r.status))}
         mainLastAt={chats?.main.lastAt ?? null}
         sideChats={chats?.sideChats ?? []}
         activeThreadId={threadId}
-        draftActive={isDraft}
         onOpenMain={() => openChat(null)}
         onOpenSide={(id) => openChat(id)}
         onNewSide={() => openChat("new")}
         onRemoveSide={(id) => removeChat.mutate(id)}
       />
 
-      <section className="tethr-panel flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Header: which chat this is (and, on phones, the chat switcher). */}
-        <div className="flex min-h-12 shrink-0 items-center gap-2 border-b tethr-rule px-3 py-2 md:h-12 md:px-4 md:py-0">
-          <div className="flex min-w-0 flex-1 items-center gap-2 md:hidden">
-            <select
-              aria-label="Chat"
-              value={isDraft ? "new" : (threadId ?? "")}
-              onChange={(e) => {
-                const v = e.target.value;
-                openChat(v === mainThreadId ? null : v);
-              }}
-              className="h-8 min-w-0 flex-1 rounded-[10px] border border-[var(--tethr-rim-strong)] bg-[var(--tethr-frost)] px-2 text-[13px] outline-none"
-            >
-              <option value={mainThreadId}>tethr · main chat</option>
-              {chats?.sideChats.map((s) => (
-                <option key={s.threadId} value={s.threadId}>
-                  {s.title}
-                </option>
-              ))}
-              {isDraft ? <option value="new">New side chat</option> : null}
-            </select>
-            <button
-              type="button"
-              onClick={() => openChat("new")}
-              aria-label="New side chat"
-              className="tethr-btn tethr-btn-glass h-8 w-8 shrink-0"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
+      {/* One area: the conversation sits on the page, under the floating bar. */}
+      <div
+        ref={scrollRef}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+        }}
+        className="min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent_0,#000_44px,#000_calc(100%-14px),transparent_100%)]"
+      >
+        {empty ? (
+          <ChatEmpty isDraft={isDraft} onPick={(s) => send.mutate(s)} />
+        ) : (
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-9 px-4 pb-6 pt-16 md:px-6">
+            {visibleRuns.length >= limit && limit < 100 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  stickToBottom.current = false;
+                  setLimit(100);
+                }}
+                className="tethr-btn tethr-btn-ghost mx-auto h-8 px-3.5 text-[12.5px]"
+              >
+                Load earlier messages
+              </button>
+            ) : null}
+            {isLoading ? <p className="text-center font-mono text-[11px] tethr-text-3">Loading…</p> : null}
+            {visibleRuns.map((run) => (
+              <Turn key={run.id} run={run} companyId={c} />
+            ))}
+            {showPending && !visibleRuns.some((r) => r.id === pending?.runId) ? (
+              <div className="flex flex-col gap-4">
+                <UserBubble text={pending!.text} />
+                <Working label="sending…" />
+              </div>
+            ) : null}
           </div>
-          <div className="hidden min-w-0 flex-1 items-baseline gap-2 md:flex">
-            <span className="truncate text-[14px] font-medium tracking-[-0.01em]">
-              {isMain ? "tethr" : isDraft ? "New side chat" : (sideChat?.title ?? "Side chat")}
-            </span>
-            <span className="tethr-eyebrow shrink-0">
-              {isMain ? "main chat · ongoing" : isDraft ? "starts with your first message" : "side chat"}
-            </span>
-          </div>
-          {!isMain && !isDraft && threadId ? (
-            <button
-              type="button"
-              onClick={() => removeChat.mutate(threadId)}
-              title="Close this side chat (its history stays in Activity)"
-              className="tethr-btn tethr-btn-ghost h-8 shrink-0 px-3 text-[12.5px]"
-            >
-              <X className="h-3.5 w-3.5" />
-              Close
-            </button>
-          ) : null}
-        </div>
+        )}
+      </div>
 
-        {/* Messages */}
-        <div
-          ref={scrollRef}
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-          }}
-          className="min-h-0 flex-1 overflow-y-auto"
-        >
-          {empty ? (
-            <ChatEmpty isDraft={isDraft} onPick={(s) => send.mutate(s)} />
-          ) : (
-            <div className="mx-auto flex w-full max-w-3xl flex-col gap-9 px-4 py-6 md:px-6">
-              {visibleRuns.length >= limit && limit < 100 ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    stickToBottom.current = false;
-                    setLimit(100);
-                  }}
-                  className="tethr-btn tethr-btn-ghost mx-auto h-8 px-3.5 text-[12.5px]"
-                >
-                  Load earlier messages
-                </button>
-              ) : null}
-              {isLoading ? <p className="text-center font-mono text-[11px] tethr-text-3">Loading…</p> : null}
-              {visibleRuns.map((run) => (
-                <Turn key={run.id} run={run} companyId={c} />
-              ))}
-              {showPending && !visibleRuns.some((r) => r.id === pending?.runId) ? (
-                <div className="flex flex-col gap-4">
-                  <UserBubble text={pending!.text} />
-                  <Working label="sending…" />
-                </div>
-              ) : null}
-            </div>
-          )}
-        </div>
-
-        <Composer
-          key={threadId ?? "draft"}
-          placeholder={
-            isDraft ? "What's this side chat about?" : isMain ? "Message tethr…" : "Message this side chat…"
-          }
-          hint={isMain ? "Everything goes to your ongoing chat with tethr." : undefined}
-          busy={send.isPending}
-          error={sendError}
-          onSend={(text) => send.mutate(text)}
-        />
-      </section>
+      <Composer
+        key={threadId ?? "draft"}
+        placeholder={isDraft ? "What's this side chat about?" : isMain ? "Message tethr…" : "Message this side chat…"}
+        hint={isMain ? "Everything goes to your ongoing chat with tethr." : undefined}
+        busy={send.isPending}
+        error={sendError}
+        onSend={(text) => send.mutate(text)}
+      />
     </div>
   );
 }
 
-// ---- rail ----------------------------------------------------------------------
+// ---- floating chat bar ----------------------------------------------------------
 
-function ChatRail({
-  mainActive,
-  mainRunning,
+/** A glass pill floating over the conversation: shows which chat you're in;
+ * click it for the main chat and your side chats; + starts a new side chat. */
+function ChatSwitcher({
+  isMain,
+  isDraft,
+  title,
+  running,
   mainLastAt,
   sideChats,
   activeThreadId,
-  draftActive,
   onOpenMain,
   onOpenSide,
   onNewSide,
   onRemoveSide,
 }: {
-  mainActive: boolean;
-  mainRunning: boolean;
+  isMain: boolean;
+  isDraft: boolean;
+  title: string;
+  running: boolean;
   mainLastAt: string | null;
   sideChats: TethrSideChat[];
   activeThreadId: string | null;
-  draftActive: boolean;
   onOpenMain: () => void;
   onOpenSide: (threadId: string) => void;
   onNewSide: () => void;
   onRemoveSide: (threadId: string) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const pick = (fn: () => void) => {
+    setOpen(false);
+    fn();
+  };
   return (
-    <aside aria-label="Chats" className="tethr-panel hidden w-60 shrink-0 flex-col gap-4 overflow-y-auto p-2 md:flex">
-      <button
-        type="button"
-        onClick={onOpenMain}
-        className={cn(
-          "flex items-center gap-3 rounded-[12px] px-2.5 py-2.5 text-left transition-colors",
-          mainActive
-            ? "bg-[var(--tethr-frost-strong)] shadow-[inset_0_0_0_1px_var(--tethr-rim)]"
-            : "hover:bg-[var(--tethr-frost-strong)]",
-        )}
-      >
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-primary text-primary-foreground">
-          <MessagesSquare className="h-4 w-4" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-[13.5px] font-medium">tethr</span>
-          <span className="block truncate text-[11.5px] text-muted-foreground">
-            {mainRunning ? "working…" : mainLastAt ? `main chat · ${formatRelative(mainLastAt)}` : "main chat"}
-          </span>
-        </span>
-        {mainRunning ? <StatusDot tone="live" /> : null}
-      </button>
+    <div className="pointer-events-none absolute inset-x-0 top-1 z-20 flex justify-center px-3">
+      <div className="tethr-glass pointer-events-auto flex max-w-full items-center gap-0.5 rounded-full p-1">
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label="Switch chat"
+              className="flex h-8 min-w-0 items-center gap-2 rounded-full pl-1 pr-2.5 transition-colors hover:bg-[var(--tethr-select-blur)]"
+            >
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
+                {isMain ? <MessagesSquare className="h-3 w-3" /> : <MessageSquarePlus className="h-3 w-3" />}
+              </span>
+              <span className="min-w-0 max-w-[44vw] truncate text-[13px] font-medium md:max-w-[340px]">{title}</span>
+              {running ? <StatusDot tone="live" /> : null}
+              <span className="hidden shrink-0 font-mono text-[9.5px] uppercase tracking-[0.16em] tethr-text-3 sm:inline">
+                {isMain ? "main chat" : isDraft ? "new" : "side chat"}
+              </span>
+              {sideChats.length ? (
+                <span className="shrink-0 rounded-full bg-[var(--tethr-select-blur)] px-1.5 font-mono text-[10px] leading-4">
+                  {sideChats.length}
+                </span>
+              ) : null}
+              <ChevronDown className="h-3.5 w-3.5 shrink-0 tethr-text-3" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="center" sideOffset={8} className="w-[min(340px,calc(100vw-2rem))] p-1.5">
+            <button
+              type="button"
+              onClick={() => pick(onOpenMain)}
+              className={cn(
+                "flex w-full items-center gap-3 rounded-[10px] px-2 py-2 text-left transition-colors",
+                isMain ? "bg-[var(--tethr-select-blur)]" : "hover:bg-[var(--tethr-select-blur)]",
+              )}
+            >
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] bg-primary text-primary-foreground">
+                <MessagesSquare className="h-3.5 w-3.5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-medium">tethr</span>
+                <span className="block truncate text-[11.5px] text-muted-foreground">
+                  {mainLastAt ? `main chat · ${formatRelative(mainLastAt)}` : "main chat · ongoing"}
+                </span>
+              </span>
+            </button>
 
-      <div className="flex min-h-0 flex-col gap-1">
-        <div className="flex items-center justify-between px-2">
-          <span className="tethr-eyebrow">side chats</span>
-          <button
-            type="button"
-            onClick={onNewSide}
-            title="New side chat"
-            aria-label="New side chat"
-            className="tethr-btn tethr-btn-ghost h-7 w-7"
-          >
-            <MessageSquarePlus className="h-3.5 w-3.5" />
-          </button>
-        </div>
-        {draftActive ? (
-          <div className="flex h-9 items-center gap-2 rounded-[10px] bg-[var(--tethr-frost-strong)] px-2.5 text-[13px] shadow-[inset_0_0_0_1px_var(--tethr-rim)]">
-            <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            New side chat
-          </div>
-        ) : null}
-        {sideChats.map((s) => (
-          <div
-            key={s.threadId}
-            className={cn(
-              "group flex items-center rounded-[10px] transition-colors",
-              s.threadId === activeThreadId
-                ? "bg-[var(--tethr-frost-strong)] shadow-[inset_0_0_0_1px_var(--tethr-rim)]"
-                : "hover:bg-[var(--tethr-frost-strong)]",
-            )}
-          >
+            <p className="tethr-eyebrow px-2 pb-1 pt-3">side chats</p>
+            {sideChats.map((s) => (
+              <div
+                key={s.threadId}
+                className={cn(
+                  "group flex items-center rounded-[10px] transition-colors",
+                  s.threadId === activeThreadId ? "bg-[var(--tethr-select-blur)]" : "hover:bg-[var(--tethr-select-blur)]",
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => pick(() => onOpenSide(s.threadId))}
+                  title={s.title}
+                  className="min-w-0 flex-1 px-2 py-1.5 text-left"
+                >
+                  <span className="block truncate text-[13px]">{s.title}</span>
+                  <span className="block text-[11px] tethr-text-3">{formatRelative(s.lastAt)}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onRemoveSide(s.threadId)}
+                  title="Close side chat (its history stays in Activity)"
+                  aria-label={`Close ${s.title}`}
+                  className="mr-1 grid h-6 w-6 shrink-0 place-items-center rounded-full tethr-text-3 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+            {!sideChats.length ? (
+              <p className="px-2 pb-1 text-[12px] leading-snug tethr-text-3">
+                None yet. Open one for a focused task or side project; it stays out of your main chat.
+              </p>
+            ) : null}
             <button
               type="button"
-              onClick={() => onOpenSide(s.threadId)}
-              title={s.title}
-              className="min-w-0 flex-1 px-2.5 py-2 text-left"
+              onClick={() => pick(onNewSide)}
+              className="mt-1.5 flex w-full items-center gap-2 rounded-[10px] px-2 py-2 text-left text-[13px] transition-colors hover:bg-[var(--tethr-select-blur)]"
             >
-              <span className="block truncate text-[13px]">{s.title}</span>
-              <span className="block text-[11px] tethr-text-3">{formatRelative(s.lastAt)}</span>
+              <Plus className="h-3.5 w-3.5 shrink-0" />
+              New side chat
             </button>
-            <button
-              type="button"
-              onClick={() => onRemoveSide(s.threadId)}
-              title="Close side chat"
-              aria-label={`Close ${s.title}`}
-              className="mr-1 hidden h-6 w-6 shrink-0 place-items-center rounded-full tethr-text-3 hover:text-foreground group-hover:grid"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        ))}
-        {!sideChats.length && !draftActive ? (
-          <p className="px-2 py-1 text-[12px] leading-snug tethr-text-3">
-            Open one for a focused task or side project. It stays out of your main chat.
-          </p>
-        ) : null}
+          </PopoverContent>
+        </Popover>
+        <button
+          type="button"
+          onClick={onNewSide}
+          title="New side chat"
+          aria-label="New side chat"
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-foreground/80 transition-colors hover:bg-[var(--tethr-select-blur)] hover:text-foreground"
+        >
+          <Plus className="h-4 w-4" />
+        </button>
       </div>
-    </aside>
+    </div>
   );
 }
 
@@ -406,7 +383,7 @@ function ChatRail({
 
 function ChatEmpty({ isDraft, onPick }: { isDraft: boolean; onPick: (text: string) => void }) {
   return (
-    <div className="tethr-reeds flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
+    <div className="tethr-reeds flex h-full flex-col items-center justify-center gap-5 px-6 pt-12 text-center">
       <span className="grid h-11 w-11 place-items-center rounded-[14px] bg-primary text-primary-foreground">
         {isDraft ? <MessageSquarePlus className="h-5 w-5" /> : <MessagesSquare className="h-5 w-5" />}
       </span>

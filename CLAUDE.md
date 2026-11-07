@@ -449,9 +449,12 @@ everything yet" — the app shell and other pages are unchanged; only the Consol
   `POST /chats {request}` (opens a side chat with its first message), `DELETE /chats/:threadId`
   (main can't be removed), `GET /chats/:threadId/runs?limit=` (newest runs oldest-first, each
   with its outputs). `routing.listThreadRuns` / `threadStats` back them.
-- **UI** (`TethrConsole.tsx`): rail (main chat pinned, side chats, + new) · conversation (your
-  message right; reply = route chips expandable to the full RouteFlow, status + time, the answer
-  as Markdown, filed outputs as links) · pill composer (Enter sends). URL: `/console` = main,
+- **UI** (`TethrConsole.tsx`) — **one area, no panel-in-a-panel (Mark's call):** the
+  conversation sits directly on the page and scrolls (fading) under a **floating glass pill** at
+  the top that shows the current chat; click it for a popover with the main chat + side chats
+  (hover X closes one) + New side chat; the pill's + starts one directly. Messages: yours on the
+  right; reply = route chips expandable to the full RouteFlow, status + time, the answer as
+  Markdown, filed outputs as links. Pill composer at the bottom (Enter sends). URL: `/console` = main,
   `?chat=<threadId>` = side, `?chat=new` = a side chat being started. **Gated outputs render as
   inline approval cards (Mark's pick) calling the same `outputs/:id/decide` endpoint as the
   Queue** — same gate, the Queue still lists everything. The bell's "ask tethr" now routes into
