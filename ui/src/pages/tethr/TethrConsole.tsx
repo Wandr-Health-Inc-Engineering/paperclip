@@ -1,324 +1,733 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, History, Inbox, MessageSquarePlus, Send } from "lucide-react";
+import {
+  ArrowRight,
+  ArrowUp,
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  Lock,
+  MessageSquarePlus,
+  MessagesSquare,
+  Plus,
+  Send,
+  Wrench,
+  X,
+} from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import { RouteFlow } from "@/components/tethr/RouteFlow";
-import {
-  CogDuo,
-  MonoTag,
-  OutputStatusBadge,
-  StatusDot,
-  formatRelative,
-} from "@/components/tethr/primitives";
+import { CogDuo, OutputStatusBadge, StatusDot, formatRelative } from "@/components/tethr/primitives";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
 import { Link, useSearchParams } from "../../lib/router";
 import { cn } from "@/lib/utils";
-import { tethrApi, tethrKeys, type TethrRouteRun } from "@/api/tethr";
+import {
+  tethrApi,
+  tethrKeys,
+  type TethrChatOutput,
+  type TethrChatRun,
+  type TethrRouteHop,
+  type TethrSideChat,
+} from "@/api/tethr";
 
-// The hero screen. Type a request and watch it travel the chain LIVE: Helm
-// classifies (or plans a multi-agent sequence), the agent routes, the
-// subagent works its tools, and the result lands — gated work stops in the
-// Queue. Follow-ups continue the same thread.
+// The Console as a chat (phase 17, Mark's model): one ONGOING main chat with
+// @tethr that everything goes into by default, plus SIDE chats he opens on
+// purpose for a focused task or side project. Each message routes through the
+// same engine as before; the reply shows which agents handled it (expandable
+// to the full route), the answer, anything filed, and an inline approval card
+// for gated work (same gate as the Queue).
+//
+// URL: /console = main chat · ?chat=<threadId> = a side chat · ?chat=new = a
+// side chat being started (it gets its thread on the first message).
+
+const TERMINAL = new Set(["done", "gated", "failed"]);
+const DECIDABLE = new Set(["gated", "changes_requested"]);
+const PAGE = 40;
 
 const SUGGESTIONS = [
-  "Any travel health news today?",
-  "Write a blog post on malaria prophylaxis timing",
-  "Launch a Peru campaign for the spring season",
-  "Draft a reply to a Reddit thread about typhoid shots",
-  "Can we afford to spend more on the Peru campaign?",
+  "What's on the plate today?",
+  "Any travel health news worth acting on?",
+  "Plan a spring-break malaria push",
+  "How are we tracking against budget?",
 ];
-
-const TERMINAL_STATUSES = new Set(["done", "gated", "failed"]);
 
 export function TethrConsole() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
-  const [request, setRequest] = useState("");
-  const [active, setActive] = useState<{
-    request: string;
-    runId: string;
-    live: boolean;
-  } | null>(null);
-  const [threadId, setThreadId] = useState<string | null>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [limit, setLimit] = useState(PAGE);
+  const [pending, setPending] = useState<{ text: string; threadId: string | null; runId?: string } | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Console" }]);
   }, [setBreadcrumbs]);
 
-  // Opened from a notification's "Ask Tethr to handle this" — pick up the run
-  // that was just dispatched and show it live, then clear the params.
+  // Older links (?run=&thread=) from before the chat: just land on the main chat.
   useEffect(() => {
-    const runParam = searchParams.get("run");
-    if (!runParam) return;
-    setActive({ request: searchParams.get("q") ?? "", runId: runParam, live: true });
-    const thread = searchParams.get("thread");
-    if (thread) setThreadId(thread);
-    setSearchParams({}, { replace: true });
+    if (searchParams.get("run") || searchParams.get("thread")) setSearchParams({}, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  }, []);
 
-  const { data: history } = useQuery({
-    queryKey: tethrKeys.routeRuns(selectedCompanyId!),
-    queryFn: () => tethrApi.routeRuns(selectedCompanyId!, 20),
+  const c = selectedCompanyId ?? "";
+  const { data: chats } = useQuery({
+    queryKey: tethrKeys.chats(c),
+    queryFn: () => tethrApi.chats(c),
     enabled: !!selectedCompanyId,
+    refetchInterval: 20_000,
   });
 
-  const { data: run } = useQuery({
-    queryKey: tethrKeys.routeRun(selectedCompanyId!, active?.runId ?? ""),
-    queryFn: () => tethrApi.routeRun(selectedCompanyId!, active!.runId),
-    enabled: !!selectedCompanyId && !!active?.runId,
-    refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status && TERMINAL_STATUSES.has(status) ? false : 600;
-    },
-  });
-  const terminal = run ? TERMINAL_STATUSES.has(run.status) : false;
+  const mainThreadId = chats?.mainThreadId ?? c;
+  const chatParam = searchParams.get("chat");
+  const isDraft = chatParam === "new";
+  const threadId = isDraft ? null : chatParam || mainThreadId;
+  const isMain = !isDraft && threadId === mainThreadId;
+  const sideChat = !isMain && threadId ? chats?.sideChats.find((s) => s.threadId === threadId) : undefined;
 
-  // When a live run lands, refresh history + queue surfaces once.
-  const settledRef = useRef<string | null>(null);
+  const openChat = (next: string | null) => {
+    setLimit(PAGE);
+    setSendError(null);
+    stickToBottom.current = true;
+    setSearchParams(next ? { chat: next } : {});
+  };
+
+  const { data: runs, isLoading } = useQuery({
+    queryKey: tethrKeys.chatRuns(c, threadId ?? "none"),
+    queryFn: () => tethrApi.chatRuns(c, threadId!, limit),
+    enabled: !!selectedCompanyId && !!threadId,
+    refetchInterval: (q) => (q.state.data?.some((r) => !TERMINAL.has(r.status)) || pending ? 800 : 15_000),
+  });
+
+  // Drop the optimistic bubble once its run shows up in the thread.
   useEffect(() => {
-    if (run && terminal && active?.live && settledRef.current !== run.id) {
-      settledRef.current = run.id;
-      queryClient.invalidateQueries({ queryKey: tethrKeys.routeRuns(selectedCompanyId!) });
-      queryClient.invalidateQueries({ queryKey: ["tethr", selectedCompanyId, "outputs"] });
-    }
-  }, [run, terminal, active?.live, queryClient, selectedCompanyId]);
+    if (pending?.runId && runs?.some((r) => r.id === pending.runId)) setPending(null);
+  }, [runs, pending]);
 
-  const routeMutation = useMutation({
-    mutationFn: (text: string) => tethrApi.route(selectedCompanyId!, text, threadId),
-    onSuccess: (ids, text) => {
-      setActive({ request: text, runId: ids.routeRunId, live: true });
-      setThreadId(ids.threadId);
+  // When a run lands, refresh the surfaces it may have touched (Queue, list counts).
+  const settled = useRef(new Set<string>());
+  useEffect(() => {
+    for (const r of runs ?? []) {
+      if (TERMINAL.has(r.status) && !settled.current.has(r.id)) {
+        if (settled.current.size) {
+          queryClient.invalidateQueries({ queryKey: ["tethr", c, "outputs"] });
+          queryClient.invalidateQueries({ queryKey: tethrKeys.chats(c) });
+        }
+        settled.current.add(r.id);
+      }
+    }
+  }, [runs, c, queryClient]);
+
+  const send = useMutation({
+    mutationFn: async (text: string) => {
+      if (isDraft) {
+        const res = await tethrApi.openSideChat(c, text);
+        return { ...res, opened: true };
+      }
+      const res = await tethrApi.route(c, text, threadId);
+      return { ...res, opened: false };
+    },
+    onMutate: (text) => {
+      setSendError(null);
+      stickToBottom.current = true;
+      setPending({ text, threadId });
+    },
+    onSuccess: (res, text) => {
+      setPending({ text, threadId: res.threadId, runId: res.routeRunId });
+      if (res.opened) {
+        queryClient.invalidateQueries({ queryKey: tethrKeys.chats(c) });
+        setSearchParams({ chat: res.threadId });
+      }
+      queryClient.invalidateQueries({ queryKey: tethrKeys.chatRuns(c, res.threadId) });
+    },
+    onError: (e) => {
+      setPending(null);
+      setSendError(e instanceof Error ? e.message : "Couldn't reach tethr.");
     },
   });
 
-  const submit = (text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed || routeMutation.isPending) return;
-    setRequest("");
-    routeMutation.mutate(trimmed);
-  };
+  const removeChat = useMutation({
+    mutationFn: (id: string) => tethrApi.removeSideChat(c, id),
+    onSuccess: (_r, id) => {
+      queryClient.invalidateQueries({ queryKey: tethrKeys.chats(c) });
+      if (id === threadId) openChat(null);
+    },
+  });
 
-  const replay = (historyRun: TethrRouteRun) => {
-    setActive({ request: historyRun.requestText, runId: historyRun.id, live: false });
-    setThreadId(historyRun.threadId ?? historyRun.id);
-  };
-
-  const newThread = () => {
-    setThreadId(null);
-    setActive(null);
-    inputRef.current?.focus();
-  };
+  // Follow the conversation down while the reader is at the bottom.
+  const last = runs?.[runs.length - 1];
+  const tick = `${threadId}|${runs?.length ?? 0}|${last?.status}|${last?.hops.length}|${pending?.text ?? ""}`;
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
+  }, [tick]);
 
   if (!selectedCompanyId) {
     return <EmptyState icon={Send} message="Select a company to open the console." />;
   }
 
-  const outputs = run?.outputs ?? [];
+  const visibleRuns = runs ?? [];
+  const showPending = pending && (pending.threadId === threadId || (isDraft && !pending.threadId));
+  const empty = !isLoading && !visibleRuns.length && !showPending;
+  const anyRunning = (isMain ? visibleRuns : []).some((r) => !TERMINAL.has(r.status));
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
-      {/* Hero input — sits on the reeded light (the Aina streaks). */}
-      <div className="tethr-reeds -mx-4 space-y-5 rounded-[20px] px-4 pb-4 pt-2 md:mx-0 md:px-6 md:pt-4">
-        {threadId ? (
-          <div className="flex justify-end">
-            <button type="button" className="tethr-btn tethr-btn-glass h-8 shrink-0 px-3.5 text-[13px]" onClick={newThread}>
-              <MessageSquarePlus className="h-3.5 w-3.5" />
-              New thread
-            </button>
-          </div>
-        ) : null}
+    <div className="flex h-[calc(100dvh-10rem)] min-h-[480px] gap-3 md:h-[calc(100dvh-6rem)]">
+      <ChatRail
+        mainActive={isMain}
+        mainRunning={anyRunning}
+        mainLastAt={chats?.main.lastAt ?? null}
+        sideChats={chats?.sideChats ?? []}
+        activeThreadId={threadId}
+        draftActive={isDraft}
+        onOpenMain={() => openChat(null)}
+        onOpenSide={(id) => openChat(id)}
+        onNewSide={() => openChat("new")}
+        onRemoveSide={(id) => removeChat.mutate(id)}
+      />
 
-        <div className="tethr-glass rounded-[18px]">
-          <textarea
-            ref={inputRef}
-            value={request}
-            onChange={(e) => setRequest(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                submit(request);
-              }
-            }}
-            rows={2}
-            placeholder={
-              threadId
-                ? "Follow up in this thread…"
-                : "Tethr, how did our ads do last month?"
-            }
-            className="w-full resize-none bg-transparent px-5 pb-2 pt-4 text-base outline-none placeholder:text-[var(--tethr-text-3)]"
-          />
-          <div className="flex flex-wrap items-center justify-between gap-2 px-4 pb-3 pt-1">
-            <span className="tethr-eyebrow">
-              {threadId ? "continuing thread · " : ""}enter to route · shift+enter for newline
-            </span>
+      <section className="tethr-panel flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Header: which chat this is (and, on phones, the chat switcher). */}
+        <div className="flex min-h-12 shrink-0 items-center gap-2 border-b tethr-rule px-3 py-2 md:h-12 md:px-4 md:py-0">
+          <div className="flex min-w-0 flex-1 items-center gap-2 md:hidden">
+            <select
+              aria-label="Chat"
+              value={isDraft ? "new" : (threadId ?? "")}
+              onChange={(e) => {
+                const v = e.target.value;
+                openChat(v === mainThreadId ? null : v);
+              }}
+              className="h-8 min-w-0 flex-1 rounded-[10px] border border-[var(--tethr-rim-strong)] bg-[var(--tethr-frost)] px-2 text-[13px] outline-none"
+            >
+              <option value={mainThreadId}>tethr · main chat</option>
+              {chats?.sideChats.map((s) => (
+                <option key={s.threadId} value={s.threadId}>
+                  {s.title}
+                </option>
+              ))}
+              {isDraft ? <option value="new">New side chat</option> : null}
+            </select>
             <button
               type="button"
-              className="tethr-btn tethr-btn-primary h-9 px-4 text-[13px]"
-              onClick={() => submit(request)}
-              disabled={!request.trim() || routeMutation.isPending}
+              onClick={() => openChat("new")}
+              aria-label="New side chat"
+              className="tethr-btn tethr-btn-glass h-8 w-8 shrink-0"
             >
-              <Send className="h-3.5 w-3.5" />
-              Route it
+              <Plus className="h-4 w-4" />
             </button>
           </div>
+          <div className="hidden min-w-0 flex-1 items-baseline gap-2 md:flex">
+            <span className="truncate text-[14px] font-medium tracking-[-0.01em]">
+              {isMain ? "tethr" : isDraft ? "New side chat" : (sideChat?.title ?? "Side chat")}
+            </span>
+            <span className="tethr-eyebrow shrink-0">
+              {isMain ? "main chat · ongoing" : isDraft ? "starts with your first message" : "side chat"}
+            </span>
+          </div>
+          {!isMain && !isDraft && threadId ? (
+            <button
+              type="button"
+              onClick={() => removeChat.mutate(threadId)}
+              title="Close this side chat (its history stays in Activity)"
+              className="tethr-btn tethr-btn-ghost h-8 shrink-0 px-3 text-[12.5px]"
+            >
+              <X className="h-3.5 w-3.5" />
+              Close
+            </button>
+          ) : null}
         </div>
 
-        {!active ? (
-          <div className="flex flex-wrap gap-2">
-            {SUGGESTIONS.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => submit(s)}
-                className="tethr-btn tethr-btn-glass h-8 px-3.5 text-left text-[12.5px] font-normal text-muted-foreground hover:text-foreground"
-              >
-                {s}
-              </button>
-            ))}
+        {/* Messages */}
+        <div
+          ref={scrollRef}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+          }}
+          className="min-h-0 flex-1 overflow-y-auto"
+        >
+          {empty ? (
+            <ChatEmpty isDraft={isDraft} onPick={(s) => send.mutate(s)} />
+          ) : (
+            <div className="mx-auto flex w-full max-w-3xl flex-col gap-9 px-4 py-6 md:px-6">
+              {visibleRuns.length >= limit && limit < 100 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    stickToBottom.current = false;
+                    setLimit(100);
+                  }}
+                  className="tethr-btn tethr-btn-ghost mx-auto h-8 px-3.5 text-[12.5px]"
+                >
+                  Load earlier messages
+                </button>
+              ) : null}
+              {isLoading ? <p className="text-center font-mono text-[11px] tethr-text-3">Loading…</p> : null}
+              {visibleRuns.map((run) => (
+                <Turn key={run.id} run={run} companyId={c} />
+              ))}
+              {showPending && !visibleRuns.some((r) => r.id === pending?.runId) ? (
+                <div className="flex flex-col gap-4">
+                  <UserBubble text={pending!.text} />
+                  <Working label="sending…" />
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
+
+        <Composer
+          key={threadId ?? "draft"}
+          placeholder={
+            isDraft ? "What's this side chat about?" : isMain ? "Message tethr…" : "Message this side chat…"
+          }
+          hint={isMain ? "Everything goes to your ongoing chat with tethr." : undefined}
+          busy={send.isPending}
+          error={sendError}
+          onSend={(text) => send.mutate(text)}
+        />
+      </section>
+    </div>
+  );
+}
+
+// ---- rail ----------------------------------------------------------------------
+
+function ChatRail({
+  mainActive,
+  mainRunning,
+  mainLastAt,
+  sideChats,
+  activeThreadId,
+  draftActive,
+  onOpenMain,
+  onOpenSide,
+  onNewSide,
+  onRemoveSide,
+}: {
+  mainActive: boolean;
+  mainRunning: boolean;
+  mainLastAt: string | null;
+  sideChats: TethrSideChat[];
+  activeThreadId: string | null;
+  draftActive: boolean;
+  onOpenMain: () => void;
+  onOpenSide: (threadId: string) => void;
+  onNewSide: () => void;
+  onRemoveSide: (threadId: string) => void;
+}) {
+  return (
+    <aside aria-label="Chats" className="tethr-panel hidden w-60 shrink-0 flex-col gap-4 overflow-y-auto p-2 md:flex">
+      <button
+        type="button"
+        onClick={onOpenMain}
+        className={cn(
+          "flex items-center gap-3 rounded-[12px] px-2.5 py-2.5 text-left transition-colors",
+          mainActive
+            ? "bg-[var(--tethr-frost-strong)] shadow-[inset_0_0_0_1px_var(--tethr-rim)]"
+            : "hover:bg-[var(--tethr-frost-strong)]",
+        )}
+      >
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-primary text-primary-foreground">
+          <MessagesSquare className="h-4 w-4" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13.5px] font-medium">tethr</span>
+          <span className="block truncate text-[11.5px] text-muted-foreground">
+            {mainRunning ? "working…" : mainLastAt ? `main chat · ${formatRelative(mainLastAt)}` : "main chat"}
+          </span>
+        </span>
+        {mainRunning ? <StatusDot tone="live" /> : null}
+      </button>
+
+      <div className="flex min-h-0 flex-col gap-1">
+        <div className="flex items-center justify-between px-2">
+          <span className="tethr-eyebrow">side chats</span>
+          <button
+            type="button"
+            onClick={onNewSide}
+            title="New side chat"
+            aria-label="New side chat"
+            className="tethr-btn tethr-btn-ghost h-7 w-7"
+          >
+            <MessageSquarePlus className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        {draftActive ? (
+          <div className="flex h-9 items-center gap-2 rounded-[10px] bg-[var(--tethr-frost-strong)] px-2.5 text-[13px] shadow-[inset_0_0_0_1px_var(--tethr-rim)]">
+            <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            New side chat
           </div>
         ) : null}
-        {routeMutation.isError ? (
-          <p className="text-sm text-destructive">
-            {(routeMutation.error as Error).message}
+        {sideChats.map((s) => (
+          <div
+            key={s.threadId}
+            className={cn(
+              "group flex items-center rounded-[10px] transition-colors",
+              s.threadId === activeThreadId
+                ? "bg-[var(--tethr-frost-strong)] shadow-[inset_0_0_0_1px_var(--tethr-rim)]"
+                : "hover:bg-[var(--tethr-frost-strong)]",
+            )}
+          >
+            <button
+              type="button"
+              onClick={() => onOpenSide(s.threadId)}
+              title={s.title}
+              className="min-w-0 flex-1 px-2.5 py-2 text-left"
+            >
+              <span className="block truncate text-[13px]">{s.title}</span>
+              <span className="block text-[11px] tethr-text-3">{formatRelative(s.lastAt)}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onRemoveSide(s.threadId)}
+              title="Close side chat"
+              aria-label={`Close ${s.title}`}
+              className="mr-1 hidden h-6 w-6 shrink-0 place-items-center rounded-full tethr-text-3 hover:text-foreground group-hover:grid"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        ))}
+        {!sideChats.length && !draftActive ? (
+          <p className="px-2 py-1 text-[12px] leading-snug tethr-text-3">
+            Open one for a focused task or side project. It stays out of your main chat.
           </p>
         ) : null}
       </div>
+    </aside>
+  );
+}
 
-      {/* Active route */}
-      {active ? (
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,4fr)]">
-          <div className="tethr-panel p-5">
-            <div className="flex items-center justify-between">
-              <MonoTag>{active.live && !terminal ? "routing · live" : "routing"}</MonoTag>
-              {active.live && !terminal ? <StatusDot tone="live" title="live" /> : null}
-            </div>
-            <div className="mt-4">
-              <RouteFlow
-                request={active.request}
-                hops={run?.hops ?? []}
-                pending={active.live && !terminal}
-                live={active.live}
-              />
-            </div>
-          </div>
+// ---- messages --------------------------------------------------------------------
 
-          <div className="space-y-4">
-            {run && terminal ? (
-              <div
-                className="tethr-result-animate tethr-panel p-5"
-                style={{ animationDelay: active.live ? "0ms" : `${200 + (run.hops.length || 1) * 240}ms` }}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <MonoTag className="inline-flex items-center gap-2">
-                    <StatusDot status={run.status === "done" ? "done" : run.status} />
-                    result
-                  </MonoTag>
-                  <span className="font-mono text-[10.5px] text-[var(--tethr-text-3)]">
-                    {run.llmProvider} ·{" "}
-                    {run.durationMs ? `${(run.durationMs / 1000).toFixed(1)}s` : "replay"}
-                  </span>
-                </div>
-                <div className="mt-3">
-                  <MarkdownBody className="text-sm leading-relaxed">
-                    {run.resultText || run.error || "No result text."}
-                  </MarkdownBody>
-                </div>
-                {outputs.length > 0 ? (
-                  <div className="tethr-rule mt-4 space-y-2 border-t pt-3">
-                    {outputs.map((o) => (
-                      <Link
-                        key={o.id}
-                        to={`/queue/${o.id}`}
-                        className="tethr-panel tethr-panel-hover group flex min-w-0 items-center justify-between gap-3 rounded-[10px] px-3 py-2"
-                      >
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                          {o.title}
-                        </span>
-                        <span className="flex shrink-0 items-center gap-2">
-                          <OutputStatusBadge status={o.status} />
-                          <ArrowRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-                        </span>
-                      </Link>
-                    ))}
-                  </div>
-                ) : null}
-                {run.status === "gated" ? (
-                  <div className="tethr-inset mt-3 flex items-center gap-2 px-3 py-2">
-                    <StatusDot tone="warn" />
-                    <Inbox className="h-3.5 w-3.5 text-muted-foreground" />
-                    <p className="text-xs font-medium">
-                      Output is gated. Nothing ships until a human approves it in the Queue.
-                    </p>
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <div className="tethr-empty flex items-center gap-3 p-5">
-                <CogDuo className="h-6 w-6" />
-                <span className="shimmer-text text-sm font-medium">
-                  {run?.hops.length
-                    ? `${run.hops[run.hops.length - 1].actorTag} is working…`
-                    : "working the chain…"}
-                </span>
-              </div>
-            )}
-          </div>
+function ChatEmpty({ isDraft, onPick }: { isDraft: boolean; onPick: (text: string) => void }) {
+  return (
+    <div className="tethr-reeds flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
+      <span className="grid h-11 w-11 place-items-center rounded-[14px] bg-primary text-primary-foreground">
+        {isDraft ? <MessageSquarePlus className="h-5 w-5" /> : <MessagesSquare className="h-5 w-5" />}
+      </span>
+      <div className="space-y-2">
+        <h2 className="tethr-display text-[28px] md:text-[32px]">
+          {isDraft ? "A new side chat" : "What should we work on?"}
+        </h2>
+        <p className="mx-auto max-w-[46ch] text-[13.5px] text-muted-foreground">
+          {isDraft
+            ? "Start with what this chat is about. It stays separate from your main chat with tethr."
+            : "This is your ongoing chat with tethr. Ask anything; it routes the work to the right agent."}
+        </p>
+      </div>
+      {!isDraft ? (
+        <div className="flex max-w-xl flex-wrap justify-center gap-2">
+          {SUGGESTIONS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => onPick(s)}
+              className="tethr-btn tethr-btn-glass h-8 px-3.5 text-[12.5px] font-normal"
+            >
+              {s}
+            </button>
+          ))}
         </div>
       ) : null}
+    </div>
+  );
+}
 
-      {/* History */}
-      <div>
-        <div className="mb-3 flex items-center gap-2">
-          <History className="h-3.5 w-3.5 text-[var(--tethr-text-3)]" />
-          <MonoTag>recent requests</MonoTag>
-        </div>
-        {history?.length ? (
-          <div className="grid gap-2" data-tethr-stagger>
-            {history.map((historyRun) => (
-              <button
-                key={historyRun.id}
-                onClick={() => replay(historyRun)}
-                className={cn(
-                  "tethr-panel tethr-panel-hover flex min-w-0 items-center justify-between gap-3 overflow-hidden px-4 py-3 text-left",
-                  active?.runId === historyRun.id && "tethr-panel-active",
-                )}
+function UserBubble({ text, at }: { text: string; at?: string }) {
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="max-w-[85%] whitespace-pre-wrap rounded-[16px_16px_4px_16px] bg-[var(--tethr-frost-strong)] px-4 py-2.5 text-[14px] leading-relaxed shadow-[inset_0_0_0_1px_var(--tethr-rim-strong)] [overflow-wrap:anywhere]">
+        {text}
+      </div>
+      {at ? <span className="font-mono text-[10.5px] tethr-text-3">{formatRelative(at)}</span> : null}
+    </div>
+  );
+}
+
+function Working({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2.5 text-[13px]">
+      <CogDuo className="h-5 w-5 text-muted-foreground" />
+      <span className="shimmer-text font-medium">{label}</span>
+    </div>
+  );
+}
+
+function Turn({ run, companyId }: { run: TethrChatRun; companyId: string }) {
+  const [showRoute, setShowRoute] = useState(false);
+  const running = !TERMINAL.has(run.status);
+  const lastHop = run.hops[run.hops.length - 1];
+  const filed = run.outputs.filter((o) => o.kind !== "answer");
+  const gated = filed.filter((o) => DECIDABLE.has(o.status));
+  const other = filed.filter((o) => !DECIDABLE.has(o.status));
+
+  return (
+    <div className="flex flex-col gap-4">
+      <UserBubble text={run.requestText} at={run.createdAt} />
+
+      <div className="flex flex-col gap-3">
+        {/* Who handled it: a compact route, expandable to the full chain. */}
+        {run.hops.length ? (
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+            <button
+              type="button"
+              onClick={() => setShowRoute((v) => !v)}
+              aria-expanded={showRoute}
+              className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-full text-left"
+              title={showRoute ? "Hide the route" : "Show every step"}
+            >
+              {showRoute ? (
+                <ChevronDown className="h-3.5 w-3.5 tethr-text-3" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5 tethr-text-3" />
+              )}
+              <HopChips hops={run.hops} />
+            </button>
+            <span className="ml-auto flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.14em] tethr-text-3">
+              <StatusDot
+                tone={
+                  running
+                    ? "live"
+                    : run.status === "failed"
+                      ? "bad"
+                      : run.status === "gated"
+                        ? "warn"
+                        : "ok"
+                }
+              />
+              {running
+                ? "working"
+                : run.status === "gated"
+                  ? "waiting on you"
+                  : run.status === "failed"
+                    ? "failed"
+                    : "done"}
+              {!running && run.durationMs ? ` · ${(run.durationMs / 1000).toFixed(1)}s` : ""}
+            </span>
+          </div>
+        ) : null}
+        {showRoute ? (
+          <div className="tethr-inset px-4 py-3">
+            <RouteFlow request={run.requestText} hops={run.hops} animate={false} />
+          </div>
+        ) : null}
+
+        {running ? (
+          <Working label={lastHop ? `${lastHop.actorTag} is working…` : "tethr is reading your message…"} />
+        ) : run.status === "failed" ? (
+          <p className="text-[14px] text-[var(--tethr-bad)]">{run.error || run.resultText || "This one failed."}</p>
+        ) : run.resultText ? (
+          <MarkdownBody className="text-[14px] leading-relaxed">{run.resultText}</MarkdownBody>
+        ) : null}
+
+        {gated.map((o) => (
+          <ApprovalCard key={o.id} output={o} companyId={companyId} threadId={run.threadId ?? ""} />
+        ))}
+        {other.length ? (
+          <div className="flex flex-col gap-1.5">
+            {other.map((o) => (
+              <Link
+                key={o.id}
+                to={`/queue/${o.id}`}
+                className="tethr-panel tethr-panel-hover group flex min-w-0 items-center gap-3 rounded-[12px] px-3 py-2"
               >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">
-                    {historyRun.requestText}
-                  </span>
-                  <span className="tethr-eyebrow mt-1 block truncate text-[9.5px] tracking-[0.14em]">
-                    {historyRun.hops.length > 0
-                      ? historyRun.hops[historyRun.hops.length - 1]?.actorTag
-                      : "unrouted"}{" "}
-                    · {historyRun.invocationSource} · {formatRelative(historyRun.createdAt)}
-                  </span>
-                </span>
-                <OutputStatusBadge
-                  status={
-                    historyRun.status === "done"
-                      ? "published"
-                      : historyRun.status === "gated"
-                        ? "gated"
-                        : historyRun.status
-                  }
-                  className="shrink-0"
-                />
-              </button>
+                <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate text-[13px]">{o.title}</span>
+                <span className="hidden shrink-0 text-[11.5px] text-muted-foreground sm:inline">{kindLabel(o.kind)}</span>
+                <OutputStatusBadge status={o.status} className="shrink-0" />
+                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+              </Link>
             ))}
           </div>
-        ) : (
-          <p className="tethr-empty px-4 py-8 text-center text-sm">
-            Nothing routed yet. The crew is waiting.
-          </p>
-        )}
+        ) : null}
       </div>
     </div>
   );
+}
+
+const LAYER_LABEL: Record<TethrRouteHop["layer"], string> = {
+  helm: "router",
+  agent: "route",
+  subagent: "do",
+  tool: "tool",
+};
+
+/** The route as chips: @tethr router — @rank route — @rank.keywords do. Tool hops fold into a count. */
+function HopChips({ hops }: { hops: TethrRouteHop[] }) {
+  const people = hops.filter((h) => h.layer !== "tool");
+  const tools = hops.length - people.length;
+  return (
+    <>
+      {people.map((hop, i) => (
+        <span key={`${i}-${hop.actorTag}`} className="flex items-center gap-1.5">
+          {i > 0 ? <span className="h-px w-3 bg-[var(--tethr-rim-strong)]" /> : null}
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--tethr-frost)] py-0.5 pl-2.5 pr-2 text-[12px] shadow-[inset_0_0_0_1px_var(--tethr-rim)]">
+            <span className="font-mono">{hop.actorTag}</span>
+            <span className="font-mono text-[9px] uppercase tracking-[0.16em] tethr-text-3">{LAYER_LABEL[hop.layer]}</span>
+          </span>
+        </span>
+      ))}
+      {tools ? (
+        <span className="inline-flex items-center gap-1 font-mono text-[10.5px] tethr-text-3">
+          <Wrench className="h-3 w-3" />
+          {tools} {tools === 1 ? "tool" : "tools"}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+/** A gated output, decided right here. Same endpoint and gate as the Queue. */
+function ApprovalCard({ output, companyId, threadId }: { output: TethrChatOutput; companyId: string; threadId: string }) {
+  const queryClient = useQueryClient();
+  const decide = useMutation({
+    mutationFn: (decision: "approve" | "reject") => tethrApi.decide(companyId, output.id, decision),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: tethrKeys.chatRuns(companyId, threadId) });
+      queryClient.invalidateQueries({ queryKey: ["tethr", companyId, "outputs"] });
+      queryClient.invalidateQueries({ queryKey: tethrKeys.chats(companyId) });
+    },
+  });
+  const snippet = useMemo(() => previewText(output.body), [output.body]);
+  return (
+    <div className="tethr-glass flex max-w-2xl flex-col gap-2.5 p-4">
+      <span className="tethr-eyebrow inline-flex items-center gap-1.5">
+        <Lock className="h-3 w-3" />
+        {output.status === "changes_requested" ? "changes requested" : "awaiting review"} · {kindLabel(output.kind)} ·{" "}
+        {output.sensitivity}
+      </span>
+      <p className="text-[14.5px] font-medium leading-snug">{output.title}</p>
+      {snippet ? <p className="line-clamp-3 text-[13px] leading-relaxed text-muted-foreground">{snippet}</p> : null}
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          disabled={decide.isPending}
+          onClick={() => decide.mutate("approve")}
+          className="tethr-btn tethr-btn-primary h-8 px-4 text-[12.5px]"
+        >
+          Approve
+        </button>
+        <button
+          type="button"
+          disabled={decide.isPending}
+          onClick={() => decide.mutate("reject")}
+          className="tethr-btn tethr-btn-ghost h-8 px-3.5 text-[12.5px]"
+        >
+          Reject
+        </button>
+        <Link
+          to={`/queue/${output.id}`}
+          className="ml-auto inline-flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground"
+        >
+          Open in Queue
+          <ArrowRight className="h-3 w-3" />
+        </Link>
+      </div>
+      {decide.isError ? (
+        <p className="text-[12px] text-[var(--tethr-bad)]">
+          {decide.error instanceof Error ? decide.error.message : "That didn't go through."}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+// ---- composer --------------------------------------------------------------------
+
+function Composer({
+  placeholder,
+  hint,
+  busy,
+  error,
+  onSend,
+}: {
+  placeholder: string;
+  hint?: string;
+  busy: boolean;
+  error: string | null;
+  onSend: (text: string) => void;
+}) {
+  const [text, setText] = useState("");
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    ref.current?.focus({ preventScroll: true });
+  }, []);
+  // Grow with the text, up to ~8 lines.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [text]);
+
+  const submit = () => {
+    const t = text.trim();
+    if (!t || busy) return;
+    onSend(t);
+    setText("");
+  };
+
+  return (
+    <div className="shrink-0 px-3 pb-3 pt-1 md:px-6 md:pb-4">
+      <div className="mx-auto w-full max-w-3xl">
+        <div className="tethr-glass flex items-end gap-2 rounded-[22px] py-1.5 pl-4 pr-1.5">
+          <textarea
+            ref={ref}
+            rows={1}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            placeholder={placeholder}
+            aria-label="Message"
+            className="max-h-[200px] min-h-[36px] flex-1 resize-none bg-transparent py-2 text-[14.5px] leading-relaxed outline-none placeholder:text-[var(--tethr-text-3)]"
+          />
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!text.trim() || busy}
+            aria-label="Send"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-opacity disabled:opacity-30"
+          >
+            <ArrowUp className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="mt-1.5 flex items-center justify-between gap-3 px-2">
+          <span className="truncate text-[11.5px] tethr-text-3">
+            {error ? <span className="text-[var(--tethr-bad)]">{error}</span> : hint}
+          </span>
+          <span className="hidden shrink-0 font-mono text-[10.5px] tethr-text-3 sm:inline">
+            enter to send · shift+enter for a new line
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- helpers -----------------------------------------------------------------------
+
+function kindLabel(kind: string): string {
+  const k = kind.replace(/_/g, " ");
+  return k.charAt(0).toUpperCase() + k.slice(1);
+}
+
+/** A plain-text taste of a body: front matter and Markdown marks stripped. */
+function previewText(body: string): string {
+  return body
+    .replace(/^---\r?\n[\s\S]*?\r?\n---\s*/, "")
+    .replace(/[#>*_`|[\]]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 320);
 }

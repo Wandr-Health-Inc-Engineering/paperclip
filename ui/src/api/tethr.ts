@@ -141,6 +141,38 @@ export interface TethrRouteRunDetail extends TethrRouteRun {
   }>;
 }
 
+/** An output as the chat renders it (the full row: body + meta included). */
+export interface TethrChatOutput {
+  id: string;
+  title: string;
+  status: string;
+  sensitivity: string;
+  kind: string;
+  body: string;
+  meta: Record<string, unknown>;
+  createdAt: string;
+}
+
+/** One message exchange in a chat: the request, how it routed, and what came back. */
+export interface TethrChatRun extends TethrRouteRun {
+  outputs: TethrChatOutput[];
+}
+
+export interface TethrSideChat {
+  threadId: string;
+  title: string;
+  createdAt: string;
+  runCount: number;
+  lastAt: string;
+}
+
+export interface TethrChats {
+  /** The ongoing main chat with @tethr (its thread id is the company id). */
+  mainThreadId: string;
+  main: { runCount: number; lastAt: string | null };
+  sideChats: TethrSideChat[];
+}
+
 export interface TethrOutputListItem {
   id: string;
   agentId: string;
@@ -402,6 +434,8 @@ export const tethrKeys = {
   overview: (c: string) => ["tethr", c, "overview"] as const,
   agent: (c: string, a: string) => ["tethr", c, "agent", a] as const,
   routeRuns: (c: string) => ["tethr", c, "route-runs"] as const,
+  chats: (c: string) => ["tethr", c, "chats"] as const,
+  chatRuns: (c: string, threadId: string) => ["tethr", c, "chats", threadId, "runs"] as const,
   routeRun: (c: string, id: string) => ["tethr", c, "route-runs", id] as const,
   outputs: (c: string, status?: string) => ["tethr", c, "outputs", status ?? "all"] as const,
   output: (c: string, id: string) => ["tethr", c, "output", id] as const,
@@ -490,6 +524,14 @@ export const tethrApi = {
     api.get<TethrRouteRun[]>(`/tethr/${c}/route-runs?limit=${limit}`),
   routeRun: (c: string, id: string) =>
     api.get<TethrRouteRunDetail>(`/tethr/${c}/route-runs/${id}`),
+  chats: (c: string) => api.get<TethrChats>(`/tethr/${c}/chats`),
+  /** Open a side chat with its first message (routes it and lists the thread). */
+  openSideChat: (c: string, request: string) =>
+    api.post<{ routeRunId: string; threadId: string; chat: TethrSideChat }>(`/tethr/${c}/chats`, { request }),
+  removeSideChat: (c: string, threadId: string) =>
+    api.delete<{ removed: boolean }>(`/tethr/${c}/chats/${threadId}`),
+  chatRuns: (c: string, threadId: string, limit = 40) =>
+    api.get<TethrChatRun[]>(`/tethr/${c}/chats/${threadId}/runs?limit=${limit}`),
   outputs: (c: string, status?: string) =>
     api.get<TethrOutputListItem[]>(
       `/tethr/${c}/outputs${status ? `?status=${status}` : ""}`,

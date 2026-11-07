@@ -204,12 +204,13 @@ function NotificationDetail({
       const ask = note.trim()
         ? note.trim()
         : "Can you look into this and tell me how you'd handle it?";
-      return tethrApi.route(companyId, `I got this alert: "${context}". ${ask}`);
+      // Into the ongoing main chat (its thread id is the company id).
+      return tethrApi.route(companyId, `I got this alert: "${context}". ${ask}`, companyId);
     },
     onSuccess: (ids) => {
       onActed();
       onClose();
-      navigate(`/console?run=${ids.routeRunId}&thread=${ids.threadId}`);
+      navigate("/console");
     },
     onError: (e) => setResult(e instanceof Error ? e.message : "Couldn't reach Tethr — try the Console."),
   });

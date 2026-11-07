@@ -1,4 +1,4 @@
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { costEvents, tethrRouteRuns, type TethrRouteHop } from "@paperclipai/db";
 import type { TethrRouteInvocationSource } from "@paperclipai/shared";
@@ -544,7 +544,41 @@ export function routingService(db: Db) {
       .limit(limit);
   }
 
-  return { routeRequest, getRouteRun, listRouteRuns };
+  /** The newest `limit` runs of one conversation thread, oldest first (chat order). */
+  async function listThreadRuns(companyId: string, threadId: string, limit = 40) {
+    const rows = await db
+      .select()
+      .from(tethrRouteRuns)
+      .where(and(eq(tethrRouteRuns.companyId, companyId), eq(tethrRouteRuns.threadId, threadId)))
+      .orderBy(desc(tethrRouteRuns.createdAt))
+      .limit(limit);
+    return rows.reverse();
+  }
+
+  /** Message count + last activity per thread, for the chat list. */
+  async function threadStats(companyId: string, threadIds: string[]) {
+    const out: Record<string, { runCount: number; lastAt: string | null }> = {};
+    if (!threadIds.length) return out;
+    const rows = await db
+      .select({
+        threadId: tethrRouteRuns.threadId,
+        runCount: sql<number>`count(*)::int`,
+        lastAt: sql<string>`max(${tethrRouteRuns.createdAt})`,
+      })
+      .from(tethrRouteRuns)
+      .where(and(eq(tethrRouteRuns.companyId, companyId), inArray(tethrRouteRuns.threadId, threadIds)))
+      .groupBy(tethrRouteRuns.threadId);
+    for (const row of rows) {
+      if (!row.threadId) continue;
+      out[row.threadId] = {
+        runCount: Number(row.runCount),
+        lastAt: row.lastAt ? new Date(row.lastAt).toISOString() : null,
+      };
+    }
+    return out;
+  }
+
+  return { routeRequest, getRouteRun, listRouteRuns, listThreadRuns, threadStats };
 }
 
 export type RoutingService = ReturnType<typeof routingService>;

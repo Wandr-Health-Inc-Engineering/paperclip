@@ -432,6 +432,31 @@ pill by the bell (`TethrBell.tsx`, polls every 30s, click → Providers); **REST
 appears, resume clears. Merge-safe: new module + additive hooks (no core edits). Budget-change and
 compliance gates are unaffected.
 
+## Chat-first Console — one ongoing chat + side chats (phase 17, 2026-11-07)
+
+Mark's model (after using Claude's chat-style products): the Console is a chat, ChatGPT/
+Hermes-like. **One ONGOING main chat with @tethr** that everything goes into by default, plus
+**side chats** he opens on purpose for a focused task or side project. "Don't rework
+everything yet" — the app shell and other pages are unchanged; only the Console route was rebuilt.
+- **Main chat = a normal routing thread whose `threadId` is the company id** — stable across
+  devices, no storage (a run id can never equal a company id; routing only reads `threadId` to
+  load the last 5 turns, trimmed, as context, so cost doesn't grow with the chat).
+- **Side chats** = ordinary threads (threadId = first run id) listed in the instance-dir
+  `tethr-chats.json` (`server/src/tethr/chats.ts`, `TETHR_CHATS_FILE` test override). Old
+  one-off Console requests are NOT listed (they stay in Activity). Closing a side chat only
+  drops it from the list.
+- **Routes:** `GET /tethr/:companyId/chats` (main + side chats with run counts/last activity),
+  `POST /chats {request}` (opens a side chat with its first message), `DELETE /chats/:threadId`
+  (main can't be removed), `GET /chats/:threadId/runs?limit=` (newest runs oldest-first, each
+  with its outputs). `routing.listThreadRuns` / `threadStats` back them.
+- **UI** (`TethrConsole.tsx`): rail (main chat pinned, side chats, + new) · conversation (your
+  message right; reply = route chips expandable to the full RouteFlow, status + time, the answer
+  as Markdown, filed outputs as links) · pill composer (Enter sends). URL: `/console` = main,
+  `?chat=<threadId>` = side, `?chat=new` = a side chat being started. **Gated outputs render as
+  inline approval cards (Mark's pick) calling the same `outputs/:id/decide` endpoint as the
+  Queue** — same gate, the Queue still lists everything. The bell's "ask tethr" now routes into
+  the main chat. Locked by `tethr-chats.test.ts`.
+
 ## Phase 15 fixes — previews, Inbox retirement, cogs (2026-07-19)
 
 - **Content previews in completion messages.** `preview.ts` `contentPreview(body)` → first ~3

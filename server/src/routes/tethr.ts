@@ -37,6 +37,7 @@ import { memoryService } from "../tethr/memory.js";
 import { notificationService } from "../tethr/notify.js";
 import { orgService } from "../tethr/org.js";
 import { routingService } from "../tethr/routing.js";
+import * as chats from "../tethr/chats.js";
 import {
   interpretSlackEvent,
   routeInboundKickoff,
@@ -313,6 +314,97 @@ export function tethrRoutes(db: Db) {
         ),
       );
     res.json({ ...run, outputs });
+  });
+
+  // ---- Chat (phase 17): one ongoing main chat with @tethr + side chats ----------
+  // The main chat's thread id is the company id; side chats are threads the
+  // user opened on purpose (listed in the instance-dir tethr-chats.json).
+
+  router.get("/tethr/:companyId/chats", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const mainThreadId = chats.mainThreadId(companyId);
+    const side = chats.listSideChats(companyId);
+    const stats = await routing.threadStats(companyId, [mainThreadId, ...side.map((c) => c.threadId)]);
+    const sideChats = side
+      .map((c) => ({ ...c, runCount: stats[c.threadId]?.runCount ?? 0, lastAt: stats[c.threadId]?.lastAt ?? c.createdAt }))
+      .sort((a, b) => Date.parse(b.lastAt) - Date.parse(a.lastAt));
+    res.json({
+      mainThreadId,
+      main: { runCount: stats[mainThreadId]?.runCount ?? 0, lastAt: stats[mainThreadId]?.lastAt ?? null },
+      sideChats,
+    });
+  });
+
+  // Open a side chat with its first message: routes it as a new thread, then
+  // lists that thread as a side chat titled from the message.
+  router.post("/tethr/:companyId/chats", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    const requestText = String(req.body?.request ?? "").trim();
+    if (!requestText) {
+      res.status(400).json({ error: "request is required" });
+      return;
+    }
+    const ids = await new Promise<{ routeRunId: string; threadId: string }>((resolve, reject) => {
+      routing
+        .routeRequest({
+          companyId,
+          requestText,
+          invocationSource: "console",
+          requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
+          threadId: null,
+          hopDelayMs: 350,
+          onStarted: resolve,
+        })
+        .catch((err) => {
+          logger.warn({ err }, "tethr side chat route failed");
+          reject(err instanceof Error ? err : new Error(String(err)));
+        });
+    });
+    const chat = await chats.addSideChat(companyId, ids.threadId, requestText);
+    res.json({ ...ids, chat });
+  });
+
+  router.delete("/tethr/:companyId/chats/:threadId", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const threadId = req.params.threadId as string;
+    if (threadId === chats.mainThreadId(companyId)) {
+      res.status(400).json({ error: "The main chat can't be removed" });
+      return;
+    }
+    res.json({ removed: await chats.removeSideChat(companyId, threadId) });
+  });
+
+  // A thread's messages for the chat view: the newest runs, oldest first, each
+  // with its outputs (so gated items render as inline approval cards).
+  router.get("/tethr/:companyId/chats/:threadId/runs", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const threadId = req.params.threadId as string;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId)) {
+      res.status(400).json({ error: "threadId must be a uuid" });
+      return;
+    }
+    const limit = Math.min(Math.max(Number(req.query.limit ?? 40) || 40, 1), 100);
+    const runs = await routing.listThreadRuns(companyId, threadId, limit);
+    const outputs = runs.length
+      ? await db
+          .select()
+          .from(tethrOutputs)
+          .where(
+            and(
+              eq(tethrOutputs.companyId, companyId),
+              inArray(
+                tethrOutputs.routeRunId,
+                runs.map((r) => r.id),
+              ),
+            ),
+          )
+      : [];
+    res.json(runs.map((run) => ({ ...run, outputs: outputs.filter((o) => o.routeRunId === run.id) })));
   });
 
   // ---- Queue (gated outputs) --------------------------------------------------
