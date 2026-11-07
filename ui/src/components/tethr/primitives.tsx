@@ -102,7 +102,7 @@ export function CogDuo({ className }: { className?: string }) {
   );
 }
 
-/** Mono uppercase eyebrow tag — the brand's TIER · 01 voice. */
+/** Mono uppercase eyebrow label — the "AWAITING REVIEW · SPEND" voice. */
 export function MonoTag({
   children,
   className,
@@ -110,16 +110,7 @@ export function MonoTag({
   children: React.ReactNode;
   className?: string;
 }) {
-  return (
-    <span
-      className={cn(
-        "font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground",
-        className,
-      )}
-    >
-      {children}
-    </span>
-  );
+  return <span className={cn("tethr-eyebrow", className)}>{children}</span>;
 }
 
 export const SENSITIVITY_LABEL: Record<string, string> = {
@@ -148,10 +139,8 @@ export function SensitivityBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 border px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.14em]",
-        gated
-          ? "border-foreground bg-foreground text-background"
-          : "border-border text-muted-foreground",
+        "tethr-pill px-2 py-0.5 text-[10px] leading-4",
+        gated && "tethr-pill-solid",
         className,
       )}
     >
@@ -161,17 +150,91 @@ export function SensitivityBadge({
   );
 }
 
-const OUTPUT_STATUS_STYLES: Record<string, string> = {
-  gated: "border-amber-600 text-amber-700 dark:border-amber-400 dark:text-amber-300",
-  changes_requested:
-    "border-amber-600 text-amber-700 dark:border-amber-400 dark:text-amber-300",
-  published:
-    "border-emerald-700 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300",
-  approved:
-    "border-emerald-700 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300",
-  rejected: "border-destructive text-destructive",
-  draft: "border-border text-muted-foreground",
+/**
+ * Status tones — one meaning each (Smoked Glass "different dots for different
+ * situations"):
+ *   ok       published · approved · done · succeeded · active
+ *   warn     awaiting review · pending approval · near a cap
+ *   changes  changes requested (amber ring)
+ *   bad      rejected · failed · error
+ *   live     running now (pulses)
+ *   idle     queued · draft · on request
+ *   paused   paused · disabled · archived (hollow ring)
+ */
+export type StatusTone = "ok" | "warn" | "changes" | "bad" | "live" | "idle" | "paused";
+
+const TONE_BY_STATUS: Record<string, StatusTone> = {
+  published: "ok",
+  approved: "ok",
+  applied: "ok",
+  done: "ok",
+  completed: "ok",
+  complete: "ok",
+  succeeded: "ok",
+  success: "ok",
+  ok: "ok",
+  active: "ok",
+  answered: "ok",
+  gated: "warn",
+  awaiting_review: "warn",
+  pending_approval: "warn",
+  needs_approval: "warn",
+  warning: "warn",
+  changes_requested: "changes",
+  revising: "changes",
+  rejected: "bad",
+  failed: "bad",
+  error: "bad",
+  errored: "bad",
+  blocked: "bad",
+  timed_out: "bad",
+  running: "live",
+  in_progress: "live",
+  processing: "live",
+  routing: "live",
+  started: "live",
+  live: "live",
+  queued: "idle",
+  pending: "idle",
+  draft: "idle",
+  idle: "idle",
+  scheduled: "idle",
+  waiting: "idle",
+  paused: "paused",
+  disabled: "paused",
+  archived: "paused",
+  terminated: "paused",
+  cancelled: "paused",
+  canceled: "paused",
+  skipped: "paused",
 };
+
+export function statusTone(status: string | null | undefined): StatusTone {
+  if (!status) return "idle";
+  return TONE_BY_STATUS[status.toLowerCase()] ?? "idle";
+}
+
+/** A 6px status dot. Pass a tone, or a raw status string to map. */
+export function StatusDot({
+  tone,
+  status,
+  className,
+  title,
+}: {
+  tone?: StatusTone;
+  status?: string | null;
+  className?: string;
+  title?: string;
+}) {
+  const t = tone ?? statusTone(status);
+  return (
+    <span
+      aria-hidden={title ? undefined : true}
+      title={title}
+      className={cn("tethr-dot", `tethr-dot-${t}`, className)}
+    />
+  );
+}
 
 export const OUTPUT_STATUS_LABEL: Record<string, string> = {
   gated: "awaiting review",
@@ -190,13 +253,8 @@ export function OutputStatusBadge({
   className?: string;
 }) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center border px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.14em]",
-        OUTPUT_STATUS_STYLES[status] ?? "border-border text-muted-foreground",
-        className,
-      )}
-    >
+    <span className={cn("tethr-pill px-2 py-0.5 text-[10px] leading-4", className)}>
+      <StatusDot status={status} />
       {OUTPUT_STATUS_LABEL[status] ?? status}
     </span>
   );
@@ -209,22 +267,7 @@ export function AgentStatusDot({
   status: string;
   className?: string;
 }) {
-  const tone =
-    status === "running"
-      ? "bg-cyan-500"
-      : status === "error"
-        ? "bg-destructive"
-        : status === "paused"
-          ? "bg-amber-500"
-          : "bg-emerald-500";
-  return (
-    <span className={cn("relative inline-flex h-2 w-2", className)}>
-      {status === "running" ? (
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-60" />
-      ) : null}
-      <span className={cn("relative inline-flex h-2 w-2 rounded-full", tone)} />
-    </span>
-  );
+  return <StatusDot status={status} className={className} title={status.replace(/_/g, " ")} />;
 }
 
 export function formatCents(cents: number): string {
@@ -272,7 +315,11 @@ export function describeCron(cron: string | null): string {
   return `daily at ${t}`;
 }
 
-/** Budget usage bar with warn threshold marker. */
+function budgetPercent(spentCents: number, capCents: number): number {
+  return capCents > 0 ? Math.min(100, (spentCents / capCents) * 100) : 0;
+}
+
+/** Thin budget meter with a warn-threshold tick. Amber at/over the threshold. */
 export function BudgetBar({
   spentCents,
   capCents,
@@ -284,22 +331,78 @@ export function BudgetBar({
   warnPercent?: number;
   className?: string;
 }) {
-  const pct = capCents > 0 ? Math.min(100, (spentCents / capCents) * 100) : 0;
+  const pct = budgetPercent(spentCents, capCents);
   const hot = pct >= warnPercent;
+  const over = capCents > 0 && spentCents >= capCents;
   return (
-    <div className={cn("relative h-1.5 w-full overflow-hidden bg-muted", className)}>
-      <div
-        className={cn(
-          "h-full transition-[width] duration-700 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)]",
-          hot ? "bg-amber-500" : "bg-foreground",
-        )}
+    <div className={cn("tethr-meter relative w-full", className)}>
+      <span
+        className={cn(over ? "tethr-ring-bad" : hot ? "tethr-ring-warn" : undefined)}
         style={{ width: `${pct}%` }}
       />
       {capCents > 0 ? (
         <div
-          className="absolute top-0 h-full w-px bg-muted-foreground/50"
+          className="absolute top-0 h-full w-px bg-[var(--tethr-text-3)] opacity-60"
           style={{ left: `${warnPercent}%` }}
         />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Oura-style progress ring for spend against a cap. Children render in the
+ * centre (typically the big light figure). Amber at the warn threshold, clay
+ * at/over the cap.
+ */
+export function BudgetRing({
+  spentCents,
+  capCents,
+  warnPercent = 80,
+  size = 132,
+  stroke = 4,
+  label,
+  children,
+  className,
+}: {
+  spentCents: number;
+  capCents: number;
+  warnPercent?: number;
+  size?: number;
+  stroke?: number;
+  label?: string;
+  children?: React.ReactNode;
+  className?: string;
+}) {
+  const pct = budgetPercent(spentCents, capCents);
+  const hot = pct >= warnPercent;
+  const over = capCents > 0 && spentCents >= capCents;
+  const r = 50 - stroke;
+  return (
+    <div className={cn("relative shrink-0", className)} style={{ width: size, height: size }}>
+      <svg
+        viewBox="0 0 100 100"
+        className="tethr-ring h-full w-full"
+        role="img"
+        aria-label={label ?? `${Math.round(pct)}% of cap used`}
+      >
+        <circle className="tethr-ring-track" cx="50" cy="50" r={r} strokeWidth={stroke * 0.75} />
+        {pct > 0 ? (
+          <circle
+            className={cn("tethr-ring-value", over ? "tethr-ring-bad" : hot ? "tethr-ring-warn" : undefined)}
+            cx="50"
+            cy="50"
+            r={r}
+            strokeWidth={stroke}
+            pathLength={100}
+            strokeDasharray={`${Math.max(pct, 0.5)} 100`}
+          />
+        ) : null}
+      </svg>
+      {children ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-center">
+          {children}
+        </div>
       ) : null}
     </div>
   );

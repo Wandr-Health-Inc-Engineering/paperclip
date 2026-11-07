@@ -1,11 +1,11 @@
 import { Link } from "@/lib/router";
-import { Menu, Moon, Sun } from "lucide-react";
+import { Menu } from "lucide-react";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useCompany } from "../context/CompanyContext";
-import { useTheme } from "../context/ThemeContext";
 import { Button } from "@/components/ui/button";
 import { TethrBell } from "@/components/tethr/TethrBell";
+import { TethrThemeSwitch } from "@/components/tethr/TethrThemeSwitch";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -21,20 +21,8 @@ import { PluginLauncherOutlet, usePluginLaunchers } from "@/plugins/launchers";
 type GlobalToolbarContext = { companyId: string | null; companyPrefix: string | null };
 
 function ThemeToggleButton() {
-  const { theme, toggleTheme } = useTheme();
-  const label = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
-  return (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      className="shrink-0 text-muted-foreground"
-      onClick={toggleTheme}
-      aria-label={label}
-      title={label}
-    >
-      {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-    </Button>
-  );
+  // tethr: Auto (follows the device) / Day / Night picker.
+  return <TethrThemeSwitch />;
 }
 
 function GlobalToolbarPlugins({ context }: { context: GlobalToolbarContext }) {

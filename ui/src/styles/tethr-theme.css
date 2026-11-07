@@ -1,125 +1,216 @@
-@import url("https://fonts.googleapis.com/css2?family=Urbanist:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@200;300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap");
 
 /*
- * tethr brand theme — overrides layered on top of index.css.
+ * tethr brand theme — "Smoked Glass" (2026-11 reskin).
  *
- * Imported AFTER index.css in main.tsx so it wins the cascade for any
- * tokens it redefines. Upstream changes to index.css merge cleanly
- * because we never edit it directly.
+ * Frosted panels floating over warm ink. Calm like Oura, exact like Vercel,
+ * with the Aina glass card as the signature object. Still monochrome at heart:
+ * light, depth and small status dots do the work the old 2px black frames did.
  *
- * See BRANDING.md at the repo root for the post-upstream-merge checklist.
+ * Imported AFTER index.css in main.tsx, and unlayered, so it wins the cascade
+ * over Tailwind utilities for anything it targets. Upstream index.css and
+ * components/ui/* are never edited — the brand rides on CSS variables and
+ * [data-slot] selectors from out here.
+ *
+ * Layers (see BRANDING.md):
+ *   L0 ground  — warm ink/fog + soft overhead light + grain (body::before/after)
+ *   L1 frost   — page panels, cards, tables: translucent fill + hairline, NO blur
+ *   L2 glass   — sidebar, menus, popovers, toasts, approval cards: blur 24px
+ *   L3 modal   — dialogs, command palette: blur 40px, deeper shadow
+ *
+ * See BRANDING.md for the post-upstream-merge checklist.
  */
 
-/* Fonts and radius as plain CSS variables — not @theme inline — so the
-   cascade applies at runtime regardless of build pipeline. */
 :root {
   --font-sans:
-    "Urbanist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono:
-    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
-  /* Slight softening — sharp enough to feel deliberate, not harsh. */
-  --radius: 0.5rem;
+  --radius: 0.75rem;
+  --tethr-r-sm: 10px;
+  --tethr-r-md: 14px;
+  --tethr-r-lg: 20px;
+  --tethr-ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* ===== Light mode: pure black + white, hairline grey only for dividers ===== */
+/* ===== Day (light): fog ground, milk glass, ink text ===== */
 :root {
-  /* Brand palette — direct hex, not oklch, so the values match the kit
-     exactly when sampled. */
-  --background: #ffffff;
-  --foreground: #000000;
+  --background: #e9e7e3;
+  --foreground: #161412;
 
-  --card: #ffffff;
-  --card-foreground: #000000;
-  --popover: #ffffff;
-  --popover-foreground: #000000;
+  --card: #f4f3f0;
+  --card-foreground: #161412;
+  --popover: #f6f5f3;
+  --popover-foreground: #161412;
 
-  --primary: #000000;
-  --primary-foreground: #ffffff;
+  --primary: #161412;
+  --primary-foreground: #f4f2ee;
 
-  --secondary: #f2f2f2;
-  --secondary-foreground: #000000;
+  --secondary: #dedbd6;
+  --secondary-foreground: #161412;
 
-  --muted: #f2f2f2;
-  --muted-foreground: #5c5c5c;
+  --muted: #e0ddd8;
+  --muted-foreground: #5c5750;
 
-  --accent: #f2f2f2;
-  --accent-foreground: #000000;
+  --accent: rgba(22, 20, 18, 0.06);
+  --accent-foreground: #161412;
 
-  --border: #1a1a1a;
-  --input: #c9c9c9;
-  --ring: #000000;
+  --destructive: #a3422b;
+  --destructive-foreground: #a3422b;
 
-  /* Sidebar mirrors the page — same restraint. */
-  --sidebar: #ffffff;
-  --sidebar-foreground: #000000;
-  --sidebar-primary: #000000;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f2f2f2;
-  --sidebar-accent-foreground: #000000;
-  --sidebar-border: #1a1a1a;
-  --sidebar-ring: #000000;
+  --border: rgba(22, 20, 18, 0.11);
+  --input: rgba(22, 20, 18, 0.16);
+  --ring: #6a655e;
+
+  --sidebar: transparent;
+  --sidebar-foreground: #161412;
+  --sidebar-primary: #161412;
+  --sidebar-primary-foreground: #f4f2ee;
+  --sidebar-accent: rgba(255, 255, 255, 0.6);
+  --sidebar-accent-foreground: #161412;
+  --sidebar-border: rgba(22, 20, 18, 0.11);
+  --sidebar-ring: #6a655e;
+
+  /* Tethr surface tokens */
+  --tethr-glass: rgba(255, 255, 255, 0.55);
+  --tethr-glass-solid: #f6f5f3;
+  --tethr-frost: rgba(255, 255, 255, 0.42);
+  --tethr-frost-strong: rgba(255, 255, 255, 0.72);
+  --tethr-inset: rgba(22, 20, 18, 0.035);
+  --tethr-rim: rgba(22, 20, 18, 0.09);
+  --tethr-rim-strong: rgba(22, 20, 18, 0.17);
+  --tethr-rim-hi: rgba(255, 255, 255, 0.85);
+  --tethr-text-3: #6a655e;
+  --tethr-shadow-float: 0 24px 50px -24px rgba(60, 48, 36, 0.35), 0 2px 6px -2px rgba(60, 48, 36, 0.12);
+  --tethr-shadow-modal: 0 40px 90px -30px rgba(60, 48, 36, 0.45), 0 4px 12px -4px rgba(60, 48, 36, 0.16);
+  --tethr-glow: rgba(255, 255, 255, 0.85);
+  --tethr-glow-2: rgba(255, 255, 255, 0.45);
+  --tethr-reed: rgba(255, 255, 255, 0.4);
+  --tethr-grain-opacity: 0.05;
+  --tethr-overlay: rgba(40, 34, 28, 0.28);
+
+  /* Status dots — one meaning each, used as 6px dots + text, never as fills */
+  --tethr-ok: #2f6b45;
+  --tethr-warn: #8a5a12;
+  --tethr-bad: #a3422b;
+  --tethr-live: #2d63b5;
+  --tethr-idle: #8c867e;
 }
 
-/* ===== Dark mode: pure black + white, inverted ===== */
+/* ===== Night (dark): warm ink ground, smoked glass, bone text ===== */
 .dark {
-  --background: #000000;
-  --foreground: #ffffff;
+  --background: #0b0a09;
+  --foreground: #eee9e2;
 
-  --card: #1a1a1a;
-  --card-foreground: #ffffff;
-  --popover: #1a1a1a;
-  --popover-foreground: #ffffff;
+  --card: #151311;
+  --card-foreground: #eee9e2;
+  --popover: #1a1715;
+  --popover-foreground: #eee9e2;
 
-  --primary: #ffffff;
-  --primary-foreground: #000000;
+  --primary: #ece6dc;
+  --primary-foreground: #12100e;
 
-  --secondary: #1a1a1a;
-  --secondary-foreground: #ffffff;
+  --secondary: #1e1b18;
+  --secondary-foreground: #eee9e2;
 
-  --muted: #1a1a1a;
-  --muted-foreground: #c9c9c9;
+  --muted: #1a1816;
+  --muted-foreground: #a39c92;
 
-  --accent: #1a1a1a;
-  --accent-foreground: #ffffff;
+  --accent: rgba(255, 244, 230, 0.07);
+  --accent-foreground: #eee9e2;
 
-  --border: #d4d4d4;
-  --input: #5c5c5c;
-  --ring: #ffffff;
+  --destructive: #d98a73;
+  --destructive-foreground: #f4ece4;
 
-  --sidebar: #000000;
-  --sidebar-foreground: #ffffff;
-  --sidebar-primary: #ffffff;
-  --sidebar-primary-foreground: #000000;
-  --sidebar-accent: #1a1a1a;
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: #d4d4d4;
-  --sidebar-ring: #ffffff;
+  --border: rgba(255, 244, 230, 0.1);
+  --input: rgba(255, 244, 230, 0.16);
+  --ring: #a8a197;
+
+  --sidebar: transparent;
+  --sidebar-foreground: #eee9e2;
+  --sidebar-primary: #ece6dc;
+  --sidebar-primary-foreground: #12100e;
+  --sidebar-accent: rgba(255, 244, 230, 0.075);
+  --sidebar-accent-foreground: #eee9e2;
+  --sidebar-border: rgba(255, 244, 230, 0.1);
+  --sidebar-ring: #a8a197;
+
+  --tethr-glass: rgba(40, 36, 32, 0.55);
+  --tethr-glass-solid: #1d1a17;
+  --tethr-frost: rgba(255, 244, 230, 0.035);
+  --tethr-frost-strong: rgba(255, 244, 230, 0.075);
+  --tethr-inset: rgba(0, 0, 0, 0.28);
+  --tethr-rim: rgba(255, 244, 230, 0.1);
+  --tethr-rim-strong: rgba(255, 244, 230, 0.18);
+  --tethr-rim-hi: rgba(255, 244, 230, 0.08);
+  --tethr-text-3: #857e75;
+  --tethr-shadow-float: 0 24px 60px -20px rgba(0, 0, 0, 0.7), 0 2px 8px -2px rgba(0, 0, 0, 0.4);
+  --tethr-shadow-modal: 0 40px 100px -24px rgba(0, 0, 0, 0.8), 0 4px 14px -4px rgba(0, 0, 0, 0.5);
+  --tethr-glow: rgba(226, 196, 158, 0.13);
+  --tethr-glow-2: rgba(226, 196, 158, 0.06);
+  --tethr-reed: rgba(235, 214, 186, 0.05);
+  --tethr-grain-opacity: 0.07;
+  --tethr-overlay: rgba(5, 4, 3, 0.55);
+
+  --tethr-ok: #8fb59a;
+  --tethr-warn: #d9ae6a;
+  --tethr-bad: #d98a73;
+  --tethr-live: #8fb0e3;
+  --tethr-idle: #7a746c;
 }
 
-/* ===== Typography — apply the brand font everywhere via inheritance.
-   Weight 600 gives body text enough presence in Urbanist; weight 500
-   was too thin against the geometric letterforms. ===== */
+/* ===== L0 — the ground. The page light and grain live on fixed pseudo-
+   elements behind everything; the app shell root is made transparent so they
+   show through. Pages without the shell (auth, onboarding) keep a plain
+   ground. ===== */
 html,
 body {
   font-family: var(--font-sans);
 }
 
 body {
-  font-weight: 600;
+  font-weight: 400;
+  font-feature-settings: "ss01" on, "cv11" on;
 }
 
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 42% at 62% -10%, var(--tethr-glow), transparent 70%),
+    radial-gradient(ellipse 42% 46% at 104% 104%, var(--tethr-glow-2), transparent 70%),
+    radial-gradient(ellipse 36% 40% at -4% 104%, var(--tethr-glow-2), transparent 70%);
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--tethr-grain-opacity);
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* The shell root (the element that holds #main-content) lets the ground through. */
+div.bg-background:has(#main-content) {
+  background-color: transparent;
+}
+
+/* ===== Typography — Geist, set light. Headlines thin and large, body at a
+   normal reading weight, Geist Mono for labels, paths and figures. ===== */
 h1,
 h2,
 h3,
 h4 {
   font-family: var(--font-sans);
-  font-weight: 800;
+  font-weight: 500;
   letter-spacing: -0.02em;
-}
-
-h1 {
-  letter-spacing: -0.025em;
 }
 
 code,
@@ -130,42 +221,476 @@ samp,
   font-family: var(--font-mono);
 }
 
-/* Override Tailwind's font-medium / font-normal where they fight Urbanist's
-   weight choices. Keeps the brand voice at body weight unless something
-   explicitly asks for bolder. */
-.font-normal {
-  font-weight: 500 !important;
-}
-.font-medium {
-  font-weight: 600 !important;
+/* ===== L2 — the app shell on glass ===== */
+
+/* Sidebar column (company sidebar + account menu below it). */
+aside.border-r,
+div.border-t.border-r.bg-background {
+  background-color: var(--tethr-glass);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
+  border-color: var(--tethr-rim);
 }
 
-/* ===== Borders — beef up the slot frames so cards and panels read like
-   intentional containers, not afterthoughts. ===== */
+aside.border-r {
+  box-shadow: inset -1px 0 0 var(--tethr-rim-hi);
+}
 
+/* Sidebar nav items: soft rounded rows; the active row is a frosted pill. */
+aside nav a.flex.items-center,
+aside nav button.flex.items-center {
+  border-radius: 10px;
+}
+
+aside nav a.bg-accent {
+  background-color: var(--tethr-frost-strong);
+  box-shadow: inset 0 0 0 1px var(--tethr-rim);
+}
+
+/* Top bar: transparent over the ground with a single hairline. */
+#main-content {
+  scrollbar-gutter: stable;
+}
+
+/* Mobile sticky header + bottom nav: glass. */
+nav[aria-label="Mobile navigation"],
+.sticky.top-0.z-20.backdrop-blur {
+  background-color: var(--tethr-glass) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
+}
+
+/* ===== shadcn slots ===== */
+
+/* L1 frost cards. */
 [data-slot="card"] {
-  border-width: 2px;
-  border-color: var(--foreground);
+  background-color: var(--tethr-frost);
+  border: 1px solid var(--tethr-rim);
+  border-radius: var(--tethr-r-md);
+  box-shadow: inset 0 1px 0 var(--tethr-rim-hi);
+}
+
+/* L2 floating layers. */
+[data-slot="popover-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="dropdown-menu-sub-content"],
+[data-slot="select-content"],
+[data-slot="tooltip-content"],
+[data-slot="hover-card-content"] {
+  background-color: var(--tethr-glass);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid var(--tethr-rim);
+  border-radius: var(--tethr-r-md);
+  box-shadow: inset 0 1px 0 var(--tethr-rim-hi), var(--tethr-shadow-float);
+}
+
+[data-slot="tooltip-content"] {
+  border-radius: 8px;
+  color: var(--foreground);
+}
+
+[data-slot="dropdown-menu-item"],
+[data-slot="select-item"],
+[data-slot="command-item"] {
+  border-radius: 8px;
+}
+
+/* L3 modal layers. */
+[data-slot="dialog-content"],
+[data-slot="alert-dialog-content"],
+[data-slot="sheet-content"] {
+  background-color: var(--tethr-glass);
+  -webkit-backdrop-filter: blur(40px) saturate(150%);
+  backdrop-filter: blur(40px) saturate(150%);
+  border: 1px solid var(--tethr-rim-strong);
+  box-shadow: inset 0 1px 0 var(--tethr-rim-hi), var(--tethr-shadow-modal);
+}
+
+[data-slot="dialog-content"],
+[data-slot="alert-dialog-content"] {
+  border-radius: var(--tethr-r-lg);
+}
+
+[data-slot="dialog-overlay"],
+[data-slot="alert-dialog-overlay"],
+[data-slot="sheet-overlay"] {
+  background-color: var(--tethr-overlay);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+/* Buttons: pills. Joined button groups keep their squared edges. */
+[data-slot="button"]:not([class*="rounded-none"]):not([class*="rounded-l-none"]):not([class*="rounded-r-none"]):not([class*="rounded-t-none"]):not([class*="rounded-b-none"]) {
+  border-radius: 999px;
+}
+
+[data-slot="button"][data-variant="outline"] {
+  background-color: var(--tethr-frost-strong);
+  border-color: var(--tethr-rim-strong);
   box-shadow: none;
 }
 
-[data-slot="popover-content"],
-[data-slot="dialog-content"],
-[data-slot="dropdown-menu-content"],
-[data-slot="alert-dialog-content"] {
-  border-width: 2px;
-  border-color: var(--foreground);
+[data-slot="button"][data-variant="outline"]:hover {
+  background-color: var(--accent);
+}
+
+/* Fields: frosted wells with a hairline. */
+[data-slot="input"],
+[data-slot="textarea"],
+[data-slot="select-trigger"] {
+  background-color: var(--tethr-frost);
+  border-color: var(--tethr-rim-strong);
+  border-radius: var(--tethr-r-sm);
+  box-shadow: none;
 }
 
 [data-slot="badge"] {
-  border-radius: calc(var(--radius) - 4px);
+  border-radius: 999px;
 }
 
-/* Sidebar divider — bumped from 1px to 2px so the shell columns feel
-   architected. */
-aside.border-r {
-  border-right-width: 2px;
-  border-color: var(--border);
+[data-slot="tabs-list"] {
+  background-color: var(--tethr-frost);
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--tethr-rim);
+}
+
+[data-slot="tabs-trigger"] {
+  border-radius: 999px;
+}
+
+/* Fallbacks: no backdrop blur, or the viewer asked for less transparency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  aside.border-r,
+  div.border-t.border-r.bg-background,
+  [data-slot="popover-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="select-content"],
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"],
+  [data-slot="sheet-content"],
+  .tethr-glass,
+  .tethr-glass-heavy {
+    background-color: var(--tethr-glass-solid);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  aside.border-r,
+  div.border-t.border-r.bg-background,
+  [data-slot="popover-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="select-content"],
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"],
+  [data-slot="sheet-content"],
+  .tethr-glass,
+  .tethr-glass-heavy {
+    background-color: var(--tethr-glass-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* Layered as `components` so a Tailwind utility on the same element (text-xs,
+   bg-transparent, …) still wins — these are defaults, not overrides. */
+@layer components {
+/* ===== Tethr vocabulary — utility classes the Tethr pages compose. Visual
+   properties only (fill, rim, radius, shadow, type); spacing stays in
+   Tailwind so these never fight a p-4 or gap-3. ===== */
+
+/* L1: page panels, cards, list rows, tables. */
+.tethr-panel {
+  background-color: var(--tethr-frost);
+  border: 1px solid var(--tethr-rim);
+  border-radius: var(--tethr-r-md);
+  box-shadow: inset 0 1px 0 var(--tethr-rim-hi);
+}
+
+/* An L1 panel that responds to hover/focus (clickable rows and cards). */
+.tethr-panel-hover {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease;
+}
+.tethr-panel-hover:hover,
+.tethr-panel-hover:focus-visible {
+  background-color: var(--tethr-frost-strong);
+  border-color: var(--tethr-rim-strong);
+}
+
+/* A selected/active L1 panel. */
+.tethr-panel-active {
+  background-color: var(--tethr-frost-strong);
+  border-color: var(--tethr-rim-strong);
+  box-shadow:
+    inset 0 1px 0 var(--tethr-rim-hi),
+    inset 0 0 0 1px var(--tethr-rim-strong);
+}
+
+/* L2: things that float and ask for attention (approval cards, composer). */
+.tethr-glass {
+  background-color: var(--tethr-glass);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid var(--tethr-rim);
+  border-radius: var(--tethr-r-md);
+  box-shadow: inset 0 1px 0 var(--tethr-rim-hi), var(--tethr-shadow-float);
+}
+
+/* L3: full-screen viewers and modal-weight panels. */
+.tethr-glass-heavy {
+  background-color: var(--tethr-glass);
+  -webkit-backdrop-filter: blur(40px) saturate(150%);
+  backdrop-filter: blur(40px) saturate(150%);
+  border: 1px solid var(--tethr-rim-strong);
+  border-radius: var(--tethr-r-lg);
+  box-shadow: inset 0 1px 0 var(--tethr-rim-hi), var(--tethr-shadow-modal);
+}
+
+/* Sunken wells: code, logs, transcripts, previews. */
+.tethr-inset {
+  background-color: var(--tethr-inset);
+  border: 1px solid var(--tethr-rim);
+  border-radius: var(--tethr-r-sm);
+}
+
+/* Empty states: dashed rim, no fill. */
+.tethr-empty {
+  border: 1px dashed var(--tethr-rim-strong);
+  border-radius: var(--tethr-r-md);
+  color: var(--muted-foreground);
+}
+
+/* Hairline divider color for border-b / divide-y inside Tethr panels. */
+.tethr-rule {
+  border-color: var(--tethr-rim) !important;
+}
+
+/* Mono micro label — the "AWAITING REVIEW · SPEND" voice. */
+.tethr-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--tethr-text-3);
+}
+
+/* Thin display headline for page titles. */
+.tethr-display {
+  font-family: var(--font-sans);
+  font-weight: 300;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+
+/* Big light numerals (Oura). */
+.tethr-figure {
+  font-family: var(--font-sans);
+  font-weight: 200;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.tethr-text-3 {
+  color: var(--tethr-text-3);
+}
+
+/* Pills: outline tag, and the inverted "gated" pill. */
+.tethr-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  box-shadow: inset 0 0 0 1px var(--tethr-rim-strong);
+}
+
+.tethr-pill-solid {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: none;
+}
+
+/* Buttons for Tethr pages that use plain <button>s. */
+.tethr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease,
+    opacity 180ms ease;
+}
+.tethr-btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.tethr-btn:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--background),
+    0 0 0 4px var(--ring);
+}
+.tethr-btn-primary {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+.tethr-btn-primary:hover {
+  background-color: color-mix(in srgb, var(--primary) 88%, transparent);
+}
+.tethr-btn-glass {
+  background-color: var(--tethr-frost-strong);
+  color: var(--foreground);
+  box-shadow: inset 0 0 0 1px var(--tethr-rim-strong);
+}
+.tethr-btn-glass:hover {
+  background-color: var(--accent);
+}
+.tethr-btn-ghost {
+  background-color: transparent;
+  color: var(--muted-foreground);
+}
+.tethr-btn-ghost:hover {
+  background-color: var(--accent);
+  color: var(--foreground);
+}
+.tethr-btn-danger {
+  background-color: transparent;
+  color: var(--tethr-bad);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tethr-bad) 45%, transparent);
+}
+.tethr-btn-danger:hover {
+  background-color: color-mix(in srgb, var(--tethr-bad) 12%, transparent);
+}
+
+/* Fields on Tethr pages (plain <input>/<textarea>/<select>). */
+.tethr-field {
+  background-color: var(--tethr-frost);
+  border: 1px solid var(--tethr-rim-strong);
+  border-radius: var(--tethr-r-sm);
+  color: var(--foreground);
+  outline: none;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+.tethr-field::placeholder {
+  color: var(--tethr-text-3);
+}
+.tethr-field:focus,
+.tethr-field:focus-visible {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 4px var(--tethr-frost-strong);
+}
+
+/* Status dots — one meaning per tone:
+     ok    published · approved · done · succeeded
+     warn  awaiting review · near a cap
+     amber-ring  changes requested
+     bad   rejected · failed · error
+     live  running now (pulses)
+     idle  queued · draft · on request
+     paused  paused · disabled · archived (hollow ring) */
+.tethr-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background-color: var(--tethr-idle);
+}
+.tethr-dot-ok { background-color: var(--tethr-ok); }
+.tethr-dot-warn { background-color: var(--tethr-warn); }
+.tethr-dot-changes { background-color: transparent; box-shadow: inset 0 0 0 1.5px var(--tethr-warn); }
+.tethr-dot-bad { background-color: var(--tethr-bad); }
+.tethr-dot-live { background-color: var(--tethr-live); animation: tethr-dot-pulse 2.2s var(--tethr-ease) infinite; }
+.tethr-dot-idle { background-color: var(--tethr-idle); }
+.tethr-dot-paused { background-color: transparent; box-shadow: inset 0 0 0 1.5px var(--tethr-idle); }
+
+@keyframes tethr-dot-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tethr-live) 60%, transparent); }
+  100% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--tethr-live) 0%, transparent); }
+}
+
+.tethr-tone-ok { color: var(--tethr-ok); }
+.tethr-tone-warn { color: var(--tethr-warn); }
+.tethr-tone-bad { color: var(--tethr-bad); }
+.tethr-tone-live { color: var(--tethr-live); }
+
+/* Thin progress rings (Oura) — an SVG with .tethr-ring-track + .tethr-ring-value
+   circles; the value circle uses pathLength="100" + stroke-dasharray. */
+.tethr-ring circle {
+  fill: none;
+}
+.tethr-ring-track {
+  stroke: var(--tethr-rim-strong);
+}
+.tethr-ring-value {
+  stroke: var(--foreground);
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  transition: stroke-dasharray 700ms var(--tethr-ease);
+}
+.tethr-ring-value.tethr-ring-warn { stroke: var(--tethr-warn); }
+.tethr-ring-value.tethr-ring-bad { stroke: var(--tethr-bad); }
+
+/* Thin progress bar. */
+.tethr-meter {
+  height: 3px;
+  border-radius: 3px;
+  background-color: var(--tethr-rim);
+  overflow: hidden;
+}
+.tethr-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background-color: var(--foreground);
+  transition: width 700ms var(--tethr-ease);
+}
+.tethr-meter > span.tethr-ring-warn { background-color: var(--tethr-warn); }
+.tethr-meter > span.tethr-ring-bad { background-color: var(--tethr-bad); }
+
+/* Reeded light — the Aina texture. Console hero and empty states only. */
+.tethr-reeds {
+  position: relative;
+  isolation: isolate;
+}
+.tethr-reeds::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background: repeating-linear-gradient(90deg, transparent 0 9px, var(--tethr-reed) 9px 11px, transparent 11px 19px);
+  filter: blur(1.2px);
+  -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 30%, #000 15%, transparent 75%);
+  mask-image: radial-gradient(ellipse 70% 70% at 50% 30%, #000 15%, transparent 75%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tethr-dot-live,
+  .tethr-ring-value,
+  .tethr-meter > span {
+    animation: none !important;
+    transition: none !important;
+  }
+}
 }
 
 /* ===== Motion — framer-style entrance for the app shell on first load.

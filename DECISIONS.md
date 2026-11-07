@@ -127,6 +127,10 @@ Every core file touched, with reason. Everything else Tethr lives in new files.
 | `server/src/services/companies.ts` | remove(): FK-order fix + routine/budget/tethr tables | pre-existing core bug (V1 log), now fixed + tested |
 | `ui/src/components/BreadcrumbBar.tsx` | + `<TethrBell />` next to the theme toggle | global toolbar is the only bell mount point |
 | `ui/src/styles/tethr-theme.css` | + routing-flow / stagger animation section | the brand layer is designed to be extended here |
+| `ui/src/context/ThemeContext.tsx` | Smoked Glass reskin (2026-11-07): + `"system"` preference that follows `prefers-color-scheme` live; adds `preference`/`setPreference`, keeps `theme`/`setTheme`/`toggleTheme`; warm theme-color values | Mark: theme defaults to the device, with Day/Night overrides. The context is the only place the theme is resolved |
+| `ui/index.html` | boot script: no stored choice (or `"system"`) → follow the OS instead of forcing dark; warm theme-color values | avoids a flash of the wrong theme before React mounts |
+| `ui/src/components/BreadcrumbBar.tsx` | `ThemeToggleButton` now renders `TethrThemeSwitch` (Auto/Day/Night) | global toolbar is the only theme-control mount point |
+| `ui/src/components/SidebarAccountMenu.tsx` (+ test mock) | theme item cycles Auto → Day → Night and shows the current choice | second theme control (mobile) |
 | `.gitignore` | + `.tethr-data/` | local data dir |
 | `.env.example` | + Tethr vars (commented, blank) | 12-factor |
 | `README.md` | + a 5-line fork banner above the upstream header pointing at `TETHR-ENGINEERING.md` + `CLAUDE.md` | an engineer landing on the repo has to be told this is a fork and where the map is; upstream's README body is untouched below it |

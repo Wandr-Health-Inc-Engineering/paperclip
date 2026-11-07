@@ -149,6 +149,10 @@ pnpm install        # once
 pnpm dev            # server :3100 + UI :5173, embedded Postgres, auto-migrate, auto-seed
 ```
 
+**Cloud container / running as root:** embedded Postgres refuses to init as root. Use the
+system one instead: `service postgresql start`, set the `postgres` password, `createdb paperclip`,
+then `DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/paperclip PAPERCLIP_MIGRATION_AUTO_APPLY=true pnpm dev:once`.
+
 First boot auto-seeds the clean-slate org: **Wandr** (prefix `WD`) — one agent, **Tethr**
 (`@tethr`), with `chat` + `plan` subagents, an Operations division, budgets ($100/mo company
 line, $25/mo Tethr cap, hard-stop on) and a Drive README; any existing "Wandr Growth" org is
@@ -618,12 +622,37 @@ no contents) + a "Google Drive" toggle panel on TethrDrive.tsx; backfill route
 old service-account plan** — scope `drive` + read/list/move API functions — still pending
 Mark's Google setup.
 
-## Brand lock (any UI work)
+## Brand lock — "Smoked Glass" (any UI work; reskinned 2026-11-07)
 
-Urbanist + JetBrains Mono · pure black/white · 2px borders · **no gradients, no color, no
-emoji noise** · minimal wireframe aesthetic. Light + dark + mobile. Edit brand only via
-**`ui/src/lib/brand.ts`** and **`ui/src/styles/tethr-theme.css`** — nowhere else. Any UI
-prompt still restates this spec.
+Frosted panels floating over warm ink: the Aina glass card + Oura's calm and big light numbers
++ Vercel's type and hairline precision. Still monochrome at heart.
+
+- **Type:** Geist + Geist Mono, weights 200–500 (no bold/extrabold). Page titles `tethr-display`
+  (thin, tight); figures `tethr-figure` (Geist 200, tabular); micro labels `tethr-eyebrow` /
+  `<MonoTag>` (mono, spaced caps).
+- **Color:** warm neutrals only — Night ground `#0B0A09`, Day ground `#E9E7E3`; the primary is
+  the brightest neutral (bone on Night, ink on Day). No brand hue. Color appears **only as 6px
+  status dots, one meaning each**: ok (published/approved/done) · warn (awaiting review / near
+  cap) · changes (amber ring) · bad (rejected/failed) · live (running, pulses) · idle (queued/
+  draft/on request) · paused (hollow ring). Use `StatusDot` / `statusTone()` in `primitives.tsx`
+  — never raw amber/emerald/cyan classes.
+- **Surfaces (4 layers):** L0 ground (soft overhead light + grain, `body::before/after`) · L1
+  `tethr-panel` frost (page panels/cards/rows — translucent, hairline, **no blur**) · L2
+  `tethr-glass` (blur 24 — ONLY things that float or ask for attention: sidebar, menus, popovers,
+  approval cards, composer) · L3 `tethr-glass-heavy` (dialogs, full-screen viewers). 1px rims with
+  a lit top edge; radius 14px panels, 10px fields, pill buttons (`tethr-btn` + `-primary/-glass/
+  -ghost/-danger`). Wells: `tethr-inset`. Empty states: `tethr-empty`. Budgets: `BudgetRing`
+  (Oura ring) / `BudgetBar`.
+- **Gradients:** only the ambient ground light and the reeded `tethr-reeds` texture (Console hero
+  + empty states). No emoji. Product name lowercase **"tethr"** (logo lockup still TBD).
+- **Theme:** Auto (follows the computer/phone — the default) · Day · Night, via
+  `TethrThemeSwitch` (top bar) and the account menu. `paperclip.theme` stores
+  `system|light|dark`; `ThemeContext` exposes `preference/setPreference` + the old API.
+- **Where:** edit the brand only in `ui/src/styles/tethr-theme.css` (tokens + slot overrides
+  unlayered; the `tethr-*` vocabulary inside `@layer components` so Tailwind utilities still
+  win), `ui/src/components/tethr/primitives.tsx`, `ui/src/lib/brand.ts`. Core pages get the brand
+  through tokens + `[data-slot]` selectors only. Light + dark + mobile on every change.
+- Proposal page (reference visuals): https://claude.ai/artifact/VK1s3mFrGkdsRsJB9muHiu
 
 ## Hard boundaries (never cross)
 

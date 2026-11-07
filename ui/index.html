@@ -22,11 +22,14 @@
     <script>
       (() => {
         const key = "paperclip.theme";
-        const darkThemeColor = "#18181b";
-        const lightThemeColor = "#ffffff";
+        const darkThemeColor = "#0b0a09";
+        const lightThemeColor = "#e9e7e3";
         try {
           const stored = window.localStorage.getItem(key);
-          const theme = stored === "light" || stored === "dark" ? stored : "dark";
+          // tethr: no explicit choice (or "system") follows the OS / phone setting.
+          const theme = stored === "light" || stored === "dark"
+            ? stored
+            : window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
           const isDark = theme === "dark";
           document.documentElement.classList.toggle("dark", isDark);
           document.documentElement.style.colorScheme = isDark ? "dark" : "light";

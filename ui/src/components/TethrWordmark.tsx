@@ -8,15 +8,16 @@ interface TethrWordmarkProps {
 }
 
 /**
- * tethr wordmark — lowercase by default, Urbanist 800 with tight tracking.
+ * tethr wordmark — lowercase by default, Geist 500 with tight tracking
+ * (Smoked Glass reskin; the logo lockup is still to be designed).
  * Use `variant="formal"` only in bio / signature contexts.
  */
 export function TethrWordmark({ className, variant = "lowercase" }: TethrWordmarkProps) {
   const label = variant === "formal" ? APP_NAME[0]!.toUpperCase() + APP_NAME.slice(1) : APP_NAME;
   return (
     <span
-      className={cn("inline-block font-sans font-extrabold leading-none", className)}
-      style={{ letterSpacing: "-0.04em" }}
+      className={cn("inline-block font-sans font-medium leading-none", className)}
+      style={{ letterSpacing: "-0.035em" }}
     >
       {label}
     </span>

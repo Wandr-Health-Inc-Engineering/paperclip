@@ -9,6 +9,7 @@ import {
   UserRound,
   Sun,
   UserRoundPen,
+  Monitor,
 } from "lucide-react";
 import type { DeploymentMode } from "@paperclipai/shared";
 import { Link } from "@/lib/router";
@@ -16,6 +17,7 @@ import { authApi } from "@/api/auth";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSidebar } from "../context/SidebarContext";
 import { useTheme } from "../context/ThemeContext";
+import { nextThemePreference, themePreferenceLabel } from "@/components/tethr/TethrThemeSwitch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "../lib/utils";
@@ -105,7 +107,7 @@ export function SidebarAccountMenu({
   const [internalOpen, setInternalOpen] = useState(false);
   const queryClient = useQueryClient();
   const { isMobile, setSidebarOpen } = useSidebar();
-  const { theme, toggleTheme } = useTheme();
+  const { preference, setPreference } = useTheme();
   const open = controlledOpen ?? internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
   const { data: session } = useQuery({
@@ -202,11 +204,11 @@ export function SidebarAccountMenu({
               onClick={() => setOpen(false)}
             />
             <MenuAction
-              label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-              icon={theme === "dark" ? Sun : Moon}
+              label={`Theme: ${themePreferenceLabel(preference)}`}
+              icon={preference === "dark" ? Moon : preference === "light" ? Sun : Monitor}
               onClick={() => {
-                toggleTheme();
-                setOpen(false);
+                // tethr: cycle Auto (follows the device) → Day → Night.
+                setPreference(nextThemePreference(preference));
               }}
             />
             {deploymentMode === "authenticated" ? (
