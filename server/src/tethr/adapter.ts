@@ -20,7 +20,147 @@ import { isAgentsPaused } from "./throttle.js";
 
 let adapterDb: Db | null = null;
 
+/**
+ * Entry point. A wake that carries a Paperclip task id (an assignment, a
+ * delegated sub-task, a roll-up after children finish, a routine's task) is
+ * worked as that task; everything else is the standing heartbeat.
+ */
 async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
+  const taskIssueId =
+    typeof ctx.context?.issueId === "string" && ctx.context.issueId.trim() ? ctx.context.issueId.trim() : null;
+  if (!taskIssueId) return executeHeartbeat(ctx);
+
+  const config = (ctx.agent.adapterConfig ?? {}) as Record<string, unknown>;
+  const specialMode =
+    config.heartbeatMode === "digest" || config.heartbeatMode === "site_audit" || config.heartbeatMode === "pulse_audit";
+  if (specialMode) {
+    // Deterministic routine modes run as before, then close their routine task.
+    const result = await executeHeartbeat(ctx);
+    const db = adapterDb;
+    if (db && result.exitCode === 0) {
+      const { taskService } = await import("./tasks.js");
+      const tasks = taskService(db);
+      const issue = await tasks.load(taskIssueId);
+      if (issue && !["done", "cancelled"].includes(issue.issue.status)) {
+        await tasks.finish({
+          issueId: taskIssueId,
+          agentId: ctx.agent.id,
+          agentTag: String(config.heartbeatMode),
+          runId: ctx.runId,
+          run: { status: "done", resultText: result.summary ?? "", outputs: [] },
+          delegated: [],
+        });
+      }
+    }
+    return result;
+  }
+  return executeTask(ctx, taskIssueId);
+}
+
+/** Work one Paperclip task as this agent: claim → run → comment → move it. */
+async function executeTask(ctx: AdapterExecutionContext, issueId: string): Promise<AdapterExecutionResult> {
+  const db = adapterDb;
+  if (!db) throw new Error("tethr_llm adapter not initialized (initTethr was not called)");
+  const provider = getTethrLLMProvider();
+  const org = orgService(db);
+  const companyId = ctx.agent.companyId;
+  const config = (ctx.agent.adapterConfig ?? {}) as Record<string, unknown>;
+  const profileRow = await org.getProfileByAgentId(companyId, ctx.agent.id);
+  if (!profileRow) throw new Error(`Agent ${ctx.agent.name} has no Tethr profile`);
+  const tag = profileRow.profile.tag;
+  const skipped = (summary: string): AdapterExecutionResult => ({
+    exitCode: 0,
+    signal: null,
+    timedOut: false,
+    provider: provider.id,
+    model: provider.model,
+    billingType: "fixed",
+    usage: { inputTokens: 0, outputTokens: 0 },
+    summary,
+  });
+
+  if (isAgentsPaused(companyId)) {
+    await ctx.onLog("stdout", `[tethr] ${tag} task skipped — agents paused (usage throttle)\n`);
+    return skipped(`${tag} task skipped — agents paused (usage throttle).`);
+  }
+
+  const { buildTaskRequest, newTaskRunState, taskService } = await import("./tasks.js");
+  const tasks = taskService(db);
+  const task = await tasks.load(issueId);
+  if (!task) return skipped(`Task ${issueId} not found — nothing to do.`);
+  if (["done", "cancelled"].includes(task.issue.status)) {
+    return skipped(`${task.issue.identifier ?? "Task"} is already ${task.issue.status}.`);
+  }
+  if (!(await tasks.start(issueId, ctx.agent.id, ctx.runId))) {
+    return skipped(`${task.issue.identifier ?? "Task"} is locked by another run — skipped.`);
+  }
+
+  const wakeReason = typeof ctx.context?.wakeReason === "string" ? ctx.context.wakeReason : null;
+  const fromRoutine = task.issue.originKind === "routine_execution";
+  const standing =
+    fromRoutine && typeof config.heartbeatRequest === "string" ? config.heartbeatRequest : null;
+  const requestText = buildTaskRequest(task, { agentTag: tag, wakeReason, standingInstructions: standing });
+  const state = newTaskRunState({
+    issueId,
+    allowDelegation: wakeReason !== "issue_children_completed",
+    requestText: task.issue.title,
+  });
+  await ctx.onLog(
+    "stdout",
+    `[tethr] ${tag} working ${task.issue.identifier ?? issueId}: ${task.issue.title}${wakeReason ? ` (${wakeReason})` : ""}\n`,
+  );
+
+  const ownSubagents = await org.listSubagents(companyId, ctx.agent.id);
+  const isRouterOnly = ownSubagents.length === 0 && profileRow.profile.routingTable.length > 0;
+  const subagentChain =
+    fromRoutine && Array.isArray(config.subagentChain) ? (config.subagentChain as string[]) : undefined;
+  const result = await routingService(db).routeRequest({
+    companyId,
+    requestText,
+    invocationSource: "task",
+    heartbeatRunId: ctx.runId,
+    task: state,
+    ...(isRouterOnly ? {} : { startAtAgentTag: tag, subagentChain }),
+  });
+  for (const hop of result.hops) {
+    await ctx.onLog("stdout", `[route] ${hop.layer.padEnd(8)} ${hop.actorTag} → ${hop.decision} (${hop.reason})\n`);
+  }
+  const taskStatus = await tasks.finish({
+    issueId,
+    agentId: ctx.agent.id,
+    agentTag: tag,
+    runId: ctx.runId,
+    run: result,
+    delegated: state.delegated,
+  });
+  await ctx.onLog("stdout", `[task] ${task.issue.identifier ?? issueId} → ${taskStatus ?? "unchanged"}\n`);
+
+  const costUsd = provider.id === "claude" ? priceUsd(provider.model, result.usage) : 0;
+  const failed = result.status === "failed";
+  return {
+    exitCode: failed ? 1 : 0,
+    signal: null,
+    timedOut: false,
+    ...(failed ? { errorMessage: result.resultText } : {}),
+    provider: provider.id,
+    model: provider.model,
+    billingType: provider.id === "claude" ? "api" : "fixed",
+    usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
+    resultJson: {
+      routeRunId: result.routeRunId,
+      status: result.status,
+      taskIssueId: issueId,
+      taskStatus,
+      delegated: state.delegated,
+      outputs: result.outputs,
+      costUsd,
+    },
+    summary: result.resultText.slice(0, 500),
+  };
+}
+
+/** The standing heartbeat (no task in hand): the agent's scheduled request. */
+async function executeHeartbeat(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const db = adapterDb;
   if (!db) {
     throw new Error("tethr_llm adapter not initialized (initTethr was not called)");

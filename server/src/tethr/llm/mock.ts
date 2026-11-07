@@ -32,6 +32,29 @@ function parseFileArchiveRequest(prompt: string): Record<string, unknown> | null
 }
 
 /** Deterministic request → org-change spec parse for the mock Tinkr path. */
+/**
+ * Deterministic delegation parse for the offline pipeline (phase 16a):
+ * "delegate keyword research to @rank and a GEO audit of /malaria to @tank"
+ * → [{ to: "@rank", title: "Keyword research" }, { to: "@tank", title: "A GEO audit of /malaria" }].
+ * Live Claude reads the delegate_task schema and decides on its own.
+ */
+export function parseDelegations(prompt: string): Array<{ to: string; title: string }> {
+  const m = prompt.match(/\b(?:delegate|assign|hand off|split)\b([\s\S]*)/i);
+  if (!m) return [];
+  const out: Array<{ to: string; title: string }> = [];
+  const seen = new Set<string>();
+  for (const x of m[1]!.matchAll(/([^,;:\n]+?)\s+to\s+(@[a-z][\w-]*)/gi)) {
+    const title = x[1]!.replace(/^\s*(?:and|then|also)\s+/i, "").replace(/^\s*(?:the\s+)?/i, "").trim();
+    const to = x[2]!.toLowerCase();
+    const key = `${to}|${title.toLowerCase()}`;
+    if (!title || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ to, title: title.charAt(0).toUpperCase() + title.slice(1) });
+    if (out.length >= 6) break;
+  }
+  return out;
+}
+
 function parseOrgChangeRequest(prompt: string): Record<string, unknown> | null {
   const p = prompt.trim();
   let m = p.match(/rename\s+@?([a-z0-9]+)\s+to\s+([A-Za-z][A-Za-z0-9 ]{1,24})/i);
@@ -254,6 +277,20 @@ export class MockProvider implements LLMProvider {
         question: input.prompt.trim().slice(0, 200),
         urgency: /urgent|asap|high priority/i.test(input.prompt) ? "high" : "normal",
       });
+    }
+
+    // Delegation (deterministic): split the named pieces across agents. A
+    // roll-up prompt says "Do not delegate again" — honor it offline too.
+    if (available.has("delegate_task") && !/do not delegate again/i.test(input.prompt)) {
+      for (const d of parseDelegations(input.prompt)) {
+        const res = await call("delegate_task", {
+          to: d.to,
+          title: d.title,
+          brief: `${d.title}. Context: ${input.prompt.trim().slice(0, 600)}`,
+          priority: "high",
+        });
+        toolContext += `\n${res.output}`;
+      }
     }
 
     // Tinkr (deterministic): parse the request into exactly one staged change.

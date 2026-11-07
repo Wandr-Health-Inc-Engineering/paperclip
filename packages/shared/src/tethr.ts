@@ -112,6 +112,8 @@ export const TETHR_ROUTE_INVOCATION_SOURCES = [
   "console",
   "heartbeat",
   "api",
+  // Phase 16a: an agent working a Paperclip task (assignment / roll-up wake).
+  "task",
 ] as const;
 export type TethrRouteInvocationSource =
   (typeof TETHR_ROUTE_INVOCATION_SOURCES)[number];

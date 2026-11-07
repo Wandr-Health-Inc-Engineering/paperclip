@@ -127,6 +127,42 @@ code (Sentry, Pulse, Google Ads, Keyword Planner) stays live and allowlisted.
   headers/bold/tables/links → Slack mrkdwn (tables become labeled bullets). Never post raw
   `##`/`**`/pipes again.
 
+### Phase 16 — growth operations control plane (2026-11-07, Mark as COO)
+
+**Identity:** Tethr is Wandr's **growth operations control plane** — its job right now is
+**acquiring customers** (go-to-market + growth). Every recurring piece of growth work is a
+workflow with an owner, a cadence, a deliverable and a gate; @tethr is the front door, @ceo sets
+the weekly growth plan and delegates, specialists do the work as **tasks**, humans approve in the
+**Queue**. Patient-data wall unchanged. Plan: `tasks/phase-16.md`.
+
+**Delegation backbone (16a, built) — Tethr now rides Paperclip's tasks (issues):**
+- **Agents work tasks.** A wake carrying `context.issueId` (assignment, delegated sub-task,
+  roll-up, routine task) runs `executeTask` in `adapter.ts`: load the task (brief, comments,
+  children) → claim it (`checkout`) → `routeRequest` at that agent with invocation `task` →
+  comment the result → move it (`nextTaskStatus`: answer/published → `done`, gated → `in_review`,
+  delegated/open children → `blocked`, failed → left to core recovery). No task id → the old
+  standing heartbeat, unchanged. Digest/site_audit/pulse modes run as before and close their task.
+- **Agents delegate.** `delegate_task` (tools/internal.ts), granted to `@ceo.plan` + `@tethr.plan`:
+  creates a child task for an agent by tag and wakes it (core `createChild` +
+  `queueIssueAssignmentWakeup`). From a Console/Slack run with no task, a **root task** owned by
+  the delegator is created first. When the last child closes, `tasks.setStatus` wakes the
+  parent's owner (`issue_children_completed`) → roll-up run with delegation OFF → root `done`.
+  Limits (`TASK_LIMITS`): depth ≤ 2, ≤ 6 children per task, no self/unknown/paused targets.
+  Delegated tasks carry `originId = "tethr:delegation"`. Delegators see the live agent roster in
+  their system prompt.
+- **Queue closes the loop.** Outputs made while working a task carry `meta.taskIssueId`;
+  `gating.decide` (now a wrapper over `decideOutput`) moves the task by the output's FINAL status:
+  approve → `done` (wakes parent), reject → `cancelled`, changes requested → stays `in_review`
+  (revisions keep the link).
+- **Why the wake helpers live in tasks.ts:** core wakes parents/dependents in the issue PATCH
+  *route*, not the service — Tethr updates via the service, so `tasks.ts` mirrors those side
+  effects. No core files edited.
+- **Mock:** `parseDelegations` ("delegate X to @rank and Y to @tank") makes delegation
+  deterministic offline. Tests: `tethr-tasks.test.ts` (8, incl. full end-to-end chains through
+  core's real wake/run loop).
+- **Next (16b/17):** growth workflows (paused routines) + growth board page; Console "projects" as
+  tasks; the memory layer (kinds, `remember` tool, relevance recall).
+
 ## Where the Tethr layer lives (all additive)
 
 - `server/src/tethr/**` — the whole L2 engine: `routing.ts`, `worker.ts`, `gating.ts`, `drive.ts`, `org.ts`, `memory.ts`, `notify.ts`, `digest.ts`, `state.ts`, `export.ts`, `adapter.ts`, `index.ts`, plus `llm/` (mock ↔ claude), `tools/` (allowlisted registry), `seed/` (`wandr-growth.ts`).

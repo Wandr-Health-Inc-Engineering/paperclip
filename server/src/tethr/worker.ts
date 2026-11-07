@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, tethrSubagents, type TethrRouteHop } from "@paperclipai/db";
+import { agents, tethrAgentProfiles, tethrSubagents, type TethrRouteHop } from "@paperclipai/db";
 import type { TethrOutputKind, TethrSensitivity } from "@paperclipai/shared";
 import { getTethrLLMProvider } from "./llm/index.js";
 import type { LLMImageAttachment, LLMUsage } from "./llm/types.js";
@@ -8,6 +8,7 @@ import { gatingService } from "./gating.js";
 import { memoryService } from "./memory.js";
 import { MIRROR_FOLDERS } from "./mirror.js";
 import { contentPreview, wordCountLabel } from "./preview.js";
+import type { TaskRunState } from "./tasks.js";
 import { toolsetForSubagent, type TethrToolContext } from "./tools/index.js";
 
 // The "do" step of classify → route → do. Renders the subagent's fine-tuned
@@ -76,6 +77,8 @@ export interface SubagentJobInput {
   /** Revision lineage when re-running after "request changes". */
   revisionOfId?: string | null;
   revisionNumber?: number;
+  /** The Paperclip task this run works + delegation state (phase 16a). */
+  task?: TaskRunState;
 }
 
 export interface SubagentJobResult {
@@ -159,9 +162,30 @@ export function workerService(db: Db) {
       agentId: input.agentId,
       agentTag: input.agentTag,
       subagentTag: input.subagent.tag,
+      task: input.task,
+      heartbeatRunId: input.heartbeatRunId ?? null,
     };
     const tools = toolsetForSubagent(input.subagent);
     const toolByName = new Map(tools.map((t) => [t.name, t]));
+
+    // Delegators see who they can hand work to (live roster, not hard-coded).
+    if (toolByName.has("delegate_task")) {
+      const team = await db
+        .select({ tag: tethrAgentProfiles.tag, title: agents.title, mission: tethrAgentProfiles.mission, status: agents.status })
+        .from(tethrAgentProfiles)
+        .innerJoin(agents, eq(agents.id, tethrAgentProfiles.agentId))
+        .where(and(eq(tethrAgentProfiles.companyId, input.companyId), ne(tethrAgentProfiles.agentId, input.agentId)));
+      const available = team.filter((m) => !["paused", "terminated", "pending_approval"].includes(m.status));
+      if (available.length) {
+        system += [
+          "\n\nYou can delegate with delegate_task. Agents available right now:",
+          ...available.map((m) => `- ${m.tag} — ${m.title ?? (m.mission ?? "").slice(0, 120)}`),
+          input.task && !input.task.allowDelegation
+            ? "Delegation is OFF for this run (you're writing a roll-up)."
+            : "Delegate real, separable pieces of work; do quick things yourself.",
+        ].join("\n");
+      }
+    }
 
     const generated = await provider.runAgentic({
       system,
@@ -297,6 +321,7 @@ export function workerService(db: Db) {
       sensitivity,
       meta: {
         request: input.request.slice(0, 500),
+        ...(input.task?.issueId ? { taskIssueId: input.task.issueId } : {}),
         provider: provider.id,
         toolCalls: generated.toolCalls.map((t) => t.summary),
         ...mirrorMeta,
@@ -404,6 +429,10 @@ export function workerService(db: Db) {
       standingRules: [],
       revisionOfId: original.id,
       revisionNumber: (original.revisionNumber ?? 1) + 1,
+      task:
+        typeof meta.taskIssueId === "string"
+          ? { issueId: meta.taskIssueId, allowDelegation: false, delegated: [] }
+          : undefined,
       extraContext: [
         `You are revising a draft a human reviewer sent back.`,
         `Reviewer's note: ${note ?? "(no note recorded — tighten and improve the draft)"}`,

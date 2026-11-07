@@ -351,6 +351,50 @@ export const proposeAgentTool: TethrTool = {
   },
 };
 
+export const delegateTaskTool: TethrTool = {
+  name: "delegate_task",
+  description:
+    "Hand a piece of work to another agent as a tracked task (a sub-task of the work you're on). Use it to split a growth push across specialists — e.g. keyword research to @rank, an AI-search audit to @tank, market or partner research to @radar. Each call creates ONE task for ONE agent; they work it, and when every sub-task is finished you're woken to write the roll-up. Don't delegate to yourself, don't delegate trivial work, max 6 sub-tasks per task.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      to: { type: "string", description: "The agent's tag, e.g. \"@rank\"." },
+      title: { type: "string", description: "Short imperative task title (≤ 120 chars)." },
+      brief: {
+        type: "string",
+        description: "What to do, why it matters for customer acquisition, and what a good result looks like.",
+      },
+      priority: { type: "string", enum: ["critical", "high", "medium", "low"] },
+    },
+    required: ["to", "title", "brief"],
+  },
+  // Side-effect tool: creates a Paperclip task (issue) and wakes the assignee.
+  async execute(ctx, input) {
+    if (!ctx.task) {
+      return { output: "Delegation isn't available in this run.", summary: "delegate_task: unavailable" };
+    }
+    const { taskService } = await import("../tasks.js");
+    const result = await taskService(ctx.db).delegate({
+      companyId: ctx.companyId,
+      fromAgentId: ctx.agentId,
+      fromTag: ctx.agentTag,
+      state: ctx.task,
+      toTag: String(input.to ?? ""),
+      title: String(input.title ?? ""),
+      brief: String(input.brief ?? ""),
+      priority: input.priority ? String(input.priority) : null,
+      runId: ctx.heartbeatRunId ?? null,
+    });
+    if (!result.ok) {
+      return { output: `Not delegated: ${result.error}`, summary: `delegate_task refused: ${result.error.slice(0, 60)}` };
+    }
+    return {
+      output: `Delegated ${result.identifier ?? "a sub-task"} to ${result.toTag}. They'll work it and you'll be woken for the roll-up when all sub-tasks are done. Tell the requester what you delegated.`,
+      summary: `delegated ${result.identifier ?? "task"} → ${result.toTag}`,
+    };
+  },
+};
+
 export const notifyTool: TethrTool = {
   name: "notify",
   description:

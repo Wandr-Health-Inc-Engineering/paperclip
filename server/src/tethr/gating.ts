@@ -374,13 +374,47 @@ export function gatingService(db: Db) {
     return updated;
   }
 
-  async function decide(input: {
+  type DecideInput = {
     companyId: string;
     outputId: string;
     decision: "approve" | "reject" | "request_changes";
     reviewer: string;
     note?: string;
-  }) {
+  };
+
+  /**
+   * Decide a gated output, then (phase 16a) move the Paperclip task it belongs
+   * to, if any: approve → done, reject → cancelled, changes → stays in review.
+   * The task sync is best-effort and keyed on the output's FINAL status, so a
+   * drive_change whose apply failed (closed "rejected") cancels, not completes.
+   */
+  async function decide(input: DecideInput) {
+    const result = await decideOutput(input);
+    try {
+      const after = await getOutput(input.companyId, input.outputId);
+      const meta = (after?.meta ?? {}) as Record<string, unknown>;
+      if (after && typeof meta.taskIssueId === "string") {
+        const effective =
+          after.status === "rejected"
+            ? "reject"
+            : after.status === "changes_requested"
+              ? "request_changes"
+              : "approve";
+        const { taskService } = await import("./tasks.js");
+        await taskService(db).onOutputDecided({
+          output: { id: after.id, title: after.title, meta: after.meta },
+          decision: effective,
+          reviewer: input.reviewer,
+          note: input.note ?? null,
+        });
+      }
+    } catch (err) {
+      logger.warn({ err, outputId: input.outputId }, "[tethr] task sync after decision failed (decision unaffected)");
+    }
+    return result;
+  }
+
+  async function decideOutput(input: DecideInput) {
     const output = await getOutput(input.companyId, input.outputId);
     if (!output) throw new Error("Output not found");
     if (!output.approvalId) throw new Error("Output is not gated");

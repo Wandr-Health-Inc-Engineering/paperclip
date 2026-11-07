@@ -1,5 +1,6 @@
 import type { tethrSubagents } from "@paperclipai/db";
 import {
+  delegateTaskTool,
   driveListTool,
   driveReadTool,
   driveWriteTool,
@@ -39,6 +40,7 @@ const ALL_TOOLS: Record<string, TethrTool> = Object.fromEntries(
     stageFileArchiveTool,
     readFailuresTool,
     proposeAgentTool,
+    delegateTaskTool,
   ].map((t) => [t.name, t]),
 );
 
@@ -54,7 +56,7 @@ const ALLOWLIST: Record<string, string[]> = {
   // Tethr — the coordinator (Phase 11 clean slate). Chat answers directly and
   // may pull read-only reports; Plan drafts internal docs. Neither can publish.
   "tethr.chat": ["web_fetch", "google_ads_report"],
-  "tethr.plan": ["web_fetch", "drive_write", "keyword_ideas"],
+  "tethr.plan": ["web_fetch", "drive_write", "keyword_ideas", "delegate_task"],
   // Tinkr — the org mechanic (Phase 12). The ONLY subagent that can stage
   // agent modifications; nothing applies without a human approval in the Queue.
   "tinkr.change": ["stage_org_change"],
@@ -73,7 +75,8 @@ const ALLOWLIST: Record<string, string[]> = {
   "tank.geo": ["web_fetch", "keyword_ideas"],
   // CEO — head of the agent org (Phase 14). Can propose new agents it recommends
   // during planning; the proposal is gated (or auto-applied if the CEO is on auto).
-  "ceo.plan": ["propose_agent"],
+  // Phase 16a: the CEO also delegates work to specialists as tracked tasks.
+  "ceo.plan": ["propose_agent", "delegate_task"],
   // Sonar — the scout
   "sonar.leads": ["reddit_scan", "web_fetch", "notify"],
   "sonar.reply": ["reddit_scan"],

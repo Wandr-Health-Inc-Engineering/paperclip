@@ -9,6 +9,7 @@ import type { LLMImageAttachment, LLMUsage } from "./llm/types.js";
 import { notificationService } from "./notify.js";
 import { orgService } from "./org.js";
 import { isContentRequest, publishedDuplicateWarning } from "./published-memory.js";
+import { newTaskRunState, type TaskRunState } from "./tasks.js";
 import { isAgentsPaused, PAUSED_MESSAGE } from "./throttle.js";
 import { workerService } from "./worker.js";
 
@@ -45,6 +46,12 @@ export interface RouteRequestInput {
   hopDelayMs?: number;
   /** Fires as soon as the run row exists — lets callers return early and poll. */
   onStarted?: (ids: { routeRunId: string; threadId: string }) => void;
+  /**
+   * The Paperclip task this run works (task-mode wakes) + delegation state.
+   * Omitted → a fresh state, so a Console/Slack run can still delegate (a root
+   * task is created on first delegation).
+   */
+  task?: TaskRunState;
 }
 
 export interface RouteRequestResult {
@@ -82,6 +89,7 @@ export function routingService(db: Db) {
   const worker = workerService(db);
 
   async function routeRequest(input: RouteRequestInput): Promise<RouteRequestResult> {
+    const taskState = input.task ?? newTaskRunState({ requestText: input.requestText });
     const startedAt = Date.now();
     const provider = getTethrLLMProvider();
     const hops: TethrRouteHop[] = [];
@@ -317,6 +325,7 @@ export function routingService(db: Db) {
           onHop: recordHop,
           extraContext: extraParts.length ? extraParts.join("\n\n") : undefined,
           attachments: input.attachments,
+          task: taskState,
         });
         usage = sumUsage(usage, result.usage);
         outputs.push({
