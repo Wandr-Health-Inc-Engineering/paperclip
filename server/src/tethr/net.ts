@@ -156,8 +156,7 @@ function decodeBody(raw: Buffer, encoding: string | undefined): string {
       case "x-gzip":
         return zlib.gunzipSync(raw, limit).toString("utf8");
       case "deflate":
-        // Some servers send "deflate" without the zlib wrapper (raw deflate).
-        return (hasZlibHeader(raw) ? zlib.inflateSync(raw, limit) : zlib.inflateRawSync(raw, limit)).toString("utf8");
+        return inflateEitherForm(raw, limit).toString("utf8");
       case "br":
         return zlib.brotliDecompressSync(raw, limit).toString("utf8");
       default:
@@ -169,10 +168,15 @@ function decodeBody(raw: Buffer, encoding: string | undefined): string {
   }
 }
 
-/** A zlib stream opens with two bytes: the low nibble of the first is 8
- * (deflate), and the pair read as one number divides by 31. */
-function hasZlibHeader(bytes: Buffer): boolean {
-  return bytes.length >= 2 && (bytes[0] & 0x0f) === 8 && ((bytes[0] << 8) | bytes[1]) % 31 === 0;
+/** "deflate" is meant to carry a zlib wrapper, but some servers send raw
+ * deflate; try the wrapped form, then the raw one. Too large is final. */
+function inflateEitherForm(raw: Buffer, limit: zlib.ZlibOptions): Buffer {
+  try {
+    return zlib.inflateSync(raw, limit);
+  } catch (err) {
+    if (err instanceof RangeError) throw err;
+    return zlib.inflateRawSync(raw, limit);
+  }
 }
 
 async function readBody(stream: Readable): Promise<Buffer> {
