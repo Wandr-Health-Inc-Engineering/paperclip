@@ -15,6 +15,9 @@ export interface TurnState {
   toolNames: Set<string>;
   resultText: string | null;
   resultIsError: boolean;
+  /** Prompt size of the latest model call (input + cache read + cache write):
+   * the session's real context size, used to decide when to rotate it. */
+  contextTokens: number | null;
   /** Internal: did the current assistant message stream deltas? */
   deltaInMessage: boolean;
   /** Internal: a new message started after some text, so add a paragraph break. */
@@ -29,6 +32,7 @@ export function newTurnState(): TurnState {
     toolNames: new Set(),
     resultText: null,
     resultIsError: false,
+    contextTokens: null,
     deltaInMessage: false,
     pendingBreak: false,
   };
@@ -50,8 +54,16 @@ function appendText(state: TurnState, chunk: string) {
   state.text += chunk;
 }
 
+function noteUsage(state: TurnState, usage: unknown) {
+  if (!usage || typeof usage !== "object") return;
+  const u = usage as Record<string, unknown>;
+  const n = (k: string) => (typeof u[k] === "number" ? (u[k] as number) : 0);
+  const total = n("input_tokens") + n("cache_read_input_tokens") + n("cache_creation_input_tokens");
+  if (total > 0) state.contextTokens = total;
+}
+
 function relativeFile(file: string, ctx: EventContext): string {
-  const abs = path.resolve(file);
+  const abs = path.resolve(ctx.policy.cwd ?? ctx.policy.workspaceDir, file);
   for (const root of [ctx.mirrorRoot, ctx.policy.workspaceDir]) {
     if (!root) continue;
     const r = path.resolve(root);
@@ -82,6 +94,7 @@ export function applyStreamLine(state: TurnState, line: string, ctx: EventContex
     case "stream_event": {
       const event = (ev.event ?? {}) as Record<string, unknown>;
       if (event.type === "message_start") {
+        noteUsage(state, ((event.message ?? {}) as Record<string, unknown>).usage);
         state.deltaInMessage = false;
         if (state.text) state.pendingBreak = true;
         return false;
@@ -95,7 +108,8 @@ export function applyStreamLine(state: TurnState, line: string, ctx: EventContex
       return false;
     }
     case "assistant": {
-      const message = (ev.message ?? {}) as { content?: Array<Record<string, unknown>> };
+      const message = (ev.message ?? {}) as { content?: Array<Record<string, unknown>>; usage?: unknown };
+      noteUsage(state, message.usage);
       let changed = false;
       for (const block of message.content ?? []) {
         if (block.type === "text" && typeof block.text === "string" && !state.deltaInMessage) {

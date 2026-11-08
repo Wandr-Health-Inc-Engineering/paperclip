@@ -1,4 +1,4 @@
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { tethrRouteRuns } from "@paperclipai/db";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
@@ -46,9 +46,11 @@ interface QueueState {
   active: Set<string>;
   running: number;
   stopped: Set<string>;
+  /** Turns dequeued but not spawned yet (Stop must still work in that window). */
+  preparing: Set<string>;
 }
 
-const state: QueueState = { threads: new Map(), active: new Set(), running: 0, stopped: new Set() };
+const state: QueueState = { threads: new Map(), active: new Set(), running: 0, stopped: new Set(), preparing: new Set() };
 
 /** Lines of builtin tools the chat session may use (Bash only when the shell is on). */
 function builtinTools(shell: "off" | "ask"): string {
@@ -97,8 +99,13 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     state.running += 1;
     try {
       await runTurn(runId);
-    } catch {
-      // runTurn records its own failures; never let one turn wedge the queue
+    } catch (err) {
+      // Never leave a turn "running" or let one turn wedge the queue.
+      await db
+        .update(tethrRouteRuns)
+        .set({ status: "failed", error: `Tethr hit an error: ${err instanceof Error ? err.message : String(err)}`, updatedAt: new Date() })
+        .where(and(eq(tethrRouteRuns.id, runId), inArray(tethrRouteRuns.status, ["queued", "running"])))
+        .catch(() => {});
     } finally {
       state.active.delete(key);
       state.running -= 1;
@@ -139,7 +146,6 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     const [row] = await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.id, runId));
     if (!row || TERMINAL.has(row.status)) return;
     const companyId = row.companyId;
-    const threadId = row.threadId ?? row.id;
     const started = Date.now();
 
     if (state.stopped.has(runId)) {
@@ -167,15 +173,58 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     }
 
     await finish(runId, { status: "running" });
+    state.preparing.add(runId);
+    try {
+      await prepareAndRun(runId, row, router, started);
+    } finally {
+      state.preparing.delete(runId);
+    }
+  }
 
-    const cfg = getIntegrations(companyId);
-    const ws = await ensureWorkspace({ integrationRules: integrationRulesText(cfg) });
-    const { personaPath, skillDir } = await ensurePersona();
-    const hookScript = await ensureHookScript();
-    const settingsPath = await writeSettingsFile(
-      companyId,
-      buildSettings({ nodePath: process.execPath, hookScript, deny: denyRulesFor(cfg) }),
-    );
+  async function prepareAndRun(
+    runId: string,
+    row: typeof tethrRouteRuns.$inferSelect,
+    router: NonNullable<Awaited<ReturnType<typeof org.getRouterProfile>>>,
+    started: number,
+  ): Promise<void> {
+    const companyId = row.companyId;
+    const threadId = row.threadId ?? row.id;
+
+    // Setup. Any failure here (Drive offline, a file we can't write) ends the
+    // turn as failed instead of leaving it "running" forever.
+    let cfg: ReturnType<typeof getIntegrations>;
+    let ws: Awaited<ReturnType<typeof ensureWorkspace>>;
+    let personaPath: string;
+    let skillDir: string;
+    let settingsPath: string;
+    try {
+      cfg = getIntegrations(companyId);
+      ws = await ensureWorkspace({ integrationRules: integrationRulesText(cfg) });
+      ({ personaPath, skillDir } = await ensurePersona());
+      const hookScript = await ensureHookScript();
+      settingsPath = await writeSettingsFile(
+        companyId,
+        buildSettings({ nodePath: process.execPath, hookScript, deny: denyRulesFor(cfg) }),
+      );
+    } catch (err) {
+      await finish(runId, {
+        status: "failed",
+        error: `Couldn't get Tethr's workspace ready: ${err instanceof Error ? err.message : String(err)}`,
+        durationMs: Date.now() - started,
+      });
+      return;
+    }
+    if (ws.quarantined.length) {
+      await logActivity(db, {
+        companyId,
+        actorType: "system",
+        actorId: "tethr",
+        action: "tethr_workspace_quarantined",
+        entityType: "tethr_route_run",
+        entityId: runId,
+        details: { moved: ws.quarantined },
+      }).catch(() => {});
+    }
 
     // Session: resume the thread's, unless its context has grown too big.
     let session = chats.getSession(companyId, threadId);
@@ -184,6 +233,10 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       await chats.clearSession(companyId, threadId);
       session = null;
       rotated = true;
+    }
+    if (state.stopped.delete(runId)) {
+      await finish(runId, { status: "stopped", resultText: "Stopped before it started." });
+      return;
     }
     const notes = await chats.takeNotes(companyId, threadId);
     const context = !session ? await legacyContext(companyId, threadId, runId) : "";
@@ -207,18 +260,21 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     let dirty = false;
     let lastFlush = 0;
     let flushTimer: NodeJS.Timeout | null = null;
-    const flush = async () => {
+    let flushing: Promise<void> = Promise.resolve();
+    const flush = () => {
       flushTimer = null;
-      if (!dirty) return;
+      if (!dirty) return flushing;
       dirty = false;
       lastFlush = Date.now();
-      await finish(runId, { resultText: turn.text, hops: turn.hops });
+      // Chained, so writes land in order and the final write can wait for them.
+      flushing = flushing.then(() => finish(runId, { resultText: turn.text, hops: turn.hops })).catch(() => {});
+      return flushing;
     };
     const scheduleFlush = () => {
       dirty = true;
       if (flushTimer) return;
       const wait = Math.max(0, FLUSH_MS - (Date.now() - lastFlush));
-      flushTimer = setTimeout(() => void flush().catch(() => {}), wait);
+      flushTimer = setTimeout(() => void flush(), wait);
     };
 
     let stdoutBuf = "";
@@ -294,6 +350,8 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       revokeHookToken(token);
       if (flushTimer) clearTimeout(flushTimer);
       if (stdoutBuf) applyStreamLine(turn, stdoutBuf, eventCtx);
+      // A partial write already on its way must land BEFORE the final one.
+      await flushing;
     }
 
     const stopped = state.stopped.delete(runId);
@@ -333,12 +391,13 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       if (result.clearSession) {
         await chats.clearSession(companyId, threadId);
       } else if (result.sessionParams || result.sessionId || turn.sessionId) {
-        const usage = result.usage;
+        // The context size is the LAST model call's prompt (the result's usage
+        // is summed over every call in the turn, so it overstates it badly).
         await chats.setSession(companyId, threadId, {
           sessionId: result.sessionId ?? turn.sessionId,
           sessionParams: result.sessionParams ?? null,
           lastTurnAt: new Date().toISOString(),
-          contextTokens: (usage?.inputTokens ?? 0) + (usage?.cachedInputTokens ?? 0),
+          contextTokens: turn.contextTokens ?? session?.contextTokens ?? 0,
         });
       }
     }
@@ -374,7 +433,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     }).catch(() => {});
   }
 
-  /** Stop a queued or running turn. */
+  /** Stop a queued, starting or running turn. */
   async function stop(runId: string): Promise<boolean> {
     for (const [key, queue] of state.threads) {
       const idx = queue.indexOf(runId);
@@ -386,7 +445,12 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       }
     }
     const proc = runningProcesses.get(runId);
-    if (!proc) return false;
+    if (!proc) {
+      // Dequeued but not spawned yet: it checks this flag right before starting.
+      if (!state.preparing.has(runId)) return false;
+      state.stopped.add(runId);
+      return true;
+    }
     state.stopped.add(runId);
     try {
       if (proc.processGroupId) process.kill(-proc.processGroupId, "SIGTERM");
@@ -420,4 +484,5 @@ export function resetAssistantRunnerForTests() {
   state.active.clear();
   state.running = 0;
   state.stopped.clear();
+  state.preparing.clear();
 }

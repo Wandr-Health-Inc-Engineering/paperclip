@@ -2,6 +2,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { resolvePaperclipInstanceRoot } from "../../home-paths.js";
+import { writeAtomic } from "../atomic.js";
 import { mirrorDir } from "../mirror.js";
 
 // Tethr's working folder for the chat assistant (phase 18). It lives INSIDE the
@@ -96,19 +97,68 @@ export async function ensureWorkspace(opts: { integrationRules?: string } = {}) 
   }
   // Only ever overwrite a CLAUDE.md Tethr generated; a hand-written one is left alone.
   if (current === null || (current.startsWith(GENERATED_MARKER) && current !== want)) {
-    await atomicWrite(claudePath, want);
+    await writeAtomic(claudePath, want);
   }
 
   const mem = path.join(dir, MEMORY_FILE);
-  if (!fs.existsSync(mem)) await atomicWrite(mem, MEMORY_SEED);
+  if (!fs.existsSync(mem)) await writeAtomic(mem, MEMORY_SEED);
 
-  return { dir, inDrive, claudePath, memoryPath: mem };
+  const quarantined = await quarantineClaudeConfig(dir);
+  return { dir, inDrive, claudePath, memoryPath: mem, quarantined };
 }
 
-async function atomicWrite(file: string, content: string) {
-  const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.tmp`);
-  await fsp.writeFile(tmp, content, "utf8");
-  await fsp.rename(tmp, file);
+// Claude Code reads settings (hooks run shell commands), MCP servers and extra
+// instructions from these names in its working folder, and CLAUDE.md files from
+// any subfolder it reads. The workspace lives in a SHARED Drive folder, so a
+// collaborator (or a file the chat was tricked into writing) could plant one.
+// Before every turn they're moved out to the instance dir and logged.
+const ROOT_CONFIG = new Set([".claude", ".mcp.json", "claude.local.md"]);
+const NESTED_CONFIG = new Set([".claude", ".mcp.json", "claude.md", "claude.local.md"]);
+const SWEEP_MAX_ENTRIES = 5000;
+
+/** Move Claude Code config/instruction files out of the workspace. Returns the
+ * workspace-relative paths that were moved (empty when the folder is clean). */
+export async function quarantineClaudeConfig(dir: string): Promise<string[]> {
+  const found: string[] = [];
+  let seen = 0;
+  const walk = async (rel: string, depth: number, names: Set<string>) => {
+    let entries: fs.Dirent[];
+    try {
+      entries = await fsp.readdir(path.join(dir, rel), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (++seen > SWEEP_MAX_ENTRIES) return;
+      const child = rel ? path.join(rel, e.name) : e.name;
+      if (names.has(e.name.toLowerCase())) found.push(child);
+      else if (e.isDirectory() && depth < 8 && !e.isSymbolicLink()) await walk(child, depth + 1, NESTED_CONFIG);
+    }
+  };
+  // Root: settings/MCP/local instructions (the generated CLAUDE.md stays).
+  await walk("", 0, ROOT_CONFIG);
+  if (!found.length) return [];
+  const dest = path.join(assistantHome(), "quarantine", new Date().toISOString().replace(/[:.]/g, "-"));
+  const moved: string[] = [];
+  for (const rel of found) {
+    const from = path.join(dir, rel);
+    const to = path.join(dest, rel);
+    try {
+      await fsp.mkdir(path.dirname(to), { recursive: true });
+      try {
+        await fsp.rename(from, to);
+      } catch {
+        // Drive (File Provider) → local disk can be a cross-device move.
+        await fsp.cp(from, to, { recursive: true });
+        await fsp.rm(from, { recursive: true, force: true });
+      }
+      moved.push(rel);
+    } catch {
+      // Couldn't move it: the runner refuses the turn rather than run with it.
+      throw new Error(`Tethr found ${rel} in its workspace and couldn't move it aside. Remove it, then try again.`);
+    }
+  }
+  return moved;
 }
 
 /** Mark's view of Memory.md (phase 18.5): the file plus its mtime, which a
@@ -132,6 +182,6 @@ export async function writeMemoryFile(file: string, content: string, ifMtime: nu
   if (!Number.isFinite(ifMtime) || Math.abs(current.mtime - ifMtime) > 1) {
     return { ok: false, conflict: current };
   }
-  await atomicWrite(file, content);
+  await writeAtomic(file, content);
   return { ok: true, mtime: (await fsp.stat(file)).mtimeMs };
 }

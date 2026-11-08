@@ -380,7 +380,12 @@ function QueueDetail({
 
         <div className="px-4 py-4">
           <div className="tethr-inset max-h-[28rem] overflow-auto px-4 py-3.5">
-            <MarkdownBody className="text-sm leading-relaxed">{output.body}</MarkdownBody>
+            {output.kind === "external_action" ? (
+              // An outward action is shown as plain text: exactly what will be sent.
+              <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">{output.body}</pre>
+            ) : (
+              <MarkdownBody className="text-sm leading-relaxed">{output.body}</MarkdownBody>
+            )}
           </div>
         </div>
 

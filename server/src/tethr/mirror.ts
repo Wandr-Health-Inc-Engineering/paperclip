@@ -1,6 +1,6 @@
 import fs from "node:fs";
+import { writeAtomic } from "./atomic.js";
 import fsp from "node:fs/promises";
-import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { and, eq, isNotNull } from "drizzle-orm";
@@ -216,21 +216,6 @@ export function resolveWithinRoot(root: string, rel: string): string {
     throw new Error(`mirror path escapes the root: ${rel}`);
   }
   return resolved;
-}
-
-/** Same-dir dot-temp + atomic rename: Drive sync can never upload a partial
- * file at the final name, and the dot/tmp name is ignored while it exists. */
-async function writeAtomic(absPath: string, data: string | Buffer): Promise<void> {
-  const dir = path.dirname(absPath);
-  await fsp.mkdir(dir, { recursive: true });
-  const tmp = path.join(dir, `.tethr-mirror-${crypto.randomBytes(6).toString("hex")}.tmp`);
-  try {
-    await fsp.writeFile(tmp, data);
-    await fsp.rename(tmp, absPath);
-  } catch (err) {
-    await fsp.unlink(tmp).catch(() => {});
-    throw err;
-  }
 }
 
 /** Does an existing markdown mirror file belong to this output? (Reads only the

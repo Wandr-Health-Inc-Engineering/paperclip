@@ -540,9 +540,36 @@ remembered nothing Mark said, and could only read). Spike findings: `tasks/phase
   under "Older agent log". Verified live: checklist file → panel auto-opened + file in Drive;
   "remember …" → Memory.md edited → a NEW side chat recalled it with no tool call; editor save +
   stale-save 409.
-- Tests: `tethr-assistant-policy` (11), `-events` (6), `-runner` (6, embedded PG, fake execute),
-  `-gate` (9: hold → approve → run once → done; no replay; expiry; reject; auto vs always-ask),
-  `-memory` (4: seed once, save, stale save refused, unversioned save refused), `tethr-integrations` (6).
+- **Security hardening (phase 18.6, after a full review)** — keep these invariants:
+  - **The chat writes ONLY `files/**` and `Memory.md`** in its workspace (`workspaceWriteRefusal`
+    in policy.ts): never a dot path, `CLAUDE*.md` or `.mcp.json` (case-insensitive). Verified
+    live: a hook in `<workspace>/.claude/settings.json` RUNS under `claude -p` (no trust dialog),
+    so a planted settings file = shell on Mark's Mac. Because the workspace is in a SHARED Drive
+    folder, `ensureWorkspace` also sweeps `.claude`/`.mcp.json`/`CLAUDE.local.md` (root) and nested
+    `CLAUDE.md` (under files/) into `<assistantHome>/quarantine/<ts>/` before every turn (activity
+    `tethr_workspace_quarantined`). `--setting-sources user` would block project hooks but ALSO
+    stops CLAUDE.md (memory) loading, so it's not used. External `@` imports (outside the
+    workspace) don't load under `-p` (tested), so Memory.md can't pull in other local files.
+  - **Web pages after connector data ask:** once a thread's session uses any connector it's
+    "tainted" (`chats.ts` `tainted`, persisted); then `WebFetch` to a host outside
+    `internalAddresses` domains is an approval card (a URL can carry data out). `POST
+    /chats/:threadId/reset` clears it with the session.
+  - **Always ask:** money, public (incl. a Gmail reply/forward with no explicit recipients),
+    medical, and the new **destructive** class (Drive trash/update, Gmail trash, Calendar delete,
+    Sheets clear, Docs delete, delete/trash/remove verbs) — sensitivity `destructive`.
+  - **Approval cards show exactly what runs:** every input field, full text, rendered as PLAIN
+    text in the chat card and the Queue (never Markdown); calls over 30k chars are refused.
+    A failed approved call records `grant.status: "failed"`, not "Sent".
+  - **Only a person drives the chat:** messages / side chats / stop / reset / chat-engine
+    require a user actor (agents get 403).
+  - **Stores:** every instance-dir JSON write goes through `tethr/atomic.ts` (`writeAtomic`,
+    random temp names; `serialize` per-file read-modify-write). Turn setup errors fail the turn
+    (never stuck "running"); session rotation uses the LAST call's prompt size (the result usage
+    is summed over the turn).
+- Tests: `tethr-assistant-policy` (16), `-events` (7), `-runner` (8, embedded PG, fake execute),
+  `-gate` (13: hold → approve → run once → done; no replay; expiry; reject; auto vs always-ask;
+  full plain-text card; size cap; web taint; failed send), `-memory` (4), `tethr-atomic` (3),
+  `tethr-integrations` (6).
 
 ## Phase 15 fixes — previews, Inbox retirement, cogs (2026-07-19)
 

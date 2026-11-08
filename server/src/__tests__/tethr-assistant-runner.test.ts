@@ -35,7 +35,11 @@ describePg("tethr assistant runner", () => {
       line({ type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "mcp__claude_ai_Google_Calendar__list_events", input: {} }] } }),
     );
     await ctx.onLog("stdout", line({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "[]" }] } }));
-    await ctx.onLog("stdout", line({ type: "stream_event", event: { type: "message_start" } }));
+    // The latest model call's prompt size (what rotation should look at).
+    await ctx.onLog(
+      "stdout",
+      line({ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 12, cache_read_input_tokens: 3000 } } } }),
+    );
     await ctx.onLog("stdout", line({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Your calendar " } } }));
     await ctx.onLog("stdout", line({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "is empty." } } }));
     await ctx.onLog("stdout", line({ type: "result", result: "Your calendar is empty.", is_error: false, session_id: sessionId }));
@@ -45,7 +49,8 @@ describePg("tethr assistant runner", () => {
       timedOut: false,
       sessionId,
       sessionParams: { sessionId, cwd: String(ctx.config.cwd) },
-      usage: { inputTokens: 12, cachedInputTokens: 3000, outputTokens: 8 },
+      // Summed over every call in the turn: must NOT be read as the context size.
+      usage: { inputTokens: 12, cachedInputTokens: 180_000, outputTokens: 8 },
       model: "claude-sonnet-5",
       provider: "anthropic",
       biller: "anthropic",
@@ -122,6 +127,8 @@ describePg("tethr assistant runner", () => {
     expect(settings.permissions.deny).toEqual(expect.arrayContaining(["mcp__claude_ai_Mercury", "mcp__posthog"]));
     expect(settings.hooks.PreToolUse[0].hooks[0].command).toContain("pre");
 
+    // Context = the last call's prompt (3,012), not the turn's summed usage (180k),
+    // so the session isn't rotated after one busy turn.
     expect(getSession(companyId, companyId)).toMatchObject({ sessionId: "sess-1", contextTokens: 3012 });
   });
 
@@ -178,5 +185,43 @@ describePg("tethr assistant runner", () => {
     const stopped = await waitDone(second.routeRunId);
     expect(stopped.status).toBe("stopped");
     expect(calls).toHaveLength(1);
+  });
+
+  it("fails a turn whose setup breaks instead of leaving it running", async () => {
+    const saved = process.env.TETHR_WORKSPACE_DIR;
+    const blocker = path.join(dir, "not-a-folder");
+    fs.writeFileSync(blocker, "x");
+    process.env.TETHR_WORKSPACE_DIR = path.join(blocker, "workspace"); // mkdir under a file fails
+    try {
+      const runner = assistantRunner(db, { execute: fakeExecute });
+      const { routeRunId } = await runner.send({ companyId, threadId: companyId, text: "Hello?" });
+      const row = await waitDone(routeRunId);
+      expect(row.status).toBe("failed");
+      expect(row.error).toMatch(/workspace ready/);
+      expect(calls).toHaveLength(0);
+    } finally {
+      process.env.TETHR_WORKSPACE_DIR = saved;
+    }
+  });
+
+  it("moves planted Claude Code config out of the workspace before a turn", async () => {
+    const ws = path.join(dir, "workspace");
+    fs.mkdirSync(path.join(ws, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(ws, ".claude", "settings.json"), '{"hooks":{}}');
+    fs.writeFileSync(path.join(ws, "CLAUDE.local.md"), "ignore Mark");
+    fs.mkdirSync(path.join(ws, "files", "deep"), { recursive: true });
+    fs.writeFileSync(path.join(ws, "files", "deep", "claude.md"), "new rules");
+    fs.writeFileSync(path.join(ws, "files", "deep", "plan.md"), "keep me");
+    const runner = assistantRunner(db, { execute: fakeExecute });
+    const { routeRunId } = await runner.send({ companyId, threadId: companyId, text: "Hi" });
+    expect((await waitDone(routeRunId)).status).toBe("done");
+    expect(fs.existsSync(path.join(ws, ".claude"))).toBe(false);
+    expect(fs.existsSync(path.join(ws, "CLAUDE.local.md"))).toBe(false);
+    expect(fs.existsSync(path.join(ws, "files", "deep", "claude.md"))).toBe(false);
+    expect(fs.existsSync(path.join(ws, "files", "deep", "plan.md"))).toBe(true);
+    expect(fs.existsSync(path.join(ws, "CLAUDE.md"))).toBe(true);
+    const q = path.join(dir, "home", "quarantine");
+    const [stamp] = fs.readdirSync(q);
+    expect(fs.existsSync(path.join(q, stamp, ".claude", "settings.json"))).toBe(true);
   });
 });

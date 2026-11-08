@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import { and, desc, eq, gte, inArray, like, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
@@ -77,6 +77,14 @@ export function tethrRoutes(db: Db) {
   const memory = memoryService(db);
   const notify = notificationService(db);
   const worker = workerService(db);
+
+  /** The Chat runs on Mark's own Claude session with his connectors, so only a
+   * person (never an agent's API key) may drive it. Returns false after replying 403. */
+  const requirePerson = (req: Request, res: Response): boolean => {
+    if (getActorInfo(req).actorType === "user") return true;
+    res.status(403).json({ error: "Only a person can use the chat" });
+    return false;
+  };
 
   // ---- Chat approval gate (phase 18) ----------------------------------------
   // Called by the hook script Claude Code runs before/after every tool call in
@@ -371,6 +379,7 @@ export function tethrRoutes(db: Db) {
   router.post("/tethr/:companyId/chats", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
     const actor = getActorInfo(req);
     const requestText = String(req.body?.request ?? "").trim();
     if (!requestText) {
@@ -447,6 +456,7 @@ export function tethrRoutes(db: Db) {
   router.post("/tethr/:companyId/chats/:threadId/messages", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
     const actor = getActorInfo(req);
     const text = String(req.body?.text ?? "").trim();
     if (!text) {
@@ -470,6 +480,7 @@ export function tethrRoutes(db: Db) {
   router.post("/tethr/:companyId/chat-turns/:runId/stop", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
     const runId = req.params.runId as string;
     const [run] = await db.select().from(tethrRouteRuns).where(and(eq(tethrRouteRuns.id, runId), eq(tethrRouteRuns.companyId, companyId)));
     if (!run) {
@@ -479,11 +490,14 @@ export function tethrRoutes(db: Db) {
     res.json({ stopped: await getAssistantRunner(db).stop(runId) });
   });
 
-  // Start the thread's Claude session over (the chat history stays).
+  // Start the thread's Claude session over (the chat history stays). The new
+  // session hasn't seen connector data, so web pages are free again.
   router.post("/tethr/:companyId/chats/:threadId/reset", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
     await chats.clearSession(companyId, req.params.threadId as string);
+    await chats.clearTaint(companyId, req.params.threadId as string);
     res.json({ reset: true });
   });
 
@@ -598,9 +612,11 @@ export function tethrRoutes(db: Db) {
   router.post("/tethr/:companyId/chat-engine", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
     const engine = req.body?.engine === "routing" ? "routing" : "session";
-    const model = typeof req.body?.model === "string" && req.body.model.trim() ? req.body.model.trim() : undefined;
-    const cfg = await updateIntegrations(companyId, { assistant: { ...getIntegrations(companyId).assistant, engine, ...(model ? { model } : {}) } });
+    // Same validation as the Integrations page (model names only).
+    const { assistant } = sanitizeIntegrationsPatch({ assistant: { engine, model: req.body?.model } });
+    const cfg = await updateIntegrations(companyId, { assistant: { ...getIntegrations(companyId).assistant, ...assistant } });
     res.json(cfg.assistant);
   });
 

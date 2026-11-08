@@ -1,8 +1,9 @@
 import type { Db } from "@paperclipai/db";
 import { logActivity } from "../../services/activity-log.js";
+import { isTainted, markTainted } from "../chats.js";
 import { getIntegrations, modeFor } from "../integrations.js";
 import type { HookTokenContext } from "./gate.js";
-import { consumeGrant, createPendingAction, findPending, inputHash, recordOutcome, shortId } from "./grants.js";
+import { canonicalJson, consumeGrant, createPendingAction, findPending, inputHash, MAX_APPROVAL_INPUT_CHARS, recordFailure, recordOutcome, shortId } from "./grants.js";
 import { classify, decide } from "./policy.js";
 import { readableRoots, workspaceDir } from "./workspace.js";
 
@@ -33,10 +34,14 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
     workspaceDir: workspaceDir().dir,
     readableRoots: readableRoots(),
     internalAddresses: cfg.internalAddresses,
+    cwd: typeof payload.cwd === "string" && payload.cwd ? payload.cwd : undefined,
   });
-  const d = decide(c, { mode: modeFor(cfg, c.connector), shell: cfg.shell });
+  const d = decide(c, { mode: modeFor(cfg, c.connector), shell: cfg.shell, tainted: isTainted(ctx.companyId, ctx.threadId) });
 
   if (d.action === "allow") {
+    // Once a thread's session has seen connector data, web pages outside Wandr
+    // need approval for the rest of that session (a URL can carry data out).
+    if (c.connector) await markTainted(ctx.companyId, ctx.threadId).catch(() => {});
     if (d.note === "auto") {
       await logActivity(db, {
         companyId: ctx.companyId,
@@ -53,6 +58,12 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
   if (d.action === "deny") return preDecision("deny", d.reason);
 
   // Needs Mark: run it if he already approved this exact call, else hold it.
+  if (canonicalJson(toolInput).length > MAX_APPROVAL_INPUT_CHARS) {
+    return preDecision(
+      "deny",
+      `Tethr approval gate: too long to review on an approval card, so it was not done — ${c.summary}. Make it shorter or split it up.`,
+    );
+  }
   const hash = inputHash(toolName, toolInput);
   const granted = await consumeGrant(db, ctx.companyId, ctx.threadId, hash);
   if (granted) {
@@ -87,9 +98,20 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
 
 export async function handlePostToolUse(db: Db, ctx: HookTokenContext, payload: Record<string, unknown>): Promise<HookReply> {
   const toolName = String(payload.tool_name ?? "");
-  if (toolName.startsWith("mcp__") || toolName === "Bash") {
+  if (toolName.startsWith("mcp__") || toolName === "Bash" || toolName === "WebFetch") {
     const hash = inputHash(toolName, payload.tool_input ?? {});
-    await recordOutcome(db, ctx.companyId, ctx.threadId, hash).catch(() => {});
+    // An approved call that came back with an error is NOT marked sent.
+    const record = responseFailed(payload.tool_response) ? recordFailure : recordOutcome;
+    await record(db, ctx.companyId, ctx.threadId, hash).catch(() => {});
   }
   return { exitCode: 0 };
+}
+
+/** Did a tool come back with an error? (MCP results flag isError; some tools
+ * return an { error } object.) */
+export function responseFailed(response: unknown): boolean {
+  if (!response || typeof response !== "object") return false;
+  if (Array.isArray(response)) return response.some((r) => responseFailed(r));
+  const r = response as Record<string, unknown>;
+  return r.isError === true || r.is_error === true || (r.error !== undefined && r.error !== null && r.error !== false);
 }

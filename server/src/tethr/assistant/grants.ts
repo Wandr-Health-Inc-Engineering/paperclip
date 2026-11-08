@@ -50,42 +50,65 @@ function sensitivityFor(c: Classified): TethrSensitivity {
   if (c.cls === "medical") return "medical";
   if (c.cls === "public") return "public";
   if (c.cls === "money") return "spend";
+  if (c.cls === "destructive") return "destructive";
   return "external";
 }
 
 const asList = (v: unknown): string =>
   Array.isArray(v)
     ? v.map((x) => (typeof x === "object" && x ? String((x as Record<string, unknown>).email ?? JSON.stringify(x)) : String(x))).join(", ")
-    : String(v ?? "");
+    : typeof v === "object" && v
+      ? JSON.stringify(v)
+      : String(v ?? "");
 
-/** A readable preview of what will happen, for the approval card. */
+/** The longest call the gate will hold for approval: anything bigger can't be
+ * reviewed properly on a card, so it's refused instead of shown truncated. */
+export const MAX_APPROVAL_INPUT_CHARS = 30_000;
+
+/** A plain-text preview of EXACTLY what will happen, for the approval card.
+ * Every field of the call is shown, nothing is truncated, and the UI renders it
+ * as plain text (never Markdown), so what Mark approves is what gets sent. */
 export function describeAction(c: Classified, input: Record<string, unknown>): string {
   const lines: string[] = [];
-  const add = (label: string, v: unknown) => {
-    const s = asList(v).trim();
-    if (s) lines.push(`**${label}:** ${s}`);
+  const shown = new Set<string>();
+  const add = (label: string, ...keys: string[]) => {
+    const key = keys.find((k) => input[k] !== undefined && input[k] !== null && input[k] !== "");
+    for (const k of keys) shown.add(k);
+    if (!key) return;
+    const s = asList(input[key]).trim();
+    if (s) lines.push(`${label}: ${s}`);
+  };
+  let body: string | null = null;
+  const bodyOf = (...keys: string[]) => {
+    for (const k of keys) shown.add(k);
+    const key = keys.find((k) => typeof input[k] === "string" && (input[k] as string).trim());
+    body = key ? (input[key] as string) : null;
   };
   if (c.connector === "Gmail") {
-    add("To", input.to);
-    add("Cc", input.cc);
-    add("Bcc", input.bcc);
-    add("Subject", input.subject);
-    const body = String(input.body ?? input.text ?? input.message ?? "").trim();
-    if (body) lines.push("", body.slice(0, 4000));
+    add("To", "to");
+    add("Cc", "cc");
+    add("Bcc", "bcc");
+    add("Subject", "subject");
+    bodyOf("body");
   } else if (c.connector === "Slack") {
-    add("Channel", input.channel_id ?? input.channel ?? input.channel_name);
-    const text = String(input.message ?? input.text ?? "").trim();
-    if (text) lines.push("", text.slice(0, 4000));
+    add("Channel", "channel_id", "channel", "channel_name");
+    bodyOf("message", "text");
   } else if (c.connector === "Google Calendar") {
-    add("Title", input.summary ?? input.title);
-    add("Start", (input.start as Record<string, unknown> | undefined)?.dateTime ?? input.start);
-    add("End", (input.end as Record<string, unknown> | undefined)?.dateTime ?? input.end);
-    add("Attendees", input.attendees);
+    add("Title", "summary", "title");
+    add("Start", "start");
+    add("End", "end");
+    add("Attendees", "attendees");
   } else if (c.tool === "Bash") {
-    lines.push("```", String(input.command ?? "").slice(0, 2000), "```");
+    bodyOf("command");
+  } else if (c.tool === "WebFetch") {
+    add("Page", "url");
+    add("Looking for", "prompt");
   }
-  if (!lines.length) lines.push("```json", JSON.stringify(input, null, 2).slice(0, 4000), "```");
-  return [`${c.summary}`, "", ...lines].join("\n");
+  // Every other field, so nothing that will be sent is hidden from the card.
+  const rest = Object.fromEntries(Object.entries(input).filter(([k, v]) => !shown.has(k) && v !== undefined && v !== null && v !== ""));
+  if (Object.keys(rest).length) lines.push(`${lines.length ? "Other fields" : "Details"}: ${JSON.stringify(rest, null, 2)}`);
+  if (body) lines.push("", body);
+  return [c.summary, "", ...lines].join("\n");
 }
 
 export interface PendingActionInput {
@@ -177,6 +200,26 @@ export async function recordOutcome(db: Db, companyId: string, threadId: string,
        set status = 'published',
            published_at = now(),
            meta = jsonb_set(meta, '{grant,doneAt}', to_jsonb(now()::text)),
+           updated_at = now()
+     where id = (
+       select id from tethr_outputs
+        where company_id = ${companyId}
+          and kind = 'external_action'
+          and status = 'approved'
+          and meta->>'inputHash' = ${hash}
+          and meta->>'threadId' = ${threadId}
+          and meta->'grant'->>'status' = 'used'
+        order by updated_at desc
+        limit 1)
+  `);
+}
+
+/** An approved call that ran but came back with an error: the card says so
+ * instead of "sent" (status stays approved; the grant is spent). */
+export async function recordFailure(db: Db, companyId: string, threadId: string, hash: string): Promise<void> {
+  await db.execute(sql`
+    update tethr_outputs
+       set meta = jsonb_set(jsonb_set(meta, '{grant,status}', '"failed"'::jsonb), '{grant,failedAt}', to_jsonb(now()::text)),
            updated_at = now()
      where id = (
        select id from tethr_outputs

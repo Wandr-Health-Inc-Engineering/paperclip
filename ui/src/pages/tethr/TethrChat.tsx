@@ -171,15 +171,24 @@ export function TethrChat() {
   // edits only show as a chip.
   const threadFiles = useMemo(() => panelFilesOf(runs ?? []), [runs]);
   const seenFiles = useRef<Map<string, string> | null>(null);
+  const liveRuns = useRef<Set<string>>(new Set());
   useEffect(() => {
     seenFiles.current = null;
+    liveRuns.current = new Set();
   }, [threadId]);
   useEffect(() => {
     if (!runs) return;
     const prev = seenFiles.current;
+    const wasLive = liveRuns.current;
     seenFiles.current = new Map(threadFiles.map((f) => [f.path, f.version]));
+    liveRuns.current = new Set(runs.filter((r) => !TERMINAL.has(r.status)).map((r) => r.id));
     if (!prev) return; // first load of this thread: nothing pops open
-    const fresh = threadFiles.filter((f) => prev.get(f.path) !== f.version && !isMemoryFile(f.path));
+    // Only a turn you watched working opens the panel (not older turns that
+    // "Load earlier messages" brings in).
+    const fresh = threadFiles.filter((f) => {
+      const runId = f.version.split(":")[0];
+      return prev.get(f.path) !== f.version && !isMemoryFile(f.path) && (wasLive.has(runId) || liveRuns.current.has(runId));
+    });
     if (fresh.length) setPanelPath(fresh[fresh.length - 1].path);
   }, [threadFiles, runs]);
   const panelFile = panelPath ? (threadFiles.find((f) => f.path === panelPath) ?? { path: panelPath, version: "" }) : null;
@@ -645,7 +654,9 @@ function ActionStatus({ output }: { output: TethrChatOutput }) {
       ? (["ok", "Done"] as const)
       : output.status === "rejected"
         ? (["bad", "Rejected"] as const)
-        : expired
+        : grant.status === "failed"
+          ? (["bad", "Approved, but it didn't go through"] as const)
+          : expired
           ? (["paused", "Approval expired"] as const)
           : grant.status === "used"
             ? (["live", "Running"] as const)
@@ -819,9 +830,11 @@ function ApprovalCard({ output, companyId, threadId }: { output: TethrChatOutput
       <p className="text-[14.5px] font-medium leading-snug">{output.title}</p>
       {isAction ? (
         actionBody ? (
-          <div className="tethr-inset max-h-64 overflow-y-auto px-3.5 py-2.5">
-            <MarkdownBody className="text-[13px] leading-relaxed">{actionBody}</MarkdownBody>
-          </div>
+          // Plain text on purpose: exactly what will be sent, with no Markdown
+          // to hide text or dress a link up as something else.
+          <pre className="tethr-inset max-h-64 overflow-y-auto whitespace-pre-wrap break-words px-3.5 py-2.5 font-sans text-[13px] leading-relaxed">
+            {actionBody}
+          </pre>
         ) : null
       ) : snippet ? (
         <p className="line-clamp-3 text-[13px] leading-relaxed text-muted-foreground">{snippet}</p>

@@ -1,7 +1,7 @@
 import fs from "node:fs";
-import fsp from "node:fs/promises";
 import path from "node:path";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
+import { serialize, writeAtomic } from "./atomic.js";
 
 // Chat-first Console (phase 17, Mark's model): one ongoing MAIN chat with
 // @tethr, plus SIDE chats he opens on purpose for a focused task or side
@@ -38,6 +38,9 @@ interface CompanyChats {
   sessions?: Record<string, ChatSession>;
   /** Notes to prepend to a thread's next turn (e.g. "Mark rejected …"). */
   notes?: Record<string, string[]>;
+  /** Threads whose session has read connector data (Gmail, Slack, …): from then
+   * on, opening web pages needs Mark's approval (it could carry that data out). */
+  tainted?: Record<string, string>;
 }
 
 interface ChatsFile {
@@ -60,10 +63,18 @@ function readFile(): ChatsFile {
   }
 }
 
-async function writeFile(data: ChatsFile): Promise<void> {
+/** Serialized read-modify-write of the file (atomic write). `fn` mutates the
+ * freshly read data and says whether anything changed. Concurrent turns and
+ * approvals never drop each other's updates, and a reader never sees a
+ * half-written file (which used to read as {} and wipe everything). */
+function mutate<T>(fn: (data: ChatsFile) => { value: T; changed: boolean }): Promise<T> {
   const file = configPath();
-  await fsp.mkdir(path.dirname(file), { recursive: true });
-  await fsp.writeFile(file, JSON.stringify(data, null, 2), "utf8");
+  return serialize(file, async () => {
+    const data = readFile();
+    const { value, changed } = fn(data);
+    if (changed) await writeAtomic(file, JSON.stringify(data, null, 2));
+    return value;
+  });
 }
 
 /** The main chat's thread id: the company id (see header). */
@@ -88,15 +99,15 @@ export function isSideChat(companyId: string, threadId: string): boolean {
 }
 
 /** Register a thread as a side chat (idempotent: an existing entry is returned as-is). */
-export async function addSideChat(companyId: string, threadId: string, title: string): Promise<SideChat> {
-  const data = readFile();
-  const list = data[companyId]?.sideChats ?? [];
-  const existing = list.find((c) => c.threadId === threadId);
-  if (existing) return existing;
-  const chat: SideChat = { threadId, title: chatTitle(title), createdAt: new Date().toISOString() };
-  data[companyId] = { ...(data[companyId] ?? { sideChats: [] }), sideChats: [chat, ...list] };
-  await writeFile(data);
-  return chat;
+export function addSideChat(companyId: string, threadId: string, title: string): Promise<SideChat> {
+  return mutate((data) => {
+    const list = data[companyId]?.sideChats ?? [];
+    const existing = list.find((c) => c.threadId === threadId);
+    if (existing) return { value: existing, changed: false };
+    const chat: SideChat = { threadId, title: chatTitle(title), createdAt: new Date().toISOString() };
+    data[companyId] = { ...(data[companyId] ?? { sideChats: [] }), sideChats: [chat, ...list] };
+    return { value: chat, changed: true };
+  });
 }
 
 // ---- Phase 18: per-thread Claude sessions + next-turn notes ----------------
@@ -105,49 +116,78 @@ export function getSession(companyId: string, threadId: string): ChatSession | n
   return readFile()[companyId]?.sessions?.[threadId] ?? null;
 }
 
-export async function setSession(companyId: string, threadId: string, session: ChatSession): Promise<void> {
-  const data = readFile();
-  const c = data[companyId] ?? { sideChats: [] };
-  data[companyId] = { ...c, sessions: { ...(c.sessions ?? {}), [threadId]: session } };
-  await writeFile(data);
+export function setSession(companyId: string, threadId: string, session: ChatSession): Promise<void> {
+  return mutate((data) => {
+    const c = data[companyId] ?? { sideChats: [] };
+    data[companyId] = { ...c, sessions: { ...(c.sessions ?? {}), [threadId]: session } };
+    return { value: undefined, changed: true };
+  });
 }
 
-export async function clearSession(companyId: string, threadId: string): Promise<void> {
-  const data = readFile();
-  const c = data[companyId];
-  if (!c?.sessions?.[threadId]) return;
-  const { [threadId]: _dropped, ...rest } = c.sessions;
-  data[companyId] = { ...c, sessions: rest };
-  await writeFile(data);
+export function clearSession(companyId: string, threadId: string): Promise<void> {
+  return mutate((data) => {
+    const c = data[companyId];
+    if (!c?.sessions?.[threadId]) return { value: undefined, changed: false };
+    const { [threadId]: _dropped, ...rest } = c.sessions;
+    data[companyId] = { ...c, sessions: rest };
+    return { value: undefined, changed: true };
+  });
 }
 
-export async function addNote(companyId: string, threadId: string, note: string): Promise<void> {
-  const data = readFile();
-  const c = data[companyId] ?? { sideChats: [] };
-  const notes = c.notes ?? {};
-  data[companyId] = { ...c, notes: { ...notes, [threadId]: [...(notes[threadId] ?? []), note] } };
-  await writeFile(data);
+export function addNote(companyId: string, threadId: string, note: string): Promise<void> {
+  return mutate((data) => {
+    const c = data[companyId] ?? { sideChats: [] };
+    const notes = c.notes ?? {};
+    data[companyId] = { ...c, notes: { ...notes, [threadId]: [...(notes[threadId] ?? []), note] } };
+    return { value: undefined, changed: true };
+  });
 }
 
 /** Read and clear the notes waiting for a thread's next turn. */
-export async function takeNotes(companyId: string, threadId: string): Promise<string[]> {
-  const data = readFile();
-  const c = data[companyId];
-  const list = c?.notes?.[threadId] ?? [];
-  if (!list.length || !c) return [];
-  const { [threadId]: _taken, ...rest } = c.notes ?? {};
-  data[companyId] = { ...c, notes: rest };
-  await writeFile(data);
-  return list;
+export function takeNotes(companyId: string, threadId: string): Promise<string[]> {
+  return mutate((data) => {
+    const c = data[companyId];
+    const list = c?.notes?.[threadId] ?? [];
+    if (!list.length || !c) return { value: [], changed: false };
+    const { [threadId]: _taken, ...rest } = c.notes ?? {};
+    data[companyId] = { ...c, notes: rest };
+    return { value: list, changed: true };
+  });
+}
+
+/** Has this thread's session read connector data? (See CompanyChats.tainted.) */
+export function isTainted(companyId: string, threadId: string): boolean {
+  return Boolean(readFile()[companyId]?.tainted?.[threadId]);
+}
+
+export function markTainted(companyId: string, threadId: string): Promise<void> {
+  if (isTainted(companyId, threadId)) return Promise.resolve();
+  return mutate((data) => {
+    const c = data[companyId] ?? { sideChats: [] };
+    if (c.tainted?.[threadId]) return { value: undefined, changed: false };
+    data[companyId] = { ...c, tainted: { ...(c.tainted ?? {}), [threadId]: new Date().toISOString() } };
+    return { value: undefined, changed: true };
+  });
+}
+
+/** "Start over" for a thread: a fresh session that hasn't seen connector data. */
+export function clearTaint(companyId: string, threadId: string): Promise<void> {
+  return mutate((data) => {
+    const c = data[companyId];
+    if (!c?.tainted?.[threadId]) return { value: undefined, changed: false };
+    const { [threadId]: _cleared, ...rest } = c.tainted;
+    data[companyId] = { ...c, tainted: rest };
+    return { value: undefined, changed: true };
+  });
 }
 
 /** Drop a side chat from the list. Its runs are untouched. */
-export async function removeSideChat(companyId: string, threadId: string): Promise<boolean> {
-  const data = readFile();
-  const list = data[companyId]?.sideChats ?? [];
-  const next = list.filter((c) => c.threadId !== threadId);
-  if (next.length === list.length) return false;
-  data[companyId] = { ...(data[companyId] ?? { sideChats: [] }), sideChats: next };
-  await writeFile(data);
-  return true;
+export function removeSideChat(companyId: string, threadId: string): Promise<boolean> {
+  return mutate((data) => {
+    const list = data[companyId]?.sideChats ?? [];
+    const next = list.filter((c) => c.threadId !== threadId);
+    if (next.length === list.length) return { value: false, changed: false };
+    data[companyId] = { ...(data[companyId] ?? { sideChats: [] }), sideChats: next };
+    return { value: true, changed: true };
+  });
 }

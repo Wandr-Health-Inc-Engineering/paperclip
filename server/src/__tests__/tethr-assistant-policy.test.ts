@@ -38,6 +38,55 @@ describe("tethr assistant policy — classify", () => {
     expect(classify("Edit", { file_path: "/drive/00 Tethr/tethr/Memory.md" }, ctx).cls).toBe("workspace");
   });
 
+  it("never lets the chat write Claude Code settings, hooks or instructions", () => {
+    const ws = "/drive/00 Tethr/tethr";
+    for (const p of [
+      `${ws}/.claude/settings.json`,
+      `${ws}/.claude/settings.local.json`,
+      `${ws}/.mcp.json`,
+      `${ws}/CLAUDE.local.md`,
+      `${ws}/claude.md`, // case variant of the generated file (APFS is case-insensitive)
+      `${ws}/files/notes/CLAUDE.md`,
+      `${ws}/files/.hidden/x.md`,
+      `${ws}/stray.md`, // outside files/
+    ]) {
+      expect(classify("Write", { file_path: p }, ctx).cls, p).toBe("blocked");
+    }
+    expect(classify("Write", { file_path: `${ws}/files/deep/plan.md` }, ctx).cls).toBe("workspace");
+  });
+
+  it("resolves relative paths against the session's folder, not the server's", () => {
+    const withCwd = { ...ctx, cwd: "/drive/00 Tethr/tethr" };
+    expect(classify("Read", { file_path: "Memory.md" }, withCwd).cls).toBe("builtin");
+    expect(classify("Grep", { pattern: "x", path: "." }, withCwd).cls).toBe("builtin");
+    expect(classify("Write", { file_path: "files/a.md" }, withCwd).cls).toBe("workspace");
+    expect(classify("Read", { file_path: "../../../Users/mark/.ssh/id_rsa" }, withCwd).cls).toBe("blocked");
+  });
+
+  it("treats a Gmail reply as leaving Wandr unless every recipient is inside", () => {
+    expect(classify(gmail("reply"), { message_id: "m1", body: "Thanks!" }, ctx).cls).toBe("public");
+    expect(classify(gmail("forward"), { message_id: "m1", to: ["ops@travelwithwandr.com"] }, ctx).cls).toBe("write");
+  });
+
+  it("classifies deletes and overwrites as destructive (always ask)", () => {
+    expect(classify("mcp__claude_ai_Google_Drive__trash_file", { file_id: "f" }, ctx).cls).toBe("destructive");
+    expect(classify("mcp__claude_ai_Google_Drive__update_file", { file_id: "f" }, ctx).cls).toBe("destructive");
+    expect(classify(gmail("trash_thread"), { thread_id: "t" }, ctx).cls).toBe("destructive");
+    expect(classify("mcp__claude_ai_Google_Calendar__delete_event", { event_id: "e" }, ctx).cls).toBe("destructive");
+    expect(classify("mcp__someserver__remove_contact", {}, ctx).cls).toBe("destructive");
+    const d = classify("mcp__claude_ai_Google_Drive__trash_file", { file_id: "f" }, ctx);
+    expect(decide(d, { mode: "auto", shell: "off" }).action).toBe("ask");
+  });
+
+  it("lets web pages through until the thread has read connector data", () => {
+    const page = classify("WebFetch", { url: "https://example.com/x?d=1", prompt: "p" }, ctx);
+    expect(page.cls).toBe("web");
+    expect(decide(page, { mode: "ask", shell: "off" }).action).toBe("allow");
+    expect(decide(page, { mode: "ask", shell: "off", tainted: true }).action).toBe("ask");
+    const own = classify("WebFetch", { url: "https://www.travelwithwandr.com/a", prompt: "p" }, ctx);
+    expect(decide(own, { mode: "ask", shell: "off", tainted: true }).action).toBe("allow");
+  });
+
   it("treats the shell and unknown built-ins separately", () => {
     expect(classify("Bash", { command: "ls" }, ctx).cls).toBe("shell");
     expect(classify("CronCreate", {}, ctx).cls).toBe("blocked");
@@ -51,7 +100,7 @@ describe("tethr assistant policy — classify", () => {
     expect(outside.cls).toBe("public");
     expect(outside.summary).toBe("Email to someone@gmail.com — “Hi”");
     expect(classify(gmail("send_message"), { to: ["mark@travelwithwandr.com"], body: "her dosage is 250mg" }, ctx).cls).toBe("medical");
-    expect(classify(gmail("trash_thread"), { thread_id: "1" }, ctx).cls).toBe("write");
+    expect(classify(gmail("trash_thread"), { thread_id: "1" }, ctx).cls).toBe("destructive");
   });
 
   it("classifies money, calendar, PostHog and unknown connectors", () => {

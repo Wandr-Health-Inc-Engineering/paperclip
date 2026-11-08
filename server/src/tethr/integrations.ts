@@ -1,7 +1,7 @@
 import fs from "node:fs";
-import fsp from "node:fs/promises";
 import path from "node:path";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
+import { serialize, writeAtomic } from "./atomic.js";
 import type { ConnectorMode } from "./assistant/policy.js";
 
 // Integrations config for the chat assistant (phase 18): per-connector modes
@@ -74,19 +74,20 @@ export async function updateIntegrations(
   companyId: string,
   patch: Partial<IntegrationsConfig>,
 ): Promise<IntegrationsConfig> {
-  const data = readFile();
-  const current = data[companyId] ?? {};
-  data[companyId] = {
-    ...current,
-    ...patch,
-    connectors: { ...(current.connectors ?? {}), ...(patch.connectors ?? {}) },
-    assistant: { ...(current.assistant ?? DEFAULT_INTEGRATIONS.assistant), ...(patch.assistant ?? {}) },
-  };
   const file = configPath();
-  await fsp.mkdir(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  await fsp.writeFile(tmp, JSON.stringify(data, null, 2), "utf8");
-  await fsp.rename(tmp, file);
+  // Serialized read-modify-write + atomic write: a turn recording discovered
+  // tools and a save from the Integrations page never drop each other's change.
+  await serialize(file, async () => {
+    const data = readFile();
+    const current = data[companyId] ?? {};
+    data[companyId] = {
+      ...current,
+      ...patch,
+      connectors: { ...(current.connectors ?? {}), ...(patch.connectors ?? {}) },
+      assistant: { ...(current.assistant ?? DEFAULT_INTEGRATIONS.assistant), ...(patch.assistant ?? {}) },
+    };
+    await writeAtomic(file, JSON.stringify(data, null, 2));
+  });
   return getIntegrations(companyId);
 }
 
@@ -138,7 +139,9 @@ export function sanitizeIntegrationsPatch(body: Record<string, unknown>): Partia
     const a = body.assistant as Record<string, unknown>;
     const assistant: Partial<IntegrationsConfig["assistant"]> = {};
     if (a.engine === "session" || a.engine === "routing") assistant.engine = a.engine;
-    if (typeof a.model === "string" && /^[a-z0-9.\-]{2,60}$/i.test(a.model)) assistant.model = a.model;
+    // A model name only: letters, digits, dots and dashes, never starting with a
+    // dash (it's passed to the CLI as --model <value>).
+    if (typeof a.model === "string" && /^[a-z0-9][a-z0-9.\-]{1,59}$/i.test(a.model.trim())) assistant.model = a.model.trim();
     patch.assistant = assistant as IntegrationsConfig["assistant"];
   }
   return patch;

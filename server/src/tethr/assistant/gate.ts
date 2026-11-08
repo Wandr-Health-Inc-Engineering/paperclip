@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { writeAtomic } from "../atomic.js";
 import { assistantHome } from "./workspace.js";
 
 // Plumbing for the approval gate (phase 18):
@@ -106,11 +107,7 @@ export function buildSettings(opts: { nodePath: string; hookScript: string; deny
 }
 
 export async function writeSettingsFile(companyId: string, settings: unknown): Promise<string> {
-  const dir = path.join(assistantHome(), "settings");
-  await fsp.mkdir(dir, { recursive: true });
-  const file = path.join(dir, `settings-${companyId}.json`);
-  const tmp = `${file}.${process.pid}.tmp`;
-  await fsp.writeFile(tmp, JSON.stringify(settings, null, 2), "utf8");
-  await fsp.rename(tmp, file);
+  const file = path.join(assistantHome(), "settings", `settings-${companyId}.json`);
+  await writeAtomic(file, JSON.stringify(settings, null, 2));
   return file;
 }

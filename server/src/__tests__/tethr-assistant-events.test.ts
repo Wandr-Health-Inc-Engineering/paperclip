@@ -97,4 +97,11 @@ describe("tethr assistant events", () => {
     applyStreamLine(s, delta("Nothing tomorrow."), ctx);
     expect(s.text).toBe("Let me check.\n\nNothing tomorrow.");
   });
+
+  it("tracks the latest model call's prompt size as the context size", () => {
+    const s = newTurnState();
+    applyStreamLine(s, line({ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 5, cache_read_input_tokens: 20_000 } } } }), ctx);
+    applyStreamLine(s, line({ type: "assistant", message: { content: [], usage: { input_tokens: 9, cache_read_input_tokens: 21_000, cache_creation_input_tokens: 400 } } }), ctx);
+    expect(s.contextTokens).toBe(21_409);
+  });
 });

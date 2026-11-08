@@ -6,11 +6,15 @@ import path from "node:path";
 //
 // Classes: read (look only) · draft (prepared, not sent) · write (changes
 // something) · public (reaches someone outside Wandr) · money · medical ·
-// builtin (Claude's own safe tools) · workspace (file write inside Tethr's
-// workspace) · shell · blocked (anything else).
+// destructive (deletes or overwrites) · web (opens a web page) · builtin
+// (Claude's own safe tools) · workspace (file write inside Tethr's workspace) ·
+// shell · blocked (anything else).
 //
 // Modes per connector: off · read · ask (approval required) · auto. Money,
-// public and medical always ask, even in auto (Mark's always-ask list).
+// public, medical and destructive always ask, even in auto (Mark's always-ask
+// list). Web pages are free until the thread has read connector data (a
+// "tainted" thread); after that a page outside Wandr's own domains asks, since
+// a URL can carry private data out.
 
 export type ToolClass =
   | "read"
@@ -19,6 +23,8 @@ export type ToolClass =
   | "public"
   | "money"
   | "medical"
+  | "destructive"
+  | "web"
   | "builtin"
   | "workspace"
   | "shell"
@@ -37,6 +43,8 @@ export interface Classified {
   summary: string;
   /** Why it's blocked, for blocked built-ins. */
   blockedReason?: string;
+  /** web: the page is on one of Wandr's own domains. */
+  internalHost?: boolean;
 }
 
 export interface PolicyContext {
@@ -45,6 +53,9 @@ export interface PolicyContext {
   readableRoots: string[];
   /** Email domains / addresses counted as inside Wandr (e.g. "travelwithwandr.com"). */
   internalAddresses: string[];
+  /** The Claude session's working directory; relative tool paths resolve against
+   * it (defaults to workspaceDir). Never the server's own cwd. */
+  cwd?: string;
 }
 
 export type Decision =
@@ -56,7 +67,6 @@ const SAFE_BUILTINS = new Set([
   "ToolSearch",
   "TodoWrite",
   "WebSearch",
-  "WebFetch",
   "Skill",
   "Task",
   "TaskCreate",
@@ -75,7 +85,8 @@ const CONNECTOR_RULES: Record<string, Rule[]> = {
     [/^(get_|list_|search_)/, "read"],
     [/^(create_draft|update_draft|delete_draft)$/, "draft"],
     [/^(send_message|reply|forward)$/, "write"],
-    [/.*/, "write"], // labels, spam, trash: change the inbox
+    [/^(trash_|delete_label$)/, "destructive"],
+    [/.*/, "write"], // labels, spam: change the inbox
   ],
   Slack: [
     [/^slack_(read_|search_|list_|get_)/, "read"],
@@ -84,15 +95,18 @@ const CONNECTOR_RULES: Record<string, Rule[]> = {
   ],
   "Google Calendar": [
     [/^(list_|get_|search_|suggest_time$)/, "read"],
+    [/^delete_event$/, "destructive"],
     [/.*/, "write"],
   ],
   "Google Drive": [
     [/^(search_files|read_file_content|download_file_content|list_|get_)/, "read"],
     [/^share_file$/, "public"],
+    [/^(trash_file|update_file)$/, "destructive"],
     [/.*/, "write"],
   ],
   "Google Sheets": [
     [/^get_/, "read"],
+    [/^batch_clear_values$/, "destructive"],
     [/.*/, "write"],
   ],
   Stripe: [
@@ -107,6 +121,7 @@ const CONNECTOR_RULES: Record<string, Rule[]> = {
   ],
   "Claude Docs": [
     [/^(query|read|export)$/, "read"],
+    [/^delete$/, "destructive"],
     [/.*/, "write"],
   ],
   Canva: [
@@ -121,6 +136,9 @@ const CONNECTOR_RULES: Record<string, Rule[]> = {
 };
 
 const READ_VERB = /^(get|list|search|read|query|fetch|describe|download|export|lookup|find|show|view|count|help|whoami)([-_]|$)/i;
+const DESTRUCTIVE_VERB = /^(delete|trash|remove|destroy|purge|archive)([-_]|$)/i;
+/** Files Claude Code treats as its own config or instructions. Never writable. */
+const CLAUDE_FILES = new Set(["claude.md", "claude.local.md", ".mcp.json"]);
 const POSTHOG_READ_VERB = /^\s*(list|get|query|search|read|docs-search|explain|execute-sql|insight\s+(get|list)|dashboard\s+(get|list))\b/i;
 
 // Patient-level clinical content. Deliberately narrow so marketing copy about
@@ -139,12 +157,35 @@ export function parseMcpTool(tool: string): { server: string; connector: string;
   return { server, connector, name };
 }
 
-function within(file: string, roots: string[]): boolean {
-  const abs = path.resolve(file);
+/** A tool path as an absolute path, resolving relative ones against the Claude
+ * session's cwd (not this server's). */
+function absPath(file: string, ctx: PolicyContext): string {
+  return path.resolve(ctx.cwd ?? ctx.workspaceDir, file);
+}
+
+function within(abs: string, roots: string[]): boolean {
   return roots.some((root) => {
     const r = path.resolve(root);
     return abs === r || abs.startsWith(r + path.sep);
   });
+}
+
+/** Where the chat may write: Memory.md and anything under files/. Never a dot
+ * path or a CLAUDE*.md / .mcp.json anywhere (Claude Code loads those as
+ * settings, hooks or instructions; a hook there would run shell commands).
+ * Returns why a target is refused, or null when it's fine. */
+export function workspaceWriteRefusal(abs: string, workspaceDir: string): string | null {
+  const rel = path.relative(path.resolve(workspaceDir), abs);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return "Tethr only writes inside its workspace folder";
+  const parts = rel.split(path.sep);
+  const lower = parts.map((p) => p.toLowerCase());
+  if (lower.some((p) => p.startsWith(".")) || CLAUDE_FILES.has(lower[lower.length - 1])) {
+    return lower[lower.length - 1] === "claude.md"
+      ? "CLAUDE.md is generated by Tethr; put notes in Memory.md"
+      : "that's a settings file Tethr doesn't let the chat change";
+  }
+  if (parts.length === 1) return lower[0] === "memory.md" ? null : "files go in the files/ folder (or notes in Memory.md)";
+  return lower[0] === "files" ? null : "files go in the files/ folder (or notes in Memory.md)";
 }
 
 function recipients(input: Record<string, unknown>): string[] {
@@ -197,22 +238,28 @@ export function classify(tool: string, input: Record<string, unknown> | undefine
   const args = input ?? {};
   const mcp = parseMcpTool(tool);
   if (!mcp) {
+    if (tool === "WebFetch") {
+      let host = "";
+      try {
+        host = new URL(String(args.url)).hostname.toLowerCase();
+      } catch {
+        host = "";
+      }
+      return { tool, connector: null, server: null, cls: "web", summary: builtinSummary(tool, args), internalHost: !!host && isInternalHost(host, ctx.internalAddresses) };
+    }
     if (SAFE_BUILTINS.has(tool)) return { tool, connector: null, server: null, cls: "builtin", summary: builtinSummary(tool, args) };
     if (READ_BUILTINS.has(tool)) {
       const target = String(args.file_path ?? args.path ?? "");
-      if (target && !within(target, ctx.readableRoots)) {
+      if (target && !within(absPath(target, ctx), ctx.readableRoots)) {
         return { tool, connector: null, server: null, cls: "blocked", summary: builtinSummary(tool, args), blockedReason: "it's outside Tethr's folders (00 Tethr)" };
       }
       return { tool, connector: null, server: null, cls: "builtin", summary: builtinSummary(tool, args) };
     }
     if (WRITE_BUILTINS.has(tool)) {
       const target = String(args.file_path ?? args.notebook_path ?? "");
-      const generated = path.resolve(ctx.workspaceDir, "CLAUDE.md");
-      if (!target || !within(target, [ctx.workspaceDir])) {
-        return { tool, connector: null, server: null, cls: "blocked", summary: builtinSummary(tool, args), blockedReason: "Tethr only writes inside its workspace folder" };
-      }
-      if (path.resolve(target) === generated) {
-        return { tool, connector: null, server: null, cls: "blocked", summary: builtinSummary(tool, args), blockedReason: "CLAUDE.md is generated by Tethr; put notes in Memory.md" };
+      const refusal = target ? workspaceWriteRefusal(absPath(target, ctx), ctx.workspaceDir) : "Tethr only writes inside its workspace folder";
+      if (refusal) {
+        return { tool, connector: null, server: null, cls: "blocked", summary: builtinSummary(tool, args), blockedReason: refusal };
       }
       return { tool, connector: null, server: null, cls: "workspace", summary: builtinSummary(tool, args) };
     }
@@ -221,7 +268,7 @@ export function classify(tool: string, input: Record<string, unknown> | undefine
   }
 
   const { server, connector, name } = mcp;
-  let cls: ToolClass = READ_VERB.test(name) ? "read" : "write";
+  let cls: ToolClass = READ_VERB.test(name) ? "read" : DESTRUCTIVE_VERB.test(name) ? "destructive" : "write";
   const rules = CONNECTOR_RULES[connector];
   if (rules) {
     for (const [re, c] of rules) {
@@ -241,17 +288,34 @@ export function classify(tool: string, input: Record<string, unknown> | undefine
       // A draft to an outsider is still only a draft; sending/inviting them is public.
       if (cls === "write") cls = "public";
     }
+    // A reply (or a forward with no explicit recipient) goes to whoever is on the
+    // thread, which the input doesn't say, so it counts as leaving Wandr.
+    if (connector === "Gmail" && cls === "write" && /^(reply|forward)$/.test(name) && !outward.length) cls = "public";
     if (MEDICAL.test(JSON.stringify(args))) cls = "medical";
   }
   return { tool, connector, server, cls, summary: summarize(connector, name, args) };
 }
 
-/** Decide what the gate does with a classified call, given the connector's mode. */
-export function decide(c: Classified, opts: { mode: ConnectorMode; shell: "off" | "ask" }): Decision {
+/** Is a web host one of Wandr's own (a domain from internalAddresses, or a subdomain)? */
+export function isInternalHost(host: string, internal: string[]): boolean {
+  return internal.some((entry) => {
+    const e = entry.trim().toLowerCase().replace(/^@/, "");
+    const domain = e.includes("@") ? e.slice(e.indexOf("@") + 1) : e;
+    return !!domain && (host === domain || host.endsWith("." + domain));
+  });
+}
+
+/** Decide what the gate does with a classified call, given the connector's mode.
+ * `tainted`: this thread's session has read connector data. */
+export function decide(c: Classified, opts: { mode: ConnectorMode; shell: "off" | "ask"; tainted?: boolean }): Decision {
   switch (c.cls) {
     case "builtin":
     case "workspace":
       return { action: "allow" };
+    case "web":
+      return opts.tainted && !c.internalHost
+        ? { action: "ask", reason: `Tethr approval gate: waiting for Mark's approval (this chat has read your connected tools, so opening outside pages needs his ok) — ${c.summary}.` }
+        : { action: "allow" };
     case "blocked":
       return { action: "deny", reason: `Tethr approval gate: blocked — ${c.blockedReason ?? "not allowed"}.` };
     case "shell":
@@ -270,7 +334,15 @@ export function decide(c: Classified, opts: { mode: ConnectorMode; shell: "off" 
   if (c.cls === "draft") return { action: "allow" };
   if (mode === "auto" && c.cls === "write") return { action: "allow", note: "auto" };
   const why =
-    c.cls === "money" ? " (moves money)" : c.cls === "public" ? " (goes outside Wandr)" : c.cls === "medical" ? " (mentions medical details)" : "";
+    c.cls === "money"
+      ? " (moves money)"
+      : c.cls === "public"
+        ? " (goes outside Wandr)"
+        : c.cls === "medical"
+          ? " (mentions medical details)"
+          : c.cls === "destructive"
+            ? " (deletes or overwrites)"
+            : "";
   return { action: "ask", reason: `Tethr approval gate: waiting for Mark's approval${why} — ${c.summary}.` };
 }
 
@@ -283,9 +355,10 @@ function builtinSummary(tool: string, args: Record<string, unknown>): string {
       return `Searching the web${typeof args.query === "string" ? ` for “${args.query.slice(0, 60)}”` : ""}`;
     case "WebFetch":
       try {
-        return `Reading ${new URL(String(args.url)).host}`;
+        const u = new URL(String(args.url));
+        return `Opening ${u.host}${u.pathname === "/" ? "" : u.pathname.slice(0, 60)}`;
       } catch {
-        return "Reading a web page";
+        return "Opening a web page";
       }
     case "Read":
       return `Reading ${file ?? "a file"}`;
