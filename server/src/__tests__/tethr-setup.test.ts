@@ -234,6 +234,10 @@ describePg("tethr setup — routes, rhythm, operations chat, wipe", () => {
     fs.writeFileSync(path.join(transcripts, "abc.jsonl"), "{}");
     try {
       const [co] = await db.select().from(companies).where(eq(companies.id, companyId));
+      // Like core's onboarding wizard: a project linked to the mission goal.
+      const { goals, projects } = await import("@paperclipai/db");
+      const [mission] = await db.select().from(goals).where(and(eq(goals.companyId, companyId), eq(goals.level, "company")));
+      await db.insert(projects).values({ companyId, name: "Onboarding", goalId: mission.id } as never);
       const now = new Date("2026-11-07T12:00:00Z");
       const plan = await planReset(db, [co.issuePrefix!], now);
       expect(plan.companies).toHaveLength(1);

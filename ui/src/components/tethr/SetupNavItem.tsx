@@ -28,10 +28,10 @@ export function TethrSetupNudge() {
   return (
     <Link
       to="/setup"
-      className="tethr-glass mx-auto flex w-fit items-center gap-2 rounded-full px-3.5 py-1.5 text-[12.5px] transition-colors hover:text-foreground"
+      className="tethr-glass mx-auto flex w-fit items-center gap-2 whitespace-nowrap rounded-full px-3.5 py-1.5 text-[12.5px] transition-colors hover:text-foreground"
     >
       <Compass className="h-3.5 w-3.5 text-muted-foreground" />
-      Finish setting up tethr: goals, connections and rhythm
+      Finish setting up tethr
     </Link>
   );
 }

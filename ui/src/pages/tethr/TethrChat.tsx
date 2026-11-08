@@ -278,6 +278,12 @@ export function TethrChat() {
         </div>
       ) : null}
 
+      {isMain ? (
+        <div className="absolute left-1/2 top-1 z-20 -translate-x-1/2">
+          <TethrSetupNudge />
+        </div>
+      ) : null}
+
       {/* One area: the conversation sits on the page, under the floating bar. */}
       <div
         ref={scrollRef}
@@ -291,7 +297,6 @@ export function TethrChat() {
           <ChatEmpty isDraft={isDraft} onPick={(s) => send.mutate({ text: s, attachments: [] })} />
         ) : (
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-9 px-4 pb-6 pt-16 md:px-6">
-            {isMain ? <TethrSetupNudge /> : null}
             {visibleRuns.length >= limit && limit < 100 ? (
               <button
                 type="button"
@@ -530,7 +535,7 @@ function ChatEmpty({ isDraft, onPick }: { isDraft: boolean; onPick: (text: strin
         <p className="mx-auto max-w-[46ch] text-[13.5px] text-muted-foreground">
           {isDraft
             ? "Start with what this chat is about. It stays separate from your chat with tethr."
-            : "Ask anything. tethr keeps the conversation going and routes the work to the right agent."}
+            : "Ask anything. tethr keeps the conversation going and works toward your goals."}
         </p>
       </div>
       {!isDraft ? (

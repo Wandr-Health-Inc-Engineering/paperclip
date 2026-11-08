@@ -769,6 +769,12 @@ Mark's call: start tethr over from scratch, with real goals. The plan is in `tas
       deletes from Drive)
     - deletes the chat workspace's Claude Code transcripts
     - re-seeds a fresh Wandr with only @tethr
+    - unlinks project goals first: core's `remove()` deletes goals before projects, so a project
+      pointing at a goal (core's onboarding wizard makes one) blocked it
+  - **Ran it 2026-11-07:** deleted WD, WG and WAN (backup
+    `data/backups/paperclip-20261107-234337.sql.gz`), moved 9 Drive items into
+    `99 Archive/2026-11 before fresh start/`, deleted 5 old transcripts. The fresh Wandr has only
+    @tethr, and `TETHR_ALLOW_RESET` is removed from the .env again.
 - **Verified live (on the old company, before the wipe):**
   - Basics saved goals; the scorecard rendered (dark, light, phone).
   - "Measure now" ran routine → WD-2 → the Operations chat in 28s (goals_list → measured →

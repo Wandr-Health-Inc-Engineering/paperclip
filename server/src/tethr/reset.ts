@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { count, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, companies, goals, issues, routines, tethrMemories, tethrOutputs, tethrRouteRuns } from "@paperclipai/db";
+import { agents, companies, goals, issues, projectGoals, projects, routines, tethrMemories, tethrOutputs, tethrRouteRuns } from "@paperclipai/db";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
 import { companyService } from "../services/companies.js";
 import { serialize, writeAtomic } from "./atomic.js";
@@ -163,6 +163,10 @@ export async function runReset(db: Db, prefixes: string[], now = new Date()): Pr
   const svc = companyService(db);
   for (const c of plan.companies) {
     try {
+      // Core's remove() deletes goals before projects, so a project that points
+      // at a goal (core's own onboarding wizard makes one) blocks it. Unlink first.
+      await db.delete(projectGoals).where(eq(projectGoals.companyId, c.id));
+      await db.update(projects).set({ goalId: null }).where(eq(projects.companyId, c.id));
       await svc.remove(c.id);
       result.deletedCompanies.push(`${c.prefix ?? c.id} ${c.name}`);
     } catch (err) {
