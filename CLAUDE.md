@@ -262,7 +262,9 @@ silently skip. Run them as a regular user: `useradd -m tester`, make
 system one instead: `service postgresql start`, set the `postgres` password, `createdb paperclip`,
 then `DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/paperclip PAPERCLIP_MIGRATION_AUTO_APPLY=true pnpm dev:once`.
 
-First boot auto-seeds the clean-slate org: **Wandr** (prefix `WD`) — one agent, **Tethr**
+First boot auto-seeds an unnamed starter company, **"Your company"** (`TETHR_STARTER_COMPANY_NAME`
+in packages/shared, prefix `WD`, no description; setup step 1 names it, and the seed finds it again
+by its prefix, never by name), with one agent, **Tethr**
 (`@tethr`), with `chat` + `plan` subagents, an Operations division, budgets ($100/mo company
 line, $25/mo Tethr cap, hard-stop on) and a Drive README; any existing "Wandr Growth" org is
 archived (recoverable), never deleted; the specialists stay archived (phase 18 fresh start). No Docker / external DB / API key needed: embedded
@@ -721,10 +723,10 @@ Integrations) edits the instance `.env` (`resolvePaperclipEnvPath()`, i.e.
 Mark asked for a startup animation when signing in or opening the desktop client.
 `ui/src/components/tethr/StartupIntro.tsx` (mounted once in `App.tsx`) + pure timing/rules in
 `ui/src/lib/tethr-intro.ts` + styles at the end of `tethr-theme.css` (`.tethr-intro*`).
-- **What it shows:** on the app's own ground, two nodes appear, a slack line is thrown between
-  them, they pull apart until it catches taut with a small twang (pulse rings, a light runs along
-  it), "tethr" rises above it in Geist 200, light passes over the reeds, and a status line goes
-  "connecting" → "<company> · ready". Then the stage lifts away and the shell's own entrance
+- **What it shows (the nebula, 2026-11-08):** on the app's own ground, tethr's nebula
+  (`Nebula.tsx`, sized in em) swirls in out of a blur and settles, its core flares once, "tethr"
+  rises under it in Geist 200, light passes over the reeds, and a status line goes "connecting" →
+  "<company> · ready" ("tethr · ready" while the company still has its starter name). All CSS. Then the stage lifts away and the shell's own entrance
   (sidebar slide, main rise) plays: `html.tethr-intro-hold` pauses those animations while the
   overlay covers them. Monochrome; the only color is the status dot.
 - **When it plays** (`introReason`): right after signing in (`requestIntro()` in `Auth.tsx` sets
@@ -734,12 +736,15 @@ Mark asked for a startup animation when signing in or opening the desktop client
 - **Timing:** leaves at ~1.95s once `#main-content` has rendered (or after 3.5s on a screen
   without it), at most 9s; click or any key skips. A desktop intro that lands on a public page
   (signed out → /auth) counts that page as ready (`introReady`), so it never holds over the
-  sign-in form. The tether's clock starts on the first painted
-  frame, the same moment the CSS parts start, so they can't drift apart on a slow first frame.
+  sign-in form. The timing clock starts on the first painted frame, the same moment the CSS
+  animation starts, so they can't drift apart on a slow first frame.
   Reduced motion: a still card, ~0.9s.
 - **Desktop app's "not running" page** (`scripts/tethr-launcher/AppWindow.swift`, local-only)
-  shows the same tether hanging slack.
-- Tests: `ui/src/lib/tethr-intro.test.ts` (14).
+  shows the nebula dim and slowly turning.
+- **Dev service worker:** core's `sw.js` registers in production only; in dev, `main.tsx`
+  unregisters it and clears its cache (it served hours-old modules after a failed request during a
+  dev-server restart, e.g. the old intro). Logged in DECISIONS.md.
+- Tests: `ui/src/lib/tethr-intro.test.ts` (when it plays, ready, leaving).
 
 ## tethr as a product: company, team, goals that adjust, ideas (phase 21, 2026-11-08)
 
