@@ -571,6 +571,57 @@ remembered nothing Mark said, and could only read). Spike findings: `tasks/phase
   full plain-text card; size cap; web taint; failed send), `-memory` (4), `tethr-atomic` (3),
   `tethr-integrations` (6).
 
+## Tethr tools in the chat — Jev list scoring (phase 19, 2026-11-07)
+
+Mark's pick for **Jev** (TypeSafe AI's decision model: yes/no probabilities, pick-from-list,
+0–N scores; it never writes text; ~$0.042 per million input tokens, output free) is **scoring
+growth lists**. The chat's Claude session gets Tethr's own tools as an MCP server named
+**`tethr`** (plan: `tasks/phase-19.md`):
+- **Bridge:** each turn passes `--mcp-config <file>` (per-turn, mode 0600, deleted after the turn;
+  it holds the turn's hook token). The config points at a zero-dependency stdio bridge script,
+  `assistant/tools-bridge.ts` `BRIDGE_SOURCE`, content-addressed in the instance dir like the hook
+  script.
+- **Server side:** the bridge forwards `tools/list` and `tools/call` to
+  `POST /api/tethr/assistant/tools/:op`, which uses hook-token auth. The work runs in the server,
+  so the TypeSafe and Google Ads keys never reach the Claude process.
+- **Never use `--strict-mcp-config`:** it would drop Mark's claude.ai connectors.
+- **Tools** (`assistant/tethr-tools.ts`):
+  - **`keyword_ideas`**: Keyword Planner volumes; `save_as` writes a CSV of every idea.
+  - **`score_list`**:
+    - Takes `items` or `from_file` (a CSV, JSON or line file in `files/`, root-confined), plus up
+      to 8 criteria: `score` levels (worst first), `yes_no` (`want: no` when yes is bad), or
+      `choice`.
+    - Sends one Jev request per item, 8 at a time, retrying 429/529. A weighted 0–100 composite
+      ranks the list, and answers Jev was unsure of are flagged "check".
+    - Writes every row to a CSV (text that a spreadsheet would run as a formula gets a leading
+      `'`).
+    - At most 500 items per call. A `from_file` list over the limit scores its first 500 rows,
+      with a note.
+    - A bad key (401) or a malformed question (422) stops the run early.
+- Jev client: `server/src/tethr/jev.ts` (raw fetch).
+- **Gate:**
+  - Connector **"Tethr tools"** (server `tethr`) is class `read`: allowed unless set Off in
+    Integrations.
+  - Off adds the deny rule `mcp__tethr`, skips the bridge, and the endpoint refuses too.
+  - These tools don't taint the thread. Unknown `mcp__tethr__*` tools are blocked.
+  - Items go to TypeSafe's servers; Jev doesn't train on them, but keep patient data out.
+- **UI:**
+  - A tool call with `save_as` becomes a file hop, so the CSV is a chip and opens in the side
+    panel.
+  - CSVs now render as a table in the panel and the Drive (`filePreview.tsx` `CsvTable`, first
+    500 rows).
+  - Integrations shows whether Jev is connected.
+- **Env:** `TYPESAFE_API_KEY` (blank = score_list says so and Claude scores the list itself),
+  `TETHR_JEV_MODEL` (default `jev-latest`), `TYPESAFE_API_URL`. The key is Mark's to add
+  (MANUAL-STEPS C6c).
+- **Verified live against a local stand-in Jev:**
+  - real Google keyword ideas (518), then score_list from the file
+  - the CSV chip opens as a table
+  - a 518-row file scores its first 500 in a 16s resumed turn
+  - The model name in the result shows when scores came from the stand-in; Claude flagged the
+    identical stand-in scores instead of presenting them.
+- Tests: `tethr-jev.test.ts` (18). Jev itself has NOT been called for real: there's no key yet.
+
 ## Phase 15 fixes — previews, Inbox retirement, cogs (2026-07-19)
 
 - **Content previews in completion messages.** `preview.ts` `contentPreview(body)` → first ~3

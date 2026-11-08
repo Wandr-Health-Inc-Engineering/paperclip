@@ -42,6 +42,8 @@ import { getAssistantRunner } from "../tethr/assistant/runner.js";
 import { resolveHookToken } from "../tethr/assistant/gate.js";
 import { MEMORY_MAX_CHARS, ensureWorkspace, readMemoryFile, workspaceDir, writeMemoryFile } from "../tethr/assistant/workspace.js";
 import { handlePostToolUse, handlePreToolUse } from "../tethr/assistant/hook-handler.js";
+import { runTethrTool, TETHR_TOOL_DEFS, TETHR_TOOLS_LABEL } from "../tethr/assistant/tethr-tools.js";
+import { jevConfigured } from "../tethr/jev.js";
 import { getIntegrations, integrationRulesText, KNOWN_CONNECTORS, modeFor, sanitizeIntegrationsPatch, updateIntegrations } from "../tethr/integrations.js";
 import {
   interpretSlackEvent,
@@ -109,6 +111,43 @@ export function tethrRoutes(db: Db) {
       logger.warn({ err }, "tethr approval gate failed");
       res.json(phase === "pre" ? { exitCode: 2, stderr: "Tethr approval gate: something went wrong, so the action was blocked." } : { exitCode: 0 });
     }
+  });
+
+  // Tethr's own tools for the chat (phase 19): the "tethr" MCP bridge script the
+  // chat's Claude session runs forwards tools/list and tools/call here, with the
+  // turn's hook token. Every call has already passed the PreToolUse gate.
+  router.post("/tethr/assistant/tools/:op", async (req, res) => {
+    const auth = String(req.headers.authorization ?? "");
+    const ctx = resolveHookToken(auth.startsWith("Bearer ") ? auth.slice(7) : null);
+    if (!ctx) {
+      res.status(401).json({ error: "This chat turn is no longer authorized." });
+      return;
+    }
+    if (req.params.op === "list") {
+      res.json({ tools: TETHR_TOOL_DEFS });
+      return;
+    }
+    if (req.params.op !== "call") {
+      res.status(404).json({ error: "Unknown tools operation." });
+      return;
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const name = String(body.name ?? "");
+    if (modeFor(getIntegrations(ctx.companyId), TETHR_TOOLS_LABEL) === "off") {
+      res.json({ content: [{ type: "text", text: "Tethr approval gate: Tethr tools are turned off in Tethr's Integrations." }], isError: true });
+      return;
+    }
+    const result = await runTethrTool(name, body.arguments, { workspaceDir: workspaceDir().dir });
+    await logActivity(db, {
+      companyId: ctx.companyId,
+      actorType: "agent",
+      actorId: "@tethr",
+      action: "tethr_tool_used",
+      entityType: "tethr_route_run",
+      entityId: ctx.runId,
+      details: { tool: name, ok: result.isError !== true, file: result.file ?? null, ...(result.meta ?? {}) },
+    }).catch(() => {});
+    res.json({ content: [{ type: "text", text: result.text }], isError: result.isError === true });
   });
 
   // ---- Slack inbound events (Phase 2) -------------------------------------
@@ -567,7 +606,10 @@ export function tethrRoutes(db: Db) {
           mode: modeFor(cfg, label),
           explicit: Boolean(cfg.connectors[label]),
           scope: cfg.connectors[label]?.scope ?? "",
-          blurb: known?.blurb ?? "Connected through your Claude account.",
+          blurb:
+            label === TETHR_TOOLS_LABEL
+              ? `${known?.blurb ?? ""} ${jevConfigured() ? "Jev is connected." : "Jev isn't set up yet: add TYPESAFE_API_KEY to Tethr's .env and restart."}`.trim()
+              : (known?.blurb ?? "Connected through your Claude account."),
           scopeHint: known?.scopeHint ?? null,
           toolsKnown: known?.tools ?? 0,
           toolsSeen: seen[label]?.length ?? 0,

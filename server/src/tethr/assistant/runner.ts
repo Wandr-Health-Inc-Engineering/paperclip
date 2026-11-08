@@ -8,13 +8,15 @@ import { logActivity } from "../../services/activity-log.js";
 import { budgetService } from "../../services/budgets.js";
 import { costService } from "../../services/costs.js";
 import * as chats from "../chats.js";
-import { denyRulesFor, getIntegrations, integrationRulesText, recordDiscoveredTools } from "../integrations.js";
+import { denyRulesFor, getIntegrations, integrationRulesText, modeFor, recordDiscoveredTools } from "../integrations.js";
 import { mirrorDir } from "../mirror.js";
 import { orgService } from "../org.js";
 import { isAgentsPaused, PAUSED_MESSAGE } from "../throttle.js";
 import { applyStreamLine, newTurnState } from "./events.js";
 import { buildSettings, ensureHookScript, issueHookToken, revokeHookToken, writeSettingsFile } from "./gate.js";
 import { ensurePersona } from "./persona.js";
+import { TETHR_TOOLS_LABEL } from "./tethr-tools.js";
+import { buildMcpConfig, ensureToolsBridge, removeMcpConfig, writeMcpConfig } from "./tools-bridge.js";
 import { ensureWorkspace, readableRoots } from "./workspace.js";
 
 // The chat assistant runner (phase 18). Each Chat thread drives ONE Claude Code
@@ -197,11 +199,13 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     let personaPath: string;
     let skillDir: string;
     let settingsPath: string;
+    let bridgeScript: string | null = null;
     try {
       cfg = getIntegrations(companyId);
       ws = await ensureWorkspace({ integrationRules: integrationRulesText(cfg) });
       ({ personaPath, skillDir } = await ensurePersona());
       const hookScript = await ensureHookScript();
+      if (modeFor(cfg, TETHR_TOOLS_LABEL) !== "off") bridgeScript = await ensureToolsBridge();
       settingsPath = await writeSettingsFile(
         companyId,
         buildSettings({ nodePath: process.execPath, hookScript, deny: denyRulesFor(cfg) }),
@@ -250,6 +254,13 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       .join("\n\n");
 
     const token = issueHookToken({ companyId, threadId, runId });
+    // Tethr's own tools (score_list, keyword_ideas) as the MCP server "tethr".
+    // Best-effort: without it the turn still runs, just without those tools.
+    let mcpConfigPath: string | null = null;
+    if (bridgeScript) {
+      const url = process.env.TETHR_HOOK_URL || process.env.PAPERCLIP_API_URL || "http://localhost:3100";
+      mcpConfigPath = await writeMcpConfig(runId, buildMcpConfig({ nodePath: process.execPath, bridgeScript, token, url })).catch(() => null);
+    }
     const mirror = mirrorDir();
     const turn = newTurnState();
     const eventCtx = {
@@ -331,6 +342,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
             ...(process.env.TETHR_ASSISTANT_BILLING === "api" ? {} : { ANTHROPIC_API_KEY: "" }),
           },
           extraArgs: [
+            ...(mcpConfigPath ? ["--mcp-config", mcpConfigPath] : []),
             "--settings",
             settingsPath,
             "--permission-mode",
@@ -348,6 +360,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       crash = err instanceof Error ? err.message : String(err);
     } finally {
       revokeHookToken(token);
+      void removeMcpConfig(mcpConfigPath);
       if (flushTimer) clearTimeout(flushTimer);
       if (stdoutBuf) applyStreamLine(turn, stdoutBuf, eventCtx);
       // A partial write already on its way must land BEFORE the final one.

@@ -133,6 +133,12 @@ const CONNECTOR_RULES: Record<string, Rule[]> = {
     [/^(get_|list_|search_|whoami$|weave_get_|weave_list_|weave_find_)/, "read"],
     [/.*/, "write"],
   ],
+  // Tethr's own MCP server "tethr" (phase 19): scoring and keyword lookups,
+  // run in the Tethr server; they change nothing outside its files/ folder.
+  "Tethr tools": [
+    [/^(score_list|keyword_ideas)$/, "read"],
+    [/.*/, "blocked"],
+  ],
 };
 
 const READ_VERB = /^(get|list|search|read|query|fetch|describe|download|export|lookup|find|show|view|count|help|whoami)([-_]|$)/i;
@@ -153,7 +159,7 @@ export function parseMcpTool(tool: string): { server: string; connector: string;
   if (sep <= 0) return null;
   const server = rest.slice(0, sep);
   const name = rest.slice(sep + 2);
-  const connector = server.startsWith("claude_ai_") ? server.slice(10).replace(/_/g, " ") : server;
+  const connector = server === "tethr" ? "Tethr tools" : server.startsWith("claude_ai_") ? server.slice(10).replace(/_/g, " ") : server;
   return { server, connector, name };
 }
 
@@ -225,6 +231,15 @@ function summarize(connector: string, name: string, input: Record<string, unknow
   if (connector === "Slack" && /send_message|schedule_message/.test(name)) {
     const ch = input.channel_id ?? input.channel ?? input.channel_name;
     return `Slack message${ch ? ` to ${String(ch)}` : ""}`;
+  }
+  if (connector === "Tethr tools" && name === "score_list") {
+    const n = Array.isArray(input.items) ? input.items.length : 0;
+    const from = typeof input.from_file === "string" ? path.basename(input.from_file) : "";
+    return `Scoring ${n ? `${n} items` : from ? from : "a list"} with Jev`;
+  }
+  if (connector === "Tethr tools" && name === "keyword_ideas") {
+    const seeds = Array.isArray(input.seeds) ? input.seeds.filter((s) => typeof s === "string").slice(0, 3) : [];
+    return `Keyword ideas${seeds.length ? ` for ${seeds.map((s) => `“${String(s).slice(0, 40)}”`).join(", ")}` : ""}`;
   }
   if (connector === "Google Calendar" && /event/.test(name)) {
     const title = input.summary ?? input.title;

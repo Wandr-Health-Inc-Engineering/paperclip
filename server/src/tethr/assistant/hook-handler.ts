@@ -41,7 +41,8 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
   if (d.action === "allow") {
     // Once a thread's session has seen connector data, web pages outside Wandr
     // need approval for the rest of that session (a URL can carry data out).
-    if (c.connector) await markTainted(ctx.companyId, ctx.threadId).catch(() => {});
+    // Tethr's own tools bring in no private data, so they don't count.
+    if (c.connector && c.server !== "tethr") await markTainted(ctx.companyId, ctx.threadId).catch(() => {});
     if (d.note === "auto") {
       await logActivity(db, {
         companyId: ctx.companyId,

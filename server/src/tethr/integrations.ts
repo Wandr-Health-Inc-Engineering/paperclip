@@ -105,6 +105,7 @@ export const KNOWN_CONNECTORS: Array<{ label: string; blurb: string; tools: numb
   { label: "Canva", blurb: "Designs (large tool set, off by default).", tools: 47 },
   { label: "Figma", blurb: "Design files (large tool set, off by default).", tools: 40 },
   { label: "Mercury", blurb: "Bank account. Never moves money on its own.", tools: 0 },
+  { label: "Tethr tools", blurb: "Tethr's own tools: score long lists with Jev, and Google keyword ideas. Read-only.", tools: 2 },
 ];
 
 const MODES = new Set(["off", "read", "ask", "auto"]);
@@ -158,7 +159,8 @@ export function modeFor(cfg: IntegrationsConfig, connector: string | null): Conn
 export function denyRulesFor(cfg: IntegrationsConfig): string[] {
   const rules = ["mcp__posthog"];
   for (const [label, setting] of Object.entries(cfg.connectors)) {
-    if (setting.mode === "off") rules.push(`mcp__claude_ai_${label.replace(/ /g, "_")}`);
+    if (setting.mode !== "off") continue;
+    rules.push(label === "Tethr tools" ? "mcp__tethr" : `mcp__claude_ai_${label.replace(/ /g, "_")}`);
   }
   // A default of "off" for unlisted connectors is enforced by the gate (decide()).
   return rules;
@@ -171,6 +173,11 @@ export function integrationRulesText(cfg: IntegrationsConfig): string {
     "- Outward actions (sending email, posting to Slack, changing calendars, Stripe, sharing files) go through Tethr's approval gate.",
     "- Gmail and Slack can contain customer messages. Skip anything that looks like a patient's health information; never quote it.",
   ];
+  if (modeFor(cfg, "Tethr tools") !== "off") {
+    lines.push(
+      "- To rank or filter a long list (keyword ideas, leads, companies, Reddit posts; more than ~15 items), use the tethr server's score_list tool (Jev) instead of judging each item yourself, then write up the top results. For search demand, keyword_ideas gives real Google volumes; save them with save_as and score them with from_file.",
+    );
+  }
   const off = Object.entries(cfg.connectors).filter(([, s]) => s.mode === "off").map(([l]) => l);
   if (off.length) lines.push(`- Turned off: ${off.join(", ")}. Don't try to use them.`);
   for (const [label, s] of Object.entries(cfg.connectors)) {

@@ -1,6 +1,8 @@
 import path from "node:path";
 import type { TethrRouteHop } from "@paperclipai/db";
 import { classify, type PolicyContext } from "./policy.js";
+import { csvFileName } from "./tethr-tools.js";
+import { FILES_DIR } from "./workspace.js";
 
 // Claude Code stream-json → chat turn state (phase 18). Pure: the runner feeds
 // it each stdout line and writes the state to the turn's tethr_route_runs row.
@@ -132,6 +134,10 @@ export function applyStreamLine(state: TurnState, line: string, ctx: EventContex
           };
           if (["Write", "Edit", "MultiEdit"].includes(block.name) && typeof input.file_path === "string") {
             hop.file = relativeFile(input.file_path, ctx);
+          }
+          // Tethr's own tools write their CSV to files/ when given save_as.
+          if (/^mcp__tethr__(score_list|keyword_ideas)$/.test(block.name) && typeof input.save_as === "string" && input.save_as.trim()) {
+            hop.file = relativeFile(path.join(ctx.policy.workspaceDir, FILES_DIR, csvFileName(input.save_as)), ctx);
           }
           state.hops.push(hop);
           changed = true;

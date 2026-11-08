@@ -122,6 +122,9 @@ export function PreviewBody({
       />
     );
   }
+  if (e === "csv") {
+    return <CsvTable content={content} full={full} />;
+  }
   if (e === "md" || e === "markdown" || !source.isFs) {
     const { meta, body } = splitFrontMatter(content);
     return (
@@ -163,6 +166,89 @@ export function splitFrontMatter(content: string): { meta: Array<[string, string
     meta.push([kv[1], kv[2].replace(/^["']|["']$/g, "")]);
   }
   return { meta, body: content.slice(m[0].length) };
+}
+
+/** RFC 4180-ish CSV: quoted fields, doubled quotes, CRLF or LF. Blank rows dropped. */
+export function parseCsvText(text: string): string[][] {
+  const src = text.replace(/^﻿/, "");
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let quoted = false;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (src[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else quoted = false;
+      } else field += ch;
+    } else if (ch === '"' && field === "") quoted = true;
+    else if (ch === ",") {
+      row.push(field);
+      field = "";
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && src[i + 1] === "\n") i++;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+    } else field += ch;
+  }
+  if (field !== "" || row.length) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows.filter((r) => r.some((f) => f.trim() !== ""));
+}
+
+const CSV_MAX_ROWS = 500;
+const NUMERIC = /^-?\d+(\.\d+)?$/;
+/** Tethr writes a leading ' before text a spreadsheet would run as a formula; hide it here. */
+const shownCell = (v: string) => (/^'[=+\-@]/.test(v) ? v.slice(1) : v);
+
+/** A CSV as a scrollable table (header row sticky, numbers right-aligned). */
+function CsvTable({ content, full }: { content: string; full: boolean }) {
+  const rows = parseCsvText(content);
+  if (!rows.length) return <p className="px-5 py-6 font-mono text-[11px] tethr-text-3">This CSV is empty.</p>;
+  const [header, ...body] = rows;
+  const shown = body.slice(0, CSV_MAX_ROWS);
+  return (
+    <div className={cn("flex w-full min-h-0 flex-1 flex-col gap-2", full ? "px-6 py-6 md:px-10" : "p-4")}>
+      <div className="tethr-inset min-h-0 flex-1 overflow-auto">
+        <table className="w-max min-w-full border-collapse text-[12px]">
+          <thead className="sticky top-0 z-[1] bg-background">
+            <tr>
+              {header.map((h, i) => (
+                <th key={i} className="border-b border-border px-3 py-2 text-left font-mono text-[10px] font-normal uppercase tracking-[0.08em] tethr-text-3">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((r, ri) => (
+              <tr key={ri} className="border-b border-border/50 last:border-0">
+                {header.map((_, ci) => {
+                  const v = shownCell(r[ci] ?? "");
+                  return (
+                    <td key={ci} className={cn("max-w-[32ch] truncate px-3 py-1.5", NUMERIC.test(v) && "text-right tabular-nums")} title={v}>
+                      {v}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="font-mono text-[10.5px] tethr-text-3">
+        {body.length} {body.length === 1 ? "row" : "rows"}
+        {body.length > shown.length ? ` · showing the first ${shown.length}; open it in Google Drive or Sheets for the rest` : ""}
+      </p>
+    </div>
+  );
 }
 
 function Unpreviewable({ item, text }: { item: FmItem; text: string }) {

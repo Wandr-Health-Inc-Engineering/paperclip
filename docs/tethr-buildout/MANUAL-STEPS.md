@@ -212,6 +212,20 @@ The shared-folder mirror (2026-07-13) can already carry any file bytes; what's m
    `spend`-sensitivity gated so every image is human-approved) writing PNGs through the same
    mirror seam into `00 Tethr`. Zero code exists today; it's a one-session add.
 
+### C6c · Jev key for list scoring (phase 19) — ~5 min, needs your account
+
+The chat's `score_list` tool ranks long lists (keyword ideas, leads, Reddit posts) with
+**Jev** from TypeSafe AI. It's built and tested, but it does nothing until there's a key:
+
+1. Sign up at https://console.typesafe.ai (Jev is in early access) and create an API key.
+2. Add `TYPESAFE_API_KEY=<key>` to `~/.paperclip/instances/default/.env`, then restart Tethr.
+3. Check it: Integrations → "Tethr tools" should say "Jev is connected."
+4. Try it in Chat: "Pull keyword ideas for malaria pills and travel vaccines, save them, then
+   score them for catalog fit and buying intent and show me the top 10."
+
+Cost is about $0.04 per million input tokens (a 500-keyword run is well under a cent).
+Optional: `TETHR_JEV_MODEL=jev-1.14.0` pins the version.
+
 ### C7 · Deferred (no action needed now)
 
 - **Ads pair (Tailwind/Ledger):** excluded until Google Ads MCP auth + Chrome-action layer works
