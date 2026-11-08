@@ -163,6 +163,18 @@ export interface TethrChatOutput {
 /** One message exchange in a chat: the request, how it routed, and what came back. */
 export interface TethrChatRun extends TethrRouteRun {
   outputs: TethrChatOutput[];
+  /** Files Mark attached to this message (phase 19.1). */
+  attachments?: TethrChatAttachment[];
+}
+
+export interface TethrChatAttachment {
+  /** Workspace-relative path ("files/uploads/2026-11-07/report.pdf"). */
+  path: string;
+  name: string;
+  kind: "image" | "pdf" | "text";
+  /** Where the side panel opens it (relative to 00 Tethr), or null. */
+  panelPath: string | null;
+  size?: number;
 }
 
 export interface TethrSideChat {
@@ -569,15 +581,23 @@ export const tethrApi = {
     api.get<TethrRouteRunDetail>(`/tethr/${c}/route-runs/${id}`),
   chats: (c: string) => api.get<TethrChats>(`/tethr/${c}/chats`),
   /** Open a side chat with its first message (routes it and lists the thread). */
-  openSideChat: (c: string, request: string) =>
-    api.post<{ routeRunId: string; threadId: string; chat: TethrSideChat }>(`/tethr/${c}/chats`, { request }),
+  openSideChat: (c: string, request: string, attachments: string[] = []) =>
+    api.post<{ routeRunId: string; threadId: string; chat: TethrSideChat }>(`/tethr/${c}/chats`, { request, attachments }),
+  /** Phase 19.1: upload a file to attach to the next chat message. */
+  uploadChatAttachment: async (c: string, file: File) => {
+    // Read the bytes now: a pasted File can lose its data once the event ends.
+    const safe = new File([await file.arrayBuffer()], file.name, { type: file.type });
+    const form = new FormData();
+    form.append("file", safe);
+    return api.postForm<TethrChatAttachment>(`/tethr/${c}/chats/attachments`, form);
+  },
   removeSideChat: (c: string, threadId: string) =>
     api.delete<{ removed: boolean }>(`/tethr/${c}/chats/${threadId}`),
   chatRuns: (c: string, threadId: string, limit = 40) =>
     api.get<TethrChatRun[]>(`/tethr/${c}/chats/${threadId}/runs?limit=${limit}`),
   /** Phase 18: send a message into a chat thread (runs as a turn of its Claude session). */
-  sendChatMessage: (c: string, threadId: string, text: string) =>
-    api.post<{ routeRunId: string; threadId: string }>(`/tethr/${c}/chats/${threadId}/messages`, { text }),
+  sendChatMessage: (c: string, threadId: string, text: string, attachments: string[] = []) =>
+    api.post<{ routeRunId: string; threadId: string }>(`/tethr/${c}/chats/${threadId}/messages`, { text, attachments }),
   integrations: (c: string) => api.get<TethrIntegrations>(`/tethr/${c}/integrations`),
   /** Phase 18.5: the chat's long-term memory file (Memory.md in the workspace). */
   assistantMemory: (c: string) =>

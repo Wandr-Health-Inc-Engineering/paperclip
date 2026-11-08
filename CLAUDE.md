@@ -622,6 +622,26 @@ growth lists**. The chat's Claude session gets Tethr's own tools as an MCP serve
     identical stand-in scores instead of presenting them.
 - Tests: `tethr-jev.test.ts` (18). Jev itself has NOT been called for real: there's no key yet.
 
+**Chat polish + attachments (phase 19.1, Mark's notes):**
+- **Type scale:** chat answers use `.tethr-chat-md` (`tethr-theme.css`, unlayered). Upstream's unlayered
+  `.paperclip-markdown` (15px, 600-weight headings) beat Tailwind's `text-[14px]`, so answers ran a
+  size larger than the bubble and composer. Now everything reads at 14px, inline code at 0.86em
+  (weight 400), and headings step up only slightly at weight 500.
+- **Composer:** paperclip, text and send arrow are all 36px tall with a 20px line, so their centers
+  line up. The hint row lines up with the text start and the arrow's right edge.
+- **Attach:**
+  - The paperclip button, drag-and-drop or a pasted screenshot upload each file straight away
+    (`POST /tethr/:companyId/chats/attachments`, multer, people only, 20 MB, 6 per message).
+  - Types: images, PDFs and text only, since Claude's Read can't open Office files.
+  - Uploads go to `<workspace>/files/uploads/<date>/` (safe names, never overwrite, Claude config
+    names refused) and sync to Drive.
+  - The message carries trailing `[Attached file: files/uploads/…]` lines that Claude opens with
+    Read (`assistant/attachments.ts`).
+  - Send routes validate that each path is a real upload. The runs route splits the markers into
+    `attachments` (with `panelPath`), and the bubble shows chips that open in the side panel.
+  - Verified live: an attached CSV was read and answered in 8s. Tests:
+    `tethr-attachments.test.ts` (5).
+
 ## Phase 15 fixes — previews, Inbox retirement, cogs (2026-07-19)
 
 - **Content previews in completion messages.** `preview.ts` `contentPreview(body)` → first ~3

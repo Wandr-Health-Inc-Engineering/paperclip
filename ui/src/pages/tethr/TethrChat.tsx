@@ -6,12 +6,14 @@ import {
   ChevronDown,
   ChevronRight,
   CornerUpLeft,
+  FileImage,
   FileText,
   Lock,
   MessageSquarePlus,
   MessagesSquare,
   PanelLeft,
   PanelLeftClose,
+  Paperclip,
   Plus,
   RotateCcw,
   Send,
@@ -28,9 +30,11 @@ import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
 import { Link, useSearchParams } from "../../lib/router";
 import { cn } from "@/lib/utils";
+import { formatBytes } from "./drive/filePreview";
 import {
   tethrApi,
   tethrKeys,
+  type TethrChatAttachment,
   type TethrChatOutput,
   type TethrChatRun,
   type TethrRouteHop,
@@ -66,7 +70,12 @@ export function TethrChat() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [limit, setLimit] = useState(PAGE);
-  const [pending, setPending] = useState<{ text: string; threadId: string | null; runId?: string } | null>(null);
+  const [pending, setPending] = useState<{
+    text: string;
+    attachments: TethrChatAttachment[];
+    threadId: string | null;
+    runId?: string;
+  } | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -132,21 +141,22 @@ export function TethrChat() {
   }, [runs, c, queryClient]);
 
   const send = useMutation({
-    mutationFn: async (text: string) => {
+    mutationFn: async ({ text, attachments }: Outgoing) => {
+      const paths = attachments.map((a) => a.path);
       if (isDraft) {
-        const res = await tethrApi.openSideChat(c, text);
+        const res = await tethrApi.openSideChat(c, text, paths);
         return { ...res, opened: true };
       }
-      const res = await tethrApi.sendChatMessage(c, threadId!, text);
+      const res = await tethrApi.sendChatMessage(c, threadId!, text, paths);
       return { ...res, opened: false };
     },
-    onMutate: (text) => {
+    onMutate: ({ text, attachments }) => {
       setSendError(null);
       stickToBottom.current = true;
-      setPending({ text, threadId });
+      setPending({ text, attachments, threadId });
     },
-    onSuccess: (res, text) => {
-      setPending({ text, threadId: res.threadId, runId: res.routeRunId });
+    onSuccess: (res, { text, attachments }) => {
+      setPending({ text, attachments, threadId: res.threadId, runId: res.routeRunId });
       if (res.opened) {
         queryClient.invalidateQueries({ queryKey: tethrKeys.chats(c) });
         setSearchParams({ chat: res.threadId });
@@ -277,7 +287,7 @@ export function TethrChat() {
         className="min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent_0,#000_44px,#000_calc(100%-14px),transparent_100%)]"
       >
         {empty ? (
-          <ChatEmpty isDraft={isDraft} onPick={(s) => send.mutate(s)} />
+          <ChatEmpty isDraft={isDraft} onPick={(s) => send.mutate({ text: s, attachments: [] })} />
         ) : (
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-9 px-4 pb-6 pt-16 md:px-6">
             {visibleRuns.length >= limit && limit < 100 ? (
@@ -302,7 +312,7 @@ export function TethrChat() {
             ))}
             {showPending && !visibleRuns.some((r) => r.id === pending?.runId) ? (
               <div className="flex flex-col gap-4">
-                <UserBubble text={pending!.text} />
+                <UserBubble text={pending!.text} attachments={pending!.attachments} />
                 <Working label="sending…" />
               </div>
             ) : null}
@@ -312,17 +322,18 @@ export function TethrChat() {
 
       <Composer
         key={threadId ?? "draft"}
+        companyId={c}
         placeholder={isDraft ? "What's this side chat about?" : isMain ? "Message tethr…" : "Message this side chat…"}
         hint={undefined}
         busy={send.isPending}
         error={sendError}
-        onSend={(text) => send.mutate(text)}
+        onSend={(text, attachments) => send.mutate({ text, attachments })}
       />
 
       {panelFile ? (
         <OutputPanel
           companyId={c}
-          files={threadFiles.length ? threadFiles : [panelFile]}
+          files={threadFiles.some((f) => f.path === panelFile.path) ? threadFiles : [...threadFiles, panelFile]}
           current={panelFile}
           onSelect={setPanelPath}
           onClose={() => setPanelPath(null)}
@@ -538,14 +549,85 @@ function ChatEmpty({ isDraft, onPick }: { isDraft: boolean; onPick: (text: strin
   );
 }
 
-function UserBubble({ text, at }: { text: string; at?: string }) {
+type Outgoing = { text: string; attachments: TethrChatAttachment[] };
+
+function UserBubble({
+  text,
+  at,
+  attachments,
+  onOpenFile,
+}: {
+  text: string;
+  at?: string;
+  attachments?: TethrChatAttachment[];
+  onOpenFile?: (path: string) => void;
+}) {
   return (
-    <div className="flex flex-col items-end gap-1">
-      <div className="max-w-[85%] whitespace-pre-wrap rounded-[16px_16px_4px_16px] bg-[var(--tethr-frost-strong)] px-4 py-2.5 text-[14px] leading-relaxed shadow-[inset_0_0_0_1px_var(--tethr-rim-strong)] [overflow-wrap:anywhere]">
-        {text}
-      </div>
+    <div className="flex flex-col items-end gap-1.5">
+      {text ? (
+        <div className="max-w-[85%] whitespace-pre-wrap rounded-[16px_16px_4px_16px] bg-[var(--tethr-frost-strong)] px-4 py-2.5 text-[14px] leading-[1.6] shadow-[inset_0_0_0_1px_var(--tethr-rim-strong)] [overflow-wrap:anywhere]">
+          {text}
+        </div>
+      ) : null}
+      {attachments?.length ? (
+        <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
+          {attachments.map((a) => (
+            <FileChip key={a.path} name={a.name} kind={a.kind} onClick={a.panelPath && onOpenFile ? () => onOpenFile(a.panelPath!) : undefined} />
+          ))}
+        </div>
+      ) : null}
       {at ? <span className="font-mono text-[10.5px] tethr-text-3">{formatRelative(at)}</span> : null}
     </div>
+  );
+}
+
+/** A file pill: opens in the side panel when it can. */
+function FileChip({
+  name,
+  kind,
+  detail,
+  tone,
+  onClick,
+  onRemove,
+}: {
+  name: string;
+  kind?: TethrChatAttachment["kind"];
+  detail?: string;
+  tone?: "live" | "bad";
+  onClick?: () => void;
+  onRemove?: () => void;
+}) {
+  const Icon = kind === "image" ? FileImage : FileText;
+  const body = (
+    <>
+      {tone ? <StatusDot tone={tone} /> : <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+      <span className="max-w-[200px] truncate">{name}</span>
+      {detail ? <span className="shrink-0 font-mono text-[10.5px] tethr-text-3">{detail}</span> : null}
+    </>
+  );
+  const chip = "inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--tethr-frost)] py-1 text-[12px] shadow-[inset_0_0_0_1px_var(--tethr-rim)]";
+  return (
+    <span className={cn(chip, onRemove ? "pl-2.5 pr-1" : "px-2.5", onClick && "hover:bg-[var(--tethr-frost-strong)]")}>
+      {onClick ? (
+        <button type="button" onClick={onClick} title={`Open ${name}`} className="inline-flex min-w-0 items-center gap-1.5">
+          {body}
+        </button>
+      ) : (
+        <span className="inline-flex min-w-0 items-center gap-1.5" title={name}>
+          {body}
+        </span>
+      )}
+      {onRemove ? (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remove ${name}`}
+          className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-[var(--tethr-frost-strong)] hover:text-foreground"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      ) : null}
+    </span>
   );
 }
 
@@ -583,10 +665,14 @@ function SessionTurn({
 
   return (
     <div className="flex flex-col gap-3">
-      {isSystem ? <SystemLine text={run.requestText} /> : <UserBubble text={run.requestText} at={run.createdAt} />}
+      {isSystem ? (
+        <SystemLine text={run.requestText} />
+      ) : (
+        <UserBubble text={run.requestText} at={run.createdAt} attachments={run.attachments} onOpenFile={onOpenFile} />
+      )}
       {tools.length ? <ActivityRows hops={tools} live={running} /> : null}
       {run.resultText ? (
-        <MarkdownBody className="text-[14px] leading-relaxed">{run.resultText}</MarkdownBody>
+        <MarkdownBody className="tethr-chat-md">{run.resultText}</MarkdownBody>
       ) : running ? (
         <Working label={run.status === "queued" ? "waiting for the previous message…" : tools.length ? "working…" : "thinking…"} />
       ) : null}
@@ -598,16 +684,7 @@ function SessionTurn({
       {files.length ? (
         <div className="flex flex-wrap gap-1.5">
           {files.map((f) => (
-            <button
-              type="button"
-              key={f}
-              onClick={() => onOpenFile(f)}
-              title={`Open ${f}`}
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--tethr-frost)] px-2.5 py-1 text-[12px] shadow-[inset_0_0_0_1px_var(--tethr-rim)] hover:bg-[var(--tethr-frost-strong)]"
-            >
-              <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <span className="truncate">{f.split("/").pop()}</span>
-            </button>
+            <FileChip key={f} name={f.split("/").pop() ?? f} onClick={() => onOpenFile(f)} />
           ))}
         </div>
       ) : null}
@@ -784,7 +861,7 @@ function Turn({ run, companyId }: { run: TethrChatRun; companyId: string }) {
         ) : run.status === "failed" ? (
           <p className="text-[14px] text-[var(--tethr-bad)]">{run.error || run.resultText || "This one failed."}</p>
         ) : run.resultText ? (
-          <MarkdownBody className="text-[14px] leading-relaxed">{run.resultText}</MarkdownBody>
+          <MarkdownBody className="tethr-chat-md">{run.resultText}</MarkdownBody>
         ) : null}
 
         {gated.map((o) => (
@@ -914,21 +991,41 @@ function ApprovalCard({ output, companyId, threadId }: { output: TethrChatOutput
 
 // ---- composer --------------------------------------------------------------------
 
+const MAX_ATTACHMENTS = 6;
+const ATTACH_ACCEPT =
+  "image/png,image/jpeg,image/gif,image/webp,application/pdf,.txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.xml,.yaml,.yml,.log,.ics,.rtf";
+
+type DraftFile = {
+  id: string;
+  name: string;
+  size: number;
+  status: "uploading" | "ready" | "error";
+  error?: string;
+  file?: TethrChatAttachment;
+};
+
 function Composer({
+  companyId,
   placeholder,
   hint,
   busy,
   error,
   onSend,
 }: {
+  companyId: string;
   placeholder: string;
   hint?: string;
   busy: boolean;
   error: string | null;
-  onSend: (text: string) => void;
+  onSend: (text: string, attachments: TethrChatAttachment[]) => void;
 }) {
   const [text, setText] = useState("");
+  const [drafts, setDrafts] = useState<DraftFile[]>([]);
+  const [note, setNote] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const count = useRef(0);
 
   useEffect(() => {
     ref.current?.focus({ preventScroll: true });
@@ -941,45 +1038,139 @@ function Composer({
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [text]);
 
-  const submit = () => {
-    const t = text.trim();
-    if (!t || busy) return;
-    onSend(t);
-    setText("");
+  // Each file uploads as soon as it's picked; the message only names it.
+  const addFiles = (list: FileList | File[]) => {
+    const room = MAX_ATTACHMENTS - drafts.length;
+    const files = Array.from(list);
+    setNote(files.length > room ? `At most ${MAX_ATTACHMENTS} files per message.` : null);
+    for (const f of files.slice(0, Math.max(0, room))) {
+      const id = `f${++count.current}`;
+      const upload = f.name ? f : new File([f], "pasted-image.png", { type: f.type });
+      setDrafts((d) => [...d, { id, name: upload.name, size: f.size, status: "uploading" }]);
+      tethrApi
+        .uploadChatAttachment(companyId, upload)
+        .then((file) => setDrafts((d) => d.map((x) => (x.id === id ? { ...x, status: "ready", name: file.name, file } : x))))
+        .catch((e) =>
+          setDrafts((d) =>
+            d.map((x) => (x.id === id ? { ...x, status: "error", error: e instanceof Error ? e.message : "Couldn't attach it." } : x)),
+          ),
+        );
+    }
+    ref.current?.focus({ preventScroll: true });
   };
+
+  const ready = drafts.flatMap((d) => (d.status === "ready" && d.file ? [d.file] : []));
+  const uploading = drafts.some((d) => d.status === "uploading");
+  const failed = drafts.find((d) => d.status === "error");
+  const canSend = !busy && !uploading && (!!text.trim() || ready.length > 0);
+
+  const submit = () => {
+    if (!canSend) return;
+    onSend(text.trim(), ready);
+    setText("");
+    setDrafts([]);
+    setNote(null);
+  };
+
+  const status = error ?? (failed ? `${failed.name}: ${failed.error}` : note);
 
   return (
     <div className="shrink-0 px-3 pb-3 pt-1 md:px-6 md:pb-4">
       <div className="mx-auto w-full max-w-3xl">
-        <div className="tethr-glass flex items-end gap-2 rounded-[22px] py-1.5 pl-4 pr-1.5">
-          <textarea
-            ref={ref}
-            rows={1}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault();
-                submit();
-              }
+        <div
+          className={cn(
+            "tethr-glass rounded-[22px] p-1.5 transition-shadow",
+            dragging && "shadow-[inset_0_0_0_1px_var(--tethr-rim-strong)]",
+          )}
+          onDragOver={(e) => {
+            if (!e.dataTransfer.types.includes("Files")) return;
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+          }}
+          onDrop={(e) => {
+            if (!e.dataTransfer.files.length) return;
+            e.preventDefault();
+            setDragging(false);
+            addFiles(e.dataTransfer.files);
+          }}
+        >
+          {drafts.length ? (
+            <div className="flex flex-wrap gap-1.5 px-1 pb-1.5 pt-0.5">
+              {drafts.map((d) => (
+                <FileChip
+                  key={d.id}
+                  name={d.name}
+                  kind={d.file?.kind ?? (/\.(png|jpe?g|gif|webp)$/i.test(d.name) ? "image" : "text")}
+                  detail={d.status === "uploading" ? "attaching…" : d.status === "error" ? "couldn't attach" : formatBytes(d.size)}
+                  tone={d.status === "uploading" ? "live" : d.status === "error" ? "bad" : undefined}
+                  onRemove={() => setDrafts((all) => all.filter((x) => x.id !== d.id))}
+                />
+              ))}
+            </div>
+          ) : null}
+          <div className="flex items-end gap-1">
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={drafts.length >= MAX_ATTACHMENTS}
+              aria-label="Attach files"
+              title="Attach files (images, PDFs, text)"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-[var(--tethr-frost-strong)] hover:text-foreground disabled:opacity-30"
+            >
+              <Paperclip className="h-4 w-4" />
+            </button>
+            <textarea
+              ref={ref}
+              rows={1}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
+              onPaste={(e) => {
+                // A pasted screenshot or file attaches; pasted text stays text.
+                const files = Array.from(e.clipboardData.files);
+                if (files.length && !e.clipboardData.getData("text/plain")) {
+                  e.preventDefault();
+                  addFiles(files);
+                }
+              }}
+              placeholder={placeholder}
+              aria-label="Message"
+              className="max-h-[200px] min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-[14px] leading-5 outline-none placeholder:text-[var(--tethr-text-3)]"
+            />
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!canSend}
+              aria-label="Send"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-opacity disabled:opacity-30"
+            >
+              <ArrowUp className="h-4 w-4" />
+            </button>
+          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            accept={ATTACH_ACCEPT}
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files?.length) addFiles(e.target.files);
+              e.target.value = "";
             }}
-            placeholder={placeholder}
-            aria-label="Message"
-            className="max-h-[200px] min-h-[36px] flex-1 resize-none bg-transparent py-2 text-[14.5px] leading-relaxed outline-none placeholder:text-[var(--tethr-text-3)]"
           />
-          <button
-            type="button"
-            onClick={submit}
-            disabled={!text.trim() || busy}
-            aria-label="Send"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-opacity disabled:opacity-30"
-          >
-            <ArrowUp className="h-4 w-4" />
-          </button>
         </div>
-        <div className="mt-1.5 flex items-center justify-between gap-3 px-2">
+        {/* Lines up with the message text on the left and the send arrow on the right. */}
+        <div className="mt-1.5 flex items-center justify-between gap-3 pl-[50px] pr-1.5">
           <span className="truncate text-[11.5px] tethr-text-3">
-            {error ? <span className="text-[var(--tethr-bad)]">{error}</span> : hint}
+            {status ? <span className={cn((error || failed) && "text-[var(--tethr-bad)]")}>{status}</span> : hint}
           </span>
           <span className="hidden shrink-0 font-mono text-[10.5px] tethr-text-3 sm:inline">
             enter to send · shift+enter for a new line

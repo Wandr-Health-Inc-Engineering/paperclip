@@ -1183,3 +1183,58 @@ a[role="button"]:active {
   background: var(--foreground);
   color: var(--background);
 }
+
+/* ---- Chat answers: one calm type scale (phase 19.1) -----------------------
+   Unlayered on purpose: upstream's `.paperclip-markdown` (unlayered, 15px,
+   600-weight headings) otherwise beats Tailwind's text-[14px] utility, which
+   left answers a size up from the bubble and composer and inline code larger
+   still. Everything in a chat answer now reads at the bubble's 14px; headings
+   only step up a little; weights stay within the brand's 200-500. */
+.paperclip-markdown.tethr-chat-md {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.paperclip-markdown.tethr-chat-md :where(p, ul, ol, blockquote, pre, .paperclip-markdown-table-scroll) {
+  margin-top: 0.6em;
+  margin-bottom: 0.6em;
+}
+.paperclip-markdown.tethr-chat-md li {
+  margin: 0.2em 0;
+}
+.paperclip-markdown.tethr-chat-md :where(h1, h2, h3, h4) {
+  margin-top: 1.1em;
+  margin-bottom: 0.35em;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  line-height: 1.35;
+}
+.paperclip-markdown.tethr-chat-md h1 {
+  font-size: 17px;
+}
+.paperclip-markdown.tethr-chat-md h2 {
+  font-size: 15.5px;
+}
+.paperclip-markdown.tethr-chat-md :where(h3, h4) {
+  font-size: 14px;
+}
+.paperclip-markdown.tethr-chat-md :where(strong, b, th) {
+  font-weight: 500;
+}
+/* Inline code: a hair smaller than the text, regular weight, so a file name
+   sits in the sentence instead of shouting over it. */
+.paperclip-markdown.tethr-chat-md :not(pre) > code {
+  font-size: 0.86em;
+  font-weight: 400;
+  padding: 0.12em 0.36em;
+  border-radius: 5px;
+}
+.paperclip-markdown.tethr-chat-md :where(code)::before,
+.paperclip-markdown.tethr-chat-md :where(code)::after {
+  content: none;
+}
+.paperclip-markdown.tethr-chat-md pre {
+  font-size: 12.5px !important;
+}
+.paperclip-markdown.tethr-chat-md :where(table) {
+  font-size: 13px;
+}

@@ -43,7 +43,18 @@ import { resolveHookToken } from "../tethr/assistant/gate.js";
 import { MEMORY_MAX_CHARS, ensureWorkspace, readMemoryFile, workspaceDir, writeMemoryFile } from "../tethr/assistant/workspace.js";
 import { handlePostToolUse, handlePreToolUse } from "../tethr/assistant/hook-handler.js";
 import { runTethrTool, TETHR_TOOL_DEFS, TETHR_TOOLS_LABEL } from "../tethr/assistant/tethr-tools.js";
+import {
+  ATTACH_LIMITS,
+  attachmentKind,
+  panelPathFor,
+  saveAttachment,
+  splitAttachments,
+  validateAttachments,
+  withAttachments,
+} from "../tethr/assistant/attachments.js";
 import { jevConfigured } from "../tethr/jev.js";
+import { mirrorDir } from "../tethr/mirror.js";
+import multer from "multer";
 import { getIntegrations, integrationRulesText, KNOWN_CONNECTORS, modeFor, sanitizeIntegrationsPatch, updateIntegrations } from "../tethr/integrations.js";
 import {
   interpretSlackEvent,
@@ -415,16 +426,61 @@ export function tethrRoutes(db: Db) {
 
   // Open a side chat with its first message: routes it as a new thread, then
   // lists that thread as a side chat titled from the message.
+  // Phase 19.1: a file Mark attaches to a chat message. It's saved in the
+  // workspace (files/uploads/<date>/) and the message names it, so Claude reads it.
+  const attachmentUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: ATTACH_LIMITS.bytes, files: 1 } });
+  router.post("/tethr/:companyId/chats/attachments", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
+    try {
+      await new Promise<void>((resolve, reject) => attachmentUpload.single("file")(req, res, (err: unknown) => (err ? reject(err) : resolve())));
+    } catch (err) {
+      const tooBig = err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE";
+      res.status(tooBig ? 413 : 400).json({ error: tooBig ? "That file is over 20 MB." : "Couldn't read that upload." });
+      return;
+    }
+    const file = (req as Request & { file?: { buffer: Buffer; originalname: string } }).file;
+    if (!file) {
+      res.status(400).json({ error: "No file was sent." });
+      return;
+    }
+    // Browsers send multipart file names as latin1; restore UTF-8 names.
+    const original = Buffer.from(file.originalname, "latin1").toString("utf8");
+    const ws = workspaceDir().dir;
+    const saved = await saveAttachment(ws, original, file.buffer);
+    if ("error" in saved) {
+      res.status(422).json({ error: saved.error });
+      return;
+    }
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: getActorInfo(req).actorId,
+      action: "tethr_chat_attachment",
+      entityType: "company",
+      entityId: companyId,
+      details: { path: saved.path, size: saved.size, kind: saved.kind },
+    }).catch(() => {});
+    res.json({ ...saved, panelPath: panelPathFor(saved.path, ws, mirrorDir()) });
+  });
+
   router.post("/tethr/:companyId/chats", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     if (!requirePerson(req, res)) return;
     const actor = getActorInfo(req);
-    const requestText = String(req.body?.request ?? "").trim();
-    if (!requestText) {
+    const typed = String(req.body?.request ?? "").trim();
+    const files = await validateAttachments(workspaceDir().dir, req.body?.attachments);
+    if (!Array.isArray(files)) {
+      res.status(400).json({ error: files.error });
+      return;
+    }
+    if (!typed && !files.length) {
       res.status(400).json({ error: "request is required" });
       return;
     }
+    const requestText = withAttachments(typed, files);
     const requestedByUserId = actor.actorType === "user" ? actor.actorId : null;
     const ids =
       getIntegrations(companyId).assistant.engine === "session"
@@ -445,7 +501,7 @@ export function tethrRoutes(db: Db) {
                 reject(err instanceof Error ? err : new Error(String(err)));
               });
           });
-    const chat = await chats.addSideChat(companyId, ids.threadId, requestText);
+    const chat = await chats.addSideChat(companyId, ids.threadId, typed || files.map((f) => f.split("/").pop()).join(", "));
     res.json({ ...ids, chat });
   });
 
@@ -486,7 +542,20 @@ export function tethrRoutes(db: Db) {
             ),
           )
       : [];
-    res.json(runs.map((run) => ({ ...run, outputs: outputs.filter((o) => o.routeRunId === run.id) })));
+    const ws = workspaceDir().dir;
+    const mirror = mirrorDir();
+    res.json(
+      runs.map((run) => {
+        // Attached files come back as their own list; the bubble shows only the words.
+        const { text, files } = run.invocationSource === "chat" ? splitAttachments(run.requestText) : { text: run.requestText, files: [] };
+        return {
+          ...run,
+          requestText: text,
+          attachments: files.map((f) => ({ path: f, name: f.split("/").pop() ?? f, kind: attachmentKind(f), panelPath: panelPathFor(f, ws, mirror) })),
+          outputs: outputs.filter((o) => o.routeRunId === run.id),
+        };
+      }),
+    );
   });
 
   // Phase 18: send a message into a chat thread. The session engine (default)
@@ -497,11 +566,17 @@ export function tethrRoutes(db: Db) {
     assertCompanyAccess(req, companyId);
     if (!requirePerson(req, res)) return;
     const actor = getActorInfo(req);
-    const text = String(req.body?.text ?? "").trim();
-    if (!text) {
+    const typed = String(req.body?.text ?? "").trim();
+    const files = await validateAttachments(workspaceDir().dir, req.body?.attachments);
+    if (!Array.isArray(files)) {
+      res.status(400).json({ error: files.error });
+      return;
+    }
+    if (!typed && !files.length) {
       res.status(400).json({ error: "text is required" });
       return;
     }
+    const text = withAttachments(typed, files);
     const threadId = req.params.threadId as string;
     const requestedByUserId = actor.actorType === "user" ? actor.actorId : null;
     if (getIntegrations(companyId).assistant.engine === "routing") {
