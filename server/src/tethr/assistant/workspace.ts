@@ -42,7 +42,7 @@ export function memoryPath(): string {
   return path.join(workspaceDir().dir, MEMORY_FILE);
 }
 
-function claudeMd(integrationRules: string): string {
+function claudeMd(integrationRules: string, goals: string | null): string {
   return `${GENERATED_MARKER} v${CLAUDE_MD_VERSION}. Tethr rewrites this file; put anything to remember in ${MEMORY_FILE}. -->
 # Tethr workspace
 
@@ -53,7 +53,11 @@ This folder is Tethr's workspace inside the shared "00 Tethr" Google Drive folde
 
 ## Integration rules
 ${integrationRules.trim()}
-
+${goals === null ? "" : `
+## Wandr's goals
+Everything you suggest or do should move one of these. Say which goal a suggestion moves. Keep them current with the tethr tools (save_goal, save_metric, record_metric), not in ${MEMORY_FILE}. Numbers only, never a customer's name or details.
+${goals.trim()}
+`}
 ## Memory
 @${MEMORY_FILE}
 `;
@@ -66,7 +70,19 @@ const MEMORY_SEED = `# What Tethr knows
 - Tethr works on marketing, growth and operations. It never handles patient health information or makes medical-content decisions.
 
 ## Goals
-- Acquire customers, keep them (reduce churn), and grow.
+- Wandr's goals and their numbers live in Tethr (the "Wandr's goals" section of CLAUDE.md), not here.
+
+## Products & prices
+- (Filled in during setup.)
+
+## Who buys
+- (Filled in during setup.)
+
+## Channels & partners
+- (Filled in during setup.)
+
+## Voice & constraints
+- (Filled in during setup.)
 
 ## How Mark works
 - (Tethr adds notes here as it learns.)
@@ -83,12 +99,12 @@ export const DEFAULT_INTEGRATION_RULES = `- Read Mark's connected tools (Gmail, 
 - Gmail and Slack can contain customer messages. Skip anything that looks like a patient's health information; never quote it.`;
 
 /** Create the workspace, (re)write the generated CLAUDE.md, seed Memory.md if missing. */
-export async function ensureWorkspace(opts: { integrationRules?: string } = {}) {
+export async function ensureWorkspace(opts: { integrationRules?: string; goals?: string | null } = {}) {
   const { dir, inDrive } = workspaceDir();
   await fsp.mkdir(path.join(dir, FILES_DIR), { recursive: true });
 
   const claudePath = path.join(dir, "CLAUDE.md");
-  const want = claudeMd(opts.integrationRules ?? DEFAULT_INTEGRATION_RULES);
+  const want = claudeMd(opts.integrationRules ?? DEFAULT_INTEGRATION_RULES, opts.goals ?? null);
   let current: string | null = null;
   try {
     current = await fsp.readFile(claudePath, "utf8");

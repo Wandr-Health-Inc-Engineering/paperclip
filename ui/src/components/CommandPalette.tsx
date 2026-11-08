@@ -37,6 +37,7 @@ import {
   ScrollText,
   Plug,
   KeyRound,
+  Compass,
   Brain,
 } from "lucide-react";
 import { Identity } from "./Identity";
@@ -239,6 +240,10 @@ export function CommandPalette() {
           <CommandItem onSelect={() => go("/tethr-settings")}>
             <Plug className="mr-2 h-4 w-4" />
             Integrations
+          </CommandItem>
+          <CommandItem onSelect={() => go("/setup")}>
+            <Compass className="mr-2 h-4 w-4" />
+            Set up tethr
           </CommandItem>
           <CommandItem onSelect={() => go("/environment")}>
             <KeyRound className="mr-2 h-4 w-4" />

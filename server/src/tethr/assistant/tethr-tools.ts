@@ -1,6 +1,8 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
+import type { Db } from "@paperclipai/db";
 import { writeAtomic } from "../atomic.js";
+import { GoalInputError, goalsContextText, goalsService, METRIC_SOURCES, METRIC_UNITS } from "../goals.js";
 import { JevError, jevAsk, jevConfigured, jevCostUsd, type JevAnswer, type JevCallOptions, type JevQuestion } from "../jev.js";
 import { googleAdsConfigured } from "../tools/google-ads.js";
 import { generateKeywordIdeas, KeywordPlannerAccessError, type KeywordIdea } from "../tools/keyword-planner.js";
@@ -45,6 +47,9 @@ export interface TethrToolResult {
 
 export interface TethrToolContext {
   workspaceDir: string;
+  /** For the goal tools (phase 20). */
+  db?: Db;
+  companyId?: string;
   now?: () => Date;
   jev?: JevCallOptions;
   concurrency?: number;
@@ -99,6 +104,63 @@ export const TETHR_TOOL_DEFS: McpToolDef[] = [
         save_as: { type: "string", description: "CSV file name in ./files/ for every idea." },
       },
       required: ["seeds"],
+    },
+  },
+  {
+    name: "goals_list",
+    description:
+      "Wandr's goals as stored in Tethr: the mission, each goal with its id, and each metric with its id, baseline, current value, target and date, and how it's measured.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "save_goal",
+    description:
+      "Create or update one of Wandr's goals in Tethr. level \"company\" is the one-line mission (there's only one); \"team\" (default) is a goal area such as New customers. Pass id to update. Only save what Mark agreed to.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Existing goal id, to update it." },
+        title: { type: "string", description: "Short title, e.g. \"New customers\"." },
+        description: { type: "string", description: "What this goal means and why it matters, in a sentence or two." },
+        level: { type: "string", enum: ["company", "team"] },
+        status: { type: "string", enum: ["planned", "active", "achieved", "cancelled"] },
+      },
+    },
+  },
+  {
+    name: "save_metric",
+    description:
+      "Create or update the metric that measures a goal: name, unit, baseline, target and target date, and EXACTLY how to measure it (source + method, e.g. \"Stripe: count of first successful charges per new customer in the last 30 days\"). Pass id to update. Numbers only, aggregates only: never a customer's name, email or health details. Only save targets Mark agreed to.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Existing metric id, to update it." },
+        goal_id: { type: "string", description: "The goal it measures (from goals_list or save_goal)." },
+        name: { type: "string", description: "e.g. \"New paying customers per month\"." },
+        unit: { type: "string", enum: [...METRIC_UNITS] },
+        direction: { type: "string", enum: ["up", "down"], description: "up = higher is better (default)." },
+        source: { type: "string", enum: [...METRIC_SOURCES] },
+        method: { type: "string", description: "How to measure it the same way every time: the tool, report or query, the time window, filters." },
+        baseline: { type: "number" },
+        baseline_at: { type: "string", description: "YYYY-MM-DD the baseline was measured." },
+        target: { type: "number" },
+        target_date: { type: "string", description: "YYYY-MM-DD." },
+      },
+    },
+  },
+  {
+    name: "record_metric",
+    description:
+      "Record a new measurement for a metric (it becomes the current value and joins its history). Measure it exactly the way its method says. One aggregate number only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        metric_id: { type: "string" },
+        value: { type: "number" },
+        at: { type: "string", description: "YYYY-MM-DD the value is for (default today)." },
+        note: { type: "string", description: "Short note, e.g. the window measured." },
+      },
+      required: ["metric_id", "value"],
     },
   },
 ];
@@ -568,14 +630,41 @@ export async function runKeywordIdeas(args: Record<string, unknown>, ctx: TethrT
   return { text: lines.join("\n"), file, meta };
 }
 
+// ---- goals (phase 20) --------------------------------------------------------------
+
+async function runGoalTool(name: string, args: Record<string, unknown>, ctx: TethrToolContext): Promise<TethrToolResult> {
+  if (!ctx.db || !ctx.companyId) return { text: `${name}: goals aren't available here.`, isError: true };
+  const svc = goalsService(ctx.db);
+  if (name === "goals_list") {
+    const view = await svc.list(ctx.companyId);
+    return { text: goalsContextText(view), meta: { goals: view.goals.length } };
+  }
+  if (name === "save_goal") {
+    const g = await svc.saveGoal(ctx.companyId, args);
+    return { text: `Saved ${g.level === "company" ? "the mission" : "goal"} "${g.title}" [goal ${g.id}].`, meta: { goalId: g.id } };
+  }
+  if (name === "save_metric") {
+    const m = await svc.saveMetric(ctx.companyId, args);
+    return { text: `Saved metric "${m.name}" [metric ${m.id}] on goal ${m.goalId}.`, meta: { metricId: m.id } };
+  }
+  const metricId = typeof args.metric_id === "string" ? args.metric_id : "";
+  if (!metricId) return { text: "record_metric: give metric_id.", isError: true };
+  const m = await svc.recordMeasurement(ctx.companyId, metricId, { value: args.value, at: args.at, note: args.note });
+  return { text: `Recorded ${m.current} for "${m.name}" (${m.currentAt?.toISOString().slice(0, 10)}).`, meta: { metricId: m.id } };
+}
+
 /** Run one Tethr tool. Never throws: errors come back as an error result. */
 export async function runTethrTool(name: string, args: unknown, ctx: TethrToolContext): Promise<TethrToolResult> {
   const a = args && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
   try {
     if (name === "score_list") return await runScoreList(a, ctx);
     if (name === "keyword_ideas") return await runKeywordIdeas(a, ctx);
+    if (name === "goals_list" || name === "save_goal" || name === "save_metric" || name === "record_metric") {
+      return await runGoalTool(name, a, ctx);
+    }
     return { text: `There's no Tethr tool called ${name}.`, isError: true };
   } catch (err) {
+    if (err instanceof GoalInputError) return { text: `${name}: ${err.message}`, isError: true };
     return { text: `Tethr tools: ${name} failed (${err instanceof Error ? err.message : String(err)}).`, isError: true };
   }
 }

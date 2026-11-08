@@ -11,6 +11,7 @@ import { priceUsd } from "./llm/pricing.js";
 import { orgService } from "./org.js";
 import { routingService } from "./routing.js";
 import { isAgentsPaused } from "./throttle.js";
+import { getIntegrations } from "./integrations.js";
 
 // The tethr_llm server adapter. Registering through the adapter seam means
 // heartbeats, cron routines, "run now", run logs, and cost events all flow
@@ -33,6 +34,12 @@ async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionRe
   const config = (ctx.agent.adapterConfig ?? {}) as Record<string, unknown>;
   const specialMode =
     config.heartbeatMode === "digest" || config.heartbeatMode === "site_audit" || config.heartbeatMode === "pulse_audit";
+  // The rhythm Mark chose in setup (phase 20) always runs as a task, even for
+  // @tethr, whose standing heartbeat is the old digest.
+  if (specialMode && adapterDb) {
+    const { isRhythmTask } = await import("./rhythm.js");
+    if (await isRhythmTask(adapterDb, ctx.agent.companyId, taskIssueId)) return executeTask(ctx, taskIssueId);
+  }
   if (specialMode) {
     // Deterministic routine modes run as before, then close their routine task.
     const result = await executeHeartbeat(ctx);
@@ -97,6 +104,35 @@ async function executeTask(ctx: AdapterExecutionContext, issueId: string): Promi
 
   const wakeReason = typeof ctx.context?.wakeReason === "string" ? ctx.context.wakeReason : null;
   const fromRoutine = task.issue.originKind === "routine_execution";
+
+  // Phase 20.3: @tethr's scheduled work (the rhythm Mark chose in setup) runs as
+  // a turn of the chat's Claude session in the Operations chat, not through the
+  // old routing engine.
+  if (fromRoutine && tag === "@tethr" && getIntegrations(companyId).assistant.engine === "session") {
+    const { runTaskInOperationsChat } = await import("./rhythm.js");
+    await ctx.onLog("stdout", `[tethr] ${task.issue.identifier ?? issueId}: running in the Operations chat\n`);
+    const out = await runTaskInOperationsChat(db, { companyId, issue: task.issue });
+    const taskStatus = await tasks.finish({
+      issueId,
+      agentId: ctx.agent.id,
+      agentTag: tag,
+      runId: ctx.runId,
+      run: { status: out.status, resultText: out.text, outputs: out.outputs },
+      delegated: [],
+    });
+    return {
+      exitCode: out.status === "done" ? 0 : 1,
+      signal: null,
+      timedOut: false,
+      ...(out.status === "done" ? {} : { errorMessage: out.text }),
+      provider: "claude-code",
+      model: getIntegrations(companyId).assistant.model,
+      billingType: "fixed",
+      usage: { inputTokens: 0, outputTokens: 0 },
+      resultJson: { chatRunId: out.runId, taskIssueId: issueId, taskStatus },
+      summary: out.text.slice(0, 500),
+    };
+  }
   const standing =
     fromRoutine && typeof config.heartbeatRequest === "string" ? config.heartbeatRequest : null;
   const requestText = buildTaskRequest(task, { agentTag: tag, wakeReason, standingInstructions: standing });

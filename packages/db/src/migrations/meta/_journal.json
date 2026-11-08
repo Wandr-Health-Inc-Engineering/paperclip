@@ -666,6 +666,13 @@
       "when": 1784012013391,
       "tag": "0094_smart_kulan_gath",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1794122325611,
+      "tag": "0095_bitter_millenium_guard",
+      "breakpoints": true
     }
   ]
 }

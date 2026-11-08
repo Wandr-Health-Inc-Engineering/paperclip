@@ -136,7 +136,9 @@ const CONNECTOR_RULES: Record<string, Rule[]> = {
   // Tethr's own MCP server "tethr" (phase 19): scoring and keyword lookups,
   // run in the Tethr server; they change nothing outside its files/ folder.
   "Tethr tools": [
-    [/^(score_list|keyword_ideas)$/, "read"],
+    [/^(score_list|keyword_ideas|goals_list)$/, "read"],
+    // Goals live in Tethr itself: saving one changes nothing outside Tethr.
+    [/^(save_goal|save_metric|record_metric)$/, "draft"],
     [/.*/, "blocked"],
   ],
 };
@@ -237,6 +239,14 @@ function summarize(connector: string, name: string, input: Record<string, unknow
     const from = typeof input.from_file === "string" ? path.basename(input.from_file) : "";
     return `Scoring ${n ? `${n} items` : from ? from : "a list"} with Jev`;
   }
+  if (connector === "Tethr tools" && name === "goals_list") return "Reading Wandr's goals";
+  if (connector === "Tethr tools" && name === "save_goal") {
+    return `Saving goal${typeof input.title === "string" ? ` “${input.title.slice(0, 60)}”` : ""}`;
+  }
+  if (connector === "Tethr tools" && name === "save_metric") {
+    return `Saving metric${typeof input.name === "string" ? ` “${input.name.slice(0, 60)}”` : ""}`;
+  }
+  if (connector === "Tethr tools" && name === "record_metric") return "Recording a goal measurement";
   if (connector === "Tethr tools" && name === "keyword_ideas") {
     const seeds = Array.isArray(input.seeds) ? input.seeds.filter((s) => typeof s === "string").slice(0, 3) : [];
     return `Keyword ideas${seeds.length ? ` for ${seeds.map((s) => `“${String(s).slice(0, 40)}”`).join(", ")}` : ""}`;
@@ -302,7 +312,9 @@ export function classify(tool: string, input: Record<string, unknown> | undefine
     cls = POSTHOG_READ_VERB.test(String(args.command ?? "")) ? "read" : "write";
   }
 
-  if (cls !== "read" && cls !== "money") {
+  // Tethr's own tools keep everything inside Tethr (a metric named "new patients
+  // per month" isn't medical content going anywhere), so the outward checks skip them.
+  if (cls !== "read" && cls !== "money" && connector !== "Tethr tools") {
     const outward = recipients(args);
     if ((cls === "write" || cls === "draft") && outward.some((a) => !isInternal(a, ctx.internalAddresses))) {
       // A draft to an outsider is still only a draft; sending/inviting them is public.

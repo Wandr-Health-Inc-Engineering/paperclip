@@ -226,6 +226,22 @@ The chat's `score_list` tool ranks long lists (keyword ideas, leads, Reddit post
 Cost is about $0.04 per million input tokens (a 500-keyword run is well under a cent).
 Optional: `TETHR_JEV_MODEL=jev-1.14.0` pins the version.
 
+### C6d · Onboard tethr (phase 20) — ~20 min, yours alone
+
+After the fresh-start wipe, open **Set up tethr** (top of the sidebar, or `/setup`):
+
+1. **Basics:** your one-line mission and the goal areas (New customers, Revenue, Partnerships &
+   distribution preselected).
+2. **Connections:** check the list; fix anything amber (Stripe/PostHog connector modes, Slack bot,
+   your Slack ID).
+3. **Goals interview:** tethr interviews you in a side chat, pulls baselines from Stripe, PostHog
+   and Google Ads, and saves each goal with a target, a date and how it's measured. Only you can
+   answer this: the goals must be yours.
+4. **Rhythm:** pick what tethr does on its own (Monday plan, Friday scorecard, daily brief, Slack
+   posts) and when.
+5. **Finish:** run the first scorecard, then finish setup. The scorecard lives at the top of
+   Growth.
+
 ### C7 · Deferred (no action needed now)
 
 - **Ads pair (Tailwind/Ledger):** excluded until Google Ads MCP auth + Chrome-action layer works

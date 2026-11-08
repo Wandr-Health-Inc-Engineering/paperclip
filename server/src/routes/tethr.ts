@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import fs from "node:fs";
 import { promisify } from "node:util";
 import { Router, type Request, type Response } from "express";
 import { and, desc, eq, gte, inArray, like, or, sql } from "drizzle-orm";
@@ -54,12 +55,30 @@ import {
 } from "../tethr/assistant/attachments.js";
 import { jevConfigured } from "../tethr/jev.js";
 import * as envFile from "../tethr/env-file.js";
+import { planReset, resetAllowed, runReset } from "../tethr/reset.js";
+import { seedTethrCore } from "../tethr/seed/tethr-core.js";
+import { GoalInputError, goalsService } from "../tethr/goals.js";
+import { applyRhythm, operationsThreadId, RHYTHMS, runRhythmNow } from "../tethr/rhythm.js";
+import {
+  getSetup,
+  interviewBrief,
+  RHYTHM_KEYS,
+  type RhythmKey,
+  SETUP_STEPS,
+  type SetupStep,
+  updateSetup,
+  validCron,
+  validTimezone,
+} from "../tethr/setup.js";
+import { getRoster } from "../tethr/overseers.js";
+import { googleAdsConfigured } from "../tethr/tools/google-ads.js";
 import { mirrorDir } from "../tethr/mirror.js";
 import multer from "multer";
 import { getIntegrations, integrationRulesText, KNOWN_CONNECTORS, modeFor, sanitizeIntegrationsPatch, updateIntegrations } from "../tethr/integrations.js";
 import {
   interpretSlackEvent,
   routeInboundKickoff,
+  slackConfigured,
   verifySlackSignature,
 } from "../tethr/slack.js";
 import { workerService } from "../tethr/worker.js";
@@ -149,7 +168,7 @@ export function tethrRoutes(db: Db) {
       res.json({ content: [{ type: "text", text: "Tethr approval gate: Tethr tools are turned off in Tethr's Integrations." }], isError: true });
       return;
     }
-    const result = await runTethrTool(name, body.arguments, { workspaceDir: workspaceDir().dir });
+    const result = await runTethrTool(name, body.arguments, { workspaceDir: workspaceDir().dir, db, companyId: ctx.companyId });
     await logActivity(db, {
       companyId: ctx.companyId,
       actorType: "agent",
@@ -760,6 +779,237 @@ export function tethrRoutes(db: Db) {
     }
     await logEnv(req, "tethr_env_deleted", key);
     res.json({ ok: true });
+  });
+
+  // ---- Fresh-start wipe (phase 20.0) --------------------------------------------
+  // Inert unless TETHR_ALLOW_RESET=true. Instance admins only. The run needs a
+  // fresh database backup (core POST /instance/database-backups) and a typed
+  // confirmation naming the companies.
+  const requireResetAdmin = (req: Request, res: Response): boolean => {
+    if (!resetAllowed()) {
+      res.status(404).json({ error: "Not found" });
+      return false;
+    }
+    if (req.actor?.type === "board" && req.actor.isInstanceAdmin === true) return true;
+    res.status(403).json({ error: "Only an instance admin can do this." });
+    return false;
+  };
+  const prefixesOf = (raw: unknown) =>
+    String(raw ?? "")
+      .split(",")
+      .map((p) => p.trim().toUpperCase())
+      .filter((p) => /^[A-Z0-9]{1,10}$/.test(p));
+
+  router.get("/tethr/admin/reset/plan", async (req, res) => {
+    if (!requireResetAdmin(req, res)) return;
+    res.json(await planReset(db, prefixesOf(req.query.prefixes)));
+  });
+
+  router.post("/tethr/admin/reset", async (req, res) => {
+    if (!requireResetAdmin(req, res)) return;
+    const prefixes = prefixesOf(req.body?.prefixes);
+    if (!prefixes.length || req.body?.confirm !== `WIPE ${prefixes.join(",")}`) {
+      res.status(400).json({ error: `Confirm with "WIPE ${prefixes.join(",") || "<prefixes>"}".` });
+      return;
+    }
+    const backupFile = String(req.body?.backupFile ?? "");
+    const backup = backupFile ? await fs.promises.stat(backupFile).catch(() => null) : null;
+    if (!backup?.isFile() || backup.size === 0 || Date.now() - backup.mtimeMs > 60 * 60 * 1000) {
+      res.status(400).json({ error: "Take a database backup first (it must be under an hour old) and pass its backupFile." });
+      return;
+    }
+    const result = await runReset(db, prefixes);
+    // A fresh Wandr with only @tethr, right away (a restart also does this).
+    const seeded = await seedTethrCore(db).catch((err) => ({ error: err instanceof Error ? err.message : String(err) }));
+    logger.warn({ prefixes, result, backupFile }, "[tethr] fresh-start wipe ran");
+    res.json({ ...result, backupFile, seeded });
+  });
+
+  // ---- Goals with numbers (phase 20) ------------------------------------------
+  const goalRoute =
+    (fn: (req: Request, res: Response, companyId: string) => Promise<void>) => async (req: Request, res: Response) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      if (!requirePerson(req, res)) return;
+      try {
+        await fn(req, res, companyId);
+      } catch (err) {
+        if (err instanceof GoalInputError) {
+          res.status(400).json({ error: err.message });
+          return;
+        }
+        throw err;
+      }
+    };
+
+  router.get("/tethr/:companyId/goals", goalRoute(async (_req, res, companyId) => {
+    res.json(await goalsService(db).list(companyId));
+  }));
+  router.post("/tethr/:companyId/goals", goalRoute(async (req, res, companyId) => {
+    res.json(await goalsService(db).saveGoal(companyId, (req.body ?? {}) as Record<string, unknown>));
+  }));
+  router.post("/tethr/:companyId/goals/metrics", goalRoute(async (req, res, companyId) => {
+    res.json(await goalsService(db).saveMetric(companyId, (req.body ?? {}) as Record<string, unknown>));
+  }));
+  router.post("/tethr/:companyId/goals/metrics/:metricId/measurements", goalRoute(async (req, res, companyId) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    res.json(await goalsService(db).recordMeasurement(companyId, req.params.metricId as string, { value: body.value, at: body.at, note: body.note }));
+  }));
+  router.delete("/tethr/:companyId/goals/metrics/:metricId", goalRoute(async (req, res, companyId) => {
+    await goalsService(db).deleteMetric(companyId, req.params.metricId as string);
+    res.json({ ok: true });
+  }));
+
+  // ---- Setup / onboarding (phase 20) -------------------------------------------
+  const setupChecks = (companyId: string) => {
+    const cfg = getIntegrations(companyId);
+    const mode = (label: string) => modeFor(cfg, label);
+    const growth = getRoster(companyId).growth;
+    return [
+      { key: "stripe", label: "Stripe (revenue and new customers)", ok: mode("Stripe") !== "off", detail: `Mode: ${mode("Stripe")}`, href: "/tethr-settings" },
+      { key: "posthog", label: "PostHog (traffic and conversion)", ok: mode("PostHog") !== "off", detail: `Mode: ${mode("PostHog")}`, href: "/tethr-settings" },
+      { key: "google_ads", label: "Google Ads (spend and keyword volumes)", ok: googleAdsConfigured(), detail: googleAdsConfigured() ? "Connected" : "Add the GOOGLE_ADS_* settings", href: "/environment" },
+      { key: "gmail", label: "Gmail", ok: mode("Gmail") !== "off", detail: `Mode: ${mode("Gmail")}`, href: "/tethr-settings" },
+      { key: "slack_connector", label: "Slack (reading)", ok: mode("Slack") !== "off", detail: `Mode: ${mode("Slack")}`, href: "/tethr-settings" },
+      { key: "slack_bot", label: "Slack bot for #tethr posts and approvals", ok: slackConfigured(), detail: slackConfigured() ? "Token set" : "Add SLACK_BOT_TOKEN", href: "/environment" },
+      { key: "approver", label: "Your Slack member ID (approve from Slack)", ok: !!growth?.slackId, detail: growth?.slackId ? `${growth.name || "Set"}` : "Not set", href: "/tethr-settings" },
+      { key: "jev", label: "Jev (fast list scoring)", ok: jevConfigured(), detail: jevConfigured() ? "Connected" : "Optional: add TYPESAFE_API_KEY", href: "/environment", optional: true },
+      { key: "drive", label: "Google Drive folder (00 Tethr)", ok: !!mirrorDir(), detail: mirrorDir() ?? "Not found", href: "/drive" },
+    ];
+  };
+
+  router.get("/tethr/:companyId/setup", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    res.json({ state: getSetup(companyId), checks: setupChecks(companyId), goals: await goalsService(db).list(companyId), rhythms: RHYTHMS });
+  });
+
+  router.put("/tethr/:companyId/setup/basics", goalRoute(async (req, res, companyId) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const mission = String(body.mission ?? "").trim();
+    if (!mission) {
+      res.status(400).json({ error: "Write the mission in a line." });
+      return;
+    }
+    const areas = (Array.isArray(body.areas) ? body.areas : [])
+      .map((a) => String(a ?? "").trim().slice(0, 80))
+      .filter(Boolean)
+      .slice(0, 6);
+    if (!areas.length) {
+      res.status(400).json({ error: "Pick at least one goal area." });
+      return;
+    }
+    const timezone = validTimezone(body.timezone) ? body.timezone : getSetup(companyId).timezone;
+    const svc = goalsService(db);
+    await svc.saveGoal(companyId, { level: "company", title: mission, description: typeof body.missionDetail === "string" ? body.missionDetail : undefined });
+    const existing = (await svc.list(companyId)).goals;
+    for (const area of areas) {
+      const found = existing.find((g) => g.title.toLowerCase() === area.toLowerCase());
+      if (!found) await svc.saveGoal(companyId, { title: area, level: "team" });
+      else if (found.status === "cancelled") await svc.saveGoal(companyId, { id: found.id, status: "active" });
+    }
+    // An area taken off the list is cancelled (kept, with its numbers), not deleted.
+    for (const g of existing) {
+      if (!areas.some((a) => a.toLowerCase() === g.title.toLowerCase()) && g.status !== "cancelled" && !g.metrics.length) {
+        await svc.saveGoal(companyId, { id: g.id, status: "cancelled" });
+      }
+    }
+    if (Array.isArray(body.internalAddresses)) {
+      const patch = sanitizeIntegrationsPatch({ internalAddresses: body.internalAddresses });
+      if (patch.internalAddresses?.length) await updateIntegrations(companyId, { internalAddresses: patch.internalAddresses });
+    }
+    const state = await updateSetup(companyId, (s) => ({ ...s, areas, timezone, steps: { ...s.steps, basics: new Date().toISOString() } }));
+    res.json({ state, goals: await svc.list(companyId) });
+  }));
+
+  router.post("/tethr/:companyId/setup/steps/:step", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
+    const step = req.params.step as SetupStep;
+    if (!SETUP_STEPS.includes(step)) {
+      res.status(400).json({ error: "Unknown step" });
+      return;
+    }
+    const done = req.body?.done !== false;
+    res.json(
+      await updateSetup(companyId, (s) => {
+        const steps = { ...s.steps };
+        if (done) steps[step] = new Date().toISOString();
+        else delete steps[step];
+        return { ...s, steps };
+      }),
+    );
+  });
+
+  router.post("/tethr/:companyId/setup/interview", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
+    const state = getSetup(companyId);
+    if (state.interviewThreadId && req.body?.restart !== true) {
+      res.json({ threadId: state.interviewThreadId, started: false });
+      return;
+    }
+    const actor = getActorInfo(req);
+    const ids = await getAssistantRunner(db).send({
+      companyId,
+      threadId: null,
+      text: interviewBrief(state.areas),
+      kind: "system",
+      requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
+    });
+    await chats.addSideChat(companyId, ids.threadId, "Goals interview");
+    await updateSetup(companyId, (s) => ({ ...s, interviewThreadId: ids.threadId }));
+    res.json({ threadId: ids.threadId, started: true });
+  });
+
+  router.put("/tethr/:companyId/setup/rhythm", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
+    const body = (req.body ?? {}) as { timezone?: unknown; rhythm?: Record<string, Record<string, unknown>> };
+    const current = getSetup(companyId);
+    const timezone = body.timezone === undefined ? current.timezone : body.timezone;
+    if (!validTimezone(timezone)) {
+      res.status(400).json({ error: "That time zone isn't recognized." });
+      return;
+    }
+    const rhythm = { ...current.rhythm };
+    for (const key of RHYTHM_KEYS) {
+      const raw = body.rhythm?.[key];
+      if (!raw) continue;
+      const cron = raw.cron === undefined ? rhythm[key].cron : raw.cron;
+      if (!validCron(cron)) {
+        res.status(400).json({ error: `${RHYTHMS[key].label}: that schedule isn't valid.` });
+        return;
+      }
+      rhythm[key] = { ...rhythm[key], enabled: raw.enabled === true, slack: raw.slack === true, cron };
+    }
+    const actor = getActorInfo(req);
+    const applied = await applyRhythm(db, companyId, rhythm, timezone, { userId: actor.actorId });
+    res.json(await updateSetup(companyId, (s) => ({ ...s, timezone, rhythm: applied, steps: { ...s.steps, rhythm: new Date().toISOString() } })));
+  });
+
+  router.post("/tethr/:companyId/setup/rhythm/:key/run", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
+    const key = req.params.key as RhythmKey;
+    if (!RHYTHM_KEYS.includes(key)) {
+      res.status(400).json({ error: "Unknown rhythm item" });
+      return;
+    }
+    const actor = getActorInfo(req);
+    res.json({ ...(await runRhythmNow(db, companyId, key, { userId: actor.actorId })), threadId: operationsThreadId(companyId) });
+  });
+
+  router.post("/tethr/:companyId/setup/complete", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
+    const done = req.body?.done !== false;
+    res.json(await updateSetup(companyId, (s) => ({ ...s, completedAt: done ? new Date().toISOString() : null })));
   });
 
   router.put("/tethr/:companyId/integrations", async (req, res) => {

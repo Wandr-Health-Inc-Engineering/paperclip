@@ -167,6 +167,77 @@ export interface TethrChatRun extends TethrRouteRun {
   attachments?: TethrChatAttachment[];
 }
 
+export interface TethrMetricPoint {
+  at: string;
+  value: number;
+  note?: string;
+}
+
+export interface TethrMetric {
+  id: string;
+  goalId: string;
+  name: string;
+  unit: "count" | "usd" | "percent" | "number";
+  direction: "up" | "down";
+  source: string;
+  method: string;
+  baseline: number | null;
+  baselineAt: string | null;
+  target: number | null;
+  targetDate: string | null;
+  current: number | null;
+  currentAt: string | null;
+  history: TethrMetricPoint[];
+}
+
+export interface TethrGoal {
+  id: string;
+  title: string;
+  description: string | null;
+  level: string;
+  status: string;
+  parentId: string | null;
+  metrics: TethrMetric[];
+}
+
+export interface TethrGoalsView {
+  company: Omit<TethrGoal, "metrics"> | null;
+  goals: TethrGoal[];
+}
+
+export type TethrRhythmKey = "plan" | "scorecard" | "brief";
+export interface TethrRhythmChoice {
+  enabled: boolean;
+  cron: string;
+  slack: boolean;
+  routineId?: string;
+}
+
+export interface TethrSetupState {
+  steps: Partial<Record<"basics" | "connect" | "interview" | "rhythm", string>>;
+  completedAt: string | null;
+  areas: string[];
+  timezone: string;
+  rhythm: Record<TethrRhythmKey, TethrRhythmChoice>;
+  interviewThreadId: string | null;
+}
+
+export interface TethrSetupCheck {
+  key: string;
+  label: string;
+  ok: boolean;
+  detail: string;
+  href: string;
+  optional?: boolean;
+}
+
+export interface TethrSetup {
+  state: TethrSetupState;
+  checks: TethrSetupCheck[];
+  goals: TethrGoalsView;
+  rhythms: Record<TethrRhythmKey, { title: string; label: string; playbook: string }>;
+}
+
 export interface TethrEnvEntry {
   key: string;
   set: boolean;
@@ -511,6 +582,8 @@ export const tethrKeys = {
   chats: (c: string) => ["tethr", c, "chats"] as const,
   integrations: (c: string) => ["tethr", c, "integrations"] as const,
   env: (c: string) => ["tethr", c, "env"] as const,
+  goals: (c: string) => ["tethr", c, "goals"] as const,
+  setup: (c: string) => ["tethr", c, "setup"] as const,
   assistantMemory: (c: string) => ["tethr", c, "assistant-memory"] as const,
   chatRuns: (c: string, threadId: string) => ["tethr", c, "chats", threadId, "runs"] as const,
   routeRun: (c: string, id: string) => ["tethr", c, "route-runs", id] as const,
@@ -633,6 +706,25 @@ export const tethrApi = {
   sendChatMessage: (c: string, threadId: string, text: string, attachments: string[] = []) =>
     api.post<{ routeRunId: string; threadId: string }>(`/tethr/${c}/chats/${threadId}/messages`, { text, attachments }),
   integrations: (c: string) => api.get<TethrIntegrations>(`/tethr/${c}/integrations`),
+  /** Phase 20: goals with numbers, and tethr's setup (onboarding). */
+  goals: (c: string) => api.get<TethrGoalsView>(`/tethr/${c}/goals`),
+  saveGoal: (c: string, body: Record<string, unknown>) => api.post<TethrGoal>(`/tethr/${c}/goals`, body),
+  saveMetric: (c: string, body: Record<string, unknown>) => api.post<TethrMetric>(`/tethr/${c}/goals/metrics`, body),
+  recordMeasurement: (c: string, metricId: string, body: { value: number; at?: string; note?: string }) =>
+    api.post<TethrMetric>(`/tethr/${c}/goals/metrics/${metricId}/measurements`, body),
+  deleteMetric: (c: string, metricId: string) => api.delete<{ ok: true }>(`/tethr/${c}/goals/metrics/${metricId}`),
+  setup: (c: string) => api.get<TethrSetup>(`/tethr/${c}/setup`),
+  setupBasics: (c: string, body: { mission: string; missionDetail?: string; areas: string[]; timezone: string; internalAddresses?: string[] }) =>
+    api.put<{ state: TethrSetupState; goals: TethrGoalsView }>(`/tethr/${c}/setup/basics`, body),
+  setupStep: (c: string, step: "basics" | "connect" | "interview" | "rhythm", done = true) =>
+    api.post<TethrSetupState>(`/tethr/${c}/setup/steps/${step}`, { done }),
+  startInterview: (c: string, restart = false) =>
+    api.post<{ threadId: string; started: boolean }>(`/tethr/${c}/setup/interview`, { restart }),
+  setupRhythm: (c: string, body: { timezone: string; rhythm: Record<TethrRhythmKey, { enabled: boolean; cron: string; slack: boolean }> }) =>
+    api.put<TethrSetupState>(`/tethr/${c}/setup/rhythm`, body),
+  runRhythm: (c: string, key: TethrRhythmKey) =>
+    api.post<{ issueId: string | null; threadId: string }>(`/tethr/${c}/setup/rhythm/${key}/run`, {}),
+  completeSetup: (c: string, done = true) => api.post<TethrSetupState>(`/tethr/${c}/setup/complete`, { done }),
   /** Phase 19.2: the instance .env (names and status only; values via reveal). */
   env: (c: string) => api.get<TethrEnv>(`/tethr/${c}/env`),
   revealEnv: (c: string, key: string) => api.post<{ key: string; value: string }>(`/tethr/${c}/env/reveal`, { key }),

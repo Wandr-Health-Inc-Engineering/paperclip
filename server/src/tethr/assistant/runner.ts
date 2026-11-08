@@ -9,6 +9,7 @@ import { budgetService } from "../../services/budgets.js";
 import { costService } from "../../services/costs.js";
 import * as chats from "../chats.js";
 import { denyRulesFor, getIntegrations, integrationRulesText, modeFor, recordDiscoveredTools } from "../integrations.js";
+import { goalsContextText, goalsService } from "../goals.js";
 import { mirrorDir } from "../mirror.js";
 import { orgService } from "../org.js";
 import { isAgentsPaused, PAUSED_MESSAGE } from "../throttle.js";
@@ -202,7 +203,8 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     let bridgeScript: string | null = null;
     try {
       cfg = getIntegrations(companyId);
-      ws = await ensureWorkspace({ integrationRules: integrationRulesText(cfg) });
+      const goals = goalsContextText(await goalsService(db).list(companyId));
+      ws = await ensureWorkspace({ integrationRules: integrationRulesText(cfg), goals });
       ({ personaPath, skillDir } = await ensurePersona());
       const hookScript = await ensureHookScript();
       if (modeFor(cfg, TETHR_TOOLS_LABEL) !== "off") bridgeScript = await ensureToolsBridge();

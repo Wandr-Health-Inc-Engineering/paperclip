@@ -22,6 +22,7 @@ import { useQuery } from "@tanstack/react-query";
 import { NavLink } from "@/lib/router";
 import { SidebarSection } from "./SidebarSection";
 import { SidebarNavItem } from "./SidebarNavItem";
+import { TethrSetupNavItem } from "./tethr/SetupNavItem";
 import { SidebarProjects } from "./SidebarProjects";
 import { SidebarAgents } from "./SidebarAgents";
 import { useDialogActions } from "../context/DialogContext";
@@ -84,6 +85,7 @@ export function Sidebar() {
             <span className="truncate">New Issue</span>
           </button>
           {/* Tethr: Chat sits above Dashboard (Mark, 2026-11-07) */}
+          <TethrSetupNavItem />
           <SidebarNavItem to="/chat" label="Chat" icon={MessagesSquare} />
           <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
           {/* Inbox removed (see DECISIONS.md): its Approve bypassed Tethr gating —

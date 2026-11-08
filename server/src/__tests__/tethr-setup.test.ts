@@ -1,0 +1,283 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import express from "express";
+import request from "supertest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { and, eq } from "drizzle-orm";
+import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
+import { companies, createDb, issues, routines, routineTriggers, tethrRouteRuns } from "@paperclipai/db";
+import { seedTethrCore } from "../tethr/seed/tethr-core.ts";
+import { applyRhythm, operationsThreadId, runTaskInOperationsChat } from "../tethr/rhythm.ts";
+import { DEFAULT_RHYTHM, getSetup, interviewBrief, validCron, validTimezone } from "../tethr/setup.ts";
+import { assistantRunner, resetAssistantRunnerForTests, setAssistantRunnerForTests } from "../tethr/assistant/runner.ts";
+import { listSideChats } from "../tethr/chats.ts";
+import { initTethrAdapter } from "../tethr/adapter.ts";
+import { planReset, runReset, transcriptDirFor } from "../tethr/reset.ts";
+import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
+
+// Phase 20: tethr's setup (onboarding), the working rhythm on the chat engine,
+// and the fresh-start wipe.
+
+describe("tethr setup — pure bits", () => {
+  it("validates schedules and time zones, and briefs the interview", () => {
+    expect(validCron("0 8 * * 1")).toBe(true);
+    expect(validCron("30 7 * * 1-5")).toBe(true);
+    expect(validCron("0 8 * *")).toBe(false);
+    expect(validCron("0 8 * * 1; rm -rf /")).toBe(false);
+    expect(validTimezone("America/Chicago")).toBe(true);
+    expect(validTimezone("Mars/Base")).toBe(false);
+    const brief = interviewBrief(["New customers", "Revenue"]);
+    expect(brief.split("\n")[0]).toBe("Setup: goals interview");
+    expect(brief).toContain("start with New customers");
+    expect(brief).toContain("Never save numbers he hasn't agreed to");
+    expect(brief).toContain("Aggregates only");
+    expect(operationsThreadId("c1")).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(operationsThreadId("c1")).toBe(operationsThreadId("c1"));
+  });
+});
+
+const support = await getEmbeddedPostgresTestSupport();
+const describePg = support.supported ? describe : describe.skip;
+
+describePg("tethr setup — routes, rhythm, operations chat, wipe", () => {
+  let db!: ReturnType<typeof createDb>;
+  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+  let companyId!: string;
+  let dir!: string;
+  const prompts: string[] = [];
+
+  const fakeExecute = async (ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> => {
+    prompts.push(String(ctx.context.tethrPrompt));
+    await ctx.onLog("stdout", JSON.stringify({ type: "result", result: "Scorecard: New customers 140 of 200, on track.", is_error: false }) + "\n");
+    return { exitCode: 0, signal: null, timedOut: false, summary: "ok" };
+  };
+
+  const appFor = async (actor: Record<string, unknown>) => {
+    const { tethrRoutes } = await import("../routes/tethr.ts");
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      (req as unknown as { actor: unknown }).actor = actor;
+      next();
+    });
+    app.use("/api", tethrRoutes(db));
+    return app;
+  };
+  const mark = { type: "board", source: "local_implicit", userId: "mark", isInstanceAdmin: true };
+
+  beforeAll(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "tethr-setup-"));
+    process.env.TETHR_SETUP_FILE = path.join(dir, "setup.json");
+    process.env.TETHR_CHATS_FILE = path.join(dir, "chats.json");
+    process.env.TETHR_INTEGRATIONS_FILE = path.join(dir, "integrations.json");
+    process.env.TETHR_PAUSED_FILE = path.join(dir, "paused.json");
+    process.env.TETHR_OVERSEERS_FILE = path.join(dir, "overseers.json");
+    process.env.TETHR_ARCHIVE_FILE = path.join(dir, "archive.json");
+    process.env.TETHR_MOUNTS_FILE = path.join(dir, "mounts.json");
+    process.env.TETHR_ASSISTANT_HOME = path.join(dir, "home");
+    process.env.TETHR_WORKSPACE_DIR = path.join(dir, "workspace");
+    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-tethr-setup-");
+    db = createDb(tempDb.connectionString);
+    companyId = (await seedTethrCore(db)).companyId;
+    setAssistantRunnerForTests(assistantRunner(db, { execute: fakeExecute }));
+    initTethrAdapter(db);
+  }, 60_000);
+
+  afterAll(async () => {
+    setAssistantRunnerForTests(null);
+    resetAssistantRunnerForTests();
+    await tempDb?.cleanup();
+  });
+
+  it("saves the basics as goals and lists what's connected", async () => {
+    const app = await appFor(mark);
+    const before = await request(app).get(`/api/tethr/${companyId}/setup`).expect(200);
+    expect(before.body.state.completedAt).toBeNull();
+    expect(before.body.checks.map((c: { key: string }) => c.key)).toEqual(expect.arrayContaining(["stripe", "posthog", "google_ads", "slack_bot", "jev"]));
+
+    await request(app).put(`/api/tethr/${companyId}/setup/basics`).send({ mission: "", areas: ["Revenue"] }).expect(400);
+    const saved = await request(app)
+      .put(`/api/tethr/${companyId}/setup/basics`)
+      .send({ mission: "Make travel medicine easy", areas: ["New customers", "Revenue", "Partnerships & distribution"], timezone: "America/Chicago" })
+      .expect(200);
+    expect(saved.body.goals.company.title).toBe("Make travel medicine easy");
+    expect(saved.body.goals.goals.map((g: { title: string }) => g.title)).toEqual(["New customers", "Revenue", "Partnerships & distribution"]);
+    expect(saved.body.state.timezone).toBe("America/Chicago");
+
+    // Dropping an area with no numbers cancels it (kept, not deleted).
+    const again = await request(app)
+      .put(`/api/tethr/${companyId}/setup/basics`)
+      .send({ mission: "Make travel medicine easy", areas: ["New customers", "Revenue"], timezone: "America/Chicago" })
+      .expect(200);
+    expect(again.body.goals.goals.map((g: { title: string }) => g.title)).toEqual(["New customers", "Revenue"]);
+
+    const agent = await appFor({ type: "agent", agentId: "a1", companyId });
+    await request(agent).put(`/api/tethr/${companyId}/setup/basics`).send({ mission: "x", areas: ["x"] }).expect(403);
+  });
+
+  it("starts the goals interview once, in its own side chat", async () => {
+    const app = await appFor(mark);
+    const first = await request(app).post(`/api/tethr/${companyId}/setup/interview`).send({}).expect(200);
+    expect(first.body.started).toBe(true);
+    const second = await request(app).post(`/api/tethr/${companyId}/setup/interview`).send({}).expect(200);
+    expect(second.body).toEqual({ threadId: first.body.threadId, started: false });
+    expect(listSideChats(companyId).some((c) => c.threadId === first.body.threadId && c.title === "Goals interview")).toBe(true);
+    const [turn] = await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.id, first.body.threadId));
+    expect(turn.requestText.startsWith("Setup: goals interview")).toBe(true);
+    expect(turn.sourceKey).toBe("chat-system");
+  });
+
+  it("turns the chosen rhythm into core routines in the right time zone, and pauses the rest", async () => {
+    const app = await appFor(mark);
+    await request(app)
+      .put(`/api/tethr/${companyId}/setup/rhythm`)
+      .send({ rhythm: { plan: { enabled: true, cron: "0 9 * * 1", slack: false } } })
+      .expect(200);
+    await request(app)
+      .put(`/api/tethr/${companyId}/setup/rhythm`)
+      .send({ rhythm: { scorecard: { enabled: true, cron: "bad", slack: false } } })
+      .expect(400);
+    const saved = await request(app)
+      .put(`/api/tethr/${companyId}/setup/rhythm`)
+      .send({ rhythm: { plan: { enabled: false, cron: "0 9 * * 1" }, scorecard: { enabled: true, cron: "0 15 * * 5" } } })
+      .expect(200);
+    const plan = saved.body.rhythm.plan;
+    const scorecard = saved.body.rhythm.scorecard;
+    expect(plan.routineId).toBeTruthy();
+    const [planRoutine] = await db.select().from(routines).where(eq(routines.id, plan.routineId));
+    const [scoreRoutine] = await db.select().from(routines).where(eq(routines.id, scorecard.routineId));
+    expect(planRoutine.status).toBe("paused");
+    expect(scoreRoutine).toMatchObject({ title: "Weekly scorecard", status: "active" });
+    expect(scoreRoutine.description).toContain("record_metric");
+    const [trigger] = await db.select().from(routineTriggers).where(eq(routineTriggers.routineId, scoreRoutine.id));
+    expect(trigger).toMatchObject({ cronExpression: "0 15 * * 5", timezone: "America/Chicago", enabled: true });
+    const [planTrigger] = await db.select().from(routineTriggers).where(eq(routineTriggers.routineId, planRoutine.id));
+    expect(planTrigger.enabled).toBe(false);
+    // Brief was never chosen: no routine at all.
+    expect(saved.body.rhythm.brief.routineId).toBeUndefined();
+    expect(getSetup(companyId).steps.rhythm).toBeTruthy();
+    // Saving again updates the same routines instead of making new ones.
+    const again = await applyRhythm(db, companyId, getSetup(companyId).rhythm, "America/Chicago", { userId: "mark" });
+    expect(again.scorecard.routineId).toBe(scorecard.routineId);
+    expect(await db.select().from(routines).where(and(eq(routines.companyId, companyId), eq(routines.title, "Weekly scorecard")))).toHaveLength(1);
+  });
+
+  it("runs a scheduled task as a turn in the Operations chat and waits for it", async () => {
+    const scoreId = getSetup(companyId).rhythm.scorecard.routineId!;
+    const [routine] = await db.select().from(routines).where(eq(routines.id, scoreId));
+    const issue = {
+      id: "00000000-0000-4000-8000-000000000123",
+      title: routine.title,
+      identifier: "WD-9",
+      description: routine.description,
+      originId: routine.id,
+    } as unknown as typeof issues.$inferSelect;
+    const out = await runTaskInOperationsChat(db, { companyId, issue, pollMs: 20 });
+    expect(out).toMatchObject({ status: "done", text: "Scorecard: New customers 140 of 200, on track." });
+    const ops = operationsThreadId(companyId);
+    expect(listSideChats(companyId).find((c) => c.threadId === ops)?.title).toBe("Operations");
+    const [turn] = await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.id, out.runId!));
+    expect(turn.threadId).toBe(ops);
+    expect(turn.requestText).toMatch(/^Scheduled: Weekly scorecard \(WD-9\)/);
+    expect(prompts.at(-1)).toContain("[From Tethr, not Mark] Scheduled: Weekly scorecard");
+  });
+
+  it("runs an item once even when it isn't switched on (creates it paused)", async () => {
+    const { runRhythmNow } = await import("../tethr/rhythm.ts");
+    expect(getSetup(companyId).rhythm.brief.routineId).toBeUndefined();
+    const out = await runRhythmNow(db, companyId, "brief", { userId: "mark" });
+    expect(out.issueId).toBeTruthy();
+    const briefId = getSetup(companyId).rhythm.brief.routineId!;
+    const [brief] = await db.select().from(routines).where(eq(routines.id, briefId));
+    expect(brief).toMatchObject({ title: "Morning brief", status: "paused" });
+    const [issue] = await db.select().from(issues).where(eq(issues.id, out.issueId!));
+    expect(issue).toMatchObject({ originKind: "routine_execution", originId: briefId });
+    // Core wakes @tethr for it; the adapter runs it as a turn in the Operations
+    // chat (the fake runner answers) and closes the task. Wait for that.
+    let status = issue.status;
+    for (let i = 0; i < 250 && status !== "done"; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      [{ status }] = await db.select({ status: issues.status }).from(issues).where(eq(issues.id, out.issueId!));
+    }
+    expect(status).toBe("done");
+    const turns = await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.threadId, operationsThreadId(companyId)));
+    expect(turns.some((t) => t.requestText.startsWith("Scheduled: Morning brief"))).toBe(true);
+  }, 40_000);
+
+  it("marks setup complete", async () => {
+    const app = await appFor(mark);
+    const done = await request(app).post(`/api/tethr/${companyId}/setup/complete`).send({}).expect(200);
+    expect(done.body.completedAt).toBeTruthy();
+    expect(DEFAULT_RHYTHM.plan.enabled).toBe(false); // nothing is on by default
+  });
+
+  it("wipes whole companies, cleans their stores, archives Drive files and old transcripts", async () => {
+    const mirror = path.join(dir, "drive", "00 Tethr");
+    const ws = path.join(mirror, "tethr");
+    fs.mkdirSync(path.join(mirror, "01 Briefs"), { recursive: true });
+    fs.writeFileSync(path.join(mirror, "01 Briefs", "old brief.md"), "old");
+    fs.writeFileSync(path.join(mirror, "00 START HERE.md"), "old guide");
+    fs.writeFileSync(path.join(mirror, "Open Tethr Command Center.command"), "#!/bin/sh");
+    fs.mkdirSync(path.join(ws, "files"), { recursive: true });
+    fs.writeFileSync(path.join(ws, "files", "plan.md"), "x");
+    fs.writeFileSync(path.join(ws, "Memory.md"), "old memory");
+    fs.writeFileSync(path.join(ws, "CLAUDE.md"), "generated");
+    const claudeHome = path.join(dir, "claude-home");
+    process.env.CLAUDE_CONFIG_DIR = claudeHome;
+    process.env.TETHR_MIRROR_ALLOW_TEST = "1";
+    process.env.TETHR_MIRROR_DIR = mirror;
+    process.env.TETHR_WORKSPACE_DIR = "";
+    delete process.env.TETHR_WORKSPACE_DIR;
+    const transcripts = transcriptDirFor(ws);
+    fs.mkdirSync(transcripts, { recursive: true });
+    fs.writeFileSync(path.join(transcripts, "abc.jsonl"), "{}");
+    try {
+      const [co] = await db.select().from(companies).where(eq(companies.id, companyId));
+      const now = new Date("2026-11-07T12:00:00Z");
+      const plan = await planReset(db, [co.issuePrefix!], now);
+      expect(plan.companies).toHaveLength(1);
+      expect(plan.companies[0].counts.goals).toBeGreaterThan(0);
+      expect(plan.driveMoves.map((m) => m.from)).toEqual(["00 START HERE.md", "01 Briefs", path.join("tethr", "files"), path.join("tethr", "Memory.md")]);
+      expect(plan.archiveDir).toBe(path.join("99 Archive", "2026-11 before fresh start"));
+
+      const result = await runReset(db, [co.issuePrefix!], now);
+      expect(result.errors).toEqual([]);
+      expect(await db.select().from(companies).where(eq(companies.id, companyId))).toHaveLength(0);
+      expect(result.storesCleaned).toEqual(expect.arrayContaining(["setup.json", "chats.json"]));
+      expect(getSetup(companyId).completedAt).toBeNull();
+      const archived = path.join(mirror, "99 Archive", "2026-11 before fresh start");
+      expect(fs.readFileSync(path.join(archived, "01 Briefs", "old brief.md"), "utf8")).toBe("old");
+      expect(fs.readFileSync(path.join(archived, "tethr", "Memory.md"), "utf8")).toBe("old memory");
+      expect(fs.existsSync(path.join(archived, "tethr", "files", "plan.md"))).toBe(true);
+      expect(fs.existsSync(path.join(mirror, "Open Tethr Command Center.command"))).toBe(true);
+      expect(fs.existsSync(path.join(ws, "CLAUDE.md"))).toBe(true);
+      expect(fs.existsSync(transcripts)).toBe(false);
+      expect(result.transcriptsDeleted).toBe(1);
+      // A fresh company seeds cleanly afterwards.
+      const fresh = await seedTethrCore(db);
+      expect(fresh.companyId).not.toBe(companyId);
+    } finally {
+      delete process.env.CLAUDE_CONFIG_DIR;
+      delete process.env.TETHR_MIRROR_ALLOW_TEST;
+      delete process.env.TETHR_MIRROR_DIR;
+    }
+  });
+
+  it("keeps the wipe endpoint shut unless it's switched on, and demands a backup", async () => {
+    const app = await appFor(mark);
+    delete process.env.TETHR_ALLOW_RESET;
+    await request(app).get(`/api/tethr/admin/reset/plan?prefixes=WD`).expect(404);
+    process.env.TETHR_ALLOW_RESET = "true";
+    try {
+      await request(app).get(`/api/tethr/admin/reset/plan?prefixes=WD`).expect(200);
+      await request(app).post(`/api/tethr/admin/reset`).send({ prefixes: "WD", confirm: "yes" }).expect(400);
+      const noBackup = await request(app).post(`/api/tethr/admin/reset`).send({ prefixes: "WD", confirm: "WIPE WD", backupFile: "/nope.sql" }).expect(400);
+      expect(noBackup.body.error).toMatch(/backup/);
+      const member = await appFor({ type: "board", source: "session", userId: "u2", isInstanceAdmin: false });
+      await request(member).get(`/api/tethr/admin/reset/plan?prefixes=WD`).expect(403);
+    } finally {
+      delete process.env.TETHR_ALLOW_RESET;
+    }
+  });
+});

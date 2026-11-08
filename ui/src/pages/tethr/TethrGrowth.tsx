@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Lock, TrendingUp } from "lucide-react";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { MonoTag, StatusDot, formatRelative, type StatusTone } from "@/components/tethr/primitives";
+import { Scorecard } from "@/components/tethr/Scorecard";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
 import { Link } from "../../lib/router";
@@ -146,6 +147,8 @@ export function TethrGrowth() {
 
   return (
     <div className="space-y-8">
+      <Scorecard companyId={selectedCompanyId!} />
+
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" data-tethr-stagger>
         <Stat
           label="waiting on you"

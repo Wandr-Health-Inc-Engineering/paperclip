@@ -236,7 +236,7 @@ The specialists were barely used (in the last 100 requests @tethr handled 35, ea
 - `server/src/tethr/**` — the whole L2 engine: `routing.ts`, `worker.ts`, `gating.ts`, `drive.ts`, `org.ts`, `memory.ts`, `notify.ts`, `digest.ts`, `state.ts`, `export.ts`, `adapter.ts`, `index.ts`, plus `llm/` (mock ↔ claude), `tools/` (allowlisted registry), `seed/` (`wandr-growth.ts`).
 - `server/src/routes/tethr.ts` — the Tethr REST surface. (`routes/health.ts` = the existing `/health` + `/api/health` health endpoints — reuse, don't add another.)
 - `ui/src/pages/tethr/**` + `ui/src/components/tethr/**` — the 10 pages.
-- `packages/db/src/schema/tethr_*.ts` — 8 tables (`tethr_divisions`, `tethr_agent_profiles`, `tethr_subagents`, `tethr_route_runs`, `tethr_outputs`, `tethr_drive*`, `tethr_memories`, `tethr_notifications`). Migrations through **0094**.
+- `packages/db/src/schema/tethr_*.ts` — 8 tables (`tethr_divisions`, `tethr_agent_profiles`, `tethr_subagents`, `tethr_route_runs`, `tethr_outputs`, `tethr_drive*`, `tethr_memories`, `tethr_notifications`). Migrations through **0095**.
 
 ## Merge-safe rule (non-negotiable)
 
@@ -715,6 +715,67 @@ Integrations) edits the instance `.env` (`resolvePaperclipEnvPath()`, i.e.
   answers loopback requests as Mark, so a fetched page there would read his data.
 - Tests: `tethr-env.test.ts` (7). Verified live: added and removed a dummy key, and the real .env
   came back byte-identical.
+
+## Onboarding from scratch: goals with numbers, setup, rhythm (phase 20, 2026-11-07)
+
+Mark's call: start tethr over from scratch, with real goals. The plan is in `tasks/phase-20.md`.
+- **Goals with numbers (20.1).**
+  - The tree stays in core `goals`: one company goal = the mission, plus one team goal per area
+    (New customers, Revenue, Partnerships & distribution).
+  - Migration **0095** adds `tethr_goal_metrics`: a metric per goal with unit, direction, source,
+    **method** (exactly how to measure it, so every scorecard measures the same way),
+    baseline/target/date, current, and `history` (capped at 104). Cascades from goal and company.
+  - Service `server/src/tethr/goals.ts`. A bare `YYYY-MM-DD` is stored at **noon UTC**, so it shows
+    as the same date in US zones.
+  - `goalsContextText()` is written into the chat's CLAUDE.md **every turn** ("Wandr's goals").
+  - Chat tools on the `tethr` MCP server: `goals_list` (read) and `save_goal` / `save_metric` /
+    `record_metric`. The last three are class **draft**, so no approval card: they're internal to
+    Tethr. `policy.ts` also skips the outward medical check for Tethr tools, since a metric named
+    "new patients" isn't medical content leaving Wandr.
+  - REST: `/tethr/:companyId/goals` (+ `/goals/metrics`, `/measurements`), people only.
+  - The **scorecard** sits at the top of Growth (`components/tethr/Scorecard.tsx`). Each metric is
+    a stat tile: value, change since baseline, a meter from baseline to target with an
+    expected-pace tick, on-track/behind as a dot **and** words, a hoverable trend line and a
+    history table. Monochrome by the brand.
+- **Setup page (20.2).**
+  - `/setup` (`TethrSetup.tsx`) has five steps: basics, connections checklist, goals interview,
+    rhythm, finish.
+  - State lives in instance-dir `tethr-setup.json` (`server/src/tethr/setup.ts`).
+  - The **goals interview** is a side chat ("Goals interview"). Its first turn is a system turn
+    whose brief (`interviewBrief`) tells tethr to pull aggregate baselines, propose targets, save
+    only what Mark agrees to, and fill Memory.md. The chat shows only that turn's first line
+    (`SystemLine`).
+  - Until setup is complete there's a "Set up tethr" sidebar item and a Chat nudge
+    (`SetupNavItem.tsx`).
+- **Rhythm on the chat engine (20.3).** `server/src/tethr/rhythm.ts`.
+  - Monday plan, Friday scorecard and daily brief are **core routines assigned to @tethr**,
+    created or updated by `applyRhythm` with Mark's cron and time zone. Unchosen ones aren't
+    created. Nothing is on by default.
+  - When one fires, `adapter.ts` routes the task, **ahead of @tethr's old digest mode**
+    (`isRhythmTask`), to `runTaskInOperationsChat`: a system turn in the fixed **Operations** side
+    chat (`operationsThreadId`, a stable UUID per company). It waits for the turn, then
+    `tasks.finish` comments and closes the task.
+  - Slack #tethr posts go through `postSlackMessage`, only when Mark ticked it.
+  - "Measure now" = `runRhythmNow`, which creates the routine paused if needed.
+- **Fresh-start wipe (20.0).** `server/src/tethr/reset.ts`.
+  - Endpoints: `GET /tethr/admin/reset/plan`, `POST /tethr/admin/reset`. **Inert unless
+    `TETHR_ALLOW_RESET=true`**, instance admins only.
+  - The POST needs `confirm: "WIPE <prefixes>"` and a `backupFile` under an hour old (from core
+    `POST /instance/database-backups`).
+  - What it does:
+    - deletes whole companies via `companyService.remove`
+    - drops their keys from every instance JSON store
+    - **moves** old `00 Tethr` files into `99 Archive/<YYYY-MM> before fresh start/` (never
+      deletes from Drive)
+    - deletes the chat workspace's Claude Code transcripts
+    - re-seeds a fresh Wandr with only @tethr
+- **Verified live (on the old company, before the wipe):**
+  - Basics saved goals; the scorecard rendered (dark, light, phone).
+  - "Measure now" ran routine → WD-2 → the Operations chat in 28s (goals_list → measured →
+    `record_metric` → `files/scorecards/2026-11-07.md`), and the task closed as done.
+- **Tests:** `tethr-goals.test.ts` (6) and `tethr-setup.test.ts` (9). The latter includes the full
+  core wake → adapter → Operations chat → task done chain, and the wipe against temp Drive, stores
+  and transcripts.
 
 ## Phase 15 fixes — previews, Inbox retirement, cogs (2026-07-19)
 

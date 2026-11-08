@@ -421,7 +421,7 @@ describePg("tethr jev — tools endpoint", () => {
     await request(app).post("/api/tethr/assistant/tools/list").expect(401);
     const token = issueHookToken({ companyId, threadId: "t", runId: "00000000-0000-4000-8000-000000000001" });
     const list = await request(app).post("/api/tethr/assistant/tools/list").set("authorization", `Bearer ${token}`).expect(200);
-    expect(list.body.tools.map((t: { name: string }) => t.name)).toEqual(["score_list", "keyword_ideas"]);
+    expect(list.body.tools.map((t: { name: string }) => t.name)).toEqual(["score_list", "keyword_ideas", "goals_list", "save_goal", "save_metric", "record_metric"]);
     delete process.env.TYPESAFE_API_KEY;
     const call = await request(app)
       .post("/api/tethr/assistant/tools/call")

@@ -25,6 +25,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import { RouteFlow } from "@/components/tethr/RouteFlow";
 import { OutputPanel, type PanelFile } from "@/components/tethr/OutputPanel";
+import { TethrSetupNudge } from "@/components/tethr/SetupNavItem";
 import { CogDuo, OutputStatusBadge, StatusDot, formatRelative } from "@/components/tethr/primitives";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
@@ -290,6 +291,7 @@ export function TethrChat() {
           <ChatEmpty isDraft={isDraft} onPick={(s) => send.mutate({ text: s, attachments: [] })} />
         ) : (
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-9 px-4 pb-6 pt-16 md:px-6">
+            {isMain ? <TethrSetupNudge /> : null}
             {visibleRuns.length >= limit && limit < 100 ? (
               <button
                 type="button"
@@ -791,7 +793,7 @@ function SystemLine({ text }: { text: string }) {
   return (
     <div className="flex items-center gap-3 text-[11.5px] tethr-text-3">
       <span className="h-px flex-1 bg-[var(--tethr-rim)]" />
-      <span className="max-w-[70%] truncate">{text}</span>
+      <span className="max-w-[70%] truncate">{text.split("\n")[0]}</span>
       <span className="h-px flex-1 bg-[var(--tethr-rim)]" />
     </div>
   );
