@@ -65,6 +65,7 @@ import { TethrSettings } from "./pages/tethr/TethrSettings";
 import { TethrEnv } from "./pages/tethr/TethrEnv";
 import { TethrSetup } from "./pages/tethr/TethrSetup";
 import { TethrMemory } from "./pages/tethr/TethrMemory";
+import { TethrStartupIntro } from "./components/tethr/StartupIntro";
 import { useCompany } from "./context/CompanyContext";
 import { useDialogActions } from "./context/DialogContext";
 import { shouldRedirectCompanylessRouteToOnboarding } from "./lib/onboarding-route";
@@ -347,6 +348,7 @@ export function App() {
         </Route>
       </Routes>
       <OnboardingWizard />
+      <TethrStartupIntro />
     </>
   );
 }

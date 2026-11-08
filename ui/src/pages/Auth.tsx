@@ -7,6 +7,7 @@ import { getRememberedInvitePath } from "../lib/invite-memory";
 import { Button } from "@/components/ui/button";
 import { AsciiArtAnimation } from "@/components/AsciiArtAnimation";
 import { TethrWordmark } from "@/components/TethrWordmark";
+import { requestIntro } from "@/lib/tethr-intro";
 
 type AuthMode = "sign_in" | "sign_up";
 
@@ -50,6 +51,7 @@ export function AuthPage() {
     },
     onSuccess: async () => {
       setError(null);
+      requestIntro(); // tethr: the startup intro covers the hop into the app
       await queryClient.invalidateQueries({ queryKey: queryKeys.auth.session });
       await queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
       navigate(nextPath, { replace: true });

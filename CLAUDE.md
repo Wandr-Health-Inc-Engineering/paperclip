@@ -716,6 +716,29 @@ Integrations) edits the instance `.env` (`resolvePaperclipEnvPath()`, i.e.
 - Tests: `tethr-env.test.ts` (7). Verified live: added and removed a dummy key, and the real .env
   came back byte-identical.
 
+## Startup intro (2026-11-08)
+
+Mark asked for a startup animation when signing in or opening the desktop client.
+`ui/src/components/tethr/StartupIntro.tsx` (mounted once in `App.tsx`) + pure timing/rules in
+`ui/src/lib/tethr-intro.ts` + styles at the end of `tethr-theme.css` (`.tethr-intro*`).
+- **What it shows:** on the app's own ground, two nodes appear, a slack line is thrown between
+  them, they pull apart until it catches taut with a small twang (pulse rings, a light runs along
+  it), "tethr" rises above it in Geist 200, light passes over the reeds, and a status line goes
+  "connecting" → "<company> · ready". Then the stage lifts away and the shell's own entrance
+  (sidebar slide, main rise) plays: `html.tethr-intro-hold` pauses those animations while the
+  overlay covers them. Monochrome; the only color is the status dot.
+- **When it plays** (`introReason`): right after signing in (`requestIntro()` in `Auth.tsx` sets
+  sessionStorage `tethr.intro.pending`); on desktop app start (user agent `TethrDesktop/`, once
+  per app run via sessionStorage `tethr.intro.seen`); `?intro` on first load previews it. Never in
+  a plain browser tab otherwise, never on its own on /auth, /invite, /board-claim, /cli-auth.
+- **Timing:** leaves at ~1.95s once `#main-content` has rendered (or after 3.5s on a screen
+  without it), at most 9s; click or any key skips. The tether's clock starts on the first painted
+  frame, the same moment the CSS parts start, so they can't drift apart on a slow first frame.
+  Reduced motion: a still card, ~0.9s.
+- **Desktop app's "not running" page** (`scripts/tethr-launcher/AppWindow.swift`, local-only)
+  shows the same tether hanging slack.
+- Tests: `ui/src/lib/tethr-intro.test.ts` (14).
+
 ## Onboarding from scratch: goals with numbers, setup, rhythm (phase 20, 2026-11-07)
 
 Mark's call: start tethr over from scratch, with real goals. The plan is in `tasks/phase-20.md`.

@@ -1238,3 +1238,211 @@ a[role="button"]:active {
 .paperclip-markdown.tethr-chat-md :where(table) {
   font-size: 13px;
 }
+
+/* ===== Startup intro (2026-11-08) ------------------------------------------
+   Plays when the desktop app starts and right after signing in
+   (components/tethr/StartupIntro.tsx). Same ground as the app, so it leaves
+   without a color change: a slack line is thrown between two nodes, pulls
+   taut, the wordmark rises above it, light passes over the reeds, and the
+   shell's own entrance plays as the overlay lifts. Monochrome; the only color
+   is the status dot. */
+:root {
+  --tethr-intro-reed: rgba(255, 255, 255, 0.42);
+  --tethr-intro-glint: rgba(255, 255, 255, 0.95);
+}
+.dark {
+  --tethr-intro-reed: rgba(235, 214, 186, 0.09);
+  --tethr-intro-glint: rgba(255, 236, 210, 0.7);
+}
+
+/* The shell's entrance waits while the intro covers it. */
+html.tethr-intro-hold aside,
+html.tethr-intro-hold main,
+html.tethr-intro-hold [role="main"],
+html.tethr-intro-hold [data-slot="card"] {
+  animation-play-state: paused !important;
+}
+
+.tethr-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: grid;
+  place-items: center;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+.tethr-intro.is-leaving {
+  pointer-events: none;
+}
+
+.tethr-intro-ground {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 38% 30% at 50% 47%, var(--tethr-glow-2), transparent 70%),
+    radial-gradient(ellipse 60% 42% at 62% -10%, var(--tethr-glow), transparent 70%),
+    radial-gradient(ellipse 42% 46% at 104% 104%, var(--tethr-glow-2), transparent 70%),
+    radial-gradient(ellipse 36% 40% at -4% 104%, var(--tethr-glow-2), transparent 70%),
+    var(--tethr-ground);
+}
+.tethr-intro-ground::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: var(--tethr-grain-opacity);
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Light passing over fluted glass: the reeds show only where a soft band
+   sweeps across, and only around the middle of the screen. */
+.tethr-intro-reeds-wrap {
+  position: absolute;
+  inset: 0;
+  -webkit-mask-image: radial-gradient(ellipse 62% 48% at 50% 50%, #000 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse 62% 48% at 50% 50%, #000 20%, transparent 75%);
+}
+.tethr-intro-reeds {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 9px, var(--tethr-intro-reed) 9px 11px, transparent 11px 19px);
+  filter: blur(1.2px);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 50%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 50%, transparent);
+  -webkit-mask-size: 55% 100%;
+  mask-size: 55% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: -150% 0;
+  mask-position: -150% 0;
+  animation: tethr-intro-sweep 2400ms cubic-bezier(0.45, 0, 0.2, 1) 150ms both;
+}
+@keyframes tethr-intro-sweep {
+  from {
+    -webkit-mask-position: -150% 0;
+    mask-position: -150% 0;
+  }
+  to {
+    -webkit-mask-position: 250% 0;
+    mask-position: 250% 0;
+  }
+}
+
+.tethr-intro-stage {
+  --w: min(420px, calc(100vw - 32px));
+  position: relative;
+  width: var(--w);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* sit a touch above center, like a title */
+  margin-top: -4vh;
+}
+
+.tethr-intro-word {
+  display: flex;
+  font-family: var(--font-sans);
+  font-weight: 200;
+  font-size: calc(var(--w) * 0.18);
+  line-height: 1;
+  letter-spacing: -0.035em;
+  color: var(--foreground);
+  animation: tethr-intro-track 900ms var(--tethr-ease) 1000ms both;
+}
+.tethr-intro-word > span {
+  display: inline-block;
+  animation: tethr-intro-letter 620ms var(--tethr-ease) both;
+  animation-delay: calc(1060ms + var(--i, 0) * 60ms);
+}
+@keyframes tethr-intro-letter {
+  from {
+    opacity: 0;
+    transform: translateY(0.22em);
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+@keyframes tethr-intro-track {
+  from { letter-spacing: 0.1em; }
+  to { letter-spacing: -0.035em; }
+}
+
+.tethr-intro-tether {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  margin-top: calc(var(--w) * -0.035);
+}
+.tethr-intro-line {
+  stroke: var(--foreground);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+.tethr-intro-glint {
+  stroke: var(--tethr-intro-glint);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 0.15 2;
+}
+.tethr-intro-node {
+  fill: var(--foreground);
+}
+.tethr-intro-ring {
+  fill: none;
+  stroke: var(--foreground);
+  stroke-width: 1;
+}
+
+.tethr-intro-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: calc(var(--w) * -0.01);
+  white-space: nowrap;
+  animation: tethr-fade 420ms ease 1400ms both;
+}
+
+/* Leaving: the stage lifts and blurs away, then the ground clears. */
+.tethr-intro.is-leaving .tethr-intro-stage {
+  animation: tethr-intro-stage-out 380ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+.tethr-intro.is-leaving .tethr-intro-ground {
+  animation: tethr-intro-clear 560ms ease 60ms both;
+}
+@keyframes tethr-intro-stage-out {
+  to {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.985);
+    filter: blur(6px);
+  }
+}
+@keyframes tethr-intro-clear {
+  to { opacity: 0; }
+}
+
+/* Reduced motion: a still card that fades in and out. */
+.tethr-intro.is-reduced .tethr-intro-word,
+.tethr-intro.is-reduced .tethr-intro-word > span,
+.tethr-intro.is-reduced .tethr-intro-status,
+.tethr-intro.is-reduced .tethr-intro-reeds {
+  animation: none;
+}
+.tethr-intro.is-reduced .tethr-intro-stage {
+  animation: tethr-fade 250ms ease both;
+}
+.tethr-intro.is-reduced.is-leaving .tethr-intro-stage,
+.tethr-intro.is-reduced.is-leaving .tethr-intro-ground {
+  animation: tethr-intro-clear 300ms ease both;
+}
+.tethr-intro.is-reduced .tethr-intro-reeds {
+  -webkit-mask-position: 50% 0;
+  mask-position: 50% 0;
+}
