@@ -229,7 +229,8 @@ export function SidebarAgents() {
 
   const visibleAgents = useMemo(() => {
     const filtered = (agents ?? []).filter(
-      (a: Agent) => a.status !== "terminated"
+      // Tethr: specialists archived by the fresh start stay off the sidebar (Company → Archived lists them).
+      (a: Agent) => a.status !== "terminated" && !String(a.pauseReason ?? "").startsWith("archived")
     );
     return filtered;
   }, [agents]);
