@@ -226,21 +226,39 @@ The chat's `score_list` tool ranks long lists (keyword ideas, leads, Reddit post
 Cost is about $0.04 per million input tokens (a 500-keyword run is well under a cent).
 Optional: `TETHR_JEV_MODEL=jev-1.14.0` pins the version.
 
-### C6d · Onboard tethr (phase 20) — ~20 min, yours alone
+### C6d · Onboard tethr (phase 20, reworked in 21) — ~20 min, yours alone
 
-After the fresh-start wipe, open **Set up tethr** (top of the sidebar, or `/setup`):
+Double-click **Tethr** on the Desktop, then open **Set up tethr** (top of the sidebar, or `/setup`):
 
-1. **Basics:** your one-line mission and the goal areas (New customers, Revenue, Partnerships &
-   distribution preselected).
-2. **Connections:** check the list; fix anything amber (Stripe/PostHog connector modes, Slack bot,
-   your Slack ID).
-3. **Goals interview:** tethr interviews you in a side chat, pulls baselines from Stripe, PostHog
-   and Google Ads, and saves each goal with a target, a date and how it's measured. Only you can
-   answer this: the goals must be yours.
-4. **Rhythm:** pick what tethr does on its own (Monday plan, Friday scorecard, daily brief, Slack
-   posts) and when.
-5. **Finish:** run the first scorecard, then finish setup. The scorecard lives at the top of
+1. **Your company:** the company name, what it sells, and you as the admin (name, email,
+   position, Slack member ID). The mission is built in. Inviting teammates is "coming soon".
+2. **Focus and pace:** the goal areas (New customers, Revenue, Partnerships & distribution
+   preselected), the growth pace (Steady / Balanced / Ambitious), and whether tethr may adjust
+   targets on its own.
+3. **Connections:** check the list; fix anything amber (Stripe/PostHog connector modes, Slack bot).
+4. **Goals interview:** tethr interviews you in a side chat, pulls baselines from Stripe, PostHog
+   and Google Ads, and saves each goal with a realistic target, a date and how it's measured.
+   Only you can answer this: the goals must be yours.
+5. **Rhythm and ideas:** what tethr does on its own (Monday plan, Friday scorecard, daily brief,
+   Slack heads-up), and how often it offers ideas (Light / Normal / Busy, adaptive, listen in
+   Slack). tethr doesn't listen or offer ideas until this step is saved.
+6. **Finish:** run the first scorecard, then finish setup. The scorecard lives at the top of
    Growth.
+
+### C6e · Let tethr hear your Slack conversations (phase 21) — ~5 min, needs your Slack app
+
+tethr already hears public channels it's invited to (`message.channels`, `channels:history`).
+For it to chime in where you and Alec talk:
+
+1. **api.slack.com → your tethr app → OAuth & Permissions → Bot Token Scopes:** add
+   `groups:history` (private channels such as #tethr) and `mpim:history` (group DMs that include
+   tethr).
+2. **Event Subscriptions → Subscribe to bot events:** add `message.groups` and `message.mpim`.
+   Save, then **Reinstall to Workspace** (the bot token stays the same).
+3. **Invite @tethr** to the channels where you and Alec talk (`/invite @tethr`). Slack never
+   shows a bot your 1:1 DMs with each other: talk in a channel, or start a group DM that includes
+   tethr.
+4. Make sure **Listen in Slack** is on (Set up tethr → Rhythm and ideas).
 
 ### C7 · Deferred (no action needed now)
 

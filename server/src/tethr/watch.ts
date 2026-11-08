@@ -511,6 +511,12 @@ export async function watchTick(
   await ensureBotUserId();
 
   const setup = getSetup(companyId);
+  // Nothing until the team has chosen how tethr may chime in (setup's rhythm
+  // and ideas step): no listening, no ideas before that.
+  if (!setup.steps.rhythm && !setup.completedAt) {
+    conversations.clear();
+    return { idea: null, looked: null };
+  }
   const pace = getPace(companyId, setup.ideas, now);
   const scale = cooldownFactor(pace);
   const settled = setup.ideas.slackListen ? settledConversations(t) : [];

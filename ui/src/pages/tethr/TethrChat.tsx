@@ -8,6 +8,7 @@ import {
   CornerUpLeft,
   FileImage,
   FileText,
+  Lightbulb,
   Lock,
   MessageSquarePlus,
   MessagesSquare,
@@ -311,7 +312,9 @@ export function TethrChat() {
             ) : null}
             {isLoading ? <p className="text-center font-mono text-[11px] tethr-text-3">Loading…</p> : null}
             {visibleRuns.map((run) => (
-              run.invocationSource === "chat" ? (
+              run.sourceKey === "tethr-idea" ? (
+                <IdeaCard key={run.id} run={run} companyId={c} />
+              ) : run.invocationSource === "chat" ? (
                 <SessionTurn key={run.id} run={run} companyId={c} onOpenFile={setPanelPath} />
               ) : (
                 <Turn key={run.id} run={run} companyId={c} />
@@ -794,6 +797,60 @@ function ActionStatus({ output }: { output: TethrChatOutput }) {
 }
 
 /** A turn Tethr started itself (e.g. after an approval): a quiet centered line. */
+/** An idea tethr offered on its own (phase 21): from a Slack conversation it
+ * heard, a goal falling behind, or a quiet stretch. Useful / Not now tune how
+ * often tethr speaks up. */
+function IdeaCard({ run, companyId }: { run: TethrChatRun; companyId: string }) {
+  const queryClient = useQueryClient();
+  const idea = run.idea ?? null;
+  const feedback = useMutation({
+    mutationFn: (verdict: "useful" | "not_now") => tethrApi.ideaFeedback(companyId, idea!.id, verdict),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: tethrKeys.chatRuns(companyId, run.threadId ?? "") }),
+  });
+  const origin = run.requestText.replace(/^Idea from tethr · /, "");
+  const decided = idea?.status === "useful" ? "Marked useful" : idea?.status === "not_now" ? "Not now" : null;
+  return (
+    <div className="tethr-glass space-y-2.5 rounded-[16px] px-4 py-3.5">
+      <div className="flex items-center gap-2 text-[11.5px] tethr-text-3">
+        <Lightbulb className="h-3.5 w-3.5" />
+        <span>Idea from tethr · {origin}</span>
+        <span className="ml-auto font-mono text-[10.5px]">{formatRelative(run.createdAt)}</span>
+      </div>
+      <MarkdownBody className="tethr-chat-md">{run.resultText ?? ""}</MarkdownBody>
+      {idea ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {decided ? (
+            <span className="flex items-center gap-1.5 text-[12px] tethr-text-3">
+              <StatusDot tone={idea.status === "useful" ? "ok" : "idle"} />
+              {decided}
+            </span>
+          ) : (
+            <>
+              <button
+                type="button"
+                disabled={feedback.isPending}
+                onClick={() => feedback.mutate("useful")}
+                className="tethr-btn tethr-btn-primary h-8 px-3.5 text-[12.5px]"
+              >
+                Useful
+              </button>
+              <button
+                type="button"
+                disabled={feedback.isPending}
+                onClick={() => feedback.mutate("not_now")}
+                className="tethr-btn tethr-btn-ghost h-8 px-3.5 text-[12.5px]"
+              >
+                Not now
+              </button>
+              <span className="text-[11.5px] tethr-text-3">Reply below to take it further.</span>
+            </>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SystemLine({ text }: { text: string }) {
   return (
     <div className="flex items-center gap-3 text-[11.5px] tethr-text-3">

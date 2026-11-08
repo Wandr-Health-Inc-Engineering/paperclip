@@ -134,6 +134,7 @@ function MetricTile({ metric: m }: { metric: TethrMetric }) {
   const state = metricState(m);
   const delta = m.current !== null && m.baseline !== null ? m.current - m.baseline : null;
   const good = delta === null || delta === 0 ? null : (delta > 0) === (m.direction === "up");
+  const lastAdjustment = m.adjustments?.length ? m.adjustments[m.adjustments.length - 1] : null;
   return (
     <div className="tethr-inset flex flex-col gap-2.5 p-3.5">
       <div className="flex items-start justify-between gap-3">
@@ -183,6 +184,12 @@ function MetricTile({ metric: m }: { metric: TethrMetric }) {
               {m.direction === "down" ? " (lower is better)" : ""}
             </span>
           </div>
+          {lastAdjustment ? (
+            <p className="text-[11px] leading-snug tethr-text-3" title={`Because ${lastAdjustment.why}.`}>
+              tethr {lastAdjustment.to > lastAdjustment.from === (m.direction !== "down") ? "raised" : "eased"} it from{" "}
+              {formatMetric(lastAdjustment.from, m.unit)} on {shortDate(lastAdjustment.at)}, to stay realistic.
+            </p>
+          ) : null}
         </div>
       ) : (
         <p className="flex items-center gap-1.5 text-[11.5px]">

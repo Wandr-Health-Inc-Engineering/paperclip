@@ -163,8 +163,22 @@ export interface TethrChatOutput {
 /** One message exchange in a chat: the request, how it routed, and what came back. */
 export interface TethrChatRun extends TethrRouteRun {
   outputs: TethrChatOutput[];
-  /** Files Mark attached to this message (phase 19.1). */
+  /** Files attached to this message (phase 19.1). */
   attachments?: TethrChatAttachment[];
+  /** An idea card's idea (phase 21): for the Useful / Not now buttons. */
+  idea?: { id: string; status: TethrIdeaStatus; source: string } | null;
+}
+
+export type TethrIdeaStatus = "new" | "useful" | "not_now" | "answered" | "ignored";
+export interface TethrIdea {
+  id: string;
+  source: "slack" | "goals" | "quiet";
+  origin: string;
+  title: string;
+  body: string;
+  status: TethrIdeaStatus;
+  createdAt: string;
+  resolvedAt: string | null;
 }
 
 export interface TethrMetricPoint {
@@ -188,6 +202,8 @@ export interface TethrMetric {
   current: number | null;
   currentAt: string | null;
   history: TethrMetricPoint[];
+  /** Targets tethr moved on its own to keep the goal realistic (phase 21). */
+  adjustments?: Array<{ at: string; from: number; to: number; why: string }>;
 }
 
 export interface TethrGoal {
@@ -213,13 +229,20 @@ export interface TethrRhythmChoice {
   routineId?: string;
 }
 
+export type TethrSetupStepKey = "company" | "focus" | "connect" | "interview" | "rhythm";
+export type TethrGrowthPace = "steady" | "balanced" | "ambitious";
+export type TethrIdeasLevel = "light" | "normal" | "busy";
+
 export interface TethrSetupState {
-  steps: Partial<Record<"basics" | "connect" | "interview" | "rhythm", string>>;
+  steps: Partial<Record<TethrSetupStepKey, string>>;
   completedAt: string | null;
   areas: string[];
   timezone: string;
   rhythm: Record<TethrRhythmKey, TethrRhythmChoice>;
   interviewThreadId: string | null;
+  growthPace: TethrGrowthPace;
+  autoAdjust: boolean;
+  ideas: { level: TethrIdeasLevel; adaptive: boolean; slackListen: boolean };
 }
 
 export interface TethrSetupCheck {
@@ -231,11 +254,38 @@ export interface TethrSetupCheck {
   optional?: boolean;
 }
 
+export interface TethrMember {
+  id: string;
+  name: string;
+  email: string | null;
+  position: string;
+  title: string;
+  role: "admin" | "member";
+  status: "active" | "invited";
+  slackUserId: string | null;
+}
+
+export interface TethrCompanyProfile {
+  id: string;
+  name: string;
+  sells: string;
+  prefix: string;
+  mission: string;
+  admin: TethrMember | null;
+  members: TethrMember[];
+}
+
 export interface TethrSetup {
   state: TethrSetupState;
   checks: TethrSetupCheck[];
   goals: TethrGoalsView;
   rhythms: Record<TethrRhythmKey, { title: string; label: string; playbook: string }>;
+  profile: TethrCompanyProfile | null;
+  mission: string;
+  positions: Array<{ key: string; title: string; focus: string }>;
+  growthPaces: Array<{ key: TethrGrowthPace; label: string; uplift: number }>;
+  ideasLevels: Array<{ key: TethrIdeasLevel; label: string; blurb: string }>;
+  ideasPace: { allowance: number; now: string; recent: Array<{ at: string; outcome: string }> };
 }
 
 export interface TethrEnvEntry {
@@ -714,14 +764,36 @@ export const tethrApi = {
     api.post<TethrMetric>(`/tethr/${c}/goals/metrics/${metricId}/measurements`, body),
   deleteMetric: (c: string, metricId: string) => api.delete<{ ok: true }>(`/tethr/${c}/goals/metrics/${metricId}`),
   setup: (c: string) => api.get<TethrSetup>(`/tethr/${c}/setup`),
-  setupBasics: (c: string, body: { mission: string; missionDetail?: string; areas: string[]; timezone: string; internalAddresses?: string[] }) =>
-    api.put<{ state: TethrSetupState; goals: TethrGoalsView }>(`/tethr/${c}/setup/basics`, body),
-  setupStep: (c: string, step: "basics" | "connect" | "interview" | "rhythm", done = true) =>
-    api.post<TethrSetupState>(`/tethr/${c}/setup/steps/${step}`, { done }),
+  setupCompany: (
+    c: string,
+    body: {
+      companyName: string;
+      sells: string;
+      adminName: string;
+      adminEmail: string;
+      position: string;
+      positionTitle?: string;
+      slackUserId?: string;
+      timezone: string;
+      internalAddresses?: string[];
+    },
+  ) => api.put<{ state: TethrSetupState; profile: TethrCompanyProfile }>(`/tethr/${c}/setup/company`, body),
+  setupFocus: (c: string, body: { areas: string[]; growthPace: TethrGrowthPace; autoAdjust: boolean }) =>
+    api.put<{ state: TethrSetupState; goals: TethrGoalsView }>(`/tethr/${c}/setup/focus`, body),
+  setupStep: (c: string, step: TethrSetupStepKey, done = true) => api.post<TethrSetupState>(`/tethr/${c}/setup/steps/${step}`, { done }),
   startInterview: (c: string, restart = false) =>
     api.post<{ threadId: string; started: boolean }>(`/tethr/${c}/setup/interview`, { restart }),
-  setupRhythm: (c: string, body: { timezone: string; rhythm: Record<TethrRhythmKey, { enabled: boolean; cron: string; slack: boolean }> }) =>
-    api.put<TethrSetupState>(`/tethr/${c}/setup/rhythm`, body),
+  setupRhythm: (
+    c: string,
+    body: {
+      timezone: string;
+      rhythm: Record<TethrRhythmKey, { enabled: boolean; cron: string; slack: boolean }>;
+      ideas?: { level: TethrIdeasLevel; adaptive: boolean; slackListen: boolean };
+    },
+  ) => api.put<TethrSetupState>(`/tethr/${c}/setup/rhythm`, body),
+  /** Phase 21: ideas tethr offered on its own, and how one landed. */
+  ideas: (c: string) => api.get<TethrIdea[]>(`/tethr/${c}/ideas`),
+  ideaFeedback: (c: string, ideaId: string, verdict: "useful" | "not_now") => api.post<TethrIdea>(`/tethr/${c}/ideas/${ideaId}/feedback`, { verdict }),
   runRhythm: (c: string, key: TethrRhythmKey) =>
     api.post<{ issueId: string | null; threadId: string }>(`/tethr/${c}/setup/rhythm/${key}/run`, {}),
   completeSetup: (c: string, done = true) => api.post<TethrSetupState>(`/tethr/${c}/setup/complete`, { done }),

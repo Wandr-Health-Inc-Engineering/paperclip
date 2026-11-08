@@ -160,6 +160,11 @@ describePg("tethr watch — ideas", () => {
     db = createDb(tempDb.connectionString);
     companyId = (await seedTethrCore(db)).companyId;
     await companyProfileService(db).saveCompanyStep(companyId, { companyName: "Wandr Health", adminName: "Mark Karam", position: "coo", slackUserId: "UMARK001" });
+    // Before the ideas step of setup, tethr neither listens nor offers ideas.
+    heardTalk(MONDAY_10AM_ET.getTime() - 10 * 60 * 1000, "CBEFORE");
+    expect(await watchTick(db, MONDAY_10AM_ET, { pollMs: 20, post })).toEqual({ idea: null, looked: null });
+    expect(_watchStateForTests().conversations.size).toBe(0);
+    await updateSetup(companyId, (s) => ({ ...s, steps: { ...s.steps, rhythm: new Date().toISOString() } }));
     setAssistantRunnerForTests(assistantRunner(db, { execute: fakeExecute }));
   }, 60_000);
 

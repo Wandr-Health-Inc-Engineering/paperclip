@@ -236,7 +236,7 @@ The specialists were barely used (in the last 100 requests @tethr handled 35, ea
 - `server/src/tethr/**` — the whole L2 engine: `routing.ts`, `worker.ts`, `gating.ts`, `drive.ts`, `org.ts`, `memory.ts`, `notify.ts`, `digest.ts`, `state.ts`, `export.ts`, `adapter.ts`, `index.ts`, plus `llm/` (mock ↔ claude), `tools/` (allowlisted registry), `seed/` (`wandr-growth.ts`).
 - `server/src/routes/tethr.ts` — the Tethr REST surface. (`routes/health.ts` = the existing `/health` + `/api/health` health endpoints — reuse, don't add another.)
 - `ui/src/pages/tethr/**` + `ui/src/components/tethr/**` — the 10 pages.
-- `packages/db/src/schema/tethr_*.ts` — 8 tables (`tethr_divisions`, `tethr_agent_profiles`, `tethr_subagents`, `tethr_route_runs`, `tethr_outputs`, `tethr_drive*`, `tethr_memories`, `tethr_notifications`). Migrations through **0095**.
+- `packages/db/src/schema/tethr_*.ts` — 8 tables (`tethr_divisions`, `tethr_agent_profiles`, `tethr_subagents`, `tethr_route_runs`, `tethr_outputs`, `tethr_drive*`, `tethr_memories`, `tethr_notifications`; later `tethr_goal_metrics`, `tethr_members`, `tethr_ideas`). Migrations through **0096**.
 
 ## Merge-safe rule (non-negotiable)
 
@@ -740,6 +740,83 @@ Mark asked for a startup animation when signing in or opening the desktop client
 - **Desktop app's "not running" page** (`scripts/tethr-launcher/AppWindow.swift`, local-only)
   shows the same tether hanging slack.
 - Tests: `ui/src/lib/tethr-intro.test.ts` (14).
+
+## tethr as a product: company, team, goals that adjust, ideas (phase 21, 2026-11-08)
+
+Mark's notes after the onboarding walkthrough: tethr will be sold as its own product, so onboarding
+starts with the company; the mission is built in; goals stay realistic on their own; tethr adapts
+its pace so nobody is overwhelmed; and **tethr watches** (if Mark and Alec talk about something in
+Slack, it suggests an idea). Plan: `tasks/phase-21.md`.
+- **Company and team (21.1).**
+  - **Members:** `tethr_members` (migration 0096): name, email, position (preset key), title, role
+    admin/member, status active/invited, `user_id` (null until hosted logins), `slack_user_id`.
+    The admin is created in setup step 1. Invites are "coming soon".
+  - **Positions:** `positions.ts`, each with a one-line focus (CTO: tech fixes that give clients a
+    better experience).
+  - **Mission:** built in (`mission.ts` `TETHR_MISSION`). The root goal is
+    "<Company>: grow with a small team", kept in sync by `companyProfileService.saveCompanyStep`
+    (`company.ts`). The chat's `save_goal` saves areas only and can't touch the root goal.
+  - **What the chat reads every turn:** CLAUDE.md gets `## The company` and `## Your team`
+    (`companyContextText`), marked as data, plus `## Goals`.
+  - **No hard-coded names:** the persona is company-neutral (static: changing it forces fresh
+    sessions). The rhythm playbooks, interview brief, tool descriptions and gate wording ("approval
+    in tethr", "[From Tethr, not the user]") no longer name Wandr or Mark.
+  - **Slack approver:** the admin's Slack member ID can approve from Slack (`slack.ts`).
+- **Goals that adjust themselves (21.2, `goal-pace.ts`).**
+  - **Setup choice:** growth pace Steady/Balanced/Ambitious (+5/15/30% on the trend) and
+    `autoAdjust` (on by default).
+  - **When:** after each `recordMeasurement` with 3 or more points, if the target is more than 15%
+    off "realistic" (trend projected to the date, plus uplift, never below the start or latest) and
+    the last 2 points agree it's behind or ahead.
+  - **How far:** halfway there, at most ±25% per change, once every 14 days, never in the last week.
+  - **Recorded:** in `tethr_goal_metrics.adjustments`, the activity log and a bell notification of
+    kind `goal`. The scorecard tile says "tethr eased it from 200 on …".
+  - **Interview:** the brief proposes trend-plus-pace targets and still saves only what's agreed.
+- **Ideas pace (21.4, `pace.ts`).**
+  - **Mechanism:** a token bucket per company in `tethr-pace.json`.
+  - **Levels:** Light (about 3 a week), Normal (about 1 a day), Busy (about 3 a day).
+  - **Adapting:** useful/answered ×1.25, not now ×0.7, ignored ×0.8, bounded by the level. Two
+    ignored in a row double the conversation cooldowns.
+  - **Hours:** 8am to 7pm in the setup time zone, weekdays (Busy: weekends too). Ideas outside
+    hours are dropped, not queued.
+- **The watcher (21.3, `watch.ts`).**
+  - **Hearing Slack:** `hear()` is fed by Socket Mode and the events route. It takes human messages
+    in channels, private channels and group DMs tethr is in. DMs to tethr stay requests; a message
+    that @mentions tethr puts the conversation on cooldown. Messages stay **in memory only, at most
+    2 hours**.
+  - **When a conversation counts as settled:** 4 quiet minutes, at least 3 messages with
+    substance. Cooldowns: 6 hours per conversation, 2 hours per channel.
+  - **Other sources:** a goal behind pace twice or a target just hit (once a week per metric), and
+    a quiet stretch.
+  - **The idea check:** `askForIdea` sends a **private one-off turn** (`runner.send({ privatePrompt
+    })`) in the "Ideas" side chat. The model gets the excerpt; tethr's record keeps a one-line
+    summary. `--no-session-persistence` means no Claude transcript, and no session resumes. The
+    model replies with one 2-4 sentence idea or `NO_IDEA`.
+  - **Delivery (`deliverIdea`):**
+    - Slack: a reply in that thread (a channel conversation gets a thread under its last message).
+      Goal and quiet ideas go to the admin by DM, else #tethr.
+    - The main chat: a card (route run with sourceKey `tethr-idea`, Useful / Not now) plus a
+      next-turn note.
+    - The bell: kind `idea`.
+  - **Outcomes:** a reply in tethr's thread or a main-chat message within 2 hours means answered;
+    24 hours with no signal means ignored.
+  - **Loop:** `startWatch` in `boot.ts`, once a minute, never under tests. **Nothing happens until
+    setup's "Rhythm and ideas" step is saved.**
+  - **Routes:** `GET /tethr/:companyId/ideas`, `POST /ideas/:id/feedback {useful|not_now}`. Chat
+    runs carry `idea` for the card.
+- **Setup page (21.5):** six steps: Your company, Focus and pace, Connections, Goals interview,
+  Rhythm and ideas, Finish. Routes `PUT /setup/company` and `PUT /setup/focus` replace
+  `/setup/basics`; `PUT /setup/rhythm` also takes `ideas`. Slack scopes for listening are
+  MANUAL-STEPS C6e.
+- **Verified live on a throwaway instance** (`PAPERCLIP_INSTANCE_ID=tethr-verify`, deleted
+  after):
+  - The six steps, in light, dark and phone.
+  - A target eased from 200 to 169 with its reason, the bell and the tile line.
+  - An idea card in the main chat; Useful raised the pace to 1.25 a day.
+- **Not run live:** a real Slack conversation turning into an idea (needs C6e). The watcher's
+  pipeline is covered end to end in tests with a fake runner and poster.
+- **Tests:** `tethr-company` (5), `tethr-goal-pace` (7), `tethr-pace` (6), `tethr-watch` (9),
+  `tethr-setup` updated.
 
 ## Review fixes (2026-11-08) — invariants to keep
 
