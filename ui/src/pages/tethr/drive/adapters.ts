@@ -18,7 +18,8 @@ export interface FmItem {
 
 /** Normalized file preview across backends. */
 export interface FilePreview {
-  kind: "text" | "binary" | "toolarge" | "missing";
+  /** office = the text inside a Word, Excel or PowerPoint file. */
+  kind: "text" | "office" | "binary" | "toolarge" | "missing";
   content?: string;
   ext?: string;
 }
@@ -37,6 +38,10 @@ export interface DriveSource {
   move(itemKey: string, toFolderRef: string): Promise<void>;
   archive(itemKey: string): Promise<void>;
   read(itemKey: string): Promise<FilePreview>;
+  /** Folder sources: a URL serving a PDF or image as it is. */
+  rawUrl?(itemKey: string): string;
+  /** Folder sources: select the file in Finder. */
+  reveal?(itemKey: string): Promise<void>;
 }
 
 /** Filesystem source (00 Tethr or an added folder). folderRef = relative path; "" = root. */
@@ -65,6 +70,8 @@ export function fsSource(companyId: string, mount: string, rootLabel: string): D
     move: (key, toRef) => tethrApi.fsMove(companyId, mount, key, toRef).then(() => {}),
     archive: (key) => tethrApi.fsArchive(companyId, mount, key).then(() => {}),
     read: (key) => tethrApi.fsRead(companyId, mount, key),
+    rawUrl: (key) => tethrApi.fsRawUrl(companyId, mount, key),
+    reveal: (key) => tethrApi.fsReveal(companyId, mount, key).then(() => {}),
   };
 }
 

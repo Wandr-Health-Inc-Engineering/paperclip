@@ -28,7 +28,8 @@ describe("tethr chat attachments — files", () => {
     expect(attachmentName(".env.json")).toEqual({ name: "env.json" });
     expect(attachmentName("CLAUDE.md")).toEqual({ name: "CLAUDE.md" }); // lands under files/uploads, never the workspace root
     expect(attachmentName("weird [name]{x}.png")).toEqual({ name: "weird -name-x-.png" });
-    expect(attachmentName("budget.xlsx")).toMatchObject({ error: expect.stringMatching(/PDF or CSV/) });
+    expect(attachmentName("budget.xlsx")).toEqual({ name: "budget.xlsx" });
+    expect(attachmentName("deck.key")).toMatchObject({ error: expect.stringMatching(/Export other files/) });
     expect(attachmentName("run.sh")).toMatchObject({ error: expect.any(String) });
   });
 

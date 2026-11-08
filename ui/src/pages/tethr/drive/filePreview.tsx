@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   File as FileIcon,
   FileCode,
@@ -7,6 +7,7 @@ import {
   FileText,
   FileType,
   Folder,
+  FolderOpen,
   Presentation,
   type LucideIcon,
 } from "lucide-react";
@@ -43,6 +44,9 @@ const KINDS: Record<string, { label: string; icon: LucideIcon }> = {
   webp: { label: "WebP image", icon: FileImage },
   svg: { label: "SVG image", icon: FileImage },
 };
+
+/** Shown as they are in the preview (served raw by the folder source). */
+const RAW_EXTS = new Set(["pdf", "png", "jpg", "jpeg", "gif", "webp"]);
 
 export function fileKind(item: Pick<FmItem, "name" | "kind">): string {
   if (item.kind === "folder") return "Folder";
@@ -91,24 +95,39 @@ export function PreviewBody({
   item: FmItem;
   size: "pane" | "full";
 }) {
+  const e = ext(item.name);
+  const full = size === "full";
+  // PDFs and images are shown as they are; everything else is read as text.
+  const raw = RAW_EXTS.has(e) && source.rawUrl ? source.rawUrl(item.key) : null;
   const { data, isLoading, error } = useQuery({
     queryKey: previewQueryKey(source, item.key),
     queryFn: () => source.read(item.key),
+    enabled: !raw,
   });
-  const e = ext(item.name);
-  const full = size === "full";
 
+  if (raw) {
+    return e === "pdf" ? (
+      <iframe title={item.name} src={raw} className="block h-full min-h-[480px] w-full flex-1 border-0 bg-white" />
+    ) : (
+      <div className={cn("flex flex-1 items-start justify-center", full ? "p-6" : "p-4")}>
+        <img src={raw} alt={item.name} className="max-h-full max-w-full rounded-[10px] shadow-[0_0_0_1px_var(--tethr-rim)]" />
+      </div>
+    );
+  }
   if (isLoading) {
     return <p className="px-5 py-6 font-mono text-[11px] tethr-text-3">Reading…</p>;
   }
   if (error || data?.kind === "missing") {
-    return <Unpreviewable item={item} text="This file couldn't be read. It may have been moved or renamed." />;
+    return <Unpreviewable item={item} source={source} text="This file couldn't be read. It may have been moved or renamed." />;
   }
   if (data?.kind === "toolarge") {
-    return <Unpreviewable item={item} text="Too large to preview here. Open it in Google Drive or Finder." />;
+    return <Unpreviewable item={item} source={source} text="Too large to preview here. Open it from Finder or Google Drive." />;
+  }
+  if (data?.kind === "office") {
+    return <OfficePreview item={item} source={source} content={data.content ?? ""} full={full} />;
   }
   if (data?.kind !== "text") {
-    return <Unpreviewable item={item} text="No preview for this file type. Open it in Google Drive or Finder." />;
+    return <Unpreviewable item={item} source={source} text="No preview for this file type. Open it from Finder or Google Drive." />;
   }
 
   const content = data.content ?? "";
@@ -251,11 +270,69 @@ function CsvTable({ content, full }: { content: string; full: boolean }) {
   );
 }
 
-function Unpreviewable({ item, text }: { item: FmItem; text: string }) {
+function Unpreviewable({ item, source, text }: { item: FmItem; source: DriveSource; text: string }) {
   return (
     <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-3 px-6 text-center">
       <FileGlyph item={item} className="h-14 w-14 text-muted-foreground" />
       <p className="max-w-[36ch] text-[13px] text-muted-foreground">{text}</p>
+      <RevealButton item={item} source={source} />
     </div>
   );
+}
+
+/** "Show in Finder" for folder sources: selects the file so it opens in its own app. */
+function RevealButton({ item, source }: { item: FmItem; source: DriveSource }) {
+  const reveal = useMutation({ mutationFn: () => source.reveal!(item.key) });
+  if (!source.reveal) return null;
+  return (
+    <span className="inline-flex items-center gap-2">
+      <button type="button" onClick={() => reveal.mutate()} disabled={reveal.isPending} className="tethr-btn tethr-btn-glass h-8 px-3.5 text-[12.5px]">
+        <FolderOpen className="h-3.5 w-3.5" />
+        Show in Finder
+      </button>
+      {reveal.error ? <span className="text-[11.5px] text-[var(--tethr-bad)]">{reveal.error instanceof Error ? reveal.error.message : "Couldn't open Finder."}</span> : null}
+    </span>
+  );
+}
+
+const OFFICE_LABEL: Record<string, string> = { docx: "Word document", xlsx: "Excel workbook", pptx: "PowerPoint deck" };
+
+/** A Word, Excel or PowerPoint file: the text inside it (each sheet as a table),
+ * under a bar that says it's the text and offers Show in Finder for the real thing. */
+function OfficePreview({ item, source, content, full }: { item: FmItem; source: DriveSource; content: string; full: boolean }) {
+  const e = ext(item.name);
+  const sheets = e === "xlsx" ? splitSheets(content) : [];
+  return (
+    <div className="flex min-h-0 w-full flex-1 flex-col">
+      <div className={cn("flex flex-wrap items-center gap-2 border-b tethr-rule py-2", full ? "px-6 md:px-10" : "px-4")}>
+        <span className="text-[12px] tethr-text-3">Text from this {OFFICE_LABEL[e] ?? "file"}; open it for the full layout.</span>
+        <span className="ml-auto">
+          <RevealButton item={item} source={source} />
+        </span>
+      </div>
+      {e === "xlsx" ? (
+        sheets.map((sheet) => (
+          <div key={sheet.name} className="flex min-h-0 flex-col">
+            {sheets.length > 1 ? <p className={cn("pt-4 font-mono text-[11px] tethr-text-3", full ? "px-6 md:px-10" : "px-4")}>{sheet.name}</p> : null}
+            <CsvTable content={sheet.csv} full={full} />
+          </div>
+        ))
+      ) : (
+        <div className={cn("mx-auto w-full", full ? "max-w-[70ch] px-6 py-8 md:px-10" : "px-5 py-5")}>
+          <MarkdownBody className={cn("tethr-doc-md", full ? "tethr-doc-lg" : "tethr-doc-sm")}>{content}</MarkdownBody>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The server's workbook text ("## Sheet: Name" then CSV lines) as sheets. */
+export function splitSheets(content: string): Array<{ name: string; csv: string }> {
+  return content
+    .split(/^## Sheet: /m)
+    .filter((part) => part.trim())
+    .map((part) => {
+      const nl = part.indexOf("\n");
+      return { name: (nl < 0 ? part : part.slice(0, nl)).trim(), csv: nl < 0 ? "" : part.slice(nl + 1) };
+    });
 }

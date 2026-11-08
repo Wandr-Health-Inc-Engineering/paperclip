@@ -28,7 +28,8 @@ import { RouteFlow } from "@/components/tethr/RouteFlow";
 import { CHIP_HOVER, CHIP_SURFACE } from "@/components/tethr/Chip";
 import { OutputPanel, type PanelFile } from "@/components/tethr/OutputPanel";
 import { TethrSetupNudge } from "@/components/tethr/SetupNavItem";
-import { CogDuo, OutputStatusBadge, StatusDot, formatRelative } from "@/components/tethr/primitives";
+import { Nebula } from "@/components/tethr/Nebula";
+import { OutputStatusBadge, StatusDot, formatRelative } from "@/components/tethr/primitives";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
 import { Link, useSearchParams } from "../../lib/router";
@@ -642,13 +643,53 @@ function FileChip({
   );
 }
 
-function Working({ label }: { label: string }) {
+/** The live status row while a turn runs: the nebula (looping until the turn
+ * ends), what's happening, how long it's been going, and Stop. */
+function Working({ label, since, onStop, stopping }: { label: string; since?: string; onStop?: () => void; stopping?: boolean }) {
+  const elapsed = useElapsed(since);
   return (
-    <div className="flex items-center gap-2.5 text-[13px]">
-      <CogDuo className="h-5 w-5 text-muted-foreground" />
-      <span className="shimmer-text font-medium">{label}</span>
+    <div className="flex min-w-0 items-center gap-2.5 text-[13px]">
+      <Nebula className="h-6 w-6 text-foreground" />
+      <span role="status" className="shimmer-text min-w-0 truncate font-medium">
+        {label}
+      </span>
+      {elapsed ? (
+        <span aria-hidden="true" className="shrink-0 font-mono text-[11px] tabular-nums tethr-text-3">
+          {elapsed}
+        </span>
+      ) : null}
+      {onStop ? (
+        <button type="button" onClick={onStop} disabled={stopping} className="tethr-btn tethr-btn-ghost ml-1 h-7 shrink-0 px-3 text-[12px]">
+          <Square className="h-3 w-3" />
+          Stop
+        </button>
+      ) : null}
     </div>
   );
+}
+
+/** "12s", "1m 04s": time since `since`, ticking every second; null without a start. */
+function useElapsed(since: string | undefined): string | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!since) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [since]);
+  if (!since) return null;
+  const seconds = Math.max(0, Math.floor((now - Date.parse(since)) / 1000));
+  if (Number.isNaN(seconds)) return null;
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+}
+
+/** What a running turn is doing right now, in a few words. */
+function turnActivity(run: TethrChatRun, tools: TethrRouteHop[], waitingOnYou: boolean): string {
+  if (run.status === "queued") return "waiting for the previous message…";
+  if (waitingOnYou) return "waiting for your approval…";
+  const step = [...tools].reverse().find((h) => h.status === "running");
+  if (step) return `${step.decision}…`;
+  if (run.resultText) return "writing…";
+  return tools.length ? "working…" : "thinking…";
 }
 
 const ACTIVE = new Set(["queued", "running"]);
@@ -682,12 +723,7 @@ function SessionTurn({
         <UserBubble text={run.requestText} at={run.createdAt} attachments={run.attachments} onOpenFile={onOpenFile} />
       )}
       {tools.length ? <ActivityRows hops={tools} live={running} /> : null}
-      {run.resultText ? (
-        <MarkdownBody className="tethr-chat-md">{run.resultText}</MarkdownBody>
-      ) : running ? (
-        <Working label={run.status === "queued" ? "waiting for the previous message…" : tools.length ? "working…" : "thinking…"} />
-      ) : null}
-      {running && run.resultText ? <StatusDot tone="live" className="self-start" /> : null}
+      {run.resultText ? <MarkdownBody className="tethr-chat-md">{run.resultText}</MarkdownBody> : null}
       {run.status === "failed" ? (
         <p className="text-[13.5px] text-[var(--tethr-bad)]">{run.error || "Something went wrong."}</p>
       ) : null}
@@ -708,17 +744,12 @@ function SessionTurn({
           <ActionStatus key={o.id} output={o} />
         ))}
       {running ? (
-        <div>
-          <button
-            type="button"
-            onClick={() => stop.mutate()}
-            disabled={stop.isPending}
-            className="tethr-btn tethr-btn-ghost h-7 px-3 text-[12px]"
-          >
-            <Square className="h-3 w-3" />
-            Stop
-          </button>
-        </div>
+        <Working
+          label={turnActivity(run, tools, gated.length > 0)}
+          since={run.createdAt}
+          onStop={() => stop.mutate()}
+          stopping={stop.isPending}
+        />
       ) : null}
     </div>
   );
@@ -1058,7 +1089,7 @@ function ApprovalCard({ output, companyId, threadId }: { output: TethrChatOutput
 
 const MAX_ATTACHMENTS = 6;
 const ATTACH_ACCEPT =
-  "image/png,image/jpeg,image/gif,image/webp,application/pdf,.txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.xml,.yaml,.yml,.log,.ics,.rtf";
+  "image/png,image/jpeg,image/gif,image/webp,application/pdf,.docx,.xlsx,.pptx,.txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.xml,.yaml,.yml,.log,.ics,.rtf";
 
 type DraftFile = {
   id: string;

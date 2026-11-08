@@ -5,6 +5,7 @@ import path from "node:path";
 import { logger } from "../middleware/logger.js";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
 import { mirrorDir, resolveWithinRoot, sanitizeTitleForFilename } from "./mirror.js";
+import { officeText, type OfficeKind } from "./office-text.js";
 
 // A generic, security-guarded file manager over a rooted directory on disk.
 // Powers the human-modifiable views on the Drive page: the Google Drive-synced
@@ -139,16 +140,21 @@ const TEXT_EXTS = new Set([
 ]);
 const MAX_PREVIEW_BYTES = 512 * 1024;
 
+const OFFICE_EXTS: Record<string, OfficeKind> = { ".docx": "docx", ".xlsx": "xlsx", ".pptx": "pptx" };
+const MAX_OFFICE_BYTES = 25 * 1024 * 1024;
+
 export interface FsFileRead {
-  kind: "text" | "binary" | "toolarge" | "missing";
+  /** office = the text inside a Word, Excel or PowerPoint file. */
+  kind: "text" | "office" | "binary" | "toolarge" | "missing";
   content?: string;
   ext?: string;
   size?: number;
 }
 
 /** Read a file for in-app preview. Text files (md/txt/json/…) come back as
- * content; binary or oversized files come back flagged so the UI points at
- * Google Drive/Finder instead. Guarded to the root; never a hard read outside. */
+ * content, and Word, Excel and PowerPoint files as the text inside them; other
+ * binary or oversized files come back flagged so the UI shows them another way.
+ * Guarded to the root; never a hard read outside. */
 export async function readFsFile(root: string, rel: string): Promise<FsFileRead> {
   const abs = resolveWithinRoot(root, normalizeRel(rel));
   let st: fs.Stats;
@@ -159,10 +165,61 @@ export async function readFsFile(root: string, rel: string): Promise<FsFileRead>
   }
   if (!st.isFile()) return { kind: "missing" };
   const ext = path.extname(abs).toLowerCase();
+  const office = OFFICE_EXTS[ext];
+  if (office) {
+    if (st.size > MAX_OFFICE_BYTES) return { kind: "toolarge", ext, size: st.size };
+    try {
+      return { kind: "office", content: officeText(office, await fsp.readFile(abs)), ext, size: st.size };
+    } catch {
+      return { kind: "binary", ext, size: st.size };
+    }
+  }
   if (!TEXT_EXTS.has(ext)) return { kind: "binary", ext, size: st.size };
   if (st.size > MAX_PREVIEW_BYTES) return { kind: "toolarge", ext, size: st.size };
   const content = await fsp.readFile(abs, "utf8");
   return { kind: "text", content, ext, size: st.size };
+}
+
+/** Files the preview may show as they are (served raw): never HTML or SVG,
+ * which would run in the app's own origin. */
+export const RAW_TYPES: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+};
+const MAX_RAW_BYTES = 50 * 1024 * 1024;
+
+/** A file the preview shows as it is (PDF or image): its absolute path and type,
+ * or null when it isn't one of those, is too large, or isn't there. */
+export async function rawFsFile(root: string, rel: string): Promise<{ abs: string; type: string; size: number } | null> {
+  const abs = resolveWithinRoot(root, normalizeRel(rel));
+  const type = RAW_TYPES[path.extname(abs).toLowerCase()];
+  if (!type) return null;
+  try {
+    // The real file must be inside the real root: a link planted in a shared
+    // folder can't serve something from elsewhere on the Mac.
+    const [real, realRoot] = await Promise.all([fsp.realpath(abs), fsp.realpath(root)]);
+    if (!real.startsWith(realRoot + path.sep)) return null;
+    const st = await fsp.stat(real);
+    return st.isFile() && st.size <= MAX_RAW_BYTES ? { abs: real, type, size: st.size } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The absolute path of an existing file or folder under the root (for "Show in
+ * Finder"), or null. */
+export async function existingFsPath(root: string, rel: string): Promise<string | null> {
+  const abs = resolveWithinRoot(root, normalizeRel(rel));
+  try {
+    await fsp.stat(abs);
+    return abs;
+  } catch {
+    return null;
+  }
 }
 
 /** Soft-delete: move an item into the source's "99 Archive" folder (created on

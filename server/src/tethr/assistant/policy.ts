@@ -139,7 +139,8 @@ const CONNECTOR_RULES: Record<string, Rule[]> = {
   // Tethr's own MCP server "tethr" (phase 19): scoring and keyword lookups,
   // run in the Tethr server; they change nothing outside its files/ folder.
   "Tethr tools": [
-    [/^(score_list|keyword_ideas|goals_list)$/, "read"],
+    // make_document only writes a new file into Tethr's own files/ folder.
+    [/^(score_list|keyword_ideas|goals_list|make_document)$/, "read"],
     // Goals live in Tethr itself: saving one changes nothing outside Tethr.
     [/^(save_goal|save_metric|record_metric)$/, "draft"],
     [/.*/, "blocked"],
@@ -258,6 +259,10 @@ function summarize(connector: string, name: string, input: Record<string, unknow
     return `Scoring ${n ? `${n} items` : from ? from : "a list"} with Jev`;
   }
   if (connector === "Tethr tools" && name === "goals_list") return "Reading the goals";
+  if (connector === "Tethr tools" && name === "make_document") {
+    const format = typeof input.format === "string" ? input.format.toUpperCase() : "document";
+    return `Making a ${format}${typeof input.title === "string" ? ` “${input.title.slice(0, 60)}”` : ""}`;
+  }
   if (connector === "Tethr tools" && name === "save_goal") {
     return `Saving goal${typeof input.title === "string" ? ` “${input.title.slice(0, 60)}”` : ""}`;
   }

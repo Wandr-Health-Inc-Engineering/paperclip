@@ -898,6 +898,48 @@ Slack, it suggests an idea). Plan: `tasks/phase-21.md`.
   loopback and read 00 Tethr. A built `.app` bundles its own copy of server.mjs: rebuild it with
   `build-app.sh` to pick up changes (rebuilt 2026-11-08 with the Host check).
 
+## Documents in and out, and the working nebula (phase 22, 2026-11-08)
+
+Mark: "more than just .md capacity… PDF and all those skills… this system is more like an
+operational harness", and "a cool animation like Claude does when it's processing… a little
+nebula, an endless loop until it's done". Plan: `tasks/phase-22.md`.
+- **Skills:** the chat's Claude session already loads Mark's own `~/.claude/skills` (the Skill tool
+  is allowed). Anthropic's pdf/docx/pptx/xlsx skills need Python through the shell, which stays
+  off, so documents come from a tethr tool instead.
+- **`make_document`** (tethr tools, class `read`; `assistant/make-document.ts`): pdf, docx, pptx,
+  xlsx or html into `files/`, from `markdown` or `from_file` (.md/.txt; .csv for xlsx) or `sheets`.
+  Saved with `writeNewFile`; the result ends with `[Saved file: …]`, so it's a chip and opens in the
+  side panel. The chat's CLAUDE.md tells it to use this for those formats.
+- **Renderers** live in `server/src/tethr/documents.ts` (the Drive mirror uses them too):
+  - PDF: Markdown → HTML → Chromium print, with **JavaScript off and every network request
+    refused** (only `data:` images load; others are hidden).
+  - Word: built from marked tokens (headings, inline bold/italic/code/links, numbered and bullet
+    lists, tables with column widths, quotes, code); raw `<script>`/`<style>` dropped.
+  - PowerPoint: a title slide plus one per `##` section.
+  - Excel: a small writer on `zip.ts` (no dependency). Bold, frozen header; text is never a formula
+    (inline strings).
+- **Reading Office files** (`office-text.ts` on `zip.ts`): docx → Markdown (headings, tables as
+  Markdown tables), xlsx → "## Sheet: name" + CSV, pptx → "## Slide N". Zip reads are capped per
+  entry (no zip bombs).
+  - **Attachments** now accept docx/xlsx/pptx: the text is read first (an unreadable file is
+    refused), and a text copy `<name>.md` is written beside the original for Claude's Read tool.
+  - **Drive and side panel:** `/fsdrive/read` returns `kind: "office"` with that text (xlsx shows as
+    tables). PDFs and images preview as they are via `GET /fsdrive/raw`, which serves only
+    pdf/png/jpg/gif/webp (never html/svg), `nosniff`, and refuses a symlink whose real path leaves
+    the folder.
+  - **Show in Finder** (`POST /fsdrive/reveal`, people only, macOS) runs `open -R`, which selects
+    the file and never opens or runs it.
+- **Nebula** (`components/tethr/Nebula.tsx`, `.tethr-nebula*` in tethr-theme.css): two blurred
+  conic "arms", a pulsing core and three motes on tilted orbits, all `currentColor` (monochrome),
+  still under reduced motion. The chat shows **one status row for as long as a turn runs**:
+  nebula · what's happening (waiting / thinking / the running step / waiting for your approval /
+  writing) · elapsed time · Stop.
+- Shared helpers: `tethr/csv.ts` (`parseCsv`, `toCsv`), `assistant/files.ts` (`resolveInFiles`,
+  `readTextInFiles`, `safeFileName`).
+- Tests: `tethr-documents.test.ts` (16, including the PDF's network block against a live local
+  server). Verified live on a throwaway instance: the nebula row on a running turn, the PDF from a
+  chat chip in the side panel, and PDF, Word, Excel, PowerPoint and PNG previews in the Drive.
+
 ## Onboarding from scratch: goals with numbers, setup, rhythm (phase 20, 2026-11-07)
 
 Mark's call: start tethr over from scratch, with real goals. The plan is in `tasks/phase-20.md`.

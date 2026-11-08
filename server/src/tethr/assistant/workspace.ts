@@ -49,6 +49,8 @@ function claudeMd(integrationRules: string, goals: string | null, company: strin
 This folder is Tethr's workspace inside the shared "00 Tethr" Google Drive folder, so everything here syncs to Drive.
 
 - Put files you make in ./${FILES_DIR}/ (subfolders are fine). Use clear names; Markdown unless asked otherwise.
+- For a PDF, Word document, PowerPoint deck, Excel workbook or a standalone web page, use the make_document tool (tethr tools). Don't build those with scripts or document skills; the shell is off.
+- An attached Word, Excel or PowerPoint file has a text copy beside it, its name plus .md (plan.docx → plan.docx.md). Read that copy.
 - ${MEMORY_FILE} (below) is your long-term memory. When someone asks you to remember or forget something, edit ${MEMORY_FILE}: a short dated bullet under "Things the team told me", or the right section. Keep it tidy. Never store passwords, keys, card numbers or anyone's health information there.
 ${company === null ? "" : `
 ${company.trim()}

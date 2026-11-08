@@ -1865,6 +1865,44 @@ export function tethrRoutes(db: Db) {
     res.json(await readFsFile(root, String(req.query.path ?? "")));
   });
 
+  // A PDF or image as it is, for the preview (never HTML or SVG: see RAW_TYPES).
+  router.get("/tethr/:companyId/fsdrive/raw", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const root = await resolveFsRoot(companyId, req.query.mount);
+    if (!root) return void res.status(404).json({ error: "That drive isn't connected." });
+    const { rawFsFile } = await import("../tethr/fsdrive.js");
+    const file = await rawFsFile(root, String(req.query.path ?? ""));
+    if (!file) return void res.status(404).json({ error: "No preview for that file." });
+    res.setHeader("Content-Type", file.type);
+    res.setHeader("Content-Length", String(file.size));
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Disposition", "inline");
+    const { createReadStream } = await import("node:fs");
+    createReadStream(file.abs).on("error", () => res.destroy()).pipe(res);
+  });
+
+  // Show a file in Finder (macOS `open -R`: it selects the file and never opens
+  // or runs it). People only.
+  router.post("/tethr/:companyId/fsdrive/reveal", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
+    if (process.platform !== "darwin") return void res.status(501).json({ error: "Show in Finder works on a Mac only." });
+    const root = await resolveFsRoot(companyId, req.body?.mount);
+    if (!root) return void res.status(404).json({ error: "That drive isn't connected." });
+    const { existingFsPath } = await import("../tethr/fsdrive.js");
+    const abs = await existingFsPath(root, String(req.body?.path ?? ""));
+    if (!abs) return void res.status(404).json({ error: "That file is no longer there." });
+    try {
+      await execFileAsync("open", ["-R", abs], { timeout: 5000 });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   router.post("/tethr/:companyId/fsdrive/folder", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);

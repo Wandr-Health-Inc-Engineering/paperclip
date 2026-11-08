@@ -314,7 +314,7 @@ export interface TethrChatAttachment {
   /** Workspace-relative path ("files/uploads/2026-11-07/report.pdf"). */
   path: string;
   name: string;
-  kind: "image" | "pdf" | "text";
+  kind: "image" | "pdf" | "office" | "text";
   /** Where the side panel opens it (relative to 00 Tethr), or null. */
   panelPath: string | null;
   size?: number;
@@ -940,9 +940,14 @@ export const tethrApi = {
       `/tethr/${c}/fsdrive/list?mount=${encodeURIComponent(mount)}&path=${encodeURIComponent(path)}`,
     ),
   fsRead: (c: string, mount: string, path: string) =>
-    api.get<{ kind: "text" | "binary" | "toolarge" | "missing"; content?: string; ext?: string; size?: number }>(
+    api.get<{ kind: "text" | "office" | "binary" | "toolarge" | "missing"; content?: string; ext?: string; size?: number }>(
       `/tethr/${c}/fsdrive/read?mount=${encodeURIComponent(mount)}&path=${encodeURIComponent(path)}`,
     ),
+  /** A PDF or image as it is (for an iframe or img). */
+  fsRawUrl: (c: string, mount: string, path: string) =>
+    `/api/tethr/${c}/fsdrive/raw?mount=${encodeURIComponent(mount)}&path=${encodeURIComponent(path)}`,
+  /** Select the file in Finder (macOS). */
+  fsReveal: (c: string, mount: string, path: string) => api.post<{ ok: true }>(`/tethr/${c}/fsdrive/reveal`, { mount, path }),
   fsCreateFolder: (c: string, mount: string, path: string, name: string) =>
     api.post<{ path: string }>(`/tethr/${c}/fsdrive/folder`, { mount, path, name }),
   fsMove: (c: string, mount: string, from: string, toDir: string, newName?: string) =>

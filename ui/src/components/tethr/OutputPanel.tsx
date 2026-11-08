@@ -101,7 +101,7 @@ export function OutputPanel({
       ) : null}
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <PreviewBody key={current.path} source={source} item={{ key: current.path, name, kind: "file" }} size="full" />
+        <PreviewBody key={`${current.path}@${current.version}`} source={source} item={{ key: current.path, name, kind: "file" }} size="full" />
       </div>
     </aside>
   );

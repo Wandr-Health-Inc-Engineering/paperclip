@@ -1,4 +1,3 @@
-import fsp from "node:fs/promises";
 import path from "node:path";
 import type { Db } from "@paperclipai/db";
 import { writeNewFile } from "../atomic.js";
@@ -6,7 +5,12 @@ import { GoalInputError, goalsContextText, goalsService, METRIC_SOURCES, METRIC_
 import { JevError, jevAsk, jevConfigured, jevCostUsd, type JevAnswer, type JevCallOptions, type JevQuestion } from "../jev.js";
 import { googleAdsConfigured } from "../tools/google-ads.js";
 import { generateKeywordIdeas, KeywordPlannerAccessError, type KeywordIdea } from "../tools/keyword-planner.js";
+import { parseCsv, toCsv } from "../csv.js";
+import { readTextInFiles, safeFileName } from "./files.js";
+import { FORMAT_LABEL, MAKE_DOCUMENT_DEF, makeDocument } from "./make-document.js";
 import { FILES_DIR } from "./workspace.js";
+
+export { parseCsv, toCsv };
 
 // Tethr's own tools for the chat (phase 19), served to its Claude session as the
 // MCP server "tethr" (see tools-bridge.ts). The work runs HERE, in the Tethr
@@ -175,6 +179,7 @@ export const TETHR_TOOL_DEFS: McpToolDef[] = [
       required: ["metric_id", "value"],
     },
   },
+  MAKE_DOCUMENT_DEF,
 ];
 
 // ---- criteria --------------------------------------------------------------
@@ -317,62 +322,7 @@ function csvValue(a: JevAnswer | undefined): string | number {
 
 /** A file name under files/: a plain base name, never a dot file, always .csv. */
 export function csvFileName(raw: unknown, fallback = "scores"): string {
-  const base = typeof raw === "string" ? path.basename(raw.trim()) : "";
-  const stem = base
-    .replace(/\.[A-Za-z0-9]{1,5}$/, "")
-    .replace(/[^A-Za-z0-9 _.-]+/g, "-")
-    .replace(/^[.\s-]+/, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 80);
-  return `${stem || fallback}.csv`;
-}
-
-/** RFC 4180-ish CSV: quoted fields, doubled quotes, CRLF or LF. */
-export function parseCsv(text: string): string[][] {
-  const src = text.replace(/^﻿/, "");
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let quoted = false;
-  for (let i = 0; i < src.length; i++) {
-    const ch = src[i];
-    if (quoted) {
-      if (ch === '"') {
-        if (src[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else quoted = false;
-      } else field += ch;
-    } else if (ch === '"' && field === "") quoted = true;
-    else if (ch === ",") {
-      row.push(field);
-      field = "";
-    } else if (ch === "\n" || ch === "\r") {
-      if (ch === "\r" && src[i + 1] === "\n") i++;
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = "";
-    } else field += ch;
-  }
-  if (field !== "" || row.length) {
-    row.push(field);
-    rows.push(row);
-  }
-  return rows.filter((r) => r.some((f) => f.trim() !== ""));
-}
-
-/** CSV text. Text cells that a spreadsheet would run as a formula get a leading '. */
-export function toCsv(rows: Array<Array<string | number | null | undefined>>): string {
-  const cell = (v: string | number | null | undefined) => {
-    if (v === null || v === undefined) return "";
-    if (typeof v === "number") return Number.isFinite(v) ? String(v) : "";
-    let s = v;
-    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  return rows.map((r) => r.map(cell).join(",")).join("\n") + "\n";
+  return safeFileName(raw, "csv", fallback);
 }
 
 function filesDir(ctx: TethrToolContext): string {
@@ -381,23 +331,10 @@ function filesDir(ctx: TethrToolContext): string {
 
 /** Read a list from a file in files/ (confined there). */
 export async function readListFile(raw: string, ctx: TethrToolContext): Promise<unknown[] | string> {
-  const rel = raw.trim().replace(/^\.?\/?files\//, "");
-  const root = path.resolve(filesDir(ctx));
-  const abs = path.resolve(root, rel);
-  const inside = path.relative(root, abs);
-  if (!rel || !inside || inside.startsWith("..") || path.isAbsolute(inside) || inside.split(path.sep).some((p) => p.startsWith("."))) {
-    return "from_file must be a file in ./files/.";
-  }
-  let stat;
-  try {
-    stat = await fsp.stat(abs);
-  } catch {
-    return `There's no file called ${rel} in ./files/.`;
-  }
-  if (!stat.isFile()) return `${rel} isn't a file.`;
-  if (stat.size > SCORE_LIMITS.fileBytes) return `${rel} is too big (over 2 MB).`;
-  const text = await fsp.readFile(abs, "utf8");
-  const ext = path.extname(abs).toLowerCase();
+  const file = await readTextInFiles(ctx.workspaceDir, raw, SCORE_LIMITS.fileBytes, "from_file");
+  if ("error" in file) return file.error;
+  const { text, rel } = file;
+  const ext = path.extname(rel).toLowerCase();
   if (ext === ".json") {
     try {
       const parsed = JSON.parse(text) as unknown;
@@ -673,11 +610,23 @@ async function runGoalTool(name: string, args: Record<string, unknown>, ctx: Tet
 }
 
 /** Run one Tethr tool. Never throws: errors come back as an error result. */
+async function runMakeDocument(args: Record<string, unknown>, ctx: TethrToolContext): Promise<TethrToolResult> {
+  const made = await makeDocument(args, ctx);
+  if ("error" in made) return { text: `make_document: ${made.error}`, isError: true };
+  const size = made.bytes < 1024 * 1024 ? `${Math.max(1, Math.round(made.bytes / 1024))} KB` : `${(made.bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return {
+    text: [`Made the ${FORMAT_LABEL[made.format]} "${made.title}" (${size}): ${made.rel}`, savedFileLine(made.rel)].join("\n"),
+    file: made.rel,
+    meta: { format: made.format, bytes: made.bytes },
+  };
+}
+
 export async function runTethrTool(name: string, args: unknown, ctx: TethrToolContext): Promise<TethrToolResult> {
   const a = args && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
   try {
     if (name === "score_list") return await runScoreList(a, ctx);
     if (name === "keyword_ideas") return await runKeywordIdeas(a, ctx);
+    if (name === "make_document") return await runMakeDocument(a, ctx);
     if (name === "goals_list" || name === "save_goal" || name === "save_metric" || name === "record_metric") {
       return await runGoalTool(name, a, ctx);
     }

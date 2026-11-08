@@ -1178,6 +1178,117 @@ a[role="button"]:active {
   }
 }
 
+/* ===== Nebula (phase 22): the chat's "working" mark, looping until a turn
+   ends. Two soft spiral arms (blurred conic gradients, faded at the edge) swirl
+   and breathe at different speeds around a pulsing core, and three motes ride
+   tilted, flattened orbits. All currentColor, so it stays monochrome in Day and
+   Night. In a layer so size utilities (h-6 w-6) still win. ===== */
+@keyframes tethr-nebula-swirl {
+  to { transform: rotate(360deg); }
+}
+@keyframes tethr-nebula-breathe {
+  from { scale: 0.86; opacity: 0.7; }
+  to { scale: 1.04; opacity: 1; }
+}
+@keyframes tethr-nebula-pulse {
+  from { scale: 0.75; opacity: 0.65; }
+  to { scale: 1.15; opacity: 1; }
+}
+
+@layer components {
+  .tethr-nebula {
+    position: relative;
+    display: inline-block;
+    flex: none;
+    width: 22px;
+    height: 22px;
+  }
+  .tethr-nebula > span {
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+  }
+  .tethr-nebula-cloud {
+    background: conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      color-mix(in oklab, currentColor 90%, transparent) 40deg,
+      transparent 110deg,
+      transparent 180deg,
+      color-mix(in oklab, currentColor 70%, transparent) 220deg,
+      transparent 290deg
+    );
+    -webkit-mask: radial-gradient(circle, #000 24%, rgb(0 0 0 / 0.6) 46%, transparent 71%);
+    mask: radial-gradient(circle, #000 24%, rgb(0 0 0 / 0.6) 46%, transparent 71%);
+    filter: blur(0.9px);
+    animation:
+      tethr-nebula-swirl 3.2s linear infinite,
+      tethr-nebula-breathe 2.4s ease-in-out infinite alternate;
+  }
+  .tethr-nebula > .tethr-nebula-cloud-inner {
+    inset: 10%;
+    opacity: 0.75;
+    background: conic-gradient(
+      from 90deg,
+      transparent 0deg,
+      color-mix(in oklab, currentColor 60%, transparent) 70deg,
+      transparent 150deg,
+      color-mix(in oklab, currentColor 45%, transparent) 250deg,
+      transparent 330deg
+    );
+    animation:
+      tethr-nebula-swirl 2.1s linear infinite reverse,
+      tethr-nebula-breathe 1.7s ease-in-out -0.6s infinite alternate;
+  }
+  .tethr-nebula > .tethr-nebula-core {
+    inset: 34%;
+    background: radial-gradient(circle, currentColor 0 34%, color-mix(in oklab, currentColor 45%, transparent) 60%, transparent 78%);
+    animation: tethr-nebula-pulse 1.3s ease-in-out infinite alternate;
+  }
+  /* The spin runs in `transform`; the flatten and tilt are the separate scale
+     and rotate properties, applied after it, so each mote traces a tilted ellipse. */
+  .tethr-nebula-orbit {
+    scale: 1 0.5;
+    rotate: -24deg;
+    animation: tethr-nebula-swirl 2.4s linear infinite;
+  }
+  .tethr-nebula > .tethr-nebula-orbit-tight {
+    inset: 16%;
+    scale: 1 0.6;
+    rotate: 40deg;
+    animation: tethr-nebula-swirl 1.6s linear -0.6s infinite reverse;
+  }
+  .tethr-nebula > .tethr-nebula-orbit-wide {
+    inset: -6%;
+    scale: 1 0.42;
+    rotate: 72deg;
+    animation: tethr-nebula-swirl 3.4s linear -1.9s infinite;
+  }
+  .tethr-nebula-orbit > i {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 2.2px;
+    height: 2.2px;
+    margin-left: -1.1px;
+    border-radius: 9999px;
+    background: currentColor;
+    box-shadow: 0 0 2.5px currentColor;
+  }
+  .tethr-nebula-orbit-wide > i {
+    width: 1.8px;
+    height: 1.8px;
+    opacity: 0.65;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tethr-nebula,
+  .tethr-nebula * {
+    animation: none !important;
+  }
+}
+
 /* Branded selection: ink-on-paper inversion in both themes. */
 ::selection {
   background: var(--foreground);

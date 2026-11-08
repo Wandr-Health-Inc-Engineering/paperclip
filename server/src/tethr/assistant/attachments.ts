@@ -1,6 +1,7 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { writeNewFile } from "../atomic.js";
+import { OFFICE_KINDS, officeText, type OfficeKind } from "../office-text.js";
 import { workspaceWriteRefusal } from "./policy.js";
 import { FILES_DIR } from "./workspace.js";
 
@@ -15,26 +16,32 @@ export const ATTACH_LIMITS = { bytes: 20 * 1024 * 1024, files: 6 };
 const UPLOADS = "uploads";
 const MARKER = /^\[Attached file: (files\/uploads\/[^\]\n]+)\]$/;
 
-/** Types Claude's Read tool can actually read: images, PDFs and text. */
+/** Types the chat can read: images, PDFs and text through Claude's Read tool,
+ * and Word, Excel and PowerPoint through a text copy saved beside them. */
 const READABLE = new Set([
   "png", "jpg", "jpeg", "gif", "webp",
   "pdf",
+  "docx", "xlsx", "pptx",
   "txt", "md", "markdown", "csv", "tsv", "json", "html", "htm", "xml", "yaml", "yml", "log", "ics", "rtf",
 ]);
 
-export function attachmentKind(name: string): "image" | "pdf" | "text" {
+export function attachmentKind(name: string): "image" | "pdf" | "office" | "text" {
   const ext = path.extname(name).slice(1).toLowerCase();
   if (["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) return "image";
   if (ext === "pdf") return "pdf";
+  if ((OFFICE_KINDS as string[]).includes(ext)) return "office";
   return "text";
 }
+
+/** The text copy of an Office attachment sits beside it: plan.docx → plan.docx.md. */
+export const textCopyName = (name: string) => `${name}.md`;
 
 /** A safe file name for an upload, or why it can't be attached. */
 export function attachmentName(original: string): { name: string } | { error: string } {
   const base = path.basename(String(original ?? "").replace(/\\/g, "/")).normalize("NFC");
   const ext = path.extname(base).slice(1).toLowerCase();
   if (!READABLE.has(ext)) {
-    return { error: "tethr can read images, PDFs and text files (Markdown, CSV, JSON…). Export Word or Excel files to PDF or CSV first." };
+    return { error: "tethr reads images, PDFs, Word, Excel and PowerPoint files, and text files (Markdown, CSV, JSON…). Export other files to one of those first." };
   }
   const stem = base
     .slice(0, base.length - ext.length - 1)
@@ -70,6 +77,16 @@ export async function saveAttachment(
   if (data.length > ATTACH_LIMITS.bytes) return { error: "That file is over 20 MB." };
   const named = attachmentName(original);
   if ("error" in named) return named;
+  // Office files: read the text out first, so a file the chat couldn't use is refused now.
+  const office = path.extname(named.name).slice(1).toLowerCase() as OfficeKind;
+  let text: string | null = null;
+  if ((OFFICE_KINDS as string[]).includes(office)) {
+    try {
+      text = officeText(office, data);
+    } catch (err) {
+      return { error: `tethr couldn't read ${named.name} (${err instanceof Error ? err.message : "not a readable file"}). Export it to PDF and attach that.` };
+    }
+  }
   const dir = path.join(workspaceDir, FILES_DIR, UPLOADS, dateDir(now));
   // Same rules as the chat's own writes: never a dot path or a Claude config file.
   if (workspaceWriteRefusal(path.join(dir, named.name), workspaceDir)) return { error: "That file name isn't allowed." };
@@ -80,6 +97,10 @@ export async function saveAttachment(
     name = await writeNewFile(dir, named.name, data, (abs) => !workspaceWriteRefusal(abs, workspaceDir));
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Couldn't save that file." };
+  }
+  if (text !== null) {
+    const header = `<!-- The text of ${name}, saved by tethr so the chat can read it. -->\n\n`;
+    await writeNewFile(dir, textCopyName(name), header + text, (abs) => !workspaceWriteRefusal(abs, workspaceDir)).catch(() => {});
   }
   const abs = path.join(dir, name);
   return { path: path.relative(workspaceDir, abs).split(path.sep).join("/"), name, size: data.length, kind: attachmentKind(name) };
