@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { approvals, tethrAgentProfiles, tethrOutputs, tethrSubagents } from "@paperclipai/db";
 import {
@@ -747,9 +747,9 @@ export function gatingService(db: Db) {
       .leftJoin(tethrSubagents, eq(tethrOutputs.subagentId, tethrSubagents.id))
       .where(and(...conditions))
       .orderBy(
-        // pending review first, then newest
-        eq(tethrOutputs.status, "gated"),
-        tethrOutputs.createdAt,
+        // Pending review first, then newest, so the limit never cuts what's waiting on a person.
+        desc(sql`${tethrOutputs.status} in ('gated', 'changes_requested')`),
+        desc(tethrOutputs.createdAt),
       )
       .limit(opts.limit ?? 100);
     return rows

@@ -49,7 +49,10 @@ export interface GrowthBoard {
   };
   counts: {
     open: number;
+    /** Tasks in review (the cards under "tasks in review"). */
     waitingOnYou: number;
+    /** Everything the Queue holds for a decision, from tasks, the chat or anywhere else. */
+    pendingDecisions: number;
     doneThisWeek: number;
     workflowsOn: number;
     workflowsTotal: number;
@@ -89,8 +92,9 @@ export async function growthBoard(db: Db, companyId: string, now = new Date()): 
 
   const lanes: GrowthBoard["lanes"] = { waitingOnYou: [], working: [], blocked: [], queued: [], doneThisWeek: [] };
   const workflows: GrowthWorkflowRow[] = [];
+  const pendingDecisions = await countPendingDecisions(db, companyId);
   if (agentIds.length === 0) {
-    return { workflows, lanes, counts: { open: 0, waitingOnYou: 0, doneThisWeek: 0, workflowsOn: 0, workflowsTotal: 0 } };
+    return { workflows, lanes, counts: { open: 0, waitingOnYou: 0, pendingDecisions, doneThisWeek: 0, workflowsOn: 0, workflowsTotal: 0 } };
   }
 
   // Tasks the agents carry (cancelled ones and anything done > a week ago drop off).
@@ -210,9 +214,19 @@ export async function growthBoard(db: Db, companyId: string, now = new Date()): 
     counts: {
       open,
       waitingOnYou: lanes.waitingOnYou.length,
+      pendingDecisions,
       doneThisWeek: lanes.doneThisWeek.length,
       workflowsOn: workflows.filter((w) => w.status === "active" && w.scheduleEnabled).length,
       workflowsTotal: workflows.length,
     },
   };
+}
+
+/** Outputs waiting for a person's decision: the Queue's Pending tab. */
+async function countPendingDecisions(db: Db, companyId: string): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(tethrOutputs)
+    .where(and(eq(tethrOutputs.companyId, companyId), inArray(tethrOutputs.status, ["gated", "changes_requested"])));
+  return row?.n ?? 0;
 }

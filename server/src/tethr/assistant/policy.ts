@@ -280,11 +280,17 @@ function hasText(value: unknown): boolean {
   return typeof value === "string" && value.trim() !== "";
 }
 
-/** A send whose recipients the input doesn't name: a Gmail reply or forward
- * with none listed, any reply-all, or a Calendar RSVP that carries a note. */
+/** A send that reaches people the input doesn't name:
+ * - a Gmail reply goes to the original sender unless `to` replaces them (cc and
+ *   bcc only add people), and reply-all reaches the whole thread;
+ * - a forward with nobody listed;
+ * - a Calendar update emails the event's existing guests unless notifications
+ *   are off;
+ * - a Calendar RSVP with a note goes to the organizer. */
 function leavesForUnnamedPeople(connector: string, name: string, args: Record<string, unknown>, named: string[]): boolean {
-  if (connector === "Gmail" && name === "reply" && args.replyAll === true) return true;
-  if (connector === "Gmail" && /^(reply|forward)$/.test(name)) return named.length === 0;
+  if (connector === "Gmail" && name === "reply") return args.replyAll === true || recipients({ to: args.to }).length === 0;
+  if (connector === "Gmail" && name === "forward") return named.length === 0;
+  if (connector === "Google Calendar" && name === "update_event") return args.notificationLevel !== "NONE";
   if (connector === "Google Calendar" && name === "respond_to_event") return hasText(args.responseComment);
   return false;
 }
@@ -364,10 +370,8 @@ export function classify(tool: string, input: Record<string, unknown> | undefine
       // A draft to an outsider is still only a draft; sending/inviting them is public.
       if (cls === "write") cls = "public";
     }
-    // A reply (or a forward with no explicit recipient) goes to whoever is on the
-    // thread, which the input doesn't say, so it counts as leaving the company.
-    // So does reply-all, whatever `to` says, and an RSVP with a note (it goes to
-    // the event's organizer).
+    // Recipients the input doesn't name could be anyone, so those sends count as
+    // leaving the company.
     if (cls === "write" && leavesForUnnamedPeople(connector, name, args, outward)) cls = "public";
     if (MEDICAL.test(JSON.stringify(args))) cls = "medical";
   }

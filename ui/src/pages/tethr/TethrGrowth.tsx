@@ -134,8 +134,6 @@ function Stat({ label, value, tone, sub, to }: { label: string; value: string; t
   );
 }
 
-const PENDING_STATUSES = ["gated", "changes_requested"];
-
 export function TethrGrowth() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -150,20 +148,12 @@ export function TethrGrowth() {
     enabled: !!selectedCompanyId,
     refetchInterval: 15_000,
   });
-  // "Waiting on you" is everything the Queue holds for a decision (the same list
-  // the Queue's Pending tab shows), not only items tied to a task.
-  const { data: outputs } = useQuery({
-    queryKey: tethrKeys.outputs(selectedCompanyId!),
-    queryFn: () => tethrApi.outputs(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
-    refetchInterval: 15_000,
-  });
-
   if (isLoading || !data) return <PageSkeleton />;
 
   const { lanes, counts, workflows } = data;
   const nothingInFlight = counts.open === 0 && counts.doneThisWeek === 0;
-  const waitingOnYou = outputs ? outputs.filter((o) => PENDING_STATUSES.includes(o.status)).length : counts.waitingOnYou;
+  // Everything the Queue holds for a decision (the Pending tab), not only items tied to a task.
+  const waitingOnYou = counts.pendingDecisions;
 
   return (
     <div className="space-y-8">
@@ -188,7 +178,7 @@ export function TethrGrowth() {
 
       {lanes.waitingOnYou.length ? (
         <section className="space-y-3">
-          <MonoTag>waiting on you</MonoTag>
+          <MonoTag>tasks in review</MonoTag>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {lanes.waitingOnYou.map((t) => (
               <Link

@@ -111,6 +111,9 @@ describe("tethr assistant policy — classify", () => {
     expect(classify(gmail("send_message"), { draftId: "", to: ["mark@travelwithwandr.com"], subject: "Hi" }, ctx).cls).toBe("write");
 
     expect(classify(gmail("reply"), { messageId: "m1", to: ["mark@travelwithwandr.com"], body: "ok" }, ctx).cls).toBe("write");
+    // cc and bcc only add people: the reply still goes to the original sender.
+    expect(classify(gmail("reply"), { messageId: "m1", cc: ["alec@travelwithwandr.com"], body: "ok" }, ctx).cls).toBe("public");
+    expect(classify(gmail("reply"), { messageId: "m1", to: [], bcc: ["alec@travelwithwandr.com"], body: "ok" }, ctx).cls).toBe("public");
     const replyAll = classify(gmail("reply"), { messageId: "m1", to: ["mark@travelwithwandr.com"], replyAll: true, body: "ok" }, ctx);
     expect(replyAll.cls).toBe("public");
     expect(decide(replyAll, { mode: "auto", shell: "off" }).action).toBe("ask");
@@ -123,7 +126,13 @@ describe("tethr assistant policy — classify", () => {
     expect(classify(cal("update_event"), { eventId: "e1", addedAttendeeEmails: ["x@partner.com"] }, ctx).cls).toBe("public");
     expect(classify(cal("update_event"), { eventId: "e1", removedAttendeeEmails: ["x@partner.com"] }, ctx).cls).toBe("public");
     expect(classify(cal("create_event"), { summary: "Sync", attendeeEmails: ["x@partner.com"] }, ctx).cls).toBe("public");
-    expect(classify(cal("update_event"), { eventId: "e1", addedAttendees: [{ email: "alec@travelwithwandr.com" }] }, ctx).cls).toBe("write");
+    // An update emails the event's existing guests, whoever they are, unless notifications are off.
+    expect(classify(cal("update_event"), { eventId: "e1", description: "Q3 numbers" }, ctx).cls).toBe("public");
+    expect(classify(cal("update_event"), { eventId: "e1", description: "Q3 numbers", notificationLevel: "NONE" }, ctx).cls).toBe("write");
+    expect(
+      classify(cal("update_event"), { eventId: "e1", addedAttendees: [{ email: "alec@travelwithwandr.com" }], notificationLevel: "NONE" }, ctx).cls,
+    ).toBe("write");
+    expect(classify(cal("create_event"), { summary: "Focus", startTime: "2026-11-09T09:00:00", endTime: "2026-11-09T10:00:00" }, ctx).cls).toBe("write");
     expect(classify(cal("respond_to_event"), { eventId: "e1", responseStatus: "accepted" }, ctx).cls).toBe("write");
     expect(classify(cal("respond_to_event"), { eventId: "e1", responseStatus: "declined", responseComment: "see notes" }, ctx).cls).toBe("public");
   });

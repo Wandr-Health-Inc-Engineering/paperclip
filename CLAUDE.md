@@ -863,20 +863,28 @@ Slack, it suggests an idea). Plan: `tasks/phase-21.md`.
 
 - **Fetches stay on the public web.** `server/src/tethr/net.ts` owns `isPrivateHost`,
   `resolvesToPrivateHost` and `fetchPublic` (policy.ts re-exports the first two). The classic
-  engine's `web_fetch`/`reddit_scan`/`cdc_scan` go through `fetchPublic`, which checks each hop
-  (redirects are followed by hand, at most 5) and refuses loopback, LAN, link-local and CGNAT
-  addresses. Before this, a Slack message could get `@tethr.chat` to fetch
+  engine's `web_fetch`/`reddit_scan`/`cdc_scan` go through `fetchPublic`: node http(s) with a
+  `lookup` that refuses loopback, LAN, link-local and CGNAT addresses at connect time (so DNS
+  rebinding can't swap the address after the check), address literals refused up front, redirects
+  followed by hand (at most 5), one timeout for the whole chain, no pooled sockets, bodies capped
+  at 5 MB. Before this, a Slack message could get `@tethr.chat` to fetch
   `http://127.0.0.1:3100/api/tethr/...`, which in local_trusted mode answers as the admin. Never
   add a fetch of an agent- or user-supplied URL that skips `fetchPublic`.
 - **`POST /tethr/seed` is instance-admin only** (`isInstanceAdmin` in `routes/tethr-people.ts`,
-  also used by the env and reset routes). A local curl in local_trusted mode still works; on a
+  built on core's `assertInstanceAdmin`; also used by the env and reset routes). A local curl in local_trusted mode still works; on a
   hosted (authenticated) instance an anonymous caller gets 403.
 - **Approval gate, Gmail and Calendar:** `send_message` with a `draftId` is blocked (Gmail sends
   the draft as is and ignores to/subject/body, so a card would show the wrong thing); the chat
-  sends with the fields written out. A reply-all and a Calendar RSVP with a note count as public.
+  sends with the fields written out. Sends to people the input doesn't name count as public
+  (`leavesForUnnamedPeople`): a Gmail reply with no `to` (cc/bcc only add people), any reply-all,
+  a forward with nobody listed, a Calendar update (it emails the existing guests) unless
+  `notificationLevel` is `NONE`, and an RSVP with a note.
   Recipients include Calendar's `attendeeEmails`, `addedAttendees`, `addedAttendeeEmails` and
   `removedAttendeeEmails` (`RECIPIENT_FIELDS` in policy.ts). Tests use the connectors' real field
   names; check a connector's schema before adding a rule for it.
+- **The Queue lists pending items first** (`listOutputs` orders gated/changes-requested first,
+  then newest, before its 100-row limit; it used to sort them last, so a busy company's pending
+  items fell off). Growth's "waiting on you" is `counts.pendingDecisions`, a server-side count.
 - **Private turns start tainted.** `runner.sendPrivate` (the watcher's idea check) marks its
   thread tainted before the turn: its prompt is other people's Slack words next to Memory.md, so
   an outside web page needs approval from the first call.

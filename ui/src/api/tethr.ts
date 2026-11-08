@@ -716,7 +716,10 @@ export interface TethrGrowthBoard {
   };
   counts: {
     open: number;
+    /** Tasks in review. */
     waitingOnYou: number;
+    /** Everything the Queue holds for a decision. */
+    pendingDecisions: number;
     doneThisWeek: number;
     workflowsOn: number;
     workflowsTotal: number;

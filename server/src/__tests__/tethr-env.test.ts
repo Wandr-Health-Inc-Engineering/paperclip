@@ -131,7 +131,7 @@ describe("tethr env — routes", () => {
     await request(app).put(`/api/tethr/${company}/env`).send({ key: "bad key", value: "v" }).expect(400);
     await request(app).delete(`/api/tethr/${company}/env/TETHR_TEST_NEW`).expect(200);
 
-    const member = await appFor({ type: "board", source: "local_implicit", userId: "u2", isInstanceAdmin: false });
+    const member = await appFor({ type: "board", source: "session", userId: "u2", isInstanceAdmin: false });
     await request(member).get(`/api/tethr/${company}/env`).expect(403);
     const agent = await appFor({ type: "agent", agentId: "a1", companyId: company });
     await request(agent).post(`/api/tethr/${company}/env/reveal`).send({ key: "ANTHROPIC_API_KEY" }).expect(403);

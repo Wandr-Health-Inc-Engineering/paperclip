@@ -1,4 +1,9 @@
 import dns from "node:dns/promises";
+import http from "node:http";
+import https from "node:https";
+import type { LookupFunction } from "node:net";
+import { pipeline, type Readable } from "node:stream";
+import zlib from "node:zlib";
 
 // Which hosts tethr may fetch from. tethr's own API answers loopback requests
 // as the board admin (local_trusted), so any fetch that reaches this machine or
@@ -31,9 +36,9 @@ export type HostLookup = (host: string) => Promise<Array<{ address: string }>>;
 const systemLookup: HostLookup = (host) => dns.lookup(host, { all: true, verbatim: true });
 
 /** Does a web host's name resolve to this machine or a private network? The
- * name check above can't see that (127.0.0.1.nip.io, a LAN name), so callers
- * look the name up before fetching. A lookup that fails or times out isn't a
- * private address (the fetch would fail on its own). */
+ * name check above can't see that (127.0.0.1.nip.io, a LAN name), so the chat's
+ * gate looks the name up before allowing a fetch. A lookup that fails or times
+ * out isn't a private address (the fetch would fail on its own). */
 export async function resolvesToPrivateHost(host: string, lookup: HostLookup = systemLookup, timeoutMs = 2_000): Promise<boolean> {
   if (!host || isPrivateHost(host)) return true;
   if (/^[\d.]+$/.test(host) || host.includes(":")) return false; // a literal address: already judged
@@ -53,26 +58,118 @@ export async function resolvesToPrivateHost(host: string, lookup: HostLookup = s
   }
 }
 
+export interface PublicResponse {
+  ok: boolean;
+  status: number;
+  headers: http.IncomingHttpHeaders;
+  text(): Promise<string>;
+}
+
+export interface FetchPublicOptions {
+  headers: Record<string, string>;
+  /** For the whole fetch, redirects included. */
+  timeoutMs: number;
+  /** Tests: resolve names without DNS. */
+  lookup?: HostLookup;
+  /** Tests: which resolved addresses are refused (default: this computer and its network). */
+  isRefusedAddress?: (address: string) => boolean;
+}
+
 const MAX_REDIRECTS = 5;
+const MAX_BODY_BYTES = 5 * 1024 * 1024;
+const LOCAL_NETWORK = "it's this computer or its local network";
 
 /** GET a public http(s) URL. Every hop, redirects included, is checked against
- * this machine and its network before it's requested, so a public page can't
- * bounce the request to localhost. (A name that resolves differently between
- * the check and the request can still slip through; that needs control of the
- * name's DNS and is out of reach for a pasted link.) */
-export async function fetchPublic(url: string, init: { headers: Record<string, string>; timeoutMs: number }, lookup: HostLookup = systemLookup): Promise<Response> {
-  let current = url;
+ * this machine and its network: an address literal before the request, a name
+ * at connect time, on the very addresses the socket then connects to. So a name
+ * that answers differently on a second lookup (DNS rebinding) can't slip by. */
+export async function fetchPublic(url: string, opts: FetchPublicOptions): Promise<PublicResponse> {
+  const signal = AbortSignal.timeout(opts.timeoutMs);
+  let current = new URL(url);
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    const target = new URL(current);
-    if (target.protocol !== "http:" && target.protocol !== "https:") throw new Error(`refused ${target.protocol} URL`);
-    if (await resolvesToPrivateHost(target.hostname.replace(/^\[|\]$/g, ""), lookup)) {
-      throw new Error(`refused ${target.hostname}: it's this computer or its local network`);
-    }
-    const res = await fetch(target, { headers: init.headers, signal: AbortSignal.timeout(init.timeoutMs), redirect: "manual" });
-    const location = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
-    if (!location) return res;
-    await res.body?.cancel().catch(() => {});
-    current = new URL(location, target).toString();
+    if (current.protocol !== "http:" && current.protocol !== "https:") throw new Error(`refused ${current.protocol} URL`);
+    if (isPrivateHost(current.hostname)) throw new Error(`refused ${current.hostname}: ${LOCAL_NETWORK}`);
+    const res = await getOnce(current, opts, signal);
+    if (!res.location) return res;
+    current = new URL(res.location, current);
   }
   throw new Error(`too many redirects from ${url}`);
+}
+
+/** A resolver for http(s).request that refuses names landing on this machine or
+ * its network. Node calls it for names only; address literals never reach it. */
+function refusingLookup(opts: FetchPublicOptions): LookupFunction {
+  const resolve = opts.lookup ?? systemLookup;
+  const refused = opts.isRefusedAddress ?? isPrivateHost;
+  return (hostname, options, callback) => {
+    resolve(hostname)
+      .then((found) => {
+        const addrs = found
+          .map((a) => ({ address: a.address, family: a.address.includes(":") ? 6 : 4 }))
+          .filter((a) => !options.family || a.family === options.family);
+        if (!addrs.length) throw Object.assign(new Error(`couldn't find ${hostname}`), { code: "ENOTFOUND" });
+        if (addrs.some((a) => refused(a.address))) throw new Error(`refused ${hostname}: ${LOCAL_NETWORK}`);
+        if (options.all) callback(null, addrs);
+        else callback(null, addrs[0].address, addrs[0].family);
+      })
+      .catch((err: NodeJS.ErrnoException) => callback(err, "", 0));
+  };
+}
+
+/** One GET. A redirect comes back as its location, with the body left unread. */
+function getOnce(target: URL, opts: FetchPublicOptions, signal: AbortSignal): Promise<PublicResponse & { location: string | null }> {
+  const client = target.protocol === "https:" ? https : http;
+  return new Promise((resolve, reject) => {
+    const req = client.request(
+      target,
+      // agent: false = a fresh connection, so a pooled socket opened without this check is never reused.
+      { method: "GET", headers: { ...opts.headers, "accept-encoding": "gzip, deflate, br" }, lookup: refusingLookup(opts), signal, agent: false },
+      (res) => {
+        const status = res.statusCode ?? 0;
+        const location = status >= 300 && status < 400 ? (res.headers.location ?? null) : null;
+        if (location) {
+          res.resume();
+          resolve({ ok: false, status, headers: res.headers, location, text: async () => "" });
+          return;
+        }
+        readBody(decoded(res, res.headers["content-encoding"]))
+          .then((body) => resolve({ ok: status >= 200 && status < 300, status, headers: res.headers, location: null, text: async () => body }))
+          .catch(reject);
+      },
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+/** The body, unzipped. pipeline() carries an error on either side to the reader. */
+function decoded(stream: Readable, encoding: string | undefined): Readable {
+  const unzip = (() => {
+    switch ((encoding ?? "").trim().toLowerCase()) {
+      case "gzip":
+      case "x-gzip":
+        return zlib.createGunzip();
+      case "deflate":
+        return zlib.createInflate();
+      case "br":
+        return zlib.createBrotliDecompress();
+      default:
+        return null;
+    }
+  })();
+  return unzip ? pipeline(stream, unzip, () => {}) : stream;
+}
+
+async function readBody(stream: Readable): Promise<string> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of stream) {
+    size += (chunk as Buffer).length;
+    if (size > MAX_BODY_BYTES) {
+      stream.destroy();
+      throw new Error("the page is too large to read");
+    }
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }

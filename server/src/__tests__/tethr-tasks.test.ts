@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { and, asc, eq, isNull, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
 import {
   agents,
   createDb,
@@ -345,5 +345,28 @@ describeEmbeddedPostgres("tethr tasks — delegation on Paperclip issues", () =>
     // Cancelled (the fan-out cap test) never shows.
     const all = Object.values(board.lanes).flat();
     expect(all.every((t) => t.status !== "cancelled")).toBe(true);
+  });
+
+  it("lists what waits on a person first, even past the limit, and the board counts all of it", async () => {
+    const agentId = await agentIdByTag("@tethr");
+    const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    // An old item waiting for approval (say, from the chat), behind newer finished ones.
+    const [waiting] = await db
+      .insert(tethrOutputs)
+      .values({ companyId, agentId, kind: "external_action", title: "Old approval", body: "x", status: "gated", sensitivity: "external", createdAt: old })
+      .returning();
+    await db.insert(tethrOutputs).values(
+      Array.from({ length: 3 }, (_, i) => ({ companyId, agentId, title: `Done ${i}`, body: "x", status: "published" })),
+    );
+    const listed = await gatingService(db).listOutputs(companyId, { limit: 2 });
+    expect(listed[0].id).toBe(waiting.id);
+
+    const pending = await db
+      .select()
+      .from(tethrOutputs)
+      .where(and(eq(tethrOutputs.companyId, companyId), inArray(tethrOutputs.status, ["gated", "changes_requested"])));
+    const board = await growthBoard(db, companyId);
+    expect(board.counts.pendingDecisions).toBe(pending.length);
+    expect(board.counts.pendingDecisions).toBeGreaterThan(board.counts.waitingOnYou);
   });
 });
