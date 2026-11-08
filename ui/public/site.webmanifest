@@ -1,14 +1,14 @@
 {
   "id": "/",
-  "name": "Paperclip",
-  "short_name": "Paperclip",
-  "description": "AI-powered project management and agent coordination platform",
+  "name": "tethr",
+  "short_name": "tethr",
+  "description": "A small team's AI partner for taking the business to market",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "theme_color": "#18181b",
-  "background_color": "#18181b",
+  "theme_color": "#0b0a09",
+  "background_color": "#0b0a09",
   "icons": [
     {
       "src": "/android-chrome-192x192.png",

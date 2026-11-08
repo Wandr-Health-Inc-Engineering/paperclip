@@ -936,6 +936,16 @@ nebula, an endless loop until it's done". Plan: `tasks/phase-22.md`.
   writing) · elapsed time · Stop.
 - Shared helpers: `tethr/csv.ts` (`parseCsv`, `toCsv`), `assistant/files.ts` (`resolveInFiles`,
   `readTextInFiles`, `safeFileName`).
+- **The mark is the nebula** (2026-11-08): `scripts/tethr-icon/make-icon.swift` draws it (tile for
+  the desktop apps, `square` for phone home screens); `scripts/tethr-icon/favicons.sh` writes the
+  PNG/ICO favicons; `ui/public/favicon.svg` is the vector version; `site.webmanifest` says tethr.
+  The desktop launcher (local-only, `scripts/tethr-launcher/`) builds its icon from the same file
+  and shows the nebula in its widget.
+- **"Tethr stopped before it came up"** with `spawn tsx EACCES` in the log means the
+  `node_modules/.bin` shims lost their execute bit (it happened once, 2026-11-08, cause unknown).
+  The launcher now repairs that (`find … -perm -u+x … chmod 755`) and retries once, and its error
+  message quotes the telling log line instead of "()". By hand: `find . -path '*/node_modules/.bin/*'
+  -type f ! -perm -u+x -not -path './node_modules/.pnpm/*' -exec chmod 755 {} +`.
 - Tests: `tethr-documents.test.ts` (16, including the PDF's network block against a live local
   server). Verified live on a throwaway instance: the nebula row on a running turn, the PDF from a
   chat chip in the side panel, and PDF, Word, Excel, PowerPoint and PNG previews in the Drive.
