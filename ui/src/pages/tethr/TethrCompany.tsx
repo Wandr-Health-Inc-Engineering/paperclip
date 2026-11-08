@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Crown, Network, Plus, Sparkles } from "lucide-react";
+import { Archive, ChevronRight, Crown, Network, Plus, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -36,7 +36,12 @@ import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
 import { Link } from "../../lib/router";
 import { cn } from "@/lib/utils";
-import { tethrApi, tethrKeys, type TethrOverviewAgent } from "@/api/tethr";
+import {
+  TETHR_ARCHIVE_PAUSE_REASON,
+  tethrApi,
+  tethrKeys,
+  type TethrOverviewAgent,
+} from "@/api/tethr";
 
 // The live company: CEO → divisions → agents → subagents. Growth is fully
 // populated; the other divisions are real, navigable shells — adding one is
@@ -79,19 +84,24 @@ export function TethrCompany() {
     );
   }
 
-  const ceo = data.agents.find((a) => a.profile.tag === "@ceo");
+  // Phase 18 fresh start: archived specialists (paused with the archive reason)
+  // leave the live org and sit in a collapsed "Archived" group at the bottom.
+  // byId keeps everyone so an archived agent's "reports to" still resolves.
   const byId = new Map(data.agents.map((a) => [a.agent.id, a]));
+  const archivedAgents = data.agents.filter(isArchived);
+  const agentsLive = data.agents.filter((a) => !isArchived(a));
+  const ceo = agentsLive.find((a) => a.profile.tag === "@ceo");
   // System agents: the tooling that RUNS the org rather than staffing it — the
   // conductor (@tethr), the mechanic (@tinkr), the debugger (@patch). They sit
   // beside the command chain, not in it, so they get their own section below.
   const SYSTEM_ORDER = ["@tethr", "@tinkr", "@patch", "@filer"];
   const isSystem = (tag: string) => SYSTEM_ORDER.includes(tag);
-  const systemAgents = data.agents
+  const systemAgents = agentsLive
     .filter((a) => isSystem(a.profile.tag))
     .sort((a, b) => SYSTEM_ORDER.indexOf(a.profile.tag) - SYSTEM_ORDER.indexOf(b.profile.tag));
   // Specialists the CEO built (report to it, not slotted into a division).
   const ceoReports = ceo
-    ? data.agents.filter(
+    ? agentsLive.filter(
         (a) =>
           a.agent.reportsTo === ceo.agent.id &&
           !a.profile.divisionId &&
@@ -103,8 +113,8 @@ export function TethrCompany() {
   const orgDivisions = data.divisions.filter((division) => {
     if (division.status === "shell") return true;
     const head = division.headAgentId ? byId.get(division.headAgentId) : null;
-    const headIsSystem = Boolean(head && isSystem(head.profile.tag));
-    const memberCount = data.agents.filter(
+    const headIsSystem = Boolean(head && (isSystem(head.profile.tag) || isArchived(head)));
+    const memberCount = agentsLive.filter(
       (a) =>
         a.profile.divisionId === division.id &&
         a.agent.id !== division.headAgentId &&
@@ -141,6 +151,13 @@ export function TethrCompany() {
         <MonoTag>organization</MonoTag>
         <div className="h-px flex-1 bg-[var(--tethr-rim)]" />
       </div>
+
+      {!ceo && ceoReports.length === 0 && orgDivisions.length === 0 ? (
+        <p className="mx-auto max-w-xl text-center text-xs text-muted-foreground">
+          Fresh start — only @tethr is active.
+          {archivedAgents.length ? " The specialists are archived below and can be restored." : ""}
+        </p>
+      ) : null}
 
       {/* CEO — head of the agent org (tier 0). @tethr, the conductor, sits
           separately in the System section below, beside the command chain. */}
@@ -189,8 +206,9 @@ export function TethrCompany() {
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2" data-tethr-stagger>
         {orgDivisions.map((division) => {
           const rawHead = division.headAgentId ? byId.get(division.headAgentId) : null;
-          const head = rawHead && !isSystem(rawHead.profile.tag) ? rawHead : null;
-          const members = data.agents.filter(
+          const head =
+            rawHead && !isSystem(rawHead.profile.tag) && !isArchived(rawHead) ? rawHead : null;
+          const members = agentsLive.filter(
             (a) =>
               a.profile.divisionId === division.id &&
               a.agent.id !== division.headAgentId &&
@@ -300,6 +318,14 @@ export function TethrCompany() {
         </div>
       ) : null}
 
+      {archivedAgents.length ? (
+        <ArchivedGroup
+          companyId={selectedCompanyId}
+          agents={archivedAgents}
+          reportsToTag={reportsToTag}
+        />
+      ) : null}
+
       <OrgChangeLog companyId={selectedCompanyId} />
 
       <AddDivisionDialog
@@ -389,6 +415,114 @@ function AddDivisionDialog({
 
 // The revertible org change log (Tinkr). Every applied agent modification,
 // git-style: revert stages the inverse change through the same approval gate.
+function isArchived(entry: TethrOverviewAgent): boolean {
+  return entry.agent.status === "paused" && entry.agent.pauseReason === TETHR_ARCHIVE_PAUSE_REASON;
+}
+
+/**
+ * The fresh start's parts bin: specialists archived on boot (paused, never
+ * terminated). Collapsed by default; Restore brings them all back exactly as
+ * they were — statuses, routines, triggers and @tethr's routing rows.
+ */
+function ArchivedGroup({
+  companyId,
+  agents,
+  reportsToTag,
+}: {
+  companyId: string;
+  agents: TethrOverviewAgent[];
+  reportsToTag: (entry: TethrOverviewAgent) => string | null;
+}) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const restore = useMutation({
+    mutationFn: () => tethrApi.restoreSpecialists(companyId),
+    onSuccess: () => {
+      setConfirming(false);
+      queryClient.invalidateQueries({ queryKey: tethrKeys.overview(companyId) });
+    },
+  });
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center gap-3">
+        <div className="h-px flex-1 bg-[var(--tethr-rim)]" />
+        <MonoTag>archived</MonoTag>
+        <div className="h-px flex-1 bg-[var(--tethr-rim)]" />
+      </div>
+      <div className="tethr-panel mx-auto max-w-5xl overflow-hidden">
+        <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            className="group flex min-w-0 flex-1 items-center gap-2.5 text-left"
+          >
+            <ChevronRight
+              className={cn(
+                "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                open && "rotate-90",
+              )}
+            />
+            <Archive className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0">
+              <span className="block text-[15px] font-medium tracking-[-0.01em]">
+                {agents.length} archived {agents.length === 1 ? "agent" : "agents"}
+              </span>
+              <span className="block truncate text-xs text-muted-foreground">
+                Paused for the fresh start, not deleted —{" "}
+                {agents.map((a) => a.profile.tag).join(" ")}
+              </span>
+            </span>
+          </button>
+          {confirming ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Restore all {agents.length}?</span>
+              <button
+                type="button"
+                onClick={() => restore.mutate()}
+                disabled={restore.isPending}
+                className="tethr-btn tethr-btn-primary h-7 px-3 text-[12px]"
+              >
+                {restore.isPending ? "Restoring…" : "Restore"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirming(false)}
+                disabled={restore.isPending}
+                className="tethr-btn tethr-btn-ghost h-7 px-3 text-[12px]"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              className="tethr-btn tethr-btn-glass h-7 px-3 text-[12px]"
+            >
+              Restore all
+            </button>
+          )}
+        </div>
+        {restore.isError ? (
+          <p className="border-t tethr-rule px-4 py-2 text-xs text-muted-foreground">
+            {(restore.error as Error).message}
+          </p>
+        ) : null}
+        {open ? (
+          <div className="grid grid-cols-1 gap-3 border-t tethr-rule p-4 opacity-80 md:grid-cols-2 xl:grid-cols-3">
+            {agents.map((entry) => (
+              <AgentRow key={entry.agent.id} entry={entry} reportsToTag={reportsToTag(entry)} />
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 function OrgChangeLog({ companyId }: { companyId: string }) {
   const queryClient = useQueryClient();
   const { data: changes } = useQuery({

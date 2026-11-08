@@ -184,6 +184,53 @@ the weekly growth plan and delegates, specialists do the work as **tasks**, huma
 - **Next:** the memory layer (Phase 17: kinds, `remember` tool, relevance recall, editable Memory
   page); Hermes as an agent when Mark installs it (`hermes_local` adapter already in the fork).
 
+### Fresh start — only @tethr (phase 18, 2026-11-07)
+
+Mark's call, the first step of the chat-first Tethr v1 plan (each chat thread will drive one real
+Claude Code session with his connectors — built separately under `server/src/tethr/assistant/**`).
+The specialists were barely used (in the last 100 requests @tethr handled 35, each of the others
+1–9; @ceo sat in an error state), so they are **archived, not deleted**, and Tethr starts fresh with
+@tethr alone. Their code and seed functions stay in the repo as the parts bin.
+- **Archive** (`seed/fresh-start.ts` `archiveSpecialists(db, companyId)`): finds @ceo @radar @remedy
+  @cgo @rank @tank @tinkr @patch @filer by profile tag (@radar/@remedy/@cgo exist only in the DB,
+  factory-made) → agent `status: "paused"`, `pauseReason: "archived: fresh start"` (**never
+  terminated** — core refuses to resume a terminated agent); pauses their routines and disables
+  those routines' triggers (the `archiveWandrGrowth` pattern), plus @tethr's own "Weekly growth
+  review" (no default briefs); strips every @tethr routing row whose `to` is one of those tags.
+  Idempotent ("ensure archived" — a specialist added later is merged in).
+- **Stash = run-once marker:** what it changed (prior agent status/pauseReason/pausedAt, routine
+  statuses, enabled triggers, removed routing rows + their index) is written to the instance-dir
+  **`tethr-archive.json`** (`TETHR_ARCHIVE_FILE` overrides it for tests). `maybeAutoSeed` and
+  `POST /tethr/seed` call `archiveSpecialistsOnce`: a company with any record (archived or
+  restored) is never re-archived, so a restore survives restarts.
+- **Restore** (`restoreSpecialists`): puts back exactly what was stashed — prior statuses (an agent
+  someone had paused keeps its own reason), routine statuses, triggers re-enabled through the
+  routine service (fresh `nextRunAt`), routing rows at their old positions. Anything a human
+  changed since is left alone. The record flips to `restored`.
+- **Routes (humans only — agents get 403):** `GET /tethr/:companyId/specialists/archive` (state),
+  `POST …/specialists/archive`, `POST …/specialists/restore` (409 when nothing is archived). Both
+  mutations write to the activity log.
+- **No more auto-seeding them:** `maybeAutoSeed` and `POST /tethr/seed` run the specialist seeds
+  (`seedCeoAgent`, `seedTinkrAgent`, `seedPatchAgent`, `seedFilerAgent`, `seedRankAgent`,
+  `seedTankAgent`) and `seedGrowthWorkflows` only when **`TETHR_SEED_SPECIALISTS=true`** — and then
+  skip the boot archive (opting in means you want them live). Their suites call the seed
+  functions directly, unchanged. `healTethrRoutingCopy` re-adds the @ceo row only when one is
+  already there, so it never undoes the strip.
+- **Routing fallback:** `routing.ts` `runAgentStep` sends work aimed at a `paused`/`terminated`
+  agent to @tethr (a `fallback → @tethr` hop; @tethr's own subagents classify it; the original
+  chain keys are dropped). Orgs without @tethr (the legacy Wandr Growth org) keep the old
+  behavior. With no @ceo row there's no explicit hand-off either, so a Slack/chat ask never
+  reaches @ceo.
+- **Company page:** archived agents leave the Organization/System sections and sit in a collapsed
+  **Archived** group at the bottom (frost panel, chevron toggle, "Restore all" with an inline
+  confirm). Classified by `pauseReason === "archived: fresh start"` (`TETHR_ARCHIVE_PAUSE_REASON`).
+- **Cost fix (same phase):** `adapter.ts` reported a run's cost only in `resultJson.costUsd`, but
+  core `heartbeat.updateRuntimeState` bills the TOP-LEVEL `result.costUsd` — so live heartbeat and
+  task runs recorded $0. It now returns both.
+- Tests: `tethr-fresh-start.test.ts` (12 — archive idempotent, routines/triggers off, rows
+  stripped, heal doesn't re-add @ceo, restore exact, fallback to @tethr, no @ceo hand-off,
+  top-level cost).
+
 ## Where the Tethr layer lives (all additive)
 
 - `server/src/tethr/**` — the whole L2 engine: `routing.ts`, `worker.ts`, `gating.ts`, `drive.ts`, `org.ts`, `memory.ts`, `notify.ts`, `digest.ts`, `state.ts`, `export.ts`, `adapter.ts`, `index.ts`, plus `llm/` (mock ↔ claude), `tools/` (allowlisted registry), `seed/` (`wandr-growth.ts`).
@@ -218,7 +265,7 @@ then `DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/paperclip PAPERCL
 First boot auto-seeds the clean-slate org: **Wandr** (prefix `WD`) — one agent, **Tethr**
 (`@tethr`), with `chat` + `plan` subagents, an Operations division, budgets ($100/mo company
 line, $25/mo Tethr cap, hard-stop on) and a Drive README; any existing "Wandr Growth" org is
-archived (recoverable), never deleted. No Docker / external DB / API key needed: embedded
+archived (recoverable), never deleted; the specialists stay archived (phase 18 fresh start). No Docker / external DB / API key needed: embedded
 Postgres + deterministic **mock LLM** out of the box. Docker path: `make compose-up` (Postgres 17 + server + bundled
 UI on :3100). Re-seed (idempotent): `curl -X POST http://localhost:3100/api/tethr/seed -d '{}' -H 'content-type: application/json'`.
 
@@ -236,6 +283,7 @@ UI on :3100). Re-seed (idempotent): `curl -X POST http://localhost:3100/api/teth
 | `TETHR_AUTO_REVISE=false` | turn off auto-revision on "request changes" |
 | `TETHR_BUNDLE_PATH` | path to the `/tethr` spec bundle; seeder imports real agent markdown (else vendored specs) |
 | `TETHR_AUTOSEED=false` | skip auto-seed at startup |
+| `TETHR_SEED_SPECIALISTS=true` | seed the archived specialists (CEO/Tinkr/Patch/Filer/Rank/Tank) + growth workflows on boot and `/seed` again, and skip the fresh-start archive (default off: only @tethr, phase 18) |
 | `DATABASE_URL` | external Postgres instead of embedded (cloud) |
 | `PAPERCLIP_STORAGE_PROVIDER` / `PAPERCLIP_STORAGE_S3_*` | `local_disk` (default) → `s3` for cloud file bytes |
 | `PAPERCLIP_MIGRATION_AUTO_APPLY=true` | run migrations on boot (deploy) |
@@ -557,8 +605,8 @@ Documents. Personas grounded in Wandr's actual marketing docs (`05 Marketing /Cl
 - **Budgets are real now (Phase 3 fix).** Two seams were broken: the adapter reported no cost
   and only Tailwind's cap hard-stopped. Fixed additively — `llm/pricing.ts` prices token usage
   (`claude-sonnet-4-6` = $3/$15 per MTok, override with `TETHR_PRICE_INPUT_PER_MTOK` /
-  `TETHR_PRICE_OUTPUT_PER_MTOK`), `adapter.ts` emits `resultJson.costUsd` for **live runs only**
-  (mock stays $0), and `seed.ts` sets `hardStopEnabled: true` for every agent policy. Cost flows
+  `TETHR_PRICE_OUTPUT_PER_MTOK`), `adapter.ts` emits `costUsd` for **live runs only** (mock stays
+  $0) — top-level, which is what core bills, plus a copy in `resultJson` (phase 18 fix), and `seed.ts` sets `hardStopEnabled: true` for every agent policy. Cost flows
   into core `cost_events`; the hard-stop fires in core `services/budgets.ts`. Re-seed a fresh DB
   for the seed change to apply. Read spend on the TethrBudgets page.
 - **Safety envelope (locked by `__tests__/tethr-live-safety.test.ts`):** a live Sonar run cannot
@@ -779,7 +827,7 @@ Frosted panels floating over warm ink: the Aina glass card + Oura's calm and big
 ## Hard boundaries (never cross)
 
 - **Never touch PHI / clinical systems / the website's medical-content correctness.** Tethr is marketing/distribution only. Medical *content* decisions are a licensed-human domain — structural/technical findings only.
-- **Internal-only output.** Nothing auto-publishes; nothing auto-merges; no medical content decisions ever. The compliance gate (`server/src/tethr/gating.ts`) hard-blocks `medical`/`public`/`spend`/`pr` outputs behind a core `approvals` row — there is no advisory bypass. Keep it hard in every phase.
+- **Outward actions follow the Integrations modes** (Mark's decision, 2026-11-07 — replaces "internal-only output"). An outward connector action runs according to that connector's mode on the Integrations page: **Auto** or **Approval required**. **Always ask, regardless of Auto:** money (every Stripe write, all of Mercury), anything public-facing (including email to external recipients), and anything medical. **Never PHI.** Nothing auto-merges; no medical content decisions ever. The compliance gate (`server/src/tethr/gating.ts`) still hard-blocks `medical`/`public`/`spend`/`pr` outputs behind a core `approvals` row — there is no advisory bypass. Keep it hard in every phase.
 - **Never modify the live Drive engine** at `05 Marketing /Claude Marketing/` — it's the current production system, retired workflow-by-workflow in Phase 5, **read as reference only, never edited**. Same for `05 Marketing /Command Center/` originals (copy, never move).
 - **Never modify `terraform/`** — the preserved Azure path (hosting is Railway-first now; Azure stays in-repo as the future migration).
 - **Every autonomous agent keeps its stated budget cap.** Any phase adding autonomous runs states a per-agent cap. Caps are enforced by core `budget_policies` + `cost_events` hard-stops.

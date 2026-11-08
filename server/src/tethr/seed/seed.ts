@@ -986,29 +986,49 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
   try {
     const { seedTethrCore } = await import("./tethr-core.js");
     const result = await seedTethrCore(db);
-    // The CEO is the head of the agent org — layered on additively + idempotently,
-    // so it fills into the existing live org on the next boot too.
-    const { seedCeoAgent } = await import("./ceo.js");
-    const ceo = await seedCeoAgent(db, result.companyId);
-    // Tinkr, the org mechanic, follows the same pattern (reports to the CEO).
-    const { seedTinkrAgent } = await import("./tinkr.js");
-    const tinkr = await seedTinkrAgent(db, result.companyId);
-    // Patch, the debug agent — tag @tethr when something breaks (reports to CEO).
-    const { seedPatchAgent } = await import("./patch.js");
-    const patch = await seedPatchAgent(db, result.companyId);
-    // Filer, the file archivist — staged soft-deletes, human-confirmed (reports to CEO).
-    const { seedFilerAgent } = await import("./filer.js");
-    const filer = await seedFilerAgent(db, result.companyId);
-    // Rank, the SEO / search-demand analyst — an org role under the CEO.
-    const { seedRankAgent } = await import("./rank.js");
-    const rank = await seedRankAgent(db, result.companyId);
-    // Tank, the GEO / LLM-visibility analyst — an org role under the CEO.
-    const { seedTankAgent } = await import("./tank.js");
-    const tank = await seedTankAgent(db, result.companyId);
-    // Phase 16: the growth operating loop — recurring growth workflows, all
-    // PAUSED (Mark switches each on), and the CEO framed as head of growth.
-    const { seedGrowthWorkflows } = await import("./growth-workflows.js");
-    await seedGrowthWorkflows(db, result.companyId);
+    const fresh = await import("./fresh-start.js");
+    // Phase 18 fresh start (Mark's call, 2026-11-07): only @tethr is auto-seeded.
+    // The specialists (CEO, Tinkr, Patch, Filer, Rank, Tank) and the growth
+    // workflows stay in the repo as the parts bin — set TETHR_SEED_SPECIALISTS=true
+    // to seed them again. Each seed is additive + idempotent.
+    let specialists: Record<string, boolean> = {};
+    if (fresh.seedSpecialistsEnabled()) {
+      // The CEO is the head of the agent org.
+      const { seedCeoAgent } = await import("./ceo.js");
+      const ceo = await seedCeoAgent(db, result.companyId);
+      // Tinkr, the org mechanic.
+      const { seedTinkrAgent } = await import("./tinkr.js");
+      const tinkr = await seedTinkrAgent(db, result.companyId);
+      // Patch, the debug agent — tag @tethr when something breaks.
+      const { seedPatchAgent } = await import("./patch.js");
+      const patch = await seedPatchAgent(db, result.companyId);
+      // Filer, the file archivist — staged soft-deletes, human-confirmed.
+      const { seedFilerAgent } = await import("./filer.js");
+      const filer = await seedFilerAgent(db, result.companyId);
+      // Rank, the SEO / search-demand analyst — an org role under the CEO.
+      const { seedRankAgent } = await import("./rank.js");
+      const rank = await seedRankAgent(db, result.companyId);
+      // Tank, the GEO / LLM-visibility analyst — an org role under the CEO.
+      const { seedTankAgent } = await import("./tank.js");
+      const tank = await seedTankAgent(db, result.companyId);
+      // Phase 16: the growth operating loop — recurring growth workflows, all
+      // PAUSED (Mark switches each on), and the CEO framed as head of growth.
+      const { seedGrowthWorkflows } = await import("./growth-workflows.js");
+      await seedGrowthWorkflows(db, result.companyId);
+      specialists = {
+        ceoAdded: ceo.created,
+        tinkrAdded: tinkr.created,
+        patchAdded: patch.created,
+        filerAdded: filer.created,
+        rankAdded: rank.created,
+        tankAdded: tank.created,
+      };
+    } else {
+      // Archive the already-seeded specialists ONCE per company (paused,
+      // recoverable). The instance-dir tethr-archive.json is the marker, so a
+      // later restore (POST /tethr/:companyId/specialists/restore) survives boots.
+      await fresh.archiveSpecialistsOnce(db, result.companyId);
+    }
     // Heal any factory agent created before per-subagent tool grants existed
     // (migration 0093) so a created "research" agent can actually fetch.
     const { backfillFactoryAgentTools } = await import("./backfill-tools.js");
@@ -1016,12 +1036,7 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
     if (
       result.created ||
       result.archivedOldCompany ||
-      ceo.created ||
-      tinkr.created ||
-      patch.created ||
-      filer.created ||
-      rank.created ||
-      tank.created ||
+      Object.values(specialists).some(Boolean) ||
       healed
     ) {
       logger.info(
@@ -1029,14 +1044,11 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
           companyId: result.companyId,
           created: result.created,
           archivedOldCompany: result.archivedOldCompany,
-          ceoAdded: ceo.created,
-          tinkrAdded: tinkr.created,
-          patchAdded: patch.created,
-          filerAdded: filer.created,
-          rankAdded: rank.created,
-          tankAdded: tank.created,
+          ...specialists,
         },
-        "[tethr] auto-seeded the clean-slate org (@tethr + CEO + Tinkr + Patch + Filer + Rank + Tank)",
+        fresh.seedSpecialistsEnabled()
+          ? "[tethr] auto-seeded the org (@tethr + specialists, TETHR_SEED_SPECIALISTS=true)"
+          : "[tethr] auto-seeded the fresh-start org (@tethr only)",
       );
     }
   } catch (err) {
