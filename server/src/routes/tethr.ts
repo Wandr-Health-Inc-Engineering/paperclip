@@ -40,9 +40,9 @@ import { routingService } from "../tethr/routing.js";
 import * as chats from "../tethr/chats.js";
 import { getAssistantRunner } from "../tethr/assistant/runner.js";
 import { resolveHookToken } from "../tethr/assistant/gate.js";
-import { workspaceDir } from "../tethr/assistant/workspace.js";
+import { MEMORY_MAX_CHARS, ensureWorkspace, readMemoryFile, workspaceDir, writeMemoryFile } from "../tethr/assistant/workspace.js";
 import { handlePostToolUse, handlePreToolUse } from "../tethr/assistant/hook-handler.js";
-import { getIntegrations, KNOWN_CONNECTORS, modeFor, sanitizeIntegrationsPatch, updateIntegrations } from "../tethr/integrations.js";
+import { getIntegrations, integrationRulesText, KNOWN_CONNECTORS, modeFor, sanitizeIntegrationsPatch, updateIntegrations } from "../tethr/integrations.js";
 import {
   interpretSlackEvent,
   routeInboundKickoff,
@@ -485,6 +485,52 @@ export function tethrRoutes(db: Db) {
     assertCompanyAccess(req, companyId);
     await chats.clearSession(companyId, req.params.threadId as string);
     res.json({ reset: true });
+  });
+
+  // ---- Memory.md (phase 18.5): the chat's long-term memory file --------------
+  // Claude reads it every turn (CLAUDE.md imports it) and edits it on "remember…".
+  // Mark can read and edit it here; a save is refused if the file changed since
+  // he opened it (e.g. Claude edited it meanwhile), so neither overwrites the other.
+  router.get("/tethr/:companyId/assistant/memory", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const ws = await ensureWorkspace({ integrationRules: integrationRulesText(getIntegrations(companyId)) });
+    const { content, mtime } = await readMemoryFile(ws.memoryPath);
+    res.json({ content, mtime, path: ws.memoryPath, inDrive: ws.inDrive });
+  });
+
+  router.put("/tethr/:companyId/assistant/memory", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    if (actor.actorType !== "user") {
+      res.status(403).json({ error: "Only a person can edit memory here" });
+      return;
+    }
+    const content = typeof req.body?.content === "string" ? req.body.content : null;
+    if (content === null || content.length > MEMORY_MAX_CHARS) {
+      res.status(400).json({ error: "content is required (max 200k characters)" });
+      return;
+    }
+    const ws = await ensureWorkspace({ integrationRules: integrationRulesText(getIntegrations(companyId)) });
+    const result = await writeMemoryFile(ws.memoryPath, content, Number(req.body?.ifMtime));
+    if (!result.ok) {
+      res.status(409).json({
+        error: "Memory.md changed since you opened it (Tethr may have just updated it). Your edit wasn't saved.",
+        ...result.conflict,
+      });
+      return;
+    }
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: actor.actorId,
+      action: "tethr_memory_edited",
+      entityType: "company",
+      entityId: companyId,
+      details: { chars: content.length },
+    }).catch(() => {});
+    res.json({ mtime: result.mtime });
   });
 
   // ---- Integrations (phase 18.4): connector modes, rules, chat model/engine ----

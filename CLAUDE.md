@@ -518,16 +518,31 @@ remembered nothing Mark said, and could only read). Spike findings: `tasks/phase
   under "Classic engine". `GET|PUT /tethr/:companyId/integrations` (`sanitizeIntegrationsPatch`:
   Mercury never Auto; people only).
 - **Config** `server/src/tethr/integrations.ts` → instance-dir `tethr-integrations.json`:
-  defaultMode (read for now), per-connector mode + scope (Mercury/Canva/Figma off), internal
+  defaultMode (ask), per-connector mode + scope (Mercury/Canva/Figma off), internal
   addresses, shell, `assistant{engine session|routing, model}`, discovered tool names (from real
   turns). `GET|POST /tethr/:companyId/chat-engine` is the rollback switch.
 - **Routes:** `POST /tethr/:companyId/chats/:threadId/messages`, `POST /chats` (side chat via the
   runner), `POST /chat-turns/:runId/stop`, `POST /chats/:threadId/reset`. UI `TethrChat.tsx`
   `SessionTurn`: live step rows (6px status dots), streaming answer, Stop, file chips; older
   routing-engine turns keep `Turn`.
+- **Side panel + Memory page (phase 18.5)** — files open in the chat like Claude artifacts:
+  `ui/src/components/tethr/OutputPanel.tsx` is an opaque (`tethr-window`) right slide-out (~600px /
+  52%; full-width sheet on phones; Esc/X closes; Drive link) that reuses the Drive's `PreviewBody` +
+  `fsSource(c,"mirror")`. File hops are stored relative to 00 Tethr (`tethr/files/x.md`); the chat
+  lists a thread's files (`panelFilesOf` in TethrChat.tsx, version = latest run+step so a re-edit
+  refreshes) and **auto-opens a file that lands while you watch** (not on page load; Memory.md edits
+  only show a chip). The conversation pads right so nothing hides under the panel.
+  **Memory page** (`TethrMemory.tsx`, Company → Settings → Memory) now reads/edits **Memory.md**
+  (the chat's real memory; preview ↔ edit, Save). `GET|PUT /tethr/:companyId/assistant/memory`
+  (`readMemoryFile`/`writeMemoryFile` in workspace.ts): a save must echo the file's mtime — if
+  Claude edited it meanwhile → 409 with the newer content, and the UI offers "Load tethr's version"
+  / "Keep mine". Atomic write, people only, activity-logged. The old `tethr_memories` log is folded
+  under "Older agent log". Verified live: checklist file → panel auto-opened + file in Drive;
+  "remember …" → Memory.md edited → a NEW side chat recalled it with no tool call; editor save +
+  stale-save 409.
 - Tests: `tethr-assistant-policy` (11), `-events` (6), `-runner` (6, embedded PG, fake execute),
   `-gate` (9: hold → approve → run once → done; no replay; expiry; reject; auto vs always-ask),
-  `tethr-integrations` (6).
+  `-memory` (4: seed once, save, stale save refused, unversioned save refused), `tethr-integrations` (6).
 
 ## Phase 15 fixes — previews, Inbox retirement, cogs (2026-07-19)
 
@@ -658,7 +673,7 @@ to #scout in the standard recommendation format; a human tags `@Cursor` in-threa
 
 ## Memory & published-content dedupe (Phase 6)
 
-**Where it lives in the UI (2026-11-07):** Company → Settings → Memory (`/company/settings/memory`), moved off the main sidebar "for now" (Mark will rework it later); `/memory` redirects there.
+**Where it lives in the UI (2026-11-07):** Company → Settings → Memory (`/company/settings/memory`), moved off the main sidebar "for now" (Mark will rework it later); `/memory` redirects there. **Since phase 18.5 that page edits the chat's Memory.md**; the `tethr_memories` rows below are the classic engine's log, folded under "Older agent log".
 
 `tethr_memories` is keyword (`ilike`) recall. `published-memory.ts` adds a dedup layer:
 `gating.ts` records a company-scoped `published-content` memory on every publish; `routing.ts`

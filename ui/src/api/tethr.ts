@@ -477,6 +477,7 @@ export const tethrKeys = {
   routeRuns: (c: string) => ["tethr", c, "route-runs"] as const,
   chats: (c: string) => ["tethr", c, "chats"] as const,
   integrations: (c: string) => ["tethr", c, "integrations"] as const,
+  assistantMemory: (c: string) => ["tethr", c, "assistant-memory"] as const,
   chatRuns: (c: string, threadId: string) => ["tethr", c, "chats", threadId, "runs"] as const,
   routeRun: (c: string, id: string) => ["tethr", c, "route-runs", id] as const,
   outputs: (c: string, status?: string) => ["tethr", c, "outputs", status ?? "all"] as const,
@@ -578,6 +579,11 @@ export const tethrApi = {
   sendChatMessage: (c: string, threadId: string, text: string) =>
     api.post<{ routeRunId: string; threadId: string }>(`/tethr/${c}/chats/${threadId}/messages`, { text }),
   integrations: (c: string) => api.get<TethrIntegrations>(`/tethr/${c}/integrations`),
+  /** Phase 18.5: the chat's long-term memory file (Memory.md in the workspace). */
+  assistantMemory: (c: string) =>
+    api.get<{ content: string; mtime: number; path: string; inDrive: boolean }>(`/tethr/${c}/assistant/memory`),
+  saveAssistantMemory: (c: string, content: string, ifMtime: number) =>
+    api.put<{ mtime: number }>(`/tethr/${c}/assistant/memory`, { content, ifMtime }),
   updateIntegrations: (c: string, patch: TethrIntegrationsPatch) =>
     api.put<{ ok: boolean }>(`/tethr/${c}/integrations`, patch),
   stopChatTurn: (c: string, runId: string) =>

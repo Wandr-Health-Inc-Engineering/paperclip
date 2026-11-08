@@ -110,3 +110,28 @@ async function atomicWrite(file: string, content: string) {
   await fsp.writeFile(tmp, content, "utf8");
   await fsp.rename(tmp, file);
 }
+
+/** Mark's view of Memory.md (phase 18.5): the file plus its mtime, which a
+ * save must echo back so it never clobbers an edit tethr made meanwhile. */
+export async function readMemoryFile(file: string) {
+  const [content, stat] = await Promise.all([fsp.readFile(file, "utf8"), fsp.stat(file)]);
+  return { content, mtime: stat.mtimeMs };
+}
+
+export const MEMORY_MAX_CHARS = 200_000;
+
+export type MemoryWriteResult =
+  | { ok: true; mtime: number }
+  | { ok: false; conflict: { content: string; mtime: number } };
+
+/** Save Memory.md if it hasn't changed since `ifMtime` (atomic write). A
+ * missing/NaN ifMtime is refused as a conflict: every save must say which
+ * version it was based on. */
+export async function writeMemoryFile(file: string, content: string, ifMtime: number): Promise<MemoryWriteResult> {
+  const current = await readMemoryFile(file);
+  if (!Number.isFinite(ifMtime) || Math.abs(current.mtime - ifMtime) > 1) {
+    return { ok: false, conflict: current };
+  }
+  await atomicWrite(file, content);
+  return { ok: true, mtime: (await fsp.stat(file)).mtimeMs };
+}

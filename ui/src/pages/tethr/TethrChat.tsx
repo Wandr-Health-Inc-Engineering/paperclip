@@ -21,6 +21,7 @@ import {
 import { EmptyState } from "@/components/EmptyState";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import { RouteFlow } from "@/components/tethr/RouteFlow";
+import { OutputPanel, type PanelFile } from "@/components/tethr/OutputPanel";
 import { CogDuo, OutputStatusBadge, StatusDot, formatRelative } from "@/components/tethr/primitives";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
@@ -68,6 +69,7 @@ export function TethrChat() {
   const [sendError, setSendError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  const [panelPath, setPanelPath] = useState<string | null>(null);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Chat" }]);
@@ -96,6 +98,7 @@ export function TethrChat() {
 
   const openChat = (next: string | null) => {
     setLimit(PAGE);
+    setPanelPath(null);
     setSendError(null);
     stickToBottom.current = true;
     setSearchParams(next ? { chat: next } : {});
@@ -163,6 +166,24 @@ export function TethrChat() {
     },
   });
 
+  // Files Tethr wrote in this thread (newest edit wins the version), for the
+  // side panel. A file that lands while you watch opens itself; Memory.md
+  // edits only show as a chip.
+  const threadFiles = useMemo(() => panelFilesOf(runs ?? []), [runs]);
+  const seenFiles = useRef<Map<string, string> | null>(null);
+  useEffect(() => {
+    seenFiles.current = null;
+  }, [threadId]);
+  useEffect(() => {
+    if (!runs) return;
+    const prev = seenFiles.current;
+    seenFiles.current = new Map(threadFiles.map((f) => [f.path, f.version]));
+    if (!prev) return; // first load of this thread: nothing pops open
+    const fresh = threadFiles.filter((f) => prev.get(f.path) !== f.version && !isMemoryFile(f.path));
+    if (fresh.length) setPanelPath(fresh[fresh.length - 1].path);
+  }, [threadFiles, runs]);
+  const panelFile = panelPath ? (threadFiles.find((f) => f.path === panelPath) ?? { path: panelPath, version: "" }) : null;
+
   // Follow the conversation down while the reader is at the bottom.
   const last = runs?.[runs.length - 1];
   const tick = `${threadId}|${runs?.length ?? 0}|${last?.status}|${last?.hops.length}|${last?.resultText?.length ?? 0}|${pending?.text ?? ""}`;
@@ -180,7 +201,12 @@ export function TethrChat() {
   const empty = !isLoading && !visibleRuns.length && !showPending;
 
   return (
-    <div className="relative flex h-[calc(100dvh-10rem)] min-h-[480px] flex-col md:h-[calc(100dvh-6rem)]">
+    <div
+      className={cn(
+        "relative flex h-[calc(100dvh-10rem)] min-h-[480px] flex-col md:h-[calc(100dvh-6rem)]",
+        panelFile && "md:pr-[calc(min(600px,52%)_+_16px)]",
+      )}
+    >
       <SideChats
         isMain={isMain}
         isDraft={isDraft}
@@ -221,7 +247,7 @@ export function TethrChat() {
             {isLoading ? <p className="text-center font-mono text-[11px] tethr-text-3">Loading…</p> : null}
             {visibleRuns.map((run) => (
               run.invocationSource === "chat" ? (
-                <SessionTurn key={run.id} run={run} companyId={c} />
+                <SessionTurn key={run.id} run={run} companyId={c} onOpenFile={setPanelPath} />
               ) : (
                 <Turn key={run.id} run={run} companyId={c} />
               )
@@ -244,9 +270,34 @@ export function TethrChat() {
         error={sendError}
         onSend={(text) => send.mutate(text)}
       />
+
+      {panelFile ? (
+        <OutputPanel
+          companyId={c}
+          files={threadFiles.length ? threadFiles : [panelFile]}
+          current={panelFile}
+          onSelect={setPanelPath}
+          onClose={() => setPanelPath(null)}
+        />
+      ) : null}
     </div>
   );
 }
+
+/** Distinct files written in a thread, in first-seen order; version = the
+ * latest run + step that touched it, so a re-edit refreshes the preview. */
+function panelFilesOf(runs: TethrChatRun[]): PanelFile[] {
+  const byPath = new Map<string, string>();
+  for (const run of runs) {
+    if (run.invocationSource !== "chat") continue;
+    run.hops.forEach((h, i) => {
+      if (h.layer === "tool" && h.file && h.status === "ok") byPath.set(h.file, `${run.id}:${i}`);
+    });
+  }
+  return [...byPath].map(([path, version]) => ({ path, version }));
+}
+
+const isMemoryFile = (p: string) => /(^|\/)Memory\.md$/i.test(p);
 
 // ---- side chats drawer ---------------------------------------------------------
 
@@ -462,7 +513,15 @@ function Working({ label }: { label: string }) {
 const ACTIVE = new Set(["queued", "running"]);
 
 /** A phase-18 turn: one step of the thread's Claude session. */
-function SessionTurn({ run, companyId }: { run: TethrChatRun; companyId: string }) {
+function SessionTurn({
+  run,
+  companyId,
+  onOpenFile,
+}: {
+  run: TethrChatRun;
+  companyId: string;
+  onOpenFile: (path: string) => void;
+}) {
   const queryClient = useQueryClient();
   const running = ACTIVE.has(run.status);
   const isSystem = run.sourceKey === "chat-system";
@@ -491,15 +550,16 @@ function SessionTurn({ run, companyId }: { run: TethrChatRun; companyId: string 
       {files.length ? (
         <div className="flex flex-wrap gap-1.5">
           {files.map((f) => (
-            <Link
+            <button
+              type="button"
               key={f}
-              to="/drive"
-              title={f}
+              onClick={() => onOpenFile(f)}
+              title={`Open ${f}`}
               className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--tethr-frost)] px-2.5 py-1 text-[12px] shadow-[inset_0_0_0_1px_var(--tethr-rim)] hover:bg-[var(--tethr-frost-strong)]"
             >
               <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <span className="truncate">{f.split("/").pop()}</span>
-            </Link>
+            </button>
           ))}
         </div>
       ) : null}
