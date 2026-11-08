@@ -36,7 +36,9 @@ export function TethrThemeSwitch({ className }: { className?: string }) {
             title={label === "Auto" ? "Auto: match this device" : label}
             onClick={() => setPreference(value)}
             className={cn(
-              "tethr-btn h-6 w-6",
+              // Round 24px buttons (32px on touch screens); tethr-touch-sized opts out of
+              // index.css's 44px touch min-height, which stretched them into tall ovals.
+              "tethr-btn tethr-touch-sized h-6 w-6 pointer-coarse:h-8 pointer-coarse:w-8",
               active
                 ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:bg-accent hover:text-foreground",
