@@ -280,19 +280,51 @@ function hasText(value: unknown): boolean {
   return typeof value === "string" && value.trim() !== "";
 }
 
+/** Calendar event fields every guest sees on their own copy of the event,
+ * whether or not Google emails them about the change. Color and reminders are
+ * the user's own and aren't listed. */
+const GUEST_VISIBLE_EVENT_FIELDS = [
+  "summary",
+  "description",
+  "location",
+  "startTime",
+  "endTime",
+  "allDay",
+  "timeZone",
+  "addedAttachments",
+  "removedAttachmentFileUrls",
+  "addGoogleMeetUrl",
+  "googleMeetUrl",
+  "visibility",
+  "guestPermissions",
+  "eventType",
+];
+
 /** A send that reaches people the input doesn't name:
  * - a Gmail reply goes to the original sender unless `to` replaces them (cc and
  *   bcc only add people), and reply-all reaches the whole thread;
  * - a forward with nobody listed;
- * - a Calendar update emails the event's existing guests unless notifications
- *   are off;
- * - a Calendar RSVP with a note goes to the organizer. */
+ * - a Calendar update that changes what guests see: it lands on every guest's
+ *   copy even with notifications off, and the input doesn't say who the guests
+ *   are (a solo event asks too; color and reminder changes don't);
+ * - a Calendar RSVP with a note goes to the organizer. (A plain accept or
+ *   decline carries no text, so it follows the connector's mode.) */
 function leavesForUnnamedPeople(connector: string, name: string, args: Record<string, unknown>, named: string[]): boolean {
   if (connector === "Gmail" && name === "reply") return args.replyAll === true || recipients({ to: args.to }).length === 0;
   if (connector === "Gmail" && name === "forward") return named.length === 0;
-  if (connector === "Google Calendar" && name === "update_event") return args.notificationLevel !== "NONE";
+  if (connector === "Google Calendar" && name === "update_event") return GUEST_VISIBLE_EVENT_FIELDS.some((key) => args[key] !== undefined);
   if (connector === "Google Calendar" && name === "respond_to_event") return hasText(args.responseComment);
   return false;
+}
+
+/** Calendar's `calendarId` names whose calendar gets the event. Someone else's
+ * calendar (an address, not "primary" or one of the user's own group
+ * calendars) counts as a recipient. */
+function calendarOwner(connector: string, args: Record<string, unknown>): string[] {
+  if (connector !== "Google Calendar" || typeof args.calendarId !== "string") return [];
+  const id = args.calendarId.trim().toLowerCase();
+  if (!id.includes("@") || /@group(\.v)?\.calendar\.google\.com$/.test(id)) return [];
+  return [id];
 }
 
 /** Classify one tool call. */
@@ -365,7 +397,7 @@ export function classify(tool: string, input: Record<string, unknown> | undefine
   // Tethr's own tools keep everything inside Tethr (a metric named "new patients
   // per month" isn't medical content going anywhere), so the outward checks skip them.
   if (cls !== "read" && cls !== "money" && connector !== "Tethr tools") {
-    const outward = recipients(args);
+    const outward = [...recipients(args), ...calendarOwner(connector, args)];
     if ((cls === "write" || cls === "draft") && outward.some((a) => !isInternal(a, ctx.internalAddresses))) {
       // A draft to an outsider is still only a draft; sending/inviting them is public.
       if (cls === "write") cls = "public";

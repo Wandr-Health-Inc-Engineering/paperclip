@@ -126,13 +126,20 @@ describe("tethr assistant policy — classify", () => {
     expect(classify(cal("update_event"), { eventId: "e1", addedAttendeeEmails: ["x@partner.com"] }, ctx).cls).toBe("public");
     expect(classify(cal("update_event"), { eventId: "e1", removedAttendeeEmails: ["x@partner.com"] }, ctx).cls).toBe("public");
     expect(classify(cal("create_event"), { summary: "Sync", attendeeEmails: ["x@partner.com"] }, ctx).cls).toBe("public");
-    // An update emails the event's existing guests, whoever they are, unless notifications are off.
+    // A change guests see lands on their copy of the event, emailed or not, and the input doesn't say who they are.
     expect(classify(cal("update_event"), { eventId: "e1", description: "Q3 numbers" }, ctx).cls).toBe("public");
-    expect(classify(cal("update_event"), { eventId: "e1", description: "Q3 numbers", notificationLevel: "NONE" }, ctx).cls).toBe("write");
-    expect(
-      classify(cal("update_event"), { eventId: "e1", addedAttendees: [{ email: "alec@travelwithwandr.com" }], notificationLevel: "NONE" }, ctx).cls,
-    ).toBe("write");
+    expect(classify(cal("update_event"), { eventId: "e1", description: "Q3 numbers", notificationLevel: "NONE" }, ctx).cls).toBe("public");
+    expect(classify(cal("update_event"), { eventId: "e1", startTime: "2026-11-09T10:00:00" }, ctx).cls).toBe("public");
+    // The user's own color and reminders reach nobody.
+    expect(classify(cal("update_event"), { eventId: "e1", colorId: "5" }, ctx).cls).toBe("write");
+    expect(classify(cal("update_event"), { eventId: "e1", overrideReminders: [{ method: "popup", minutes: 10 }], useDefaultReminders: false }, ctx).cls).toBe("write");
+    expect(classify(cal("update_event"), { eventId: "e1", addedAttendees: [{ email: "alec@travelwithwandr.com" }] }, ctx).cls).toBe("write");
     expect(classify(cal("create_event"), { summary: "Focus", startTime: "2026-11-09T09:00:00", endTime: "2026-11-09T10:00:00" }, ctx).cls).toBe("write");
+    // Someone else's calendar is a recipient; the user's own calendars aren't.
+    expect(classify(cal("create_event"), { summary: "Hold", calendarId: "partner@outside.com", startTime: "a", endTime: "b" }, ctx).cls).toBe("public");
+    expect(classify(cal("create_event"), { summary: "Hold", calendarId: "alec@travelwithwandr.com", startTime: "a", endTime: "b" }, ctx).cls).toBe("write");
+    expect(classify(cal("create_event"), { summary: "Hold", calendarId: "abc123@group.calendar.google.com", startTime: "a", endTime: "b" }, ctx).cls).toBe("write");
+    expect(classify(cal("create_event"), { summary: "Hold", calendarId: "primary", startTime: "a", endTime: "b" }, ctx).cls).toBe("write");
     expect(classify(cal("respond_to_event"), { eventId: "e1", responseStatus: "accepted" }, ctx).cls).toBe("write");
     expect(classify(cal("respond_to_event"), { eventId: "e1", responseStatus: "declined", responseComment: "see notes" }, ctx).cls).toBe("public");
   });

@@ -867,7 +867,7 @@ Slack, it suggests an idea). Plan: `tasks/phase-21.md`.
   `lookup` that refuses loopback, LAN, link-local and CGNAT addresses at connect time (so DNS
   rebinding can't swap the address after the check), address literals refused up front, redirects
   followed by hand (at most 5), one timeout for the whole chain, no pooled sockets, bodies capped
-  at 5 MB. Before this, a Slack message could get `@tethr.chat` to fetch
+  at 5 MB before and after unzipping (raw deflate without the zlib wrapper is read too). Before this, a Slack message could get `@tethr.chat` to fetch
   `http://127.0.0.1:3100/api/tethr/...`, which in local_trusted mode answers as the admin. Never
   add a fetch of an agent- or user-supplied URL that skips `fetchPublic`.
 - **`POST /tethr/seed` is instance-admin only** (`isInstanceAdmin` in `routes/tethr-people.ts`,
@@ -877,21 +877,26 @@ Slack, it suggests an idea). Plan: `tasks/phase-21.md`.
   the draft as is and ignores to/subject/body, so a card would show the wrong thing); the chat
   sends with the fields written out. Sends to people the input doesn't name count as public
   (`leavesForUnnamedPeople`): a Gmail reply with no `to` (cc/bcc only add people), any reply-all,
-  a forward with nobody listed, a Calendar update (it emails the existing guests) unless
-  `notificationLevel` is `NONE`, and an RSVP with a note.
+  a forward with nobody listed, a Calendar update that changes anything guests see
+  (`GUEST_VISIBLE_EVENT_FIELDS`: it lands on their copy even with `notificationLevel: NONE`;
+  color and reminders stay a plain write), and an RSVP with a note. A plain accept/decline
+  follows the connector's mode. A `calendarId` that is someone else's address counts as a
+  recipient (`calendarOwner`; "primary" and `@group.calendar.google.com` don't).
   Recipients include Calendar's `attendeeEmails`, `addedAttendees`, `addedAttendeeEmails` and
   `removedAttendeeEmails` (`RECIPIENT_FIELDS` in policy.ts). Tests use the connectors' real field
   names; check a connector's schema before adding a rule for it.
 - **The Queue lists pending items first** (`listOutputs` orders gated/changes-requested first,
   then newest, before its 100-row limit; it used to sort them last, so a busy company's pending
   items fell off). Growth's "waiting on you" is `counts.pendingDecisions`, a server-side count.
+  Every place a person decides an output (Queue, chat card, bell) calls `refreshAfterDecision`
+  (ui/src/api/tethr.ts), so the Queue list, Growth's count and the overview refresh together.
 - **Private turns start tainted.** `runner.sendPrivate` (the watcher's idea check) marks its
   thread tainted before the turn: its prompt is other people's Slack words next to Memory.md, so
   an outside web page needs approval from the first call.
 - **Command Center answers only to `127.0.0.1:<port>` / `localhost:<port>`** (Host header check in
   `scripts/tethr-command-center/server.mjs`), so a web page can't rebind its own domain to
   loopback and read 00 Tethr. A built `.app` bundles its own copy of server.mjs: rebuild it with
-  `build-app.sh` to pick up changes.
+  `build-app.sh` to pick up changes (rebuilt 2026-11-08 with the Host check).
 
 ## Onboarding from scratch: goals with numbers, setup, rhythm (phase 20, 2026-11-07)
 

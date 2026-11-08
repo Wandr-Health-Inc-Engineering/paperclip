@@ -35,6 +35,7 @@ import { Link, useSearchParams } from "../../lib/router";
 import { cn } from "@/lib/utils";
 import { formatBytes } from "./drive/filePreview";
 import {
+  refreshAfterDecision,
   tethrApi,
   tethrKeys,
   type TethrChatAttachment,
@@ -992,8 +993,8 @@ function ApprovalCard({ output, companyId, threadId }: { output: TethrChatOutput
     mutationFn: (decision: "approve" | "reject") => tethrApi.decide(companyId, output.id, decision),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: tethrKeys.chatRuns(companyId, threadId) });
-      queryClient.invalidateQueries({ queryKey: ["tethr", companyId, "outputs"] });
       queryClient.invalidateQueries({ queryKey: tethrKeys.chats(companyId) });
+      refreshAfterDecision(queryClient, companyId);
     },
   });
   const snippet = useMemo(() => previewText(output.body), [output.body]);

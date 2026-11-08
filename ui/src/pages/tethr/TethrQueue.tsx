@@ -34,7 +34,7 @@ import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
 import { useNavigate, useParams } from "../../lib/router";
 import { cn } from "@/lib/utils";
-import { tethrApi, tethrKeys, type TethrOutputListItem } from "@/api/tethr";
+import { refreshAfterDecision, tethrApi, tethrKeys, type TethrOutputListItem } from "@/api/tethr";
 
 // The Queue: every gated output (medical / public-facing / spend / PR) stops
 // here. Approve publishes to the Drive; reject and request-changes send it
@@ -299,8 +299,7 @@ function QueueDetail({
     onSuccess: () => {
       setNote("");
       queryClient.invalidateQueries({ queryKey: tethrKeys.output(companyId, outputId) });
-      queryClient.invalidateQueries({ queryKey: tethrKeys.outputs(companyId) });
-      queryClient.invalidateQueries({ queryKey: ["tethr", companyId, "overview"] });
+      refreshAfterDecision(queryClient, companyId);
     },
   });
 
@@ -308,7 +307,7 @@ function QueueDetail({
     mutationFn: () => tethrApi.revise(companyId, outputId, note.trim() || undefined),
     onSuccess: (result) => {
       setNote("");
-      queryClient.invalidateQueries({ queryKey: tethrKeys.outputs(companyId) });
+      refreshAfterDecision(queryClient, companyId);
       queryClient.invalidateQueries({ queryKey: tethrKeys.output(companyId, outputId) });
       if (result?.outputId) navigate(`/queue/${result.outputId}`);
     },

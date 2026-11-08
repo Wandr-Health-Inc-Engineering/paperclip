@@ -1,3 +1,4 @@
+import type { QueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 
 // Tethr add-on API surface. Self-contained (types + calls + query keys) so
@@ -657,6 +658,14 @@ export const tethrKeys = {
   fsMounts: (c: string) => ["tethr", c, "fsdrive-mounts"] as const,
   throttle: (c: string) => ["tethr", c, "throttle"] as const,
 };
+
+/** After a person decides an output (Queue, chat card or bell): refresh every
+ * view of what's waiting on them, every status filter of the list included. */
+export function refreshAfterDecision(queryClient: QueryClient, c: string): void {
+  for (const queryKey of [["tethr", c, "outputs"], tethrKeys.growth(c), ["tethr", c, "overview"]]) {
+    void queryClient.invalidateQueries({ queryKey });
+  }
+}
 
 export interface ThrottleState {
   paused: boolean;

@@ -6,7 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useCompany } from "../../context/CompanyContext";
 import { useNavigate } from "../../lib/router";
 import { cn } from "@/lib/utils";
-import { tethrApi, tethrKeys, type TethrNotification } from "@/api/tethr";
+import { refreshAfterDecision, tethrApi, tethrKeys, type TethrNotification } from "@/api/tethr";
 import { MonoTag, StatusDot, formatRelative } from "./primitives";
 
 // The notification bell: the in-app channel of the Notifier interface. Clicking
@@ -182,6 +182,7 @@ function NotificationDetail({
   onActed: () => void;
 }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [note, setNote] = useState("");
   const [result, setResult] = useState<string | null>(null);
   const { pendingOutputId, viewLabel, viewTo } = actionsFor(n);
@@ -191,6 +192,7 @@ function NotificationDetail({
       tethrApi.decide(companyId, pendingOutputId!, decision, note.trim() || undefined),
     onSuccess: (_r, decision) => {
       setResult(decision === "approve" ? "Approved — it's applied now." : "Rejected — nothing was applied.");
+      refreshAfterDecision(queryClient, companyId);
       onActed();
     },
     onError: (e) => setResult(e instanceof Error ? e.message : "This may have already been handled."),

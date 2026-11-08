@@ -1,6 +1,6 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { gzipSync } from "node:zlib";
+import { deflateRawSync, deflateSync, gzipSync } from "node:zlib";
 import { afterAll, beforeAll, beforeEach, describe, it, expect } from "vitest";
 import { toolsetForSubagent } from "../tethr/tools/index.js";
 import { webFetchTool } from "../tethr/tools/web.js";
@@ -166,6 +166,15 @@ describe("web fetches stay on the public web", () => {
     expect(res.ok).toBe(true);
     expect(await res.text()).toBe("hello");
     expect(hits).toEqual([`site.example.com:${port}/old`, `site.example.com:${port}/moved`]);
+  });
+
+  it("reads deflate with or without the zlib wrapper, and refuses a body that unzips too large", async () => {
+    routes["/zlib"] = (res) => res.writeHead(200, { "content-encoding": "deflate" }).end(deflateSync("wrapped"));
+    routes["/raw"] = (res) => res.writeHead(200, { "content-encoding": "deflate" }).end(deflateRawSync("raw"));
+    routes["/bomb"] = (res) => res.writeHead(200, { "content-encoding": "gzip" }).end(gzipSync(Buffer.alloc(20 * 1024 * 1024)));
+    expect(await (await fetchPublic(`http://site.example.com:${port}/zlib`, { ...opts, ...asPublic })).text()).toBe("wrapped");
+    expect(await (await fetchPublic(`http://site.example.com:${port}/raw`, { ...opts, ...asPublic })).text()).toBe("raw");
+    await expect(fetchPublic(`http://site.example.com:${port}/bomb`, { ...opts, ...asPublic })).rejects.toThrow(/too large/);
   });
 
   it("stops after too many redirects", async () => {

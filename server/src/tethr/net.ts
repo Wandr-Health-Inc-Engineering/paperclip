@@ -2,7 +2,7 @@ import dns from "node:dns/promises";
 import http from "node:http";
 import https from "node:https";
 import type { LookupFunction } from "node:net";
-import { pipeline, type Readable } from "node:stream";
+import type { Readable } from "node:stream";
 import zlib from "node:zlib";
 
 // Which hosts tethr may fetch from. tethr's own API answers loopback requests
@@ -78,6 +78,7 @@ export interface FetchPublicOptions {
 const MAX_REDIRECTS = 5;
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 const LOCAL_NETWORK = "it's this computer or its local network";
+const TOO_LARGE = "the page is too large to read";
 
 /** GET a public http(s) URL. Every hop, redirects included, is checked against
  * this machine and its network: an address literal before the request, a name
@@ -132,8 +133,11 @@ function getOnce(target: URL, opts: FetchPublicOptions, signal: AbortSignal): Pr
           resolve({ ok: false, status, headers: res.headers, location, text: async () => "" });
           return;
         }
-        readBody(decoded(res, res.headers["content-encoding"]))
-          .then((body) => resolve({ ok: status >= 200 && status < 300, status, headers: res.headers, location: null, text: async () => body }))
+        readBody(res)
+          .then((raw) => {
+            const body = decodeBody(raw, res.headers["content-encoding"]);
+            resolve({ ok: status >= 200 && status < 300, status, headers: res.headers, location: null, text: async () => body });
+          })
           .catch(reject);
       },
     );
@@ -142,34 +146,45 @@ function getOnce(target: URL, opts: FetchPublicOptions, signal: AbortSignal): Pr
   });
 }
 
-/** The body, unzipped. pipeline() carries an error on either side to the reader. */
-function decoded(stream: Readable, encoding: string | undefined): Readable {
-  const unzip = (() => {
+/** The body as text, unzipped, never past the size cap (a small gzip can
+ * expand enormously). */
+function decodeBody(raw: Buffer, encoding: string | undefined): string {
+  const limit = { maxOutputLength: MAX_BODY_BYTES };
+  try {
     switch ((encoding ?? "").trim().toLowerCase()) {
       case "gzip":
       case "x-gzip":
-        return zlib.createGunzip();
+        return zlib.gunzipSync(raw, limit).toString("utf8");
       case "deflate":
-        return zlib.createInflate();
+        // Some servers send "deflate" without the zlib wrapper (raw deflate).
+        return (hasZlibHeader(raw) ? zlib.inflateSync(raw, limit) : zlib.inflateRawSync(raw, limit)).toString("utf8");
       case "br":
-        return zlib.createBrotliDecompress();
+        return zlib.brotliDecompressSync(raw, limit).toString("utf8");
       default:
-        return null;
+        return raw.toString("utf8");
     }
-  })();
-  return unzip ? pipeline(stream, unzip, () => {}) : stream;
+  } catch (err) {
+    if (err instanceof RangeError) throw new Error(TOO_LARGE);
+    throw err;
+  }
 }
 
-async function readBody(stream: Readable): Promise<string> {
+/** A zlib stream opens with two bytes: the low nibble of the first is 8
+ * (deflate), and the pair read as one number divides by 31. */
+function hasZlibHeader(bytes: Buffer): boolean {
+  return bytes.length >= 2 && (bytes[0] & 0x0f) === 8 && ((bytes[0] << 8) | bytes[1]) % 31 === 0;
+}
+
+async function readBody(stream: Readable): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of stream) {
     size += (chunk as Buffer).length;
     if (size > MAX_BODY_BYTES) {
       stream.destroy();
-      throw new Error("the page is too large to read");
+      throw new Error(TOO_LARGE);
     }
     chunks.push(chunk as Buffer);
   }
-  return Buffer.concat(chunks).toString("utf8");
+  return Buffer.concat(chunks);
 }
