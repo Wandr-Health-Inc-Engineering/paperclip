@@ -511,6 +511,12 @@ remembered nothing Mark said, and could only read). Spike findings: `tasks/phase
   **ask** (approval required); Auto per connector in Integrations (money/public/medical still ask).
   Persona: never self-confirm — make the call and let the gate ask; "Notes from Tethr" /
   "[From Tethr, not Mark]" are genuine. Auto-revise is skipped for `external_action`.
+- **Integrations page (phase 18.4)** `TethrSettings.tsx` (route `/tethr-settings`, nav "Integrations"): per-connector
+  Off/Read/Ask/Auto (`KNOWN_CONNECTORS` + tools seen on real turns; headless init doesn't list
+  claude.ai connectors, so no probe), scope notes (Gmail/Slack/Drive), default mode, inside-Wandr
+  addresses, shell Off/Ask, chat model + engine, throttle + overseers; old provider cards folded
+  under "Classic engine". `GET|PUT /tethr/:companyId/integrations` (`sanitizeIntegrationsPatch`:
+  Mercury never Auto; people only).
 - **Config** `server/src/tethr/integrations.ts` → instance-dir `tethr-integrations.json`:
   defaultMode (read for now), per-connector mode + scope (Mercury/Canva/Figma off), internal
   addresses, shell, `assistant{engine session|routing, model}`, discovered tool names (from real
@@ -520,7 +526,8 @@ remembered nothing Mark said, and could only read). Spike findings: `tasks/phase
   `SessionTurn`: live step rows (6px status dots), streaming answer, Stop, file chips; older
   routing-engine turns keep `Turn`.
 - Tests: `tethr-assistant-policy` (11), `-events` (6), `-runner` (6, embedded PG, fake execute),
-  `-gate` (9: hold → approve → run once → done; no replay; expiry; reject; auto vs always-ask).
+  `-gate` (9: hold → approve → run once → done; no replay; expiry; reject; auto vs always-ask),
+  `tethr-integrations` (6).
 
 ## Phase 15 fixes — previews, Inbox retirement, cogs (2026-07-19)
 

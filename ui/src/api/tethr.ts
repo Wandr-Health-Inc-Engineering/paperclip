@@ -180,6 +180,40 @@ export interface TethrChats {
   sideChats: TethrSideChat[];
 }
 
+export type TethrConnectorMode = "off" | "read" | "ask" | "auto";
+
+export interface TethrIntegrationConnector {
+  label: string;
+  mode: TethrConnectorMode;
+  /** false when the connector just follows the default mode. */
+  explicit: boolean;
+  scope: string;
+  blurb: string;
+  scopeHint: string | null;
+  toolsKnown: number;
+  toolsSeen: number;
+  /** Mercury: never Auto. */
+  moneyOnly: boolean;
+}
+
+export interface TethrIntegrations {
+  defaultMode: TethrConnectorMode;
+  internalAddresses: string[];
+  shell: "off" | "ask";
+  assistant: { engine: "session" | "routing"; model: string };
+  workspace: { dir: string; inDrive: boolean };
+  connectors: TethrIntegrationConnector[];
+  discoveredAt: string | null;
+}
+
+export interface TethrIntegrationsPatch {
+  defaultMode?: TethrConnectorMode;
+  connectors?: Record<string, { mode: TethrConnectorMode; scope?: string }>;
+  internalAddresses?: string[];
+  shell?: "off" | "ask";
+  assistant?: { engine?: "session" | "routing"; model?: string };
+}
+
 export interface TethrOutputListItem {
   id: string;
   agentId: string;
@@ -442,6 +476,7 @@ export const tethrKeys = {
   agent: (c: string, a: string) => ["tethr", c, "agent", a] as const,
   routeRuns: (c: string) => ["tethr", c, "route-runs"] as const,
   chats: (c: string) => ["tethr", c, "chats"] as const,
+  integrations: (c: string) => ["tethr", c, "integrations"] as const,
   chatRuns: (c: string, threadId: string) => ["tethr", c, "chats", threadId, "runs"] as const,
   routeRun: (c: string, id: string) => ["tethr", c, "route-runs", id] as const,
   outputs: (c: string, status?: string) => ["tethr", c, "outputs", status ?? "all"] as const,
@@ -542,6 +577,9 @@ export const tethrApi = {
   /** Phase 18: send a message into a chat thread (runs as a turn of its Claude session). */
   sendChatMessage: (c: string, threadId: string, text: string) =>
     api.post<{ routeRunId: string; threadId: string }>(`/tethr/${c}/chats/${threadId}/messages`, { text }),
+  integrations: (c: string) => api.get<TethrIntegrations>(`/tethr/${c}/integrations`),
+  updateIntegrations: (c: string, patch: TethrIntegrationsPatch) =>
+    api.put<{ ok: boolean }>(`/tethr/${c}/integrations`, patch),
   stopChatTurn: (c: string, runId: string) =>
     api.post<{ stopped: boolean }>(`/tethr/${c}/chat-turns/${runId}/stop`, {}),
   resetChatSession: (c: string, threadId: string) =>

@@ -90,6 +90,60 @@ export async function updateIntegrations(
   return getIntegrations(companyId);
 }
 
+/** The claude.ai connectors Mark has connected (from the phase 18 spike), with a plain blurb. */
+export const KNOWN_CONNECTORS: Array<{ label: string; blurb: string; tools: number; scopeHint?: string }> = [
+  { label: "Gmail", blurb: "Read and search mail; draft and send email.", tools: 30, scopeHint: "e.g. Only read labels Wandr/Marketing and Wandr/Partners; skip support threads." },
+  { label: "Slack", blurb: "Read channels and threads; post messages.", tools: 19, scopeHint: "e.g. Only read #growth, #marketing and #tethr." },
+  { label: "Google Calendar", blurb: "See your calendar; create or change events.", tools: 9 },
+  { label: "Google Drive", blurb: "Search and read files; create, edit or share them.", tools: 16, scopeHint: "e.g. Never touch 05 Marketing /Claude Marketing/." },
+  { label: "Google Sheets", blurb: "Read spreadsheets; write values.", tools: 9 },
+  { label: "Stripe", blurb: "Revenue, customers and churn data; any change is money.", tools: 12 },
+  { label: "PostHog", blurb: "Product analytics and funnels.", tools: 1 },
+  { label: "Clay", blurb: "Find and enrich companies and contacts (uses Clay credits).", tools: 19 },
+  { label: "Claude Docs", blurb: "Read and write Claude Docs.", tools: 5 },
+  { label: "Canva", blurb: "Designs (large tool set, off by default).", tools: 47 },
+  { label: "Figma", blurb: "Design files (large tool set, off by default).", tools: 40 },
+  { label: "Mercury", blurb: "Bank account. Never moves money on its own.", tools: 0 },
+];
+
+const MODES = new Set(["off", "read", "ask", "auto"]);
+
+/** Validate + apply an update from the Integrations page. Mercury can't be Auto. */
+export function sanitizeIntegrationsPatch(body: Record<string, unknown>): Partial<IntegrationsConfig> {
+  const patch: Partial<IntegrationsConfig> = {};
+  if (typeof body.defaultMode === "string" && MODES.has(body.defaultMode)) {
+    patch.defaultMode = body.defaultMode as ConnectorMode;
+  }
+  if (body.connectors && typeof body.connectors === "object") {
+    const out: Record<string, ConnectorSetting> = {};
+    for (const [label, raw] of Object.entries(body.connectors as Record<string, unknown>)) {
+      if (!raw || typeof raw !== "object" || !label.trim()) continue;
+      const r = raw as Record<string, unknown>;
+      let mode = typeof r.mode === "string" && MODES.has(r.mode) ? (r.mode as ConnectorMode) : null;
+      if (!mode) continue;
+      if (label === "Mercury" && mode === "auto") mode = "ask";
+      out[label] = { mode, ...(typeof r.scope === "string" ? { scope: r.scope.slice(0, 500) } : {}) };
+    }
+    patch.connectors = out;
+  }
+  if (Array.isArray(body.internalAddresses)) {
+    patch.internalAddresses = body.internalAddresses
+      .filter((a): a is string => typeof a === "string")
+      .map((a) => a.trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, 50);
+  }
+  if (body.shell === "off" || body.shell === "ask") patch.shell = body.shell;
+  if (body.assistant && typeof body.assistant === "object") {
+    const a = body.assistant as Record<string, unknown>;
+    const assistant: Partial<IntegrationsConfig["assistant"]> = {};
+    if (a.engine === "session" || a.engine === "routing") assistant.engine = a.engine;
+    if (typeof a.model === "string" && /^[a-z0-9.\-]{2,60}$/i.test(a.model)) assistant.model = a.model;
+    patch.assistant = assistant as IntegrationsConfig["assistant"];
+  }
+  return patch;
+}
+
 /** The effective mode for a connector. Mercury (money) is capped at "ask". */
 export function modeFor(cfg: IntegrationsConfig, connector: string | null): ConnectorMode {
   if (!connector) return cfg.defaultMode;

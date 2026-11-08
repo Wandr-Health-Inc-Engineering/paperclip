@@ -40,8 +40,9 @@ import { routingService } from "../tethr/routing.js";
 import * as chats from "../tethr/chats.js";
 import { getAssistantRunner } from "../tethr/assistant/runner.js";
 import { resolveHookToken } from "../tethr/assistant/gate.js";
+import { workspaceDir } from "../tethr/assistant/workspace.js";
 import { handlePostToolUse, handlePreToolUse } from "../tethr/assistant/hook-handler.js";
-import { getIntegrations, updateIntegrations } from "../tethr/integrations.js";
+import { getIntegrations, KNOWN_CONNECTORS, modeFor, sanitizeIntegrationsPatch, updateIntegrations } from "../tethr/integrations.js";
 import {
   interpretSlackEvent,
   routeInboundKickoff,
@@ -484,6 +485,62 @@ export function tethrRoutes(db: Db) {
     assertCompanyAccess(req, companyId);
     await chats.clearSession(companyId, req.params.threadId as string);
     res.json({ reset: true });
+  });
+
+  // ---- Integrations (phase 18.4): connector modes, rules, chat model/engine ----
+  router.get("/tethr/:companyId/integrations", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const cfg = getIntegrations(companyId);
+    const seen = cfg.discovered?.connectors ?? {};
+    const labels = [...new Set([...KNOWN_CONNECTORS.map((k) => k.label), ...Object.keys(seen), ...Object.keys(cfg.connectors)])];
+    res.json({
+      defaultMode: cfg.defaultMode,
+      internalAddresses: cfg.internalAddresses,
+      shell: cfg.shell,
+      assistant: cfg.assistant,
+      workspace: workspaceDir(),
+      connectors: labels.map((label) => {
+        const known = KNOWN_CONNECTORS.find((k) => k.label === label);
+        return {
+          label,
+          mode: modeFor(cfg, label),
+          explicit: Boolean(cfg.connectors[label]),
+          scope: cfg.connectors[label]?.scope ?? "",
+          blurb: known?.blurb ?? "Connected through your Claude account.",
+          scopeHint: known?.scopeHint ?? null,
+          toolsKnown: known?.tools ?? 0,
+          toolsSeen: seen[label]?.length ?? 0,
+          moneyOnly: label === "Mercury",
+        };
+      }),
+      discoveredAt: cfg.discovered?.at ?? null,
+    });
+  });
+
+  router.put("/tethr/:companyId/integrations", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    if (actor.actorType !== "user") {
+      res.status(403).json({ error: "Only a person can change integrations" });
+      return;
+    }
+    const patch = sanitizeIntegrationsPatch((req.body ?? {}) as Record<string, unknown>);
+    const current = getIntegrations(companyId);
+    if (patch.connectors) patch.connectors = { ...current.connectors, ...patch.connectors };
+    if (patch.assistant) patch.assistant = { ...current.assistant, ...patch.assistant };
+    const cfg = await updateIntegrations(companyId, patch);
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: actor.actorId,
+      action: "tethr_integrations_updated",
+      entityType: "company",
+      entityId: companyId,
+      details: { patch },
+    }).catch(() => {});
+    res.json({ ok: true, defaultMode: cfg.defaultMode });
   });
 
   router.get("/tethr/:companyId/chat-engine", async (req, res) => {

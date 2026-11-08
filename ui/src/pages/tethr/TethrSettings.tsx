@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cog, GitCommitHorizontal, Users } from "lucide-react";
+import { ChevronDown, ChevronRight, Cog, GitCommitHorizontal, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
@@ -12,21 +12,49 @@ import { cn } from "@/lib/utils";
 import {
   tethrApi,
   tethrKeys,
+  type TethrConnectorMode,
+  type TethrIntegrationConnector,
+  type TethrIntegrations,
+  type TethrIntegrationsPatch,
   type TethrOverseerRole,
   type TethrOverseerRoster,
   type TethrStatus,
 } from "@/api/tethr";
 
-// Tethr settings: provider status (everything behind an interface), the
-// env-driven config surfaced read-only, plus the one runtime switch that
-// actually flips behavior — live Claude vs the deterministic mock.
+// Integrations (phase 18, formerly "Providers"): what Tethr's chat may do with
+// each of Mark's connectors (Off / Read / Ask = approval required / Auto), the
+// rules around it (who counts as inside Wandr, the shell, the default for new
+// connectors), the chat's model and engine, and the usage throttle. The old
+// provider/infrastructure cards sit folded at the bottom.
+
+const MODES: TethrConnectorMode[] = ["off", "read", "ask", "auto"];
+const MODE_LABEL: Record<TethrConnectorMode, string> = { off: "Off", read: "Read", ask: "Ask", auto: "Auto" };
+const MODE_HELP: Record<TethrConnectorMode, string> = {
+  off: "Tethr can't use it.",
+  read: "Tethr can look, but can't change anything.",
+  ask: "Changes wait for your OK in the chat.",
+  auto: "Changes just happen. Money, outsiders and anything medical still ask.",
+};
+const MODE_TONE: Record<TethrConnectorMode, "paused" | "idle" | "warn" | "ok"> = {
+  off: "paused",
+  read: "idle",
+  ask: "warn",
+  auto: "ok",
+};
+const MODELS = [
+  { id: "sonnet", label: "Sonnet", hint: "balanced (default)" },
+  { id: "opus", label: "Opus", hint: "smartest, slower" },
+  { id: "haiku", label: "Haiku", hint: "fastest, lightest" },
+];
 
 export function TethrSettings() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const queryClient = useQueryClient();
+  const [classicOpen, setClassicOpen] = useState(false);
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Providers" }]);
+    setBreadcrumbs([{ label: "Integrations" }]);
   }, [setBreadcrumbs]);
 
   const { data, isLoading } = useQuery({
@@ -34,83 +62,319 @@ export function TethrSettings() {
     queryFn: () => tethrApi.status(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const { data: integrations } = useQuery({
+    queryKey: tethrKeys.integrations(selectedCompanyId!),
+    queryFn: () => tethrApi.integrations(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  const update = useMutation({
+    mutationFn: (patch: TethrIntegrationsPatch) => tethrApi.updateIntegrations(selectedCompanyId!, patch),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: tethrKeys.integrations(selectedCompanyId!) }),
+  });
 
   if (!selectedCompanyId) {
     return <EmptyState icon={Cog} message="Select a company first." />;
   }
-  if (isLoading) return <PageSkeleton variant="detail" />;
+  if (isLoading || !integrations) return <PageSkeleton variant="detail" />;
   if (!data) return null;
+
+  const setConnector = (label: string, mode: TethrConnectorMode, scope?: string) => {
+    queryClient.setQueryData<TethrIntegrations>(tethrKeys.integrations(selectedCompanyId), (prev) =>
+      prev
+        ? { ...prev, connectors: prev.connectors.map((c) => (c.label === label ? { ...c, mode, explicit: true, ...(scope !== undefined ? { scope } : {}) } : c)) }
+        : prev,
+    );
+    update.mutate({ connectors: { [label]: { mode, ...(scope !== undefined ? { scope } : {}) } } });
+  };
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div className="space-y-3" data-tethr-stagger>
-        <ThrottleCard companyId={selectedCompanyId} />
-        <LlmModeCard companyId={selectedCompanyId} llm={data.llm} />
-        <ProviderCard
-          name="Drive storage"
-          state={data.storage.provider === "local_disk" ? "local" : "cloud"}
-          detail={
-            data.storage.provider === "local_disk"
-              ? `Local disk · ${data.storage.localDir ?? ""}`
-              : "S3-compatible object storage"
-          }
-          swap="StorageProvider → S3 / GCS (env: PAPERCLIP_STORAGE_PROVIDER)"
-        />
-        <ProviderCard
-          name="Database"
-          state={data.database.external ? "external postgres" : "embedded postgres"}
-          detail={
-            data.database.external
-              ? "External Postgres via DATABASE_URL"
-              : "Embedded Postgres (dev). Cloud swap is a DATABASE_URL change."
-          }
-          swap="Drizzle + versioned migrations"
-        />
-        <ProviderCard
-          name="Notifications"
-          state="in-app live"
-          detail={data.notifications.channels.join(" · ")}
-          swap="Notifier interface → Slack / SMS / email implementations"
-        />
-        <ProviderCard
-          name="Shared workspace"
-          state={data.mirror.enabled ? "mirroring" : "off"}
-          detail={
-            data.mirror.enabled
-              ? `Published deliverables project into ${data.mirror.dir} (Google Drive desktop sync uploads them)`
-              : "TETHR_MIRROR_DIR not set — approved deliverables stay in the in-app Drive only."
-          }
-          swap="v2 (cloud): Google Drive API via service account"
-        />
-        <ProviderCard
-          name="Spec bundle"
-          state={data.bundle.path ? "linked" : "vendored"}
-          detail={
-            data.bundle.path
-              ? `Reading agent specs from ${data.bundle.path}`
-              : "TETHR_BUNDLE_PATH not set — seeds from the vendored org spec."
-          }
-          swap="TETHR_BUNDLE_PATH (read-only)"
-        />
-      </div>
+      <ThrottleCard companyId={selectedCompanyId} />
+
+      <section className="space-y-2">
+        <div className="flex items-baseline justify-between gap-3 px-1">
+          <MonoTag>connectors</MonoTag>
+          <span className="text-[11.5px] tethr-text-3">From your Claude account on this Mac</span>
+        </div>
+        <div className="tethr-panel divide-y divide-[var(--tethr-rim)] overflow-hidden">
+          {integrations.connectors.map((c) => (
+            <ConnectorRow
+              key={c.label}
+              connector={c}
+              onMode={(mode) => setConnector(c.label, mode)}
+              onScope={(scope) => setConnector(c.label, c.mode, scope)}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="space-y-2">
+        <div className="px-1">
+          <MonoTag>rules</MonoTag>
+        </div>
+        <div className="tethr-panel divide-y divide-[var(--tethr-rim)] overflow-hidden">
+          <SettingRow title="Connectors not listed above" help={MODE_HELP[integrations.defaultMode]}>
+            <ModeControl value={integrations.defaultMode} onChange={(m) => update.mutate({ defaultMode: m })} />
+          </SettingRow>
+          <SettingRow
+            title="Inside Wandr"
+            help="Email addresses or domains that count as inside the company. Sending to anyone else always asks."
+          >
+            <AddressesField
+              value={integrations.internalAddresses}
+              onSave={(list) => update.mutate({ internalAddresses: list })}
+            />
+          </SettingRow>
+          <SettingRow title="Shell commands on this Mac" help="Off by default. Ask lets Tethr run a command after you approve it.">
+            <PillChoice
+              value={integrations.shell}
+              options={[
+                { value: "off", label: "Off" },
+                { value: "ask", label: "Ask" },
+              ]}
+              onChange={(v) => update.mutate({ shell: v as "off" | "ask" })}
+            />
+          </SettingRow>
+        </div>
+      </section>
+
+      <section className="space-y-2">
+        <div className="px-1">
+          <MonoTag>chat</MonoTag>
+        </div>
+        <div className="tethr-panel divide-y divide-[var(--tethr-rim)] overflow-hidden">
+          <SettingRow title="Model" help={MODELS.find((m) => m.id === integrations.assistant.model)?.hint ?? integrations.assistant.model}>
+            <PillChoice
+              value={integrations.assistant.model}
+              options={MODELS.map((m) => ({ value: m.id, label: m.label }))}
+              onChange={(v) => update.mutate({ assistant: { model: v } })}
+            />
+          </SettingRow>
+          <SettingRow
+            title="Engine"
+            help={
+              integrations.assistant.engine === "session"
+                ? "One Claude session per chat, with your connectors (new)."
+                : "The older multi-agent routing engine (rollback)."
+            }
+          >
+            <PillChoice
+              value={integrations.assistant.engine}
+              options={[
+                { value: "session", label: "Claude session" },
+                { value: "routing", label: "Classic" },
+              ]}
+              onChange={(v) => update.mutate({ assistant: { engine: v as "session" | "routing" } })}
+            />
+          </SettingRow>
+          <SettingRow title="Workspace" help={integrations.workspace.inDrive ? "Inside 00 Tethr, so its files and memory sync to Google Drive." : "Not in Google Drive (00 Tethr isn't connected)."}>
+            <span className="max-w-[260px] truncate font-mono text-[11px] tethr-text-3" title={integrations.workspace.dir}>
+              {integrations.workspace.dir.split("/").slice(-2).join("/")}
+            </span>
+          </SettingRow>
+        </div>
+      </section>
 
       <OverseerRosterCard companyId={selectedCompanyId} />
 
-      <div className="tethr-panel flex items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-2">
-          <GitCommitHorizontal className="h-4 w-4 text-muted-foreground" />
-          <MonoTag>paperclip engine</MonoTag>
-        </div>
-        <span className="font-mono text-xs text-muted-foreground">
-          {data.paperclipSha.slice(0, 12)}
-        </span>
-      </div>
-
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        Secrets never appear here. Keys live in env files outside version control;
-        see .env.example for every knob.
-      </p>
+      <section className="space-y-3">
+        <button
+          type="button"
+          onClick={() => setClassicOpen((v) => !v)}
+          className="flex items-center gap-1.5 px-1 text-[12px] tethr-text-3 transition-colors hover:text-foreground"
+        >
+          {classicOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          Classic engine and infrastructure
+        </button>
+        {classicOpen ? (
+          <div className="space-y-3">
+            <LlmModeCard companyId={selectedCompanyId} llm={data.llm} />
+            <ProviderCard
+              name="Drive storage"
+              state={data.storage.provider === "local_disk" ? "local" : "cloud"}
+              detail={
+                data.storage.provider === "local_disk"
+                  ? `Local disk · ${data.storage.localDir ?? ""}`
+                  : "S3-compatible object storage"
+              }
+              swap="StorageProvider → S3 / GCS (env: PAPERCLIP_STORAGE_PROVIDER)"
+            />
+            <ProviderCard
+              name="Database"
+              state={data.database.external ? "external postgres" : "embedded postgres"}
+              detail={
+                data.database.external
+                  ? "External Postgres via DATABASE_URL"
+                  : "Embedded Postgres (dev). Cloud swap is a DATABASE_URL change."
+              }
+              swap="Drizzle + versioned migrations"
+            />
+            <ProviderCard
+              name="Notifications"
+              state="in-app live"
+              detail={data.notifications.channels.join(" · ")}
+              swap="Notifier interface → Slack / SMS / email implementations"
+            />
+            <ProviderCard
+              name="Shared workspace"
+              state={data.mirror.enabled ? "mirroring" : "off"}
+              detail={
+                data.mirror.enabled
+                  ? `Published deliverables project into ${data.mirror.dir} (Google Drive desktop sync uploads them)`
+                  : "TETHR_MIRROR_DIR not set — approved deliverables stay in the in-app Drive only."
+              }
+              swap="v2 (cloud): Google Drive API via service account"
+            />
+            <ProviderCard
+              name="Spec bundle"
+              state={data.bundle.path ? "linked" : "vendored"}
+              detail={
+                data.bundle.path
+                  ? `Reading agent specs from ${data.bundle.path}`
+                  : "TETHR_BUNDLE_PATH not set — seeds from the vendored org spec."
+              }
+              swap="TETHR_BUNDLE_PATH (read-only)"
+            />
+            <div className="tethr-panel flex items-center justify-between px-4 py-3">
+              <div className="flex items-center gap-2">
+                <GitCommitHorizontal className="h-4 w-4 text-muted-foreground" />
+                <MonoTag>paperclip engine</MonoTag>
+              </div>
+              <span className="font-mono text-xs text-muted-foreground">{data.paperclipSha.slice(0, 12)}</span>
+            </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Secrets never appear here. Keys live in env files outside version control; see .env.example for every knob.
+            </p>
+          </div>
+        ) : null}
+      </section>
     </div>
+  );
+}
+
+function ConnectorRow({
+  connector,
+  onMode,
+  onScope,
+}: {
+  connector: TethrIntegrationConnector;
+  onMode: (mode: TethrConnectorMode) => void;
+  onScope: (scope: string) => void;
+}) {
+  const [scope, setScope] = useState(connector.scope);
+  useEffect(() => setScope(connector.scope), [connector.scope]);
+  const showScope = connector.mode !== "off" && (connector.scopeHint || connector.scope);
+  return (
+    <div className="flex flex-col gap-2.5 px-4 py-3.5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <StatusDot tone={MODE_TONE[connector.mode]} />
+            <span className="text-[14px] font-medium">{connector.label}</span>
+            {!connector.explicit ? <span className="tethr-eyebrow text-[9.5px]">default</span> : null}
+          </div>
+          <p className="mt-0.5 text-[12.5px] text-muted-foreground">{connector.blurb}</p>
+          <p className="mt-0.5 text-[11.5px] tethr-text-3">
+            {connector.moneyOnly && connector.mode !== "off" ? "Money always needs you." : MODE_HELP[connector.mode]}
+          </p>
+        </div>
+        <ModeControl value={connector.mode} onChange={onMode} noAuto={connector.moneyOnly} />
+      </div>
+      {showScope ? (
+        <Input
+          value={scope}
+          onChange={(e) => setScope(e.target.value)}
+          onBlur={() => scope !== connector.scope && onScope(scope)}
+          placeholder={connector.scopeHint ?? "Limit what Tethr reads here"}
+          aria-label={`${connector.label} scope`}
+          className="h-8 text-[12.5px]"
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ModeControl({
+  value,
+  onChange,
+  noAuto,
+}: {
+  value: TethrConnectorMode;
+  onChange: (m: TethrConnectorMode) => void;
+  noAuto?: boolean;
+}) {
+  return (
+    <PillChoice
+      value={value}
+      options={MODES.map((m) => ({ value: m, label: MODE_LABEL[m], disabled: noAuto && m === "auto" }))}
+      onChange={(v) => onChange(v as TethrConnectorMode)}
+    />
+  );
+}
+
+function PillChoice({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: Array<{ value: string; label: string; disabled?: boolean }>;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="inline-flex shrink-0 items-center gap-0.5 self-start rounded-full bg-[var(--tethr-frost)] p-0.5 shadow-[inset_0_0_0_1px_var(--tethr-rim)] sm:self-auto">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          aria-pressed={value === o.value}
+          disabled={o.disabled}
+          title={o.disabled ? "Money always needs you" : undefined}
+          onClick={() => value !== o.value && onChange(o.value)}
+          className={cn(
+            "h-7 rounded-full px-3 text-[12px] transition-colors disabled:pointer-events-none disabled:opacity-30",
+            value === o.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SettingRow({ title, help, children }: { title: string; help?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:gap-4">
+      <div className="min-w-0 flex-1">
+        <p className="text-[14px] font-medium">{title}</p>
+        {help ? <p className="mt-0.5 text-[12px] text-muted-foreground">{help}</p> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function AddressesField({ value, onSave }: { value: string[]; onSave: (list: string[]) => void }) {
+  const [text, setText] = useState(value.join(", "));
+  useEffect(() => setText(value.join(", ")), [value]);
+  const save = () => {
+    const list = text
+      .split(/[,\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (list.join(",") !== value.join(",")) onSave(list);
+  };
+  return (
+    <Input
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={save}
+      onKeyDown={(e) => e.key === "Enter" && save()}
+      placeholder="travelwithwandr.com"
+      aria-label="Inside Wandr"
+      className="h-8 w-full text-[12.5px] sm:w-64"
+    />
   );
 }
 

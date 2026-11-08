@@ -77,4 +77,4 @@ export async function setThrottle(
 
 /** The one-line note returned to a caller whose request was throttled. */
 export const PAUSED_MESSAGE =
-  "Agents are paused (usage throttle). Resume in the Tethr UI (Providers page) or say “resume agents” in Slack.";
+  "Agents are paused (usage throttle). Resume in the Tethr UI (Integrations page) or say “resume agents” in Slack.";

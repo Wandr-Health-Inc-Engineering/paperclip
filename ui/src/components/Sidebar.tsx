@@ -104,7 +104,7 @@ export function Sidebar() {
           <SidebarNavItem to="/drive" label="Drive" icon={HardDrive} />
           <SidebarNavItem to="/budgets" label="Budgets" icon={Wallet} />
           <SidebarNavItem to="/audit" label="Activity" icon={History} />
-          <SidebarNavItem to="/tethr-settings" label="Providers" icon={Plug} />
+          <SidebarNavItem to="/tethr-settings" label="Integrations" icon={Plug} />
         </SidebarSection>
 
         <SidebarSection label="Work">

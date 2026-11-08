@@ -237,7 +237,7 @@ export function CommandPalette() {
           </CommandItem>
           <CommandItem onSelect={() => go("/tethr-settings")}>
             <Plug className="mr-2 h-4 w-4" />
-            Providers
+            Integrations
           </CommandItem>
           <CommandItem onSelect={() => go("/company/settings/memory")}>
             <Brain className="mr-2 h-4 w-4" />
