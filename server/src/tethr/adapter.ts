@@ -112,19 +112,25 @@ async function executeTask(ctx: AdapterExecutionContext, issueId: string): Promi
     const { runTaskInOperationsChat } = await import("./rhythm.js");
     await ctx.onLog("stdout", `[tethr] ${task.issue.identifier ?? issueId}: running in the Operations chat\n`);
     const out = await runTaskInOperationsChat(db, { companyId, issue: task.issue });
-    const taskStatus = await tasks.finish({
+    let taskStatus = await tasks.finish({
       issueId,
       agentId: ctx.agent.id,
       agentTag: tag,
       runId: ctx.runId,
-      run: { status: out.status, resultText: out.text, outputs: out.outputs },
+      run: { status: out.status === "skipped" ? "failed" : out.status, resultText: out.text, outputs: out.outputs },
       delegated: [],
     });
+    // Paused when it was due: nothing ran, so it's a missed run (the routines
+    // skip missed runs too), not a failure to retry.
+    if (out.status === "skipped") {
+      await tasks.setStatus(issueId, "cancelled", { agentId: ctx.agent.id });
+      taskStatus = "cancelled";
+    }
     return {
-      exitCode: out.status === "done" ? 0 : 1,
+      exitCode: out.status === "failed" ? 1 : 0,
       signal: null,
       timedOut: false,
-      ...(out.status === "done" ? {} : { errorMessage: out.text }),
+      ...(out.status === "failed" ? { errorMessage: out.text } : {}),
       provider: "claude-code",
       model: getIntegrations(companyId).assistant.model,
       billingType: "fixed",

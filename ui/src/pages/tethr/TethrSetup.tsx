@@ -507,7 +507,7 @@ function RhythmStep({ companyId, data, onDone }: { companyId: string; data: Setu
                       disabled={!slackReady}
                       onChange={(e) => set(key, { slack: e.target.checked })}
                     />
-                    Also post to Slack #tethr
+                    Heads-up in Slack #tethr
                   </label>
                 </div>
               ) : null}
@@ -515,7 +515,11 @@ function RhythmStep({ companyId, data, onDone }: { companyId: string; data: Setu
           );
         })}
       </div>
-      {!slackReady ? <p className="text-[11.5px] tethr-text-3">Slack posting needs the Slack bot token (Connections step).</p> : null}
+      <p className="text-[11.5px] tethr-text-3">
+        {slackReady
+          ? "The Slack post says it's ready and links to it (the scorecard adds its numbers); the write-up itself stays in tethr, since it can mention customers."
+          : "Slack posting needs the Slack bot token (Connections step)."}
+      </p>
       <ErrorLine error={save.error} />
       <div className="flex justify-end">
         <button type="button" onClick={() => save.mutate()} disabled={save.isPending} className="tethr-btn tethr-btn-primary h-9 px-4 text-[12.5px]">

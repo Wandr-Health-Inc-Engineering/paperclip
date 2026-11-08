@@ -43,6 +43,10 @@ export interface ResetPlan {
   archiveDir: string | null;
   /** Claude Code transcript folders of the chat workspace, deleted. */
   transcriptDirs: string[];
+  /** Companies that stay. The Drive folder, the chat workspace (Memory.md,
+   * files/) and its transcripts are shared by every company on this instance,
+   * so they're only archived when no company stays. */
+  keptCompanies: string[];
 }
 
 export function resetAllowed(): boolean {
@@ -97,10 +101,16 @@ export async function planReset(db: Db, prefixes: string[], now = new Date()): P
     });
   }
 
+  const wiped = new Set(out.map((c) => c.id));
+  const kept = (await db.select({ id: companies.id, name: companies.name, prefix: companies.issuePrefix }).from(companies))
+    .filter((c) => !wiped.has(c.id))
+    .map((c) => `${c.prefix ?? c.id} ${c.name}`);
+  const touchShared = out.length > 0 && kept.length === 0;
+
   const mirror = mirrorDir();
   const driveMoves: ResetPlan["driveMoves"] = [];
   let archiveDir: string | null = null;
-  if (mirror && fs.existsSync(mirror)) {
+  if (touchShared && mirror && fs.existsSync(mirror)) {
     archiveDir = path.join(ARCHIVE_FOLDER, archiveFolderName(now));
     for (const name of (await fsp.readdir(mirror)).sort()) {
       if (KEEP_TOP.has(name) || name.startsWith(".")) continue;
@@ -115,8 +125,8 @@ export async function planReset(db: Db, prefixes: string[], now = new Date()): P
     }
   }
 
-  const transcriptDirs = [transcriptDirFor(workspaceDir().dir)].filter((d) => fs.existsSync(d));
-  return { companies: out, stores: storeFiles().filter((f) => fs.existsSync(f)), driveMoves, archiveDir, transcriptDirs };
+  const transcriptDirs = touchShared ? [transcriptDirFor(workspaceDir().dir)].filter((d) => fs.existsSync(d)) : [];
+  return { companies: out, stores: storeFiles().filter((f) => fs.existsSync(f)), driveMoves, archiveDir, transcriptDirs, keptCompanies: kept };
 }
 
 async function dropKeys(file: string, ids: string[]): Promise<boolean> {

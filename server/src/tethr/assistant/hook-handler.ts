@@ -4,7 +4,7 @@ import { isTainted, markTainted } from "../chats.js";
 import { getIntegrations, modeFor } from "../integrations.js";
 import type { HookTokenContext } from "./gate.js";
 import { canonicalJson, consumeGrant, createPendingAction, findPending, inputHash, MAX_APPROVAL_INPUT_CHARS, recordFailure, recordOutcome, shortId } from "./grants.js";
-import { classify, decide } from "./policy.js";
+import { classify, decide, resolvesToPrivateHost } from "./policy.js";
 import { readableRoots, workspaceDir } from "./workspace.js";
 
 // The approval gate's server side (phase 18). The hook script POSTs Claude Code's
@@ -36,6 +36,19 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
     internalAddresses: cfg.internalAddresses,
     cwd: typeof payload.cwd === "string" && payload.cwd ? payload.cwd : undefined,
   });
+  // A web page whose name resolves to this Mac or its network is blocked like
+  // a literal localhost address (tethr answers loopback requests as Mark).
+  if (c.cls === "web") {
+    let host = "";
+    try {
+      host = new URL(String(toolInput.url ?? "")).hostname.replace(/^\[|\]$/g, "");
+    } catch {
+      host = "";
+    }
+    if (await resolvesToPrivateHost(host)) {
+      return preDecision("deny", "Tethr approval gate: blocked — the chat can't open pages on this computer or its local network.");
+    }
+  }
   const d = decide(c, { mode: modeFor(cfg, c.connector), shell: cfg.shell, tainted: isTainted(ctx.companyId, ctx.threadId) });
 
   if (d.action === "allow") {

@@ -732,12 +732,41 @@ Mark asked for a startup animation when signing in or opening the desktop client
   per app run via sessionStorage `tethr.intro.seen`); `?intro` on first load previews it. Never in
   a plain browser tab otherwise, never on its own on /auth, /invite, /board-claim, /cli-auth.
 - **Timing:** leaves at ~1.95s once `#main-content` has rendered (or after 3.5s on a screen
-  without it), at most 9s; click or any key skips. The tether's clock starts on the first painted
+  without it), at most 9s; click or any key skips. A desktop intro that lands on a public page
+  (signed out → /auth) counts that page as ready (`introReady`), so it never holds over the
+  sign-in form. The tether's clock starts on the first painted
   frame, the same moment the CSS parts start, so they can't drift apart on a slow first frame.
   Reduced motion: a still card, ~0.9s.
 - **Desktop app's "not running" page** (`scripts/tethr-launcher/AppWindow.swift`, local-only)
   shows the same tether hanging slack.
 - Tests: `ui/src/lib/tethr-intro.test.ts` (14).
+
+## Review fixes (2026-11-08) — invariants to keep
+
+- **New files never overwrite.** `atomic.ts` `writeNewFile` claims a name with an exclusive
+  create (`stem (2).ext` when taken) before writing atomically. Chat attachments and the tethr
+  tools' CSVs (`score_list`/`keyword_ideas` `save_as`) use it, so two pasted `image.png`s each
+  keep a file and a CSV never lands on the list being scored. A tool result that saved a file ends
+  with `[Saved file: files/…]`; the chat's file chip comes from that line (events.ts), not from
+  the call's input.
+- **Goal text is one line in CLAUDE.md** (`oneLine` in goals.ts: titles and names stored that way,
+  methods flattened when rendered), and the block says it's data, not instructions. One
+  measurement per day: a second value for the same date replaces the first; no date = today at
+  noon UTC.
+- **Rhythm:** a turn the usage throttle answered is `skipped` (task cancelled, no Slack), not done.
+  A scheduled turn past 20 minutes is STOPPED, so the task and the chat agree. Slack gets a
+  heads-up only (`rhythmSlackText`: what's ready + a link when `PAPERCLIP_PUBLIC_URL` is set, and
+  for the scorecard its numbers from the goals store), never the chat's write-up, which can
+  mention customers. "Measure now" re-creates a routine deleted on the Routines page.
+- **Wipe:** the Drive folder, the chat workspace (Memory.md, files/) and transcripts are shared by
+  every company, so a wipe touches them only when no company stays (`plan.keptCompanies`).
+- **Gate:** WebFetch hosts are DNS-resolved before allowing (`resolvesToPrivateHost`); a name
+  that resolves to loopback/LAN is blocked. The tools endpoint applies the same `decide()` as the
+  hook (Read mode blocks the goal-saving tools there too).
+- **Stores:** `tethr-archive.json` now goes through `serialize` + `writeAtomic` like the others.
+- **Environment page:** a multi-line paste names the settings it replaces and the core ones.
+- **Startup:** server startup imports `tethr/boot.ts` (no static engine imports); `TaskRunState`
+  lives in `task-run-state.ts` so routing doesn't load the issue service.
 
 ## Onboarding from scratch: goals with numbers, setup, rhythm (phase 20, 2026-11-07)
 

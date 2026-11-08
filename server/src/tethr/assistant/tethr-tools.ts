@@ -1,7 +1,7 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
 import type { Db } from "@paperclipai/db";
-import { writeAtomic } from "../atomic.js";
+import { writeNewFile } from "../atomic.js";
 import { GoalInputError, goalsContextText, goalsService, METRIC_SOURCES, METRIC_UNITS } from "../goals.js";
 import { JevError, jevAsk, jevConfigured, jevCostUsd, type JevAnswer, type JevCallOptions, type JevQuestion } from "../jev.js";
 import { googleAdsConfigured } from "../tools/google-ads.js";
@@ -43,6 +43,19 @@ export interface TethrToolResult {
   file?: string;
   /** For the activity log (counts and timings, never content). */
   meta?: Record<string, unknown>;
+}
+
+/** The line a tool result ends with when it saved a file: the chat shows that
+ * file as a chip (events.ts reads it from the result, so a failed call or an
+ * auto-saved file is shown as it really is). */
+export const SAVED_FILE_RE = /^\[Saved file: (files\/[^\]\n]+)\]$/m;
+export const savedFileLine = (rel: string) => `[Saved file: ${rel}]`;
+
+/** Write a CSV into files/ under a NEW name (never over an existing file, such
+ * as the list being scored); returns its workspace-relative path. */
+async function saveCsv(ctx: TethrToolContext, name: string, rows: Array<Array<string | number | null | undefined>>): Promise<string> {
+  const used = await writeNewFile(filesDir(ctx), name, toCsv(rows));
+  return `${FILES_DIR}/${used}`;
 }
 
 export interface TethrToolContext {
@@ -552,8 +565,7 @@ export async function runScoreList(args: Record<string, unknown>, ctx: TethrTool
       }),
     ];
     const rows = [header, ...ranked.map((s, i) => row(s, i + 1)), ...failed.map((s) => row(s, null))];
-    await writeAtomic(path.join(filesDir(ctx), name), toCsv(rows));
-    file = `${FILES_DIR}/${name}`;
+    file = await saveCsv(ctx, name, rows);
   }
 
   const describe = (c: Criterion) => {
@@ -578,7 +590,7 @@ export async function runScoreList(args: Record<string, unknown>, ctx: TethrTool
     lines.push("", `Couldn't score ${failed.length}: ${failed.slice(0, 5).map((s) => `"${cellText(s.label, 40)}" (${s.error})`).join("; ")}${failed.length > 5 ? "; ..." : ""}`);
   }
   if (ranked.some((s) => s.uncertain.length)) lines.push("", "Check = criteria Jev wasn't sure about for that item; worth a human look.");
-  if (file) lines.push("", `All rows: ${file}`);
+  if (file) lines.push("", `All rows: ${file}`, savedFileLine(file));
   return { text: lines.join("\n"), file, meta };
 }
 
@@ -614,8 +626,7 @@ export async function runKeywordIdeas(args: Record<string, unknown>, ctx: TethrT
       ["keyword", "monthly_searches", "competition", "avg_cpc", "low_top_bid", "high_top_bid"],
       ...sorted.map((k) => [k.text, k.monthlySearchVolume, k.competition, k.averageCpc, k.lowTopOfPageCpc, k.highTopOfPageCpc]),
     ];
-    await writeAtomic(path.join(filesDir(ctx), name), toCsv(rows));
-    file = `${FILES_DIR}/${name}`;
+    file = await saveCsv(ctx, name, rows);
   }
   const where = geo.length && !(geo.length === 1 && geo[0] === "2840") ? `geo ${geo.join(", ")}` : "US";
   const shown = sorted.slice(0, limit);
@@ -626,7 +637,7 @@ export async function runKeywordIdeas(args: Record<string, unknown>, ctx: TethrT
     "|---|---|---|---|",
     ...shown.map((k) => `| ${cellText(k.text)} | ${k.monthlySearchVolume} | ${k.competition} | $${k.averageCpc.toFixed(2)} |`),
   ];
-  if (file) lines.push("", `All ${sorted.length} ideas: ${file} (rank them with score_list, from_file: "${file.slice(FILES_DIR.length + 1)}").`);
+  if (file) lines.push("", `All ${sorted.length} ideas: ${file} (rank them with score_list, from_file: "${file.slice(FILES_DIR.length + 1)}").`, savedFileLine(file));
   return { text: lines.join("\n"), file, meta };
 }
 

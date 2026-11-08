@@ -271,6 +271,29 @@ describe("tethr jev — score_list", () => {
     expect(big.text).toMatch(/Couldn't score 1: .*too long/);
   });
 
+  it("never writes over an existing file, including the list it scored, and says which file it saved", async () => {
+    fs.mkdirSync(path.join(tmp, "files"), { recursive: true });
+    const source = "keyword\nmalaria pills\nflights to bali\ntravel insurance\n";
+    fs.writeFileSync(path.join(tmp, "files", "leads.csv"), source);
+    const res = await runScoreList(
+      { from_file: "leads.csv", criteria, save_as: "leads" },
+      { workspaceDir: tmp, jev: { fetchImpl: fakeJev(), sleep: noSleep } },
+    );
+    expect(res.isError).toBeFalsy();
+    expect(res.file).toBe("files/leads (2).csv");
+    expect(res.text).toContain("[Saved file: files/leads (2).csv]");
+    expect(fs.readFileSync(path.join(tmp, "files", "leads.csv"), "utf8")).toBe(source);
+    const again = await runScoreList({ from_file: "leads.csv", criteria, save_as: "leads" }, { workspaceDir: tmp, jev: { fetchImpl: fakeJev(), sleep: noSleep } });
+    expect(again.file).toBe("files/leads (3).csv");
+    // A call that scores nothing saves nothing and names no file.
+    const badKey = (async () => json(401, {})) as typeof fetch;
+    const failed = await runScoreList({ items: ["a"], criteria, save_as: "nothing" }, { workspaceDir: tmp, concurrency: 1, jev: { fetchImpl: badKey, sleep: noSleep } });
+    expect(failed.isError).toBe(true);
+    expect(failed.file).toBeUndefined();
+    expect(failed.text).not.toContain("[Saved file:");
+    expect(fs.existsSync(path.join(tmp, "files", "nothing.csv"))).toBe(false);
+  });
+
   it("scores a keyword_ideas CSV straight from files/", async () => {
     const ideas = async () => [
       { text: "malaria pills", monthlySearchVolume: 880, competition: "HIGH" as const, averageCpc: 2.5, lowTopOfPageCpc: 1, highTopOfPageCpc: 4 },
@@ -308,17 +331,29 @@ describe("tethr jev — gate, settings and chat events", () => {
     expect(integrationRulesText(DEFAULT_INTEGRATIONS)).toMatch(/score_list tool \(Jev\)/);
   });
 
-  it("shows a saved CSV as a file in the chat", () => {
-    const state = newTurnState();
-    applyStreamLine(
-      state,
+  it("shows the CSV a tool actually saved as a file in the chat, and none when it failed", () => {
+    const ev = { policy: ctx, mirrorRoot: "/drive/00 Tethr" };
+    const call = (id: string) =>
       JSON.stringify({
         type: "assistant",
-        message: { content: [{ type: "tool_use", id: "t1", name: "mcp__tethr__score_list", input: { from_file: "ideas.csv", criteria: [], save_as: "spring scores" } }] },
-      }),
-      { policy: ctx, mirrorRoot: "/drive/00 Tethr" },
-    );
-    expect(state.hops[0]).toMatchObject({ actorTag: "Tethr tools", decision: "Scoring ideas.csv with Jev", file: "tethr/files/spring scores.csv" });
+        message: { content: [{ type: "tool_use", id, name: "mcp__tethr__score_list", input: { from_file: "ideas.csv", criteria: [], save_as: "spring scores" } }] },
+      });
+    const result = (id: string, text: string, isError = false) =>
+      JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, is_error: isError, content: [{ type: "text", text }] }] } });
+
+    const state = newTurnState();
+    applyStreamLine(state, call("t1"), ev);
+    expect(state.hops[0]).toMatchObject({ actorTag: "Tethr tools", decision: "Scoring ideas.csv with Jev" });
+    expect(state.hops[0].file).toBeUndefined();
+    // The name was taken, so the tool saved "spring scores (2).csv": the chip follows.
+    applyStreamLine(state, result("t1", "Scored 3 of 3 items.\n\nAll rows: files/spring scores (2).csv\n[Saved file: files/spring scores (2).csv]"), ev);
+    expect(state.hops[0]).toMatchObject({ status: "ok", file: "tethr/files/spring scores (2).csv" });
+
+    // Jev not set up: an error result, no file, no chip.
+    applyStreamLine(state, call("t2"), ev);
+    applyStreamLine(state, result("t2", "Jev isn't set up in Tethr yet (no TYPESAFE_API_KEY), so nothing was scored.", true), ev);
+    expect(state.hops[1]).toMatchObject({ status: "failed" });
+    expect(state.hops[1].file).toBeUndefined();
   });
 });
 
@@ -430,6 +465,19 @@ describePg("tethr jev — tools endpoint", () => {
       .expect(200);
     expect(call.body.isError).toBe(true);
     expect(call.body.content[0].text).toMatch(/Jev isn't set up/);
+    // Read mode: the reads still run, the goal-saving tools don't, even called directly.
+    await updateIntegrations(companyId, { connectors: { "Tethr tools": { mode: "read" } } });
+    const readOnly = await request(app)
+      .post("/api/tethr/assistant/tools/call")
+      .set("authorization", `Bearer ${token}`)
+      .send({ name: "save_goal", arguments: { title: "Sneaky" } })
+      .expect(200);
+    expect(readOnly.body.isError).toBe(true);
+    expect(readOnly.body.content[0].text).toMatch(/read-only/);
+    const listGoals = await request(app).post("/api/tethr/assistant/tools/call").set("authorization", `Bearer ${token}`).send({ name: "goals_list", arguments: {} }).expect(200);
+    expect(listGoals.body.isError).toBe(false);
+    const unknown = await request(app).post("/api/tethr/assistant/tools/call").set("authorization", `Bearer ${token}`).send({ name: "drop_tables", arguments: {} }).expect(200);
+    expect(unknown.body.isError).toBe(true);
     await updateIntegrations(companyId, { connectors: { "Tethr tools": { mode: "off" } } });
     const off = await request(app).post("/api/tethr/assistant/tools/call").set("authorization", `Bearer ${token}`).send({ name: "score_list", arguments: {} }).expect(200);
     expect(off.body.content[0].text).toMatch(/turned off/);

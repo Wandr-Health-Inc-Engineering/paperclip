@@ -8,7 +8,7 @@ import { gatingService } from "./gating.js";
 import { memoryService } from "./memory.js";
 import { MIRROR_FOLDERS } from "./mirror.js";
 import { contentPreview, wordCountLabel } from "./preview.js";
-import type { TaskRunState } from "./tasks.js";
+import type { TaskRunState } from "./task-run-state.js";
 import { toolsetForSubagent, type TethrToolContext } from "./tools/index.js";
 
 // The "do" step of classify → route → do. Renders the subagent's fine-tuned

@@ -183,6 +183,65 @@ describePg("tethr setup — routes, rhythm, operations chat, wipe", () => {
     expect(prompts.at(-1)).toContain("[From Tethr, not Mark] Scheduled: Weekly scorecard");
   });
 
+  it("skips a scheduled turn when agents are paused, instead of calling it done", async () => {
+    const { setThrottle } = await import("../tethr/throttle.ts");
+    const scoreId = getSetup(companyId).rhythm.scorecard.routineId!;
+    const issue = { id: "00000000-0000-4000-8000-000000000124", title: "Weekly scorecard", identifier: "WD-10", description: "Measure.", originId: scoreId } as unknown as typeof issues.$inferSelect;
+    await setThrottle(companyId, true, { by: "test" });
+    try {
+      const out = await runTaskInOperationsChat(db, { companyId, issue, pollMs: 20 });
+      expect(out.status).toBe("skipped");
+      expect(out.text).toMatch(/agents were paused/);
+    } finally {
+      await setThrottle(companyId, false, { by: "test" });
+    }
+  });
+
+  it("stops a scheduled turn that runs past its time, so the task and the chat agree", async () => {
+    // Hold the Operations chat with a turn that doesn't finish, so the scheduled one waits in line.
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const slow = async (ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> => {
+      await held;
+      return fakeExecute(ctx);
+    };
+    setAssistantRunnerForTests(assistantRunner(db, { execute: slow }));
+    try {
+      const { getAssistantRunner } = await import("../tethr/assistant/runner.ts");
+      const blocker = await getAssistantRunner(db).send({ companyId, threadId: operationsThreadId(companyId), text: "busy", kind: "user" } as never);
+      const issue = { id: "00000000-0000-4000-8000-000000000125", title: "Weekly plan", identifier: "WD-11", description: "Plan.", originId: null } as unknown as typeof issues.$inferSelect;
+      const out = await runTaskInOperationsChat(db, { companyId, issue, pollMs: 20, waitMs: 300 });
+      expect(out.status).toBe("failed");
+      expect(out.text).toMatch(/so it was stopped/);
+      const [turn] = await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.id, out.runId!));
+      expect(turn.status).toBe("stopped");
+      release();
+      for (let i = 0; i < 100; i++) {
+        const [b] = await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.id, blocker.routeRunId));
+        if (b && ["done", "failed", "stopped"].includes(b.status)) break;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+    } finally {
+      release();
+      setAssistantRunnerForTests(assistantRunner(db, { execute: fakeExecute }));
+    }
+  });
+
+  it("tells Slack it's ready and where, with the scorecard's numbers from the goals, never the chat's words", async () => {
+    const { rhythmSlackText } = await import("../tethr/rhythm.ts");
+    process.env.PAPERCLIP_PUBLIC_URL = "https://tethr.example.com/";
+    try {
+      const brief = await rhythmSlackText(db, companyId, "brief");
+      expect(brief).toBe(`*Daily brief* is ready in tethr's <https://tethr.example.com/chat?chat=${operationsThreadId(companyId)}|Operations chat>.`);
+      const score = await rhythmSlackText(db, companyId, "scorecard");
+      expect(score.split("\n")[0]).toMatch(/^\*Friday scorecard\* is ready/);
+      expect(score).not.toContain("Scorecard: New customers 140 of 200");
+    } finally {
+      delete process.env.PAPERCLIP_PUBLIC_URL;
+    }
+    expect(await rhythmSlackText(db, companyId, "plan")).toBe("*Monday plan* is ready in tethr's Operations chat.");
+  });
+
   it("runs an item once even when it isn't switched on (creates it paused)", async () => {
     const { runRhythmNow } = await import("../tethr/rhythm.ts");
     expect(getSetup(companyId).rhythm.brief.routineId).toBeUndefined();
@@ -205,11 +264,65 @@ describePg("tethr setup — routes, rhythm, operations chat, wipe", () => {
     expect(turns.some((t) => t.requestText.startsWith("Scheduled: Morning brief"))).toBe(true);
   }, 40_000);
 
+  it("re-creates an item's routine if it was deleted, instead of failing every Measure now", async () => {
+    const { runRhythmNow } = await import("../tethr/rhythm.ts");
+    const { updateSetup } = await import("../tethr/setup.ts");
+    // The saved id points at a routine that no longer exists (deleted on the Routines page).
+    const gone = "00000000-0000-4000-8000-0000000000aa";
+    await updateSetup(companyId, (st) => ({ ...st, rhythm: { ...st.rhythm, brief: { ...st.rhythm.brief, routineId: gone } } }));
+    const out = await runRhythmNow(db, companyId, "brief", { userId: "mark" });
+    expect(out.issueId).toBeTruthy();
+    const newId = getSetup(companyId).rhythm.brief.routineId!;
+    expect(newId).not.toBe(gone);
+    expect(await db.select().from(routines).where(eq(routines.id, newId))).toHaveLength(1);
+    let status = "";
+    for (let i = 0; i < 250 && status !== "done"; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      [{ status }] = await db.select({ status: issues.status }).from(issues).where(eq(issues.id, out.issueId!));
+    }
+    expect(status).toBe("done");
+  }, 40_000);
+
   it("marks setup complete", async () => {
     const app = await appFor(mark);
     const done = await request(app).post(`/api/tethr/${companyId}/setup/complete`).send({}).expect(200);
     expect(done.body.completedAt).toBeTruthy();
     expect(DEFAULT_RHYTHM.plan.enabled).toBe(false); // nothing is on by default
+  });
+
+  it("a wipe that leaves a company standing keeps the shared Drive folder, Memory.md and transcripts", async () => {
+    const mirror = path.join(dir, "drive-partial", "00 Tethr");
+    const ws = path.join(mirror, "tethr");
+    fs.mkdirSync(path.join(mirror, "01 Briefs"), { recursive: true });
+    fs.writeFileSync(path.join(mirror, "01 Briefs", "live brief.md"), "live");
+    fs.mkdirSync(path.join(ws, "files"), { recursive: true });
+    fs.writeFileSync(path.join(ws, "Memory.md"), "live memory");
+    process.env.CLAUDE_CONFIG_DIR = path.join(dir, "claude-home-partial");
+    process.env.TETHR_MIRROR_ALLOW_TEST = "1";
+    process.env.TETHR_MIRROR_DIR = mirror;
+    const transcripts = transcriptDirFor(ws);
+    fs.mkdirSync(transcripts, { recursive: true });
+    fs.writeFileSync(path.join(transcripts, "live.jsonl"), "{}");
+    try {
+      const [other] = await db.insert(companies).values({ name: "Old Org", issuePrefix: "OLD" } as never).returning();
+      const plan = await planReset(db, ["OLD"]);
+      expect(plan.companies.map((c) => c.id)).toEqual([other.id]);
+      expect(plan.keptCompanies.some((k) => k.includes("Wandr") || k.startsWith("WD"))).toBe(true);
+      expect(plan.driveMoves).toEqual([]);
+      expect(plan.transcriptDirs).toEqual([]);
+
+      const result = await runReset(db, ["OLD"]);
+      expect(result.errors).toEqual([]);
+      expect(result.deletedCompanies).toHaveLength(1);
+      expect(result.moved).toEqual([]);
+      expect(fs.readFileSync(path.join(ws, "Memory.md"), "utf8")).toBe("live memory");
+      expect(fs.existsSync(path.join(mirror, "01 Briefs", "live brief.md"))).toBe(true);
+      expect(fs.existsSync(path.join(transcripts, "live.jsonl"))).toBe(true);
+    } finally {
+      delete process.env.CLAUDE_CONFIG_DIR;
+      delete process.env.TETHR_MIRROR_ALLOW_TEST;
+      delete process.env.TETHR_MIRROR_DIR;
+    }
   });
 
   it("wipes whole companies, cleans their stores, archives Drive files and old transcripts", async () => {

@@ -10,7 +10,7 @@ import { notificationService } from "./notify.js";
 import { orgService } from "./org.js";
 import { isContentRequest, publishedDuplicateWarning } from "./published-memory.js";
 import { parseDelegations } from "./delegation-parse.js";
-import { newTaskRunState, type TaskRunState } from "./tasks.js";
+import { newTaskRunState, type TaskRunState } from "./task-run-state.js";
 import { isAgentsPaused, PAUSED_MESSAGE } from "./throttle.js";
 import { workerService } from "./worker.js";
 

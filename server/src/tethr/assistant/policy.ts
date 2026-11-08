@@ -1,3 +1,4 @@
+import dns from "node:dns/promises";
 import path from "node:path";
 
 // The approval gate's policy (phase 18). Every tool call the chat's Claude
@@ -347,6 +348,33 @@ export function isPrivateHost(host: string): boolean {
     (a === 192 && b === 168) ||
     (a === 100 && b >= 64 && b <= 127)
   );
+}
+
+/** Does a web host's name resolve to this machine or a private network? The
+ * name check above can't see that (127.0.0.1.nip.io, a LAN name), so the gate
+ * looks the name up before allowing a fetch. A lookup that fails or times out
+ * isn't a private address (the fetch would fail on its own). */
+export async function resolvesToPrivateHost(
+  host: string,
+  lookup: (h: string) => Promise<Array<{ address: string }>> = (h) => dns.lookup(h, { all: true, verbatim: true }),
+  timeoutMs = 2_000,
+): Promise<boolean> {
+  if (!host || isPrivateHost(host)) return true;
+  if (/^[\d.]+$/.test(host) || host.includes(":")) return false; // a literal address: already judged
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const addrs = await Promise.race([
+      lookup(host),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
+      }),
+    ]);
+    return addrs.some((a) => isPrivateHost(a.address));
+  } catch {
+    return false;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 /** Is a web host one of Wandr's own (a domain from internalAddresses, or a subdomain)? */

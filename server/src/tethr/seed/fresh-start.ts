@@ -1,11 +1,11 @@
 import fs from "node:fs";
-import fsp from "node:fs/promises";
 import path from "node:path";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { agents, routines, routineTriggers, tethrAgentProfiles } from "@paperclipai/db";
 import { resolvePaperclipInstanceRoot } from "../../home-paths.js";
 import { logger } from "../../middleware/logger.js";
+import { serialize, writeAtomic } from "../atomic.js";
 import { GROWTH_WORKFLOWS } from "./growth-workflows.js";
 
 // Phase 18 — the fresh start (Mark's call, 2026-11-07). Tethr becomes a
@@ -103,10 +103,11 @@ function readArchiveFile(): ArchiveFile {
   }
 }
 
+/** Atomic write (temp file + rename): a crash mid-write never leaves a
+ * truncated file that reads back as "never archived". Callers hold the file's
+ * serialize() queue around their read-modify-write. */
 async function writeArchiveFile(data: ArchiveFile): Promise<void> {
-  const file = archivePath();
-  await fsp.mkdir(path.dirname(file), { recursive: true });
-  await fsp.writeFile(file, JSON.stringify(data, null, 2), "utf8");
+  await writeAtomic(archivePath(), JSON.stringify(data, null, 2));
 }
 
 /** The stash for one company, or null if the fresh start never ran there. */
@@ -164,6 +165,10 @@ export async function archiveSpecialists(
   companyId: string,
   opts: { by?: string } = {},
 ): Promise<ArchiveResult> {
+  return serialize(archivePath(), () => archiveUnlocked(db, companyId, opts));
+}
+
+async function archiveUnlocked(db: Db, companyId: string, opts: { by?: string }): Promise<ArchiveResult> {
   const file = readArchiveFile();
   const prior = file[companyId];
   const record: ArchiveRecord =
@@ -299,8 +304,12 @@ export async function archiveSpecialists(
  * restore survives restarts.
  */
 export async function archiveSpecialistsOnce(db: Db, companyId: string): Promise<ArchiveResult | null> {
-  if (getArchiveRecord(companyId)) return null;
-  return archiveSpecialists(db, companyId, { by: "tethr-boot" });
+  // Check and archive inside one turn of the file's queue, so a restore (or a
+  // second boot path) can't slip in between.
+  return serialize(archivePath(), async () => {
+    if (getArchiveRecord(companyId)) return null;
+    return archiveUnlocked(db, companyId, { by: "tethr-boot" });
+  });
 }
 
 /**
@@ -315,6 +324,10 @@ export async function restoreSpecialists(
   companyId: string,
   opts: { by?: string } = {},
 ): Promise<RestoreResult> {
+  return serialize(archivePath(), () => restoreUnlocked(db, companyId, opts));
+}
+
+async function restoreUnlocked(db: Db, companyId: string, opts: { by?: string }): Promise<RestoreResult> {
   const file = readArchiveFile();
   const record = file[companyId];
   if (!record || record.state !== "archived") {

@@ -41,9 +41,10 @@ import { routingService } from "../tethr/routing.js";
 import * as chats from "../tethr/chats.js";
 import { getAssistantRunner } from "../tethr/assistant/runner.js";
 import { resolveHookToken } from "../tethr/assistant/gate.js";
-import { MEMORY_MAX_CHARS, ensureWorkspace, readMemoryFile, workspaceDir, writeMemoryFile } from "../tethr/assistant/workspace.js";
+import { MEMORY_MAX_CHARS, ensureWorkspace, readableRoots, readMemoryFile, workspaceDir, writeMemoryFile } from "../tethr/assistant/workspace.js";
 import { handlePostToolUse, handlePreToolUse } from "../tethr/assistant/hook-handler.js";
-import { runTethrTool, TETHR_TOOL_DEFS, TETHR_TOOLS_LABEL } from "../tethr/assistant/tethr-tools.js";
+import { runTethrTool, TETHR_TOOL_DEFS, TETHR_TOOLS_LABEL, TETHR_TOOLS_SERVER } from "../tethr/assistant/tethr-tools.js";
+import { classify, decide } from "../tethr/assistant/policy.js";
 import {
   ATTACH_LIMITS,
   attachmentKind,
@@ -164,8 +165,20 @@ export function tethrRoutes(db: Db) {
     }
     const body = (req.body ?? {}) as Record<string, unknown>;
     const name = String(body.name ?? "");
-    if (modeFor(getIntegrations(ctx.companyId), TETHR_TOOLS_LABEL) === "off") {
-      res.json({ content: [{ type: "text", text: "Tethr approval gate: Tethr tools are turned off in Tethr's Integrations." }], isError: true });
+    // The same decision the PreToolUse gate makes (Off denies everything, Read
+    // denies the goal-saving tools), enforced here too: this is where the work
+    // happens, whoever holds the turn's token.
+    const cfg = getIntegrations(ctx.companyId);
+    const args = body.arguments && typeof body.arguments === "object" && !Array.isArray(body.arguments) ? (body.arguments as Record<string, unknown>) : {};
+    const classified = classify(`mcp__${TETHR_TOOLS_SERVER}__${name}`, args, {
+      workspaceDir: workspaceDir().dir,
+      readableRoots: readableRoots(),
+      internalAddresses: cfg.internalAddresses,
+    });
+    const decision = decide(classified, { mode: modeFor(cfg, TETHR_TOOLS_LABEL), shell: cfg.shell });
+    if (decision.action !== "allow") {
+      const text = decision.action === "deny" ? decision.reason : `Tethr approval gate: ${name} can't run from here.`;
+      res.json({ content: [{ type: "text", text }], isError: true });
       return;
     }
     const result = await runTethrTool(name, body.arguments, { workspaceDir: workspaceDir().dir, db, companyId: ctx.companyId });

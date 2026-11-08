@@ -1,5 +1,5 @@
 import type { Db } from "@paperclipai/db";
-import type { TaskRunState } from "../tasks.js";
+import type { TaskRunState } from "../task-run-state.js";
 
 // The tool registry: agents' hands. Each subagent gets an allowlisted set of
 // tools derived from its spec; the agentic loop (LLMProvider.runAgentic) calls

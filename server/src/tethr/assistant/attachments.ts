@@ -1,6 +1,6 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { writeAtomic } from "../atomic.js";
+import { writeNewFile } from "../atomic.js";
 import { workspaceWriteRefusal } from "./policy.js";
 import { FILES_DIR } from "./workspace.js";
 
@@ -71,14 +71,17 @@ export async function saveAttachment(
   const named = attachmentName(original);
   if ("error" in named) return named;
   const dir = path.join(workspaceDir, FILES_DIR, UPLOADS, dateDir(now));
-  const ext = path.extname(named.name);
-  const stem = named.name.slice(0, -ext.length);
-  let name = named.name;
-  for (let n = 2; await exists(path.join(dir, name)); n++) name = `${stem} (${n})${ext}`;
-  const abs = path.join(dir, name);
   // Same rules as the chat's own writes: never a dot path or a Claude config file.
-  if (workspaceWriteRefusal(abs, workspaceDir)) return { error: "That file name isn't allowed." };
-  await writeAtomic(abs, data);
+  if (workspaceWriteRefusal(path.join(dir, named.name), workspaceDir)) return { error: "That file name isn't allowed." };
+  // A new file every time: two uploads with the same name (two pasted
+  // screenshots, both "image.png") each keep their own copy.
+  let name: string;
+  try {
+    name = await writeNewFile(dir, named.name, data, (abs) => !workspaceWriteRefusal(abs, workspaceDir));
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Couldn't save that file." };
+  }
+  const abs = path.join(dir, name);
   return { path: path.relative(workspaceDir, abs).split(path.sep).join("/"), name, size: data.length, kind: attachmentKind(name) };
 }
 

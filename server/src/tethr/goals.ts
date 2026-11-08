@@ -33,6 +33,10 @@ export interface GoalsView {
 export class GoalInputError extends Error {}
 
 const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+/** One line: what goes into the chat's standing instructions can never start a
+ * line of its own (so saved text can't pose as a heading or a rule there). */
+export const oneLine = (v: unknown, max: number) =>
+  typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max) : "";
 const num = (v: unknown): number | null | undefined => {
   if (v === undefined) return undefined;
   if (v === null || v === "") return null;
@@ -48,6 +52,12 @@ const date = (v: unknown): Date | null | undefined => {
   if (Number.isNaN(d.getTime())) throw new GoalInputError(`"${String(v)}" isn't a date (use YYYY-MM-DD).`);
   return d;
 };
+
+/** Today's date (this machine's calendar) at noon UTC, the same as a typed YYYY-MM-DD. */
+function todayNoonUtc(now = new Date()): Date {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return new Date(`${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}T12:00:00Z`);
+}
 
 export function goalsService(db: Db) {
   const core = goalService(db);
@@ -84,7 +94,7 @@ export function goalsService(db: Db) {
       companyId: string,
       input: { id?: unknown; title?: unknown; description?: unknown; level?: unknown; status?: unknown },
     ): Promise<GoalRow> {
-      const title = text(input.title, 200);
+      const title = oneLine(input.title, 200);
       const description = input.description === undefined ? undefined : text(input.description, 4000) || null;
       const status = input.status === undefined ? undefined : String(input.status);
       if (status !== undefined && !["planned", "active", "achieved", "cancelled"].includes(status)) {
@@ -124,7 +134,7 @@ export function goalsService(db: Db) {
       }
       const direction = input.direction === undefined ? undefined : input.direction === "down" ? "down" : "up";
       const fields = {
-        ...(input.name !== undefined ? { name: text(input.name, 120) } : {}),
+        ...(input.name !== undefined ? { name: oneLine(input.name, 120) } : {}),
         ...(unit ? { unit } : {}),
         ...(source ? { source } : {}),
         ...(direction ? { direction } : {}),
@@ -166,10 +176,16 @@ export function goalsService(db: Db) {
       const metric = await ownMetric(companyId, metricId);
       const value = num(input.value);
       if (value === null || value === undefined) throw new GoalInputError("Give the measured value.");
-      const at = date(input.at) ?? new Date();
-      const note = text(input.note, 300);
+      // A value is for a day: the default is today, stored like a typed date
+      // (noon UTC), and a second value for the same day replaces the first
+      // (e.g. "Measure now" in the morning, then the Friday scorecard).
+      const at = date(input.at) ?? todayNoonUtc();
+      const note = oneLine(input.note, 300);
       const point: TethrMetricPoint = { at: at.toISOString(), value, ...(note ? { note } : {}) };
-      const history = [...(metric.history ?? []), point].sort((a, b) => a.at.localeCompare(b.at)).slice(-HISTORY_CAP);
+      const dayOf = (iso: string) => iso.slice(0, 10);
+      const history = [...(metric.history ?? []).filter((p) => dayOf(p.at) !== dayOf(point.at)), point]
+        .sort((a, b) => a.at.localeCompare(b.at))
+        .slice(-HISTORY_CAP);
       const latest = history[history.length - 1];
       const [row] = await db
         .update(tethrGoalMetrics)
@@ -207,16 +223,35 @@ export function goalsContextText(view: GoalsView): string {
     return "- No goals are set yet. If Mark asks for plans or priorities, suggest finishing tethr's setup (the goals interview) first.";
   }
   const lines: string[] = [];
-  if (view.company) lines.push(`Mission: ${view.company.title}${view.company.description ? ` (${view.company.description.split("\n")[0].slice(0, 200)})` : ""}`);
+  if (view.company) {
+    const detail = oneLine(view.company.description, 200);
+    lines.push(`Mission: ${oneLine(view.company.title, 200)}${detail ? ` (${detail})` : ""}`);
+  }
   for (const g of view.goals) {
-    lines.push(`- ${g.title} [goal ${g.id}${g.status !== "active" ? `, ${g.status}` : ""}]`);
+    lines.push(`- ${oneLine(g.title, 200)} [goal ${g.id}${g.status !== "active" ? `, ${g.status}` : ""}]`);
     if (!g.metrics.length) lines.push("  - no metric yet");
     for (const m of g.metrics) {
       const by = day(m.targetDate);
       lines.push(
-        `  - ${m.name} [metric ${m.id}]: ${fmt(m.current, m.unit)} now${m.currentAt ? ` (${day(m.currentAt)})` : ""}, baseline ${fmt(m.baseline, m.unit)}, target ${fmt(m.target, m.unit)}${by ? ` by ${by}` : ""}${m.direction === "down" ? " (lower is better)" : ""}. Measure: ${m.method || "not written down yet"} [${m.source}]`,
+        `  - ${oneLine(m.name, 120)} [metric ${m.id}]: ${fmt(m.current, m.unit)} now${m.currentAt ? ` (${day(m.currentAt)})` : ""}, baseline ${fmt(m.baseline, m.unit)}, target ${fmt(m.target, m.unit)}${by ? ` by ${by}` : ""}${m.direction === "down" ? " (lower is better)" : ""}. Measure: ${oneLine(m.method, 600) || "not written down yet"} [${m.source}]`,
       );
     }
   }
   return lines.join("\n");
+}
+
+/** One plain line per metric (name, value now, target and date): numbers from
+ * the goals store only, for places outside the chat such as a Slack heads-up. */
+export function metricSummaryLines(view: GoalsView): string[] {
+  const out: string[] = [];
+  for (const g of view.goals) {
+    if (g.status === "cancelled") continue;
+    for (const m of g.metrics) {
+      const by = day(m.targetDate);
+      out.push(
+        `${oneLine(m.name, 120)}: ${fmt(m.current, m.unit)}${m.currentAt ? ` (${day(m.currentAt)})` : ""}, target ${fmt(m.target, m.unit)}${by ? ` by ${by}` : ""}`,
+      );
+    }
+  }
+  return out;
 }

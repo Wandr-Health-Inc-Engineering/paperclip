@@ -48,25 +48,8 @@ export interface TaskContext {
 }
 
 /** Mutable, per-run task state shared by the tools of one agent run. */
-export interface TaskRunState {
-  /** The task this run is working (null for Console/Slack runs). */
-  issueId: string | null;
-  /** Whether delegate_task may create children in this run. */
-  allowDelegation: boolean;
-  /** Children created during this run (so the run's task parks as blocked). */
-  delegated: Array<{ issueId: string; identifier: string | null; toTag: string }>;
-  /** The original request, used to title a root task created on the fly. */
-  requestText?: string;
-}
-
-export function newTaskRunState(input: Partial<TaskRunState> = {}): TaskRunState {
-  return {
-    issueId: input.issueId ?? null,
-    allowDelegation: input.allowDelegation ?? true,
-    delegated: input.delegated ?? [],
-    requestText: input.requestText,
-  };
-}
+export { newTaskRunState, type TaskRunState } from "./task-run-state.js";
+import type { TaskRunState } from "./task-run-state.js";
 
 function clip(text: string, max: number): string {
   const t = text.trim().replace(/\s+\n/g, "\n");

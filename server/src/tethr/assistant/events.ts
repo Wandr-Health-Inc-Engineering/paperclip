@@ -1,8 +1,7 @@
 import path from "node:path";
 import type { TethrRouteHop } from "@paperclipai/db";
 import { classify, type PolicyContext } from "./policy.js";
-import { csvFileName } from "./tethr-tools.js";
-import { FILES_DIR } from "./workspace.js";
+import { SAVED_FILE_RE } from "./tethr-tools.js";
 
 // Claude Code stream-json → chat turn state (phase 18). Pure: the runner feeds
 // it each stdout line and writes the state to the turn's tethr_route_runs row.
@@ -135,10 +134,6 @@ export function applyStreamLine(state: TurnState, line: string, ctx: EventContex
           if (["Write", "Edit", "MultiEdit"].includes(block.name) && typeof input.file_path === "string") {
             hop.file = relativeFile(input.file_path, ctx);
           }
-          // Tethr's own tools write their CSV to files/ when given save_as.
-          if (/^mcp__tethr__(score_list|keyword_ideas)$/.test(block.name) && typeof input.save_as === "string" && input.save_as.trim()) {
-            hop.file = relativeFile(path.join(ctx.policy.workspaceDir, FILES_DIR, csvFileName(input.save_as)), ctx);
-          }
           state.hops.push(hop);
           changed = true;
         }
@@ -166,6 +161,12 @@ export function applyStreamLine(state: TurnState, line: string, ctx: EventContex
           ? (content as Array<Record<string, unknown>>).map((c) => (typeof c.text === "string" ? c.text : "")).join(" ")
           : String(content ?? "");
         hop.status = block.is_error ? (/Tethr approval gate:/.test(textOf) || /denied/i.test(textOf) ? "blocked" : "failed") : "ok";
+        // Tethr's own tools say which file they actually saved (none when they
+        // failed; a "(2)" name when one was taken), so the chip shows that file.
+        if (hop.status === "ok" && hop.tool?.startsWith("mcp__tethr__")) {
+          const saved = SAVED_FILE_RE.exec(textOf.replace(/ (?=\[Saved file: )/g, "\n"));
+          if (saved) hop.file = relativeFile(path.join(ctx.policy.workspaceDir, saved[1]), ctx);
+        }
         if (hop.status === "blocked") hop.reason = textOf.replace(/^.*?Tethr approval gate:\s*/s, "").slice(0, 300);
         changed = true;
       }

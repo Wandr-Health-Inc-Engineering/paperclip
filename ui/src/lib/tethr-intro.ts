@@ -205,6 +205,28 @@ export function tetherPath(f: Pick<TetherFrame, "xLeft" | "xRight" | "sag">, y: 
   return `M ${r(f.xLeft)} ${y} Q ${r(mid)} ${r(y + 2 * f.sag)} ${r(f.xRight)} ${y}`;
 }
 
+/** A screen without the app's main column (onboarding, an error) counts as ready after this. */
+export const READY_FALLBACK_MS = 3500;
+
+/**
+ * Has the app come up under the intro? Its main column has rendered; or a
+ * screen without one has settled; or (for anything but a sign-in) the app has
+ * gone to a public page such as the sign-in form, which is what the person
+ * needs to see next. A sign-in intro starts ON the sign-in page and waits for
+ * the hop into the app, so it doesn't count that page.
+ */
+export function introReady(input: {
+  reason: IntroReason;
+  t: number;
+  hasMainColumn: boolean;
+  onPublicPage: boolean;
+  companyLoading: boolean;
+}): boolean {
+  if (input.hasMainColumn) return true;
+  if (input.onPublicPage) return input.reason !== "login";
+  return input.t >= READY_FALLBACK_MS && !input.companyLoading;
+}
+
 /** When the overlay starts leaving, given when the app became ready (ms, or null if not yet). */
 export function exitAt(readyAt: number | null, now: number, reduced: boolean): number | null {
   const min = reduced ? INTRO.reducedHold : INTRO.holdMin;

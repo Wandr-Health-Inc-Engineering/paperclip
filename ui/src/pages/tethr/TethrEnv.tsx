@@ -32,6 +32,23 @@ export function parseEnvPaste(text: string): Array<{ key: string; value: string 
   return out;
 }
 
+/** Same rule as the server's isCoreKey (server/src/tethr/env-file.ts). */
+const CORE_KEY = /^(PAPERCLIP_|BETTER_AUTH_|DATABASE_URL$|PORT$|HOST$|NODE_ENV$)/;
+
+/** The question asked before saving several pasted settings: what's new, what
+ * gets replaced, and which ones tethr itself depends on. */
+export function pasteConfirmText(pairs: Array<{ key: string }>, existing: Set<string>): string {
+  const keys = [...new Set(pairs.map((p) => p.key))];
+  const added = keys.filter((k) => !existing.has(k));
+  const replaced = keys.filter((k) => existing.has(k));
+  const core = keys.filter((k) => CORE_KEY.test(k));
+  const parts = [`Save these ${keys.length} settings?`];
+  if (added.length) parts.push(`New: ${added.join(", ")}`);
+  if (replaced.length) parts.push(`Replaces the current value of: ${replaced.join(", ")}`);
+  if (core.length) parts.push(`tethr itself depends on ${core.join(", ")} (database, login or server); a wrong value can stop it from starting.`);
+  return parts.join("\n\n");
+}
+
 export function TethrEnv() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -132,7 +149,7 @@ export function TethrEnv() {
                   setDraftKey(pairs[0].key);
                   setDraftValue(pairs[0].value);
                   valueRef.current?.focus();
-                } else if (window.confirm(`Add these ${pairs.length} settings?\n\n${pairs.map((p) => p.key).join("\n")}`)) {
+                } else if (window.confirm(pasteConfirmText(pairs, existing))) {
                   add.mutate(pairs);
                 }
               }}

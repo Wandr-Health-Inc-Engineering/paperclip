@@ -4,6 +4,7 @@ import {
   INTRO_PENDING_KEY,
   INTRO_SEEN_KEY,
   exitAt,
+  introReady,
   introReason,
   isDesktopClient,
   SLACK_SAG,
@@ -139,3 +140,28 @@ describe("when it leaves", () => {
     expect(exitAt(null, INTRO.holdMax, false)).toBe(INTRO.holdMax);
   });
 });
+
+describe("when the app counts as ready under the intro", () => {
+  const base = { t: 500, hasMainColumn: false, onPublicPage: false, companyLoading: false };
+
+  it("is ready once the app's main column renders", () => {
+    expect(introReady({ ...base, reason: "desktop", hasMainColumn: true })).toBe(true);
+    expect(introReady({ ...base, reason: "login", hasMainColumn: true })).toBe(true);
+  });
+
+  it("a signed-out desktop launch lands on the sign-in page: that's ready, not a 9 second wait", () => {
+    expect(introReady({ ...base, reason: "desktop", onPublicPage: true })).toBe(true);
+    expect(introReady({ ...base, reason: "preview", onPublicPage: true })).toBe(true);
+  });
+
+  it("a sign-in intro starts on the sign-in page and waits for the hop into the app", () => {
+    expect(introReady({ ...base, reason: "login", onPublicPage: true, t: 8000 })).toBe(false);
+  });
+
+  it("a screen without the main column counts after a while, once companies have loaded", () => {
+    expect(introReady({ ...base, reason: "desktop", t: 3000 })).toBe(false);
+    expect(introReady({ ...base, reason: "desktop", t: 3600 })).toBe(true);
+    expect(introReady({ ...base, reason: "desktop", t: 3600, companyLoading: true })).toBe(false);
+  });
+});
+

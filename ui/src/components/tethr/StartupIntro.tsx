@@ -7,6 +7,7 @@ import {
   INTRO,
   INTRO_EVENT,
   exitAt,
+  introReady,
   introReason,
   isPublicPath,
   markIntroPlayed,
@@ -26,10 +27,8 @@ import { StatusDot } from "./primitives";
 /** While this class is on <html>, the shell's own entrance animations wait, so
  * they play as the intro leaves instead of unseen underneath it. */
 const HOLD_CLASS = "tethr-intro-hold";
-/** The app counts as ready once its main column has rendered. */
+/** The app's main column (core Layout): once it renders, the app is up. */
 const READY_SELECTOR = "#main-content";
-/** A screen without the main column (onboarding, an error) counts after this. */
-const READY_FALLBACK_MS = 3500;
 /** After the line catches, the drawing has settled by then: stop redrawing. */
 const SETTLED_MS = INTRO.pullTo + 1000;
 
@@ -97,12 +96,12 @@ export function TethrStartupIntro() {
 
   const done = useCallback(() => setPlay(null), []);
   if (!play) return null;
-  return <IntroOverlay key={play.id} onDone={done} />;
+  return <IntroOverlay key={play.id} reason={play.reason} onDone={done} />;
 }
 
 const FINAL_FRAME = tetherFrame(SETTLED_MS);
 
-function IntroOverlay({ onDone }: { onDone: () => void }) {
+function IntroOverlay({ reason, onDone }: { reason: IntroReason; onDone: () => void }) {
   const reduced = useMemo(prefersReducedMotion, []);
   const { loading, selectedCompany, companies } = useCompany();
   const location = useLocation();
@@ -147,8 +146,13 @@ function IntroOverlay({ onDone }: { onDone: () => void }) {
     };
 
     const isReady = (t: number) =>
-      document.querySelector(READY_SELECTOR) !== null ||
-      (t >= READY_FALLBACK_MS && !state.companyLoading && !state.publicPage);
+      introReady({
+        reason,
+        t,
+        hasMainColumn: document.querySelector(READY_SELECTOR) !== null,
+        onPublicPage: state.publicPage,
+        companyLoading: state.companyLoading,
+      });
 
     const step = (now: number) => {
       if (start === null) start = now;
@@ -176,7 +180,7 @@ function IntroOverlay({ onDone }: { onDone: () => void }) {
       state.leaving = false;
       state.readyAt = null;
     };
-  }, [onDone, reduced]);
+  }, [onDone, reduced, reason]);
 
   const company = selectedCompany?.name ?? companies[0]?.name ?? APP_NAME;
   const initial = reduced ? FINAL_FRAME : tetherFrame(0);

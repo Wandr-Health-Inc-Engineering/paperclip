@@ -44,6 +44,16 @@ describe("tethr chat attachments — files", () => {
     expect(await saveAttachment(ws, "big.txt", Buffer.alloc(21 * 1024 * 1024), now)).toMatchObject({ error: expect.stringMatching(/20 MB/) });
   });
 
+  it("gives two same-named uploads arriving together a file each", async () => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tethr-attach-race-"));
+    // Two pasted screenshots: the browser names both image.png.
+    const shots = await Promise.all(Array.from({ length: 5 }, (_, i) => saveAttachment(ws, "image.png", Buffer.from(`shot ${i}`), now)));
+    const paths = shots.map((s) => ("path" in s ? s.path : s.error));
+    expect(new Set(paths).size).toBe(5);
+    const contents = paths.map((p) => fs.readFileSync(path.join(ws, p), "utf8")).sort();
+    expect(contents).toEqual(["shot 0", "shot 1", "shot 2", "shot 3", "shot 4"]);
+  });
+
   it("only lets a message name real uploads", async () => {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tethr-attach-"));
     const a = await saveAttachment(ws, "photo.png", Buffer.from([0x89, 0x50]), now);

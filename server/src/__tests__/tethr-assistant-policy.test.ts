@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classify, decide, isInternal, parseMcpTool, type PolicyContext } from "../tethr/assistant/policy.js";
+import { classify, decide, isInternal, parseMcpTool, resolvesToPrivateHost, type PolicyContext } from "../tethr/assistant/policy.js";
 
 // Phase 18: the chat's approval gate policy (pure).
 
@@ -160,5 +160,32 @@ describe("tethr assistant policy — decide", () => {
     const d = decide(blocked, { mode: "auto", shell: "ask" });
     expect(d.action).toBe("deny");
     expect(d.action === "deny" && d.reason).toMatch(/workspace/);
+  });
+});
+
+describe("tethr assistant policy — names that resolve to this machine", () => {
+  const lookup = (map: Record<string, string[]>) => async (h: string) => {
+    if (!(h in map)) throw new Error("ENOTFOUND");
+    return map[h].map((address) => ({ address }));
+  };
+
+  it("blocks a public-looking name that resolves to loopback or the LAN", async () => {
+    const dns = lookup({ "127.0.0.1.nip.io": ["127.0.0.1"], "printer.example.com": ["192.168.1.20"], "travelwithwandr.com": ["104.21.3.4"], "mixed.example.com": ["8.8.8.8", "10.0.0.5"] });
+    expect(await resolvesToPrivateHost("127.0.0.1.nip.io", dns)).toBe(true);
+    expect(await resolvesToPrivateHost("printer.example.com", dns)).toBe(true);
+    expect(await resolvesToPrivateHost("mixed.example.com", dns)).toBe(true);
+    expect(await resolvesToPrivateHost("travelwithwandr.com", dns)).toBe(false);
+  });
+
+  it("judges literal addresses and local names without a lookup, and lets a failed lookup through", async () => {
+    const never = async () => {
+      throw new Error("should not look up");
+    };
+    expect(await resolvesToPrivateHost("localhost", never)).toBe(true);
+    expect(await resolvesToPrivateHost("", never)).toBe(true);
+    expect(await resolvesToPrivateHost("8.8.8.8", never)).toBe(false);
+    expect(await resolvesToPrivateHost("nowhere.invalid", lookup({}))).toBe(false);
+    const slow = () => new Promise<Array<{ address: string }>>(() => {});
+    expect(await resolvesToPrivateHost("slow.example.com", slow, 20)).toBe(false);
   });
 });

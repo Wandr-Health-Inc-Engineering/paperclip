@@ -39,7 +39,7 @@ import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-sh
 import { buildRuntimeApiCandidateUrls, choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
-import { maybeAutoSeed } from "./tethr/index.js";
+import { maybeAutoSeed } from "./tethr/boot.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
