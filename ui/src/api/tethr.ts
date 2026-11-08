@@ -542,6 +542,18 @@ export interface ThrottleState {
   by?: string;
 }
 
+// Phase 18 — the fresh start (server/src/tethr/seed/fresh-start.ts). Archived
+// specialists are paused with this exact reason (recoverable, never terminated).
+export const TETHR_ARCHIVE_PAUSE_REASON = "archived: fresh start";
+
+export interface TethrRestoreResult {
+  restored: string[];
+  routinesResumed: number;
+  triggersEnabled: number;
+  routingRowsRestored: number;
+  hadArchive: boolean;
+}
+
 // Phase 16 — the growth board (server/src/tethr/growth.ts).
 export interface TethrGrowthTask {
   id: string;
@@ -725,6 +737,8 @@ export const tethrApi = {
   throttle: (c: string) => api.get<ThrottleState>(`/tethr/${c}/throttle`),
   setThrottle: (c: string, paused: boolean) =>
     api.post<ThrottleState>(`/tethr/${c}/throttle`, { paused }),
+  restoreSpecialists: (c: string) =>
+    api.post<TethrRestoreResult>(`/tethr/${c}/specialists/restore`, {}),
   orgChanges: (c: string) => api.get<TethrOrgChange[]>(`/tethr/${c}/org-changes`),
   revertOrgChange: (c: string, changeId: string) =>
     api.post<{ outputId: string }>(`/tethr/${c}/org-changes/${changeId}/revert`, {}),

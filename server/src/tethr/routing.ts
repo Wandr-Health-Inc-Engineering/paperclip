@@ -85,6 +85,10 @@ function sumUsage(a: LLMUsage, b: LLMUsage): LLMUsage {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Where work for a paused/archived agent goes instead (phase 18 fresh start). */
+const FALLBACK_TAG = "@tethr";
+const isUnavailable = (status: string) => status === "paused" || status === "terminated";
+
 export function routingService(db: Db) {
   const org = orgService(db);
   const worker = workerService(db);
@@ -243,8 +247,29 @@ export function routingService(db: Db) {
       requestText: string,
       opts: { chainKeys?: string[]; chainReason?: string; extraContext?: string } = {},
     ): Promise<{ ok: boolean; error?: string }> {
-      const agentRow = await org.getProfileByTag(input.companyId, agentTag);
+      let agentRow = await org.getProfileByTag(input.companyId, agentTag);
       if (!agentRow) return { ok: false, error: `No agent found for tag ${agentTag}.` };
+      // Phase 18 fresh start: a paused/archived agent never takes work — @tethr
+      // does (its own subagents classify the request; the original chain keys
+      // belonged to the other agent). Orgs without @tethr keep the old behavior.
+      if (isUnavailable(agentRow.agent.status) && agentTag !== FALLBACK_TAG) {
+        const fallback = await org.getProfileByTag(input.companyId, FALLBACK_TAG);
+        if (fallback && !isUnavailable(fallback.agent.status)) {
+          const why = agentRow.agent.pauseReason?.startsWith("archived")
+            ? "is archived"
+            : `is ${agentRow.agent.status}`;
+          await recordHop({
+            layer: "helm",
+            actorTag: FALLBACK_TAG,
+            decision: `fallback → ${FALLBACK_TAG}`,
+            reason: `${agentTag} ${why} — ${FALLBACK_TAG} takes the request.`,
+            at: new Date().toISOString(),
+          });
+          agentTag = FALLBACK_TAG;
+          agentRow = fallback;
+          opts = { ...opts, chainKeys: undefined };
+        }
+      }
       const { profile, agent } = agentRow;
       if (!run.agentId) {
         await db

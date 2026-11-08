@@ -146,6 +146,9 @@ async function executeTask(ctx: AdapterExecutionContext, issueId: string): Promi
     model: provider.model,
     billingType: provider.id === "claude" ? "api" : "fixed",
     usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
+    // Core bills the TOP-LEVEL costUsd (heartbeat.updateRuntimeState); the copy in
+    // resultJson stays for run detail views.
+    costUsd,
     resultJson: {
       routeRunId: result.routeRunId,
       status: result.status,
@@ -311,8 +314,9 @@ async function executeHeartbeat(ctx: AdapterExecutionContext): Promise<AdapterEx
   }
 
   // Price the run so real spend accrues into core cost_events / budget_policies.
-  // Only live (Claude) runs cost money; the mock provider stays $0. Core reads
-  // `resultJson.costUsd` and converts to cents (heartbeat.normalizeBilledCostCents).
+  // Only live (Claude) runs cost money; the mock provider stays $0. Core bills the
+  // TOP-LEVEL `costUsd` (heartbeat.updateRuntimeState → normalizeBilledCostCents →
+  // cost_events); `resultJson.costUsd` is kept for the run detail views.
   const costUsd =
     provider.id === "claude" ? priceUsd(provider.model, result.usage) : 0;
 
@@ -333,6 +337,7 @@ async function executeHeartbeat(ctx: AdapterExecutionContext): Promise<AdapterEx
       model: provider.model,
       billingType: provider.id === "claude" ? "api" : "fixed",
       usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
+      costUsd,
       resultJson: { status: result.status, costUsd },
       summary: `Heartbeat failed: ${result.resultText.slice(0, 200)}`,
     };
@@ -346,6 +351,7 @@ async function executeHeartbeat(ctx: AdapterExecutionContext): Promise<AdapterEx
     model: provider.model,
     billingType: provider.id === "claude" ? "api" : "fixed",
     usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
+    costUsd,
     resultJson: {
       routeRunId: result.routeRunId,
       status: result.status,

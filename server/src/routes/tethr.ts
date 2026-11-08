@@ -1976,33 +1976,106 @@ export function tethrRoutes(db: Db) {
     }
     const { seedTethrCore } = await import("../tethr/seed/tethr-core.js");
     const result = await seedTethrCore(db, { force: req.body?.force === true });
-    const { seedCeoAgent } = await import("../tethr/seed/ceo.js");
-    const ceo = await seedCeoAgent(db, result.companyId);
-    const { seedTinkrAgent } = await import("../tethr/seed/tinkr.js");
-    const tinkr = await seedTinkrAgent(db, result.companyId);
-    const { seedPatchAgent } = await import("../tethr/seed/patch.js");
-    const patch = await seedPatchAgent(db, result.companyId);
-    const { seedFilerAgent } = await import("../tethr/seed/filer.js");
-    const filer = await seedFilerAgent(db, result.companyId);
-    const { seedRankAgent } = await import("../tethr/seed/rank.js");
-    const rank = await seedRankAgent(db, result.companyId);
-    const { seedTankAgent } = await import("../tethr/seed/tank.js");
-    const tank = await seedTankAgent(db, result.companyId);
-    const { seedGrowthWorkflows } = await import("../tethr/seed/growth-workflows.js");
-    const growth = await seedGrowthWorkflows(db, result.companyId);
+    const fresh = await import("../tethr/seed/fresh-start.js");
+    // Phase 18 fresh start: only @tethr by default. TETHR_SEED_SPECIALISTS=true
+    // brings back the old auto-seeded specialists + growth workflows.
+    let specialists: Record<string, unknown> = {};
+    if (fresh.seedSpecialistsEnabled()) {
+      const { seedCeoAgent } = await import("../tethr/seed/ceo.js");
+      const ceo = await seedCeoAgent(db, result.companyId);
+      const { seedTinkrAgent } = await import("../tethr/seed/tinkr.js");
+      const tinkr = await seedTinkrAgent(db, result.companyId);
+      const { seedPatchAgent } = await import("../tethr/seed/patch.js");
+      const patch = await seedPatchAgent(db, result.companyId);
+      const { seedFilerAgent } = await import("../tethr/seed/filer.js");
+      const filer = await seedFilerAgent(db, result.companyId);
+      const { seedRankAgent } = await import("../tethr/seed/rank.js");
+      const rank = await seedRankAgent(db, result.companyId);
+      const { seedTankAgent } = await import("../tethr/seed/tank.js");
+      const tank = await seedTankAgent(db, result.companyId);
+      const { seedGrowthWorkflows } = await import("../tethr/seed/growth-workflows.js");
+      const growth = await seedGrowthWorkflows(db, result.companyId);
+      specialists = {
+        ceoAdded: ceo.created,
+        tinkrAdded: tinkr.created,
+        patchAdded: patch.created,
+        filerAdded: filer.created,
+        rankAdded: rank.created,
+        tankAdded: tank.created,
+        growthWorkflowsAdded: growth.created,
+      };
+    } else {
+      const archive = await fresh.archiveSpecialistsOnce(db, result.companyId);
+      specialists = { specialistsArchived: archive?.archived ?? [] };
+    }
     const { backfillFactoryAgentTools } = await import("../tethr/seed/backfill-tools.js");
     const toolsHealed = await backfillFactoryAgentTools(db, result.companyId);
+    res.json({ ...result, ...specialists, toolsHealed });
+  });
+
+  // ---- Fresh start (phase 18): archive / restore the specialists ---------------
+  // Archive pauses the nine specialists (recoverably — never terminated), pauses
+  // their routines + @tethr's weekly review, and strips @tethr's routing rows to
+  // them; restore puts back exactly what the archive stashed. Humans only.
+  router.get("/tethr/:companyId/specialists/archive", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const { getArchiveRecord } = await import("../tethr/seed/fresh-start.js");
+    const record = getArchiveRecord(companyId);
     res.json({
-      ...result,
-      ceoAdded: ceo.created,
-      tinkrAdded: tinkr.created,
-      patchAdded: patch.created,
-      filerAdded: filer.created,
-      rankAdded: rank.created,
-      tankAdded: tank.created,
-      growthWorkflowsAdded: growth.created,
-      toolsHealed,
+      state: record?.state ?? "never",
+      archivedAt: record?.archivedAt ?? null,
+      restoredAt: record?.restoredAt ?? null,
+      archivedTags: record?.agents.map((a) => a.tag) ?? [],
     });
+  });
+
+  router.post("/tethr/:companyId/specialists/archive", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    if (actor.actorType !== "user") {
+      res.status(403).json({ error: "Only humans archive or restore agents" });
+      return;
+    }
+    const { archiveSpecialists } = await import("../tethr/seed/fresh-start.js");
+    const result = await archiveSpecialists(db, companyId, { by: actor.actorId });
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: actor.actorId,
+      action: "tethr_specialists_archived",
+      entityType: "company",
+      entityId: companyId,
+      details: { ...result },
+    }).catch(() => {});
+    res.json(result);
+  });
+
+  router.post("/tethr/:companyId/specialists/restore", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    if (actor.actorType !== "user") {
+      res.status(403).json({ error: "Only humans archive or restore agents" });
+      return;
+    }
+    const { restoreSpecialists } = await import("../tethr/seed/fresh-start.js");
+    const result = await restoreSpecialists(db, companyId, { by: actor.actorId });
+    if (!result.hadArchive) {
+      res.status(409).json({ error: "Nothing to restore — the specialists aren't archived.", ...result });
+      return;
+    }
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: actor.actorId,
+      action: "tethr_specialists_restored",
+      entityType: "company",
+      entityId: companyId,
+      details: { ...result },
+    }).catch(() => {});
+    res.json(result);
   });
 
   return router;

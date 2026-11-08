@@ -107,6 +107,30 @@ Branch: `mark-sandbox` (local only). Date started: 2026-06-11.
     registration points (.gitignore, shared/index.ts, Sidebar, companies.ts,
     migrations journal) — all one-liner shape, as designed. Drill aborted cleanly.
 
+## Phase 18 decisions (Tethr v1, chat-first — 2026-11-07)
+
+24. **Outward connector actions follow the Integrations modes** (Mark's decision,
+    2026-11-07). The old hard boundary "Internal-only output. Nothing auto-publishes" is
+    replaced: each connector runs in **Auto** or **Approval required** per the Integrations
+    page. **Always ask, regardless of Auto:** money (every Stripe write, all of Mercury),
+    anything public-facing (including email to external recipients), and anything medical.
+    **Never PHI.** Nothing auto-merges; the gating hard-block on `medical`/`public`/`spend`/`pr`
+    outputs is unchanged. CLAUDE.md "Hard boundaries" carries the wording.
+25. **Fresh start: archive the nine specialists, keep only @tethr** (Mark's call,
+    2026-11-07 — barely used: @tethr handled 35 of the last 100 requests, the others 1–9 each;
+    @ceo in an error state). **Archive, not delete:** paused with `pauseReason "archived: fresh
+    start"` (never terminated — terminated agents can't be resumed), routines paused + triggers
+    off (plus @tethr's "Weekly growth review"), @tethr's routing rows to them stripped. Everything
+    changed is stashed in the instance-dir `tethr-archive.json` so `restoreSpecialists` puts it
+    back exactly; the file doubles as the run-once boot marker, so a restore survives restarts.
+    The specialist seeds + growth workflows no longer auto-run — opt back in with
+    `TETHR_SEED_SPECIALISTS=true`, which also skips the boot archive. Routing falls back to
+    @tethr for any paused/archived target. Rejected: deleting the agents (loses the parts bin
+    and history) and terminating them (one-way in core). No core files changed.
+26. **Tethr adapter returns `costUsd` top-level** as well as in `resultJson`. Core
+    `heartbeat.updateRuntimeState` bills `result.costUsd`, so live heartbeat/task runs had been
+    recording $0 spend against the budget hard-stops. Tethr-only fix (`adapter.ts`).
+
 ## Core changes (keep merge-safe)
 
 Every core file touched, with reason. Everything else Tethr lives in new files.
