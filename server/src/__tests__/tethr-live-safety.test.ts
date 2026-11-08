@@ -1,5 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { toolsetForSubagent } from "../tethr/tools/index.js";
+import { webFetchTool } from "../tethr/tools/web.js";
+import { fetchPublic, type HostLookup } from "../tethr/net.js";
 import { priceUsd, rateForModel } from "../tethr/llm/pricing.js";
 
 // Phase 3 safety envelope. Before flipping Sonar to the live Claude provider we
@@ -85,5 +87,64 @@ describe("live-run pricing (budget hard-stop depends on this)", () => {
       if (savedOut === undefined) delete process.env.TETHR_PRICE_OUTPUT_PER_MTOK;
       else process.env.TETHR_PRICE_OUTPUT_PER_MTOK = savedOut;
     }
+  });
+});
+
+// Live web fetches (TETHR_LIVE_FETCH=true) reach only public hosts. tethr's API
+// answers loopback requests as the admin, so a fetch of localhost, a LAN name or
+// a redirect to either would read private data back into an agent's answer.
+describe("web fetches stay on the public web", () => {
+  const publicLookup: HostLookup = async () => [{ address: "93.184.216.34" }];
+  const savedLive = process.env.TETHR_LIVE_FETCH;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (savedLive === undefined) delete process.env.TETHR_LIVE_FETCH;
+    else process.env.TETHR_LIVE_FETCH = savedLive;
+  });
+
+  function stubFetch(responses: Response[]) {
+    const fetchMock = vi.fn(async () => responses.shift() ?? new Response("done"));
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("refuses a localhost or LAN URL before any request", async () => {
+    process.env.TETHR_LIVE_FETCH = "true";
+    const fetchMock = stubFetch([]);
+    for (const url of ["http://127.0.0.1:3100/api/tethr/x/chats", "http://localhost:3100/", "http://[::1]/", "http://192.168.1.4/", "http://169.254.169.254/latest"]) {
+      const result = await webFetchTool.execute({} as never, { url });
+      expect(result.output).toMatch(/^Blocked/);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a public name that resolves to a private address", async () => {
+    const fetchMock = stubFetch([]);
+    const lanLookup: HostLookup = async () => [{ address: "10.0.0.5" }];
+    await expect(fetchPublic("http://printer.example.com/", { headers: {}, timeoutMs: 1000 }, lanLookup)).rejects.toThrow(/local network/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a redirect that points back at this computer", async () => {
+    const fetchMock = stubFetch([new Response(null, { status: 302, headers: { location: "http://127.0.0.1:3100/api/tethr/x/assistant/memory" } })]);
+    await expect(fetchPublic("https://bounce.example.com/", { headers: {}, timeoutMs: 1000 }, publicLookup)).rejects.toThrow(/local network/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("follows a redirect between public pages", async () => {
+    const fetchMock = stubFetch([
+      new Response(null, { status: 301, headers: { location: "/moved" } }),
+      new Response("hello", { status: 200 }),
+    ]);
+    const res = await fetchPublic("https://site.example.com/old", { headers: {}, timeoutMs: 1000 }, publicLookup);
+    expect(await res.text()).toBe("hello");
+    expect(String((fetchMock.mock.calls[1] as unknown[])[0])).toBe("https://site.example.com/moved");
+  });
+
+  it("stops after too many redirects", async () => {
+    const loops = Array.from({ length: 10 }, () => new Response(null, { status: 302, headers: { location: "https://loop.example.com/" } }));
+    stubFetch(loops);
+    await expect(fetchPublic("https://loop.example.com/", { headers: {}, timeoutMs: 1000 }, publicLookup)).rejects.toThrow(/too many redirects/);
   });
 });

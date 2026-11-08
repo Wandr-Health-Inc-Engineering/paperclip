@@ -136,6 +136,19 @@ describe("tethr env — routes", () => {
     const agent = await appFor({ type: "agent", agentId: "a1", companyId: company });
     await request(agent).post(`/api/tethr/${company}/env/reveal`).send({ key: "ANTHROPIC_API_KEY" }).expect(403);
   });
+
+  it("refuses to seed for anyone but an instance admin", async () => {
+    // Refused before the database is touched (the app has none here).
+    for (const actor of [
+      { type: "none" },
+      { type: "board", source: "session", userId: "u2", isInstanceAdmin: false },
+      { type: "agent", agentId: "a1", companyId: company },
+    ]) {
+      const app = await appFor(actor);
+      await request(app).post("/api/tethr/seed").send({ org: "growth" }).expect(403);
+      await request(app).post("/api/tethr/seed").send({}).expect(403);
+    }
+  });
 });
 
 describe("tethr chat — no pages on this Mac or its network", () => {

@@ -70,7 +70,7 @@ import {
 import { workerService } from "../tethr/worker.js";
 import { toolsetForSubagent } from "../tethr/tools/index.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
-import { requirePerson } from "./tethr-people.js";
+import { isInstanceAdmin, requirePerson } from "./tethr-people.js";
 import { tethrSetupRoutes } from "./tethr-setup.js";
 
 const execFileAsync = promisify(execFile);
@@ -725,7 +725,7 @@ export function tethrRoutes(db: Db) {
   // value; a value comes back only from the explicit reveal POST.
   const requireEnvAdmin = (req: Request, res: Response): boolean => {
     assertCompanyAccess(req, req.params.companyId as string);
-    if (req.actor?.type === "board" && req.actor.isInstanceAdmin === true) return true;
+    if (isInstanceAdmin(req)) return true;
     res.status(403).json({ error: "Only an instance admin can see or change the environment." });
     return false;
   };
@@ -795,7 +795,7 @@ export function tethrRoutes(db: Db) {
       res.status(404).json({ error: "Not found" });
       return false;
     }
-    if (req.actor?.type === "board" && req.actor.isInstanceAdmin === true) return true;
+    if (isInstanceAdmin(req)) return true;
     res.status(403).json({ error: "Only an instance admin can do this." });
     return false;
   };
@@ -2035,7 +2035,14 @@ export function tethrRoutes(db: Db) {
   // Default: the Phase 11 clean slate (one coordinator, @tethr). The legacy
   // 12-agent org is still seedable with {"org":"growth"} — the parts bin for
   // re-adding specialists.
+  // Instance admins only: seeding creates companies and agents (the growth org
+  // even switches on heartbeats), so an anonymous caller on a hosted instance
+  // must not reach it. A local curl in local_trusted mode is the admin.
   router.post("/tethr/seed", async (req, res) => {
+    if (!isInstanceAdmin(req)) {
+      res.status(403).json({ error: "Only an instance admin can seed tethr." });
+      return;
+    }
     if (req.body?.org === "growth") {
       const { seedWandrGrowth } = await import("../tethr/seed/seed.js");
       const result = await seedWandrGrowth(db, {

@@ -1,5 +1,7 @@
-import dns from "node:dns/promises";
 import path from "node:path";
+import { isPrivateHost } from "../net.js";
+
+export { isPrivateHost, resolvesToPrivateHost } from "../net.js";
 
 // The approval gate's policy (phase 18). Every tool call the chat's Claude
 // session makes passes through the PreToolUse hook → POST /tethr/hooks/pre →
@@ -197,9 +199,24 @@ export function workspaceWriteRefusal(abs: string, workspaceDir: string): string
   return lower[0] === "files" ? null : "files go in the files/ folder (or notes in Memory.md)";
 }
 
+/** Input fields that name who a message or invite reaches. Calendar's added and
+ * removed attendees count: both get an email from Google. */
+const RECIPIENT_FIELDS = [
+  "to",
+  "cc",
+  "bcc",
+  "recipients",
+  "emails",
+  "attendees",
+  "attendeeEmails",
+  "addedAttendees",
+  "addedAttendeeEmails",
+  "removedAttendeeEmails",
+];
+
 function recipients(input: Record<string, unknown>): string[] {
   const out: string[] = [];
-  for (const key of ["to", "cc", "bcc", "attendees", "recipients", "emails"]) {
+  for (const key of RECIPIENT_FIELDS) {
     const v = input[key];
     const list = Array.isArray(v) ? v : typeof v === "string" ? v.split(/[,;]/) : [];
     for (const item of list) {
@@ -259,6 +276,19 @@ function summarize(connector: string, name: string, input: Record<string, unknow
   return `${connector}: ${words(name)}`;
 }
 
+function hasText(value: unknown): boolean {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+/** A send whose recipients the input doesn't name: a Gmail reply or forward
+ * with none listed, any reply-all, or a Calendar RSVP that carries a note. */
+function leavesForUnnamedPeople(connector: string, name: string, args: Record<string, unknown>, named: string[]): boolean {
+  if (connector === "Gmail" && name === "reply" && args.replyAll === true) return true;
+  if (connector === "Gmail" && /^(reply|forward)$/.test(name)) return named.length === 0;
+  if (connector === "Google Calendar" && name === "respond_to_event") return hasText(args.responseComment);
+  return false;
+}
+
 /** Classify one tool call. */
 export function classify(tool: string, input: Record<string, unknown> | undefined, ctx: PolicyContext): Classified {
   const args = input ?? {};
@@ -312,6 +342,19 @@ export function classify(tool: string, input: Record<string, unknown> | undefine
   if (connector === "PostHog" && name === "exec") {
     cls = POSTHOG_READ_VERB.test(String(args.command ?? "")) ? "read" : "write";
   }
+  // Gmail sends a saved draft as it is and ignores every other field, so an
+  // approval card could show recipients and text that never go out. The chat
+  // sends with the recipients and text written out instead.
+  if (connector === "Gmail" && name === "send_message" && hasText(args.draftId)) {
+    return {
+      tool,
+      connector,
+      server,
+      cls: "blocked",
+      summary: "Send a saved Gmail draft as it is",
+      blockedReason: "sending a saved draft hides who it goes to and what it says; send it with to, subject and body written out so the approval shows them",
+    };
+  }
 
   // Tethr's own tools keep everything inside Tethr (a metric named "new patients
   // per month" isn't medical content going anywhere), so the outward checks skip them.
@@ -322,59 +365,13 @@ export function classify(tool: string, input: Record<string, unknown> | undefine
       if (cls === "write") cls = "public";
     }
     // A reply (or a forward with no explicit recipient) goes to whoever is on the
-    // thread, which the input doesn't say, so it counts as leaving Wandr.
-    if (connector === "Gmail" && cls === "write" && /^(reply|forward)$/.test(name) && !outward.length) cls = "public";
+    // thread, which the input doesn't say, so it counts as leaving the company.
+    // So does reply-all, whatever `to` says, and an RSVP with a note (it goes to
+    // the event's organizer).
+    if (cls === "write" && leavesForUnnamedPeople(connector, name, args, outward)) cls = "public";
     if (MEDICAL.test(JSON.stringify(args))) cls = "medical";
   }
   return { tool, connector, server, cls, summary: summarize(connector, name, args) };
-}
-
-/** This machine or a private network: localhost names, loopback, private,
- * link-local and CGNAT/Tailscale ranges, IPv6 loopback/ULA/link-local. */
-export function isPrivateHost(host: string): boolean {
-  const h = host.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
-  if (!h) return true;
-  if (h === "localhost" || /\.(localhost|local|internal|lan|home\.arpa)$/.test(h)) return true;
-  if (h.includes(":")) {
-    return h === "::" || h === "::1" || /^(fe8|fe9|fea|feb|fc|fd)/.test(h) || h.startsWith("::ffff:");
-  }
-  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
-  if (!v4) return false;
-  const [a, b] = [Number(v4[1]), Number(v4[2])];
-  return (
-    a === 0 || a === 10 || a === 127 ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 100 && b >= 64 && b <= 127)
-  );
-}
-
-/** Does a web host's name resolve to this machine or a private network? The
- * name check above can't see that (127.0.0.1.nip.io, a LAN name), so the gate
- * looks the name up before allowing a fetch. A lookup that fails or times out
- * isn't a private address (the fetch would fail on its own). */
-export async function resolvesToPrivateHost(
-  host: string,
-  lookup: (h: string) => Promise<Array<{ address: string }>> = (h) => dns.lookup(h, { all: true, verbatim: true }),
-  timeoutMs = 2_000,
-): Promise<boolean> {
-  if (!host || isPrivateHost(host)) return true;
-  if (/^[\d.]+$/.test(host) || host.includes(":")) return false; // a literal address: already judged
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    const addrs = await Promise.race([
-      lookup(host),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
-      }),
-    ]);
-    return addrs.some((a) => isPrivateHost(a.address));
-  } catch {
-    return false;
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
 }
 
 /** Is a web host one of Wandr's own (a domain from internalAddresses, or a subdomain)? */

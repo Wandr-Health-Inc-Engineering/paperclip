@@ -103,6 +103,31 @@ describe("tethr assistant policy — classify", () => {
     expect(classify(gmail("trash_thread"), { thread_id: "1" }, ctx).cls).toBe("destructive");
   });
 
+  it("never sends a saved Gmail draft blind, and treats reply-all as leaving the company", () => {
+    // Gmail ignores to/subject/body when draftId is set, so a card showing them would lie.
+    const draftSend = classify(gmail("send_message"), { draftId: "r-123", to: ["mark@travelwithwandr.com"], subject: "Weekly notes", body: "benign" }, ctx);
+    expect(draftSend.cls).toBe("blocked");
+    expect(decide(draftSend, { mode: "auto", shell: "off" }).action).toBe("deny");
+    expect(classify(gmail("send_message"), { draftId: "", to: ["mark@travelwithwandr.com"], subject: "Hi" }, ctx).cls).toBe("write");
+
+    expect(classify(gmail("reply"), { messageId: "m1", to: ["mark@travelwithwandr.com"], body: "ok" }, ctx).cls).toBe("write");
+    const replyAll = classify(gmail("reply"), { messageId: "m1", to: ["mark@travelwithwandr.com"], replyAll: true, body: "ok" }, ctx);
+    expect(replyAll.cls).toBe("public");
+    expect(decide(replyAll, { mode: "auto", shell: "off" }).action).toBe("ask");
+    expect(classify(gmail("forward"), { messageId: "m1", forwardText: "fyi" }, ctx).cls).toBe("public");
+  });
+
+  it("counts every Calendar attendee field, and an RSVP note, as reaching people", () => {
+    const cal = (n: string) => `mcp__claude_ai_Google_Calendar__${n}`;
+    expect(classify(cal("update_event"), { eventId: "e1", addedAttendees: [{ email: "x@partner.com" }] }, ctx).cls).toBe("public");
+    expect(classify(cal("update_event"), { eventId: "e1", addedAttendeeEmails: ["x@partner.com"] }, ctx).cls).toBe("public");
+    expect(classify(cal("update_event"), { eventId: "e1", removedAttendeeEmails: ["x@partner.com"] }, ctx).cls).toBe("public");
+    expect(classify(cal("create_event"), { summary: "Sync", attendeeEmails: ["x@partner.com"] }, ctx).cls).toBe("public");
+    expect(classify(cal("update_event"), { eventId: "e1", addedAttendees: [{ email: "alec@travelwithwandr.com" }] }, ctx).cls).toBe("write");
+    expect(classify(cal("respond_to_event"), { eventId: "e1", responseStatus: "accepted" }, ctx).cls).toBe("write");
+    expect(classify(cal("respond_to_event"), { eventId: "e1", responseStatus: "declined", responseComment: "see notes" }, ctx).cls).toBe("public");
+  });
+
   it("classifies money, calendar, PostHog and unknown connectors", () => {
     expect(classify("mcp__claude_ai_Stripe__stripe_api_read", {}, ctx).cls).toBe("read");
     expect(classify("mcp__claude_ai_Stripe__stripe_api_write", {}, ctx).cls).toBe("money");

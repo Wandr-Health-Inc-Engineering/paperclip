@@ -859,6 +859,25 @@ Slack, it suggests an idea). Plan: `tasks/phase-21.md`.
 - **Startup:** server startup imports `tethr/boot.ts` (no static engine imports); `TaskRunState`
   lives in `task-run-state.ts` so routing doesn't load the issue service.
 
+## Security review fixes (2026-11-08): invariants to keep
+
+- **Fetches stay on the public web.** `server/src/tethr/net.ts` owns `isPrivateHost`,
+  `resolvesToPrivateHost` and `fetchPublic` (policy.ts re-exports the first two). The classic
+  engine's `web_fetch`/`reddit_scan`/`cdc_scan` go through `fetchPublic`, which checks each hop
+  (redirects are followed by hand, at most 5) and refuses loopback, LAN, link-local and CGNAT
+  addresses. Before this, a Slack message could get `@tethr.chat` to fetch
+  `http://127.0.0.1:3100/api/tethr/...`, which in local_trusted mode answers as the admin. Never
+  add a fetch of an agent- or user-supplied URL that skips `fetchPublic`.
+- **`POST /tethr/seed` is instance-admin only** (`isInstanceAdmin` in `routes/tethr-people.ts`,
+  also used by the env and reset routes). A local curl in local_trusted mode still works; on a
+  hosted (authenticated) instance an anonymous caller gets 403.
+- **Approval gate, Gmail and Calendar:** `send_message` with a `draftId` is blocked (Gmail sends
+  the draft as is and ignores to/subject/body, so a card would show the wrong thing); the chat
+  sends with the fields written out. A reply-all and a Calendar RSVP with a note count as public.
+  Recipients include Calendar's `attendeeEmails`, `addedAttendees`, `addedAttendeeEmails` and
+  `removedAttendeeEmails` (`RECIPIENT_FIELDS` in policy.ts). Tests use the connectors' real field
+  names; check a connector's schema before adding a rule for it.
+
 ## Onboarding from scratch: goals with numbers, setup, rhythm (phase 20, 2026-11-07)
 
 Mark's call: start tethr over from scratch, with real goals. The plan is in `tasks/phase-20.md`.

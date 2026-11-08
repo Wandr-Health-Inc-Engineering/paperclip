@@ -1,4 +1,5 @@
 import { logger } from "../../middleware/logger.js";
+import { fetchPublic, isPrivateHost } from "../net.js";
 import { CDC_FIXTURE, GENERIC_FETCH_FIXTURE, REDDIT_FIXTURE } from "./fixtures.js";
 import { liveFetchEnabled, type TethrTool } from "./types.js";
 
@@ -10,15 +11,14 @@ const USER_AGENT = "TethrLocal/1.0 (read-only research; contact: local)";
 const MIN_INTERVAL_MS = 1100;
 let lastFetchAt = 0;
 
+/** A rate-limited GET. Never this machine or its network, redirects included:
+ * tethr's own API answers loopback requests as the admin, so a fetched
+ * localhost page would read private data back into the agent's answer. */
 async function politeFetch(url: string, accept: string): Promise<string> {
   const wait = lastFetchAt + MIN_INTERVAL_MS - Date.now();
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   lastFetchAt = Date.now();
-  const res = await fetch(url, {
-    headers: { "user-agent": USER_AGENT, accept },
-    signal: AbortSignal.timeout(10_000),
-    redirect: "follow",
-  });
+  const res = await fetchPublic(url, { headers: { "user-agent": USER_AGENT, accept }, timeoutMs: 10_000 });
   if (!res.ok) throw new Error(`GET ${url} → ${res.status}`);
   return res.text();
 }
@@ -70,6 +70,10 @@ export const webFetchTool: TethrTool = {
       return { output: "Error: url must be absolute http(s).", summary: "invalid url" };
     }
     const host = hostOf(url);
+    if (!host) return { output: "Error: url must be absolute http(s).", summary: "invalid url" };
+    if (isPrivateHost(host)) {
+      return { output: "Blocked: web_fetch only opens public web pages, not this computer or its local network.", summary: `blocked host: ${host}` };
+    }
     if (!liveFetchEnabled()) {
       const fixture =
         url.includes("cdc.gov") || url.includes("who.int") || url.includes("state.gov")
