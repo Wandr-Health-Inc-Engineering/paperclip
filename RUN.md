@@ -83,4 +83,6 @@ against an embedded Postgres.
 curl -X POST http://localhost:3100/api/tethr/seed -H 'content-type: application/json' -d '{}'
 ```
 
-Idempotent: returns the existing company if "Wandr Growth" is already present.
+Idempotent: returns the existing company if it's already present. Instance admins only: a
+local curl works in the default `local_trusted` mode; on a hosted (authenticated) instance,
+call it from a signed-in admin session.

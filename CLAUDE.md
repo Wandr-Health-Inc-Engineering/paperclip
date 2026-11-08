@@ -267,7 +267,7 @@ First boot auto-seeds the clean-slate org: **Wandr** (prefix `WD`) — one agent
 line, $25/mo Tethr cap, hard-stop on) and a Drive README; any existing "Wandr Growth" org is
 archived (recoverable), never deleted; the specialists stay archived (phase 18 fresh start). No Docker / external DB / API key needed: embedded
 Postgres + deterministic **mock LLM** out of the box. Docker path: `make compose-up` (Postgres 17 + server + bundled
-UI on :3100). Re-seed (idempotent): `curl -X POST http://localhost:3100/api/tethr/seed -d '{}' -H 'content-type: application/json'`.
+UI on :3100). Re-seed (idempotent, instance admins only; a local curl in local_trusted mode is the admin): `curl -X POST http://localhost:3100/api/tethr/seed -d '{}' -H 'content-type: application/json'`.
 
 **Dev env is loaded from the Paperclip instance dir, not repo `.env`:**
 `~/.paperclip/instances/default/.env` (holds `TETHR_BUNDLE_PATH`, `TETHR_LIVE_FETCH`, etc.).
