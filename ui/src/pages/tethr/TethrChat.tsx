@@ -13,6 +13,7 @@ import {
   PanelLeft,
   PanelLeftClose,
   Plus,
+  RotateCcw,
   Send,
   Square,
   Wrench,
@@ -158,6 +159,18 @@ export function TethrChat() {
     },
   });
 
+  // "Start over": a fresh Claude session for this thread (messages and
+  // Memory.md stay). Also lifts the web-page approvals a session that has read
+  // your tools gets.
+  const [resetNote, setResetNote] = useState(false);
+  const resetSession = useMutation({
+    mutationFn: () => tethrApi.resetChatSession(c, threadId!),
+    onSuccess: () => {
+      setResetNote(true);
+      window.setTimeout(() => setResetNote(false), 4000);
+    },
+  });
+
   const removeChat = useMutation({
     mutationFn: (id: string) => tethrApi.removeSideChat(c, id),
     onSuccess: (_r, id) => {
@@ -227,6 +240,32 @@ export function TethrChat() {
         onNewSide={() => openChat("new")}
         onRemoveSide={(id) => removeChat.mutate(id)}
       />
+
+      {threadId && !isDraft && visibleRuns.length ? (
+        <div className="absolute right-0 top-1 z-20 flex items-center gap-2">
+          {resetNote ? (
+            <span className="tethr-glass rounded-full px-3 py-1.5 text-[12px]">Fresh start: your next message begins a new session.</span>
+          ) : null}
+          <button
+            type="button"
+            title="Start over"
+            aria-label="Start this chat over"
+            disabled={resetSession.isPending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Start this chat over? tethr begins a fresh session: it keeps Memory.md and the messages here, but forgets this chat's working context.",
+                )
+              ) {
+                resetSession.mutate();
+              }
+            }}
+            className="tethr-glass grid h-9 w-9 place-items-center rounded-full text-foreground/80 transition-colors hover:text-foreground disabled:opacity-50"
+          >
+            <RotateCcw className="h-4 w-4" />
+          </button>
+        </div>
+      ) : null}
 
       {/* One area: the conversation sits on the page, under the floating bar. */}
       <div
