@@ -7,7 +7,7 @@ import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclip
 import { costEvents, createDb, tethrRouteRuns } from "@paperclipai/db";
 import { seedTethrCore } from "../tethr/seed/tethr-core.ts";
 import { assistantRunner, resetAssistantRunnerForTests } from "../tethr/assistant/runner.ts";
-import { getSession } from "../tethr/chats.ts";
+import { getSession, isTainted } from "../tethr/chats.ts";
 import { setThrottle } from "../tethr/throttle.ts";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 
@@ -146,6 +146,21 @@ describePg("tethr assistant runner", () => {
     expect(threadId).toBe(routeRunId);
     const row = await waitDone(routeRunId);
     expect(row.threadId).toBe(routeRunId);
+  });
+
+  it("runs a private turn on a tainted thread, without resuming or saving a session", async () => {
+    const runner = assistantRunner(db, { execute: fakeExecute });
+    const ideas = "22222222-2222-4222-8222-222222222222";
+    expect(isTainted(companyId, ideas)).toBe(false);
+    const { routeRunId } = await runner.sendPrivate({ companyId, threadId: ideas, summary: "Idea check", prompt: "Slack excerpt: …" });
+    // Other people's words sit beside Memory.md, so outside pages need approval from the first call.
+    expect(isTainted(companyId, ideas)).toBe(true);
+    const row = await waitDone(routeRunId);
+    expect(row.requestText).toBe("Idea check");
+    expect(calls[0].context.tethrPrompt).toBe("[From Tethr, not the user] Slack excerpt: …");
+    expect(calls[0].runtime.sessionId ?? null).toBeNull();
+    expect(calls[0].config.extraArgs as string[]).toContain("--no-session-persistence");
+    expect(getSession(companyId, ideas)).toBeNull();
   });
 
   it("records tokens against @tethr with no heartbeat run (subscription = 0¢)", async () => {

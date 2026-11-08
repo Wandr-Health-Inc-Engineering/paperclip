@@ -287,6 +287,17 @@ export function extractImageFiles(files: unknown): SlackImageRef[] {
   return out;
 }
 
+/** An https URL on Slack's own domains (files.slack.com, or GovSlack's). */
+export function isSlackFileUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw);
+    const host = u.hostname.toLowerCase();
+    return u.protocol === "https:" && (host === "slack.com" || host.endsWith(".slack.com") || host.endsWith(".slack-gov.com"));
+  } catch {
+    return false;
+  }
+}
+
 /** Decode → auto-orient → downscale → re-encode as JPEG. Throws on anything
  * that isn't a real image (e.g. a Slack login page returned when the bot lacks
  * the files:read scope), so the caller drops it instead of shipping garbage to
@@ -315,6 +326,11 @@ export async function fetchSlackImageAttachments(
   if (!token || !images.length) return [];
   const out: LLMImageAttachment[] = [];
   for (const img of images.slice(0, MAX_IMAGES)) {
+    // The bot token rides on this request, so it only ever goes to Slack's own file host.
+    if (!isSlackFileUrl(img.url)) {
+      logger.warn({ name: img.name }, "tethr slack: skipped an image that isn't on Slack's file host");
+      continue;
+    }
     try {
       const res = await fetch(img.url, { headers: { authorization: `Bearer ${token}` } });
       if (!res.ok) {

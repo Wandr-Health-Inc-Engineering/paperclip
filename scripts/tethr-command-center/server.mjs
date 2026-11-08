@@ -236,7 +236,16 @@ async function readBody(req) {
   }
 }
 
+// The names this server answers to. Binding to loopback keeps other machines
+// out, but a web page can point its own domain at 127.0.0.1 (DNS rebinding) and
+// then read this folder from the browser; such a request carries that domain in
+// its Host header, so anything else is refused.
+const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
+
 const server = createServer(async (req, res) => {
+  if (!ALLOWED_HOSTS.has(String(req.headers.host ?? "").toLowerCase())) {
+    return sendJson(res, 403, { error: "Unknown host" });
+  }
   try {
     const url = new URL(req.url, `http://${HOST}:${PORT}`);
     const path = url.pathname;

@@ -97,8 +97,12 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     return enqueue(input, null);
   }
 
-  /** A private one-off turn (see PrivateTurnInput). */
-  function sendPrivate(input: PrivateTurnInput): Promise<{ routeRunId: string; threadId: string }> {
+  /** A private one-off turn (see PrivateTurnInput). Its prompt carries other
+   * people's words (a Slack conversation) next to the company's memory, so the
+   * thread counts as tainted from the start: an outside web page needs approval,
+   * since a URL could carry that memory out. */
+  async function sendPrivate(input: PrivateTurnInput): Promise<{ routeRunId: string; threadId: string }> {
+    await chats.markTainted(input.companyId, input.threadId);
     return enqueue({ companyId: input.companyId, threadId: input.threadId, text: input.summary, kind: "system" }, input.prompt);
   }
 

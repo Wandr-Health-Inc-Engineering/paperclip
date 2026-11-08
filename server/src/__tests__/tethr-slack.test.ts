@@ -16,6 +16,7 @@ import {
   slackDecisionIntent,
   slackSourceKey,
   stripResetPhrase,
+  isSlackFileUrl,
   toSlackMrkdwn,
   verifySlackSignature,
 } from "../tethr/slack.js";
@@ -536,5 +537,16 @@ describe("Slack thread approvals — only approvers can decide", () => {
     expect(resolveSlackApprover(roster, undefined, "")).toBeNull();
     expect(resolveSlackApprover(blank, "", "")).toBeNull();
     expect(resolveSlackApprover(blank, "USTRANGER", undefined)).toBeNull();
+  });
+});
+
+describe("slack image downloads", () => {
+  it("sends the bot token only to Slack's own file host", () => {
+    expect(isSlackFileUrl("https://files.slack.com/files-pri/T1-F1/shot.png")).toBe(true);
+    expect(isSlackFileUrl("https://files.enterprise.slack-gov.com/x.png")).toBe(true);
+    expect(isSlackFileUrl("http://files.slack.com/x.png")).toBe(false);
+    expect(isSlackFileUrl("https://files.slack.com.attacker.io/x.png")).toBe(false);
+    expect(isSlackFileUrl("https://evilslack.com/x.png")).toBe(false);
+    expect(isSlackFileUrl("not a url")).toBe(false);
   });
 });

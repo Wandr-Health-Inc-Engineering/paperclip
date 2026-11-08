@@ -877,6 +877,13 @@ Slack, it suggests an idea). Plan: `tasks/phase-21.md`.
   Recipients include Calendar's `attendeeEmails`, `addedAttendees`, `addedAttendeeEmails` and
   `removedAttendeeEmails` (`RECIPIENT_FIELDS` in policy.ts). Tests use the connectors' real field
   names; check a connector's schema before adding a rule for it.
+- **Private turns start tainted.** `runner.sendPrivate` (the watcher's idea check) marks its
+  thread tainted before the turn: its prompt is other people's Slack words next to Memory.md, so
+  an outside web page needs approval from the first call.
+- **Command Center answers only to `127.0.0.1:<port>` / `localhost:<port>`** (Host header check in
+  `scripts/tethr-command-center/server.mjs`), so a web page can't rebind its own domain to
+  loopback and read 00 Tethr. A built `.app` bundles its own copy of server.mjs: rebuild it with
+  `build-app.sh` to pick up changes.
 
 ## Onboarding from scratch: goals with numbers, setup, rhythm (phase 20, 2026-11-07)
 
