@@ -649,7 +649,7 @@ function Working({ label, since, onStop, stopping }: { label: string; since?: st
   const elapsed = useElapsed(since);
   return (
     <div className="flex min-w-0 items-center gap-2.5 text-[13px]">
-      <Nebula className="h-6 w-6 text-foreground" />
+      <Nebula className="text-[24px] text-foreground" />
       <span role="status" className="shimmer-text min-w-0 truncate font-medium">
         {label}
       </span>

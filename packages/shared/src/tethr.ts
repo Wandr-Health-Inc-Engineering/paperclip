@@ -168,6 +168,10 @@ export const TETHR_NOTIFICATION_CHANNELS = [
 export type TethrNotificationChannel =
   (typeof TETHR_NOTIFICATION_CHANNELS)[number];
 
+/** The name of the company tethr creates on first boot, before anyone has set
+ * it up. Setup step 1 treats it as blank and renames the company. */
+export const TETHR_STARTER_COMPANY_NAME = "Your company";
+
 /** Core approvals.type used for Tethr gated outputs. */
 export const TETHR_OUTPUT_APPROVAL_TYPE = "tethr_output" as const;
 

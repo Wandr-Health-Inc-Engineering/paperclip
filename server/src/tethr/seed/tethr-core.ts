@@ -10,7 +10,7 @@ import {
   tethrDivisions,
   tethrSubagents,
 } from "@paperclipai/db";
-import { TETHR_ADAPTER_TYPE } from "@paperclipai/shared";
+import { TETHR_ADAPTER_TYPE, TETHR_STARTER_COMPANY_NAME } from "@paperclipai/shared";
 import { logger } from "../../middleware/logger.js";
 import { driveService } from "../drive.js";
 
@@ -26,10 +26,12 @@ import { driveService } from "../drive.js";
 // archived (status flip, reversible), never deleted. `seedWandrGrowth` stays
 // in the repo as the parts bin for re-adding specialists later.
 
+/** The company tethr creates on first boot. It starts unnamed (setup step 1
+ * names it and says what it sells) and is found again by its prefix, which a
+ * rename never changes. */
 export const CORE_COMPANY = {
-  name: "Wandr",
+  name: TETHR_STARTER_COMPANY_NAME,
   issuePrefix: "WD",
-  goal: "Wandr Health's marketing & distribution operations, coordinated by Tethr — one front door that absorbs any request, answers directly, and routes to specialist agents as they come online.",
   budgetMonthlyCents: 10000, // $100/mo company line while the org is one agent
 };
 
@@ -188,23 +190,24 @@ export async function seedTethrCore(
 ): Promise<CoreSeedResult> {
   const archivedOldCompany = await archiveWandrGrowth(db);
 
+  // By prefix, not name: setup step 1 renames the company, and a lookup by name
+  // would then seed a second one on the next boot.
   const [existing] = await db
     .select()
     .from(companies)
-    .where(eq(companies.name, CORE_COMPANY.name))
+    .where(eq(companies.issuePrefix, CORE_COMPANY.issuePrefix))
     .limit(1);
   if (existing && !opts.force) {
     return { companyId: existing.id, created: false, archivedOldCompany };
   }
 
-  logger.info("[tethr] seeding the clean-slate org: Wandr + @tethr");
+  logger.info("[tethr] seeding the starter company + @tethr");
   const [company] = existing
     ? [existing]
     : await db
         .insert(companies)
         .values({
           name: CORE_COMPANY.name,
-          description: CORE_COMPANY.goal,
           status: "active",
           issuePrefix: CORE_COMPANY.issuePrefix,
           budgetMonthlyCents: CORE_COMPANY.budgetMonthlyCents,

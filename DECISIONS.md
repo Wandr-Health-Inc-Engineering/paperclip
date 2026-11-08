@@ -138,6 +138,7 @@ Every core file touched, with reason. Everything else Tethr lives in new files.
 | File | Change | Why |
 |------|--------|-----|
 | `packages/db/src/schema/index.ts` | + exports for `tethr_*` schema files | barrel is the only registration point |
+| `ui/src/main.tsx` | Imports `tethr-theme.css`. 2026-11-08: the service worker registers in production only; in dev it's unregistered and its cache cleared (a request that failed during a dev-server restart made it serve hours-old source modules, e.g. the old intro) | app entry is the only place both happen |
 | `packages/shared/src/constants.ts` (or new `tethr.ts` + index export) | + Tethr status constants | match core enum convention |
 | `server/src/app.ts` | + mount line for `tethrRoutes` + `initTethr(db)` (adapter registration) | route registration point |
 | `server/src/index.ts` | + 1 line `maybeAutoSeed(db)` at startup | seeding is a boot concern, not an app-construction concern (keeps API tests clean) |

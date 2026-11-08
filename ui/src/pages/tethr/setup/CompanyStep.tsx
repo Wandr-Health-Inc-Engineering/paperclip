@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { TETHR_STARTER_COMPANY_NAME } from "@paperclipai/shared";
 import { Input } from "@/components/ui/input";
 import { ChoiceChip } from "@/components/tethr/Chip";
 import { MonoTag } from "@/components/tethr/primitives";
@@ -26,8 +27,10 @@ interface CompanyForm {
 function initialCompanyForm(data: SetupData, browserZone: string): CompanyForm {
   const admin = data.profile?.admin ?? null;
   const saved = !!data.state.steps.company;
+  // The company tethr made on first boot has a placeholder name: ask for the real one.
+  const companyName = data.profile?.name && data.profile.name !== TETHR_STARTER_COMPANY_NAME ? data.profile.name : "";
   return {
-    companyName: data.profile?.name ?? "",
+    companyName,
     // The seeded company description isn't "what it sells": start empty until this step is saved.
     sells: saved ? (data.profile?.sells ?? "") : "",
     name: admin?.name ?? "",
@@ -40,6 +43,12 @@ function initialCompanyForm(data: SetupData, browserZone: string): CompanyForm {
   };
 }
 
+/** "mark@wandr.com" → "wandr.com"; "" for anything that isn't an address yet. */
+function emailDomain(email: string): string {
+  const m = /@([a-z0-9.-]+\.[a-z]{2,})$/i.exec(email.trim());
+  return m ? m[1].toLowerCase() : "";
+}
+
 function isComplete(form: CompanyForm): boolean {
   return !!form.companyName.trim() && !!form.name.trim() && !!form.position && (form.position !== "other" || !!form.positionTitle.trim());
 }
@@ -50,7 +59,9 @@ export function CompanyStep({ companyId, data, onDone }: StepProps) {
   const browserZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
   const [form, setForm] = useState(() => initialCompanyForm(data, browserZone));
   const update = <K extends keyof CompanyForm>(field: K, value: CompanyForm[K]) => setForm((f) => ({ ...f, [field]: value }));
-  const domainText = form.domains ?? (integrations?.internalAddresses ?? []).join(", ");
+  // Until this step is saved, the company's email domain comes from the admin's
+  // own address (the saved list is the instance default, not theirs yet).
+  const domainText = form.domains ?? (data.state.steps.company ? (integrations?.internalAddresses ?? []).join(", ") : emailDomain(form.email));
   const zones = useMemo(() => [...new Set([form.timezone, browserZone, ...TIMEZONES].filter(Boolean))], [form.timezone, browserZone]);
   const focus = data.positions.find((p) => p.key === form.position)?.focus;
 

@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { companies, createDb } from "@paperclipai/db";
+import { TETHR_STARTER_COMPANY_NAME } from "@paperclipai/shared";
 import { seedTethrCore } from "../tethr/seed/tethr-core.ts";
 import { adminFirstName, companyContextText, companyProfileService } from "../tethr/company.ts";
 import { goalsService } from "../tethr/goals.ts";
@@ -57,6 +58,11 @@ describePg("tethr company — profile, team and the chat's instructions", () => 
     await tempDb?.cleanup();
   });
 
+  it("starts as an unnamed company with nothing about what it sells", async () => {
+    const [starter] = await db.select().from(companies).where(eq(companies.id, companyId));
+    expect(starter).toMatchObject({ name: TETHR_STARTER_COMPANY_NAME, issuePrefix: "WD", description: null });
+  });
+
   it("saves the company and its admin, and keeps one admin", async () => {
     const svc = companyProfileService(db);
     await expect(svc.saveCompanyStep(companyId, { companyName: "", adminName: "Mark", position: "coo" })).rejects.toThrow(/name/);
@@ -76,6 +82,11 @@ describePg("tethr company — profile, team and the chat's instructions", () => 
     // The root goal follows the name and carries the built-in mission.
     const view = await goalsService(db).list(companyId);
     expect(view.company).toMatchObject({ title: "Wandr Health: grow with a small team", description: TETHR_MISSION });
+
+    // The next boot finds the renamed company by its prefix instead of seeding another.
+    const reboot = await seedTethrCore(db);
+    expect(reboot).toMatchObject({ companyId, created: false });
+    expect(await db.select().from(companies)).toHaveLength(1);
   });
 
   it("writes the company and the team into the chat's CLAUDE.md, as data", async () => {

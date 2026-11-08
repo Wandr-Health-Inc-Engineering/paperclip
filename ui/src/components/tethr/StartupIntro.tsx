@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { TETHR_STARTER_COMPANY_NAME } from "@paperclipai/shared";
 import { useLocation } from "@/lib/router";
 import { useCompany } from "@/context/CompanyContext";
 import { APP_NAME } from "@/lib/brand";
@@ -12,16 +13,14 @@ import {
   isPublicPath,
   markIntroPlayed,
   sessionStorageOrNull,
-  tetherFrame,
-  tetherPath,
   type IntroReason,
-  type TetherFrame,
 } from "@/lib/tethr-intro";
+import { Nebula } from "./Nebula";
 import { StatusDot } from "./primitives";
 
 // The startup intro: plays when the desktop app starts and right after signing
-// in (rules in lib/tethr-intro.ts). A line is thrown between two nodes and
-// pulls taut, the wordmark rises above it, and the app comes up from
+// in (rules in lib/tethr-intro.ts). tethr's nebula swirls in out of a blur, its
+// core flares once, the wordmark rises under it, and the app comes up from
 // underneath. Click or press any key to skip. Reduced motion gets a short,
 // still card instead.
 
@@ -30,8 +29,6 @@ import { StatusDot } from "./primitives";
 const HOLD_CLASS = "tethr-intro-hold";
 /** The app's main column (core Layout): once it renders, the app is up. */
 const READY_SELECTOR = "#main-content";
-/** After the line catches, the drawing has settled by then: stop redrawing. */
-const SETTLED_MS = INTRO.pullTo + 1000;
 
 function prefersReducedMotion(): boolean {
   try {
@@ -92,13 +89,10 @@ export function TethrStartupIntro() {
   return <IntroOverlay key={play.id} reason={play.reason} onDone={done} />;
 }
 
-const FINAL_FRAME = tetherFrame(SETTLED_MS);
-
 function IntroOverlay({ reason, onDone }: { reason: IntroReason; onDone: () => void }) {
   const reduced = useMemo(prefersReducedMotion, []);
   const { loading, selectedCompany, companies } = useCompany();
   const location = useLocation();
-  const glowId = useId().replace(/:/g, "");
 
   const [leaving, setLeaving] = useState(false);
   const [ready, setReady] = useState(false);
@@ -106,12 +100,6 @@ function IntroOverlay({ reason, onDone }: { reason: IntroReason; onDone: () => v
   liveState.current.companyLoading = loading;
   liveState.current.publicPage = isPublicPath(location.pathname);
 
-  const line = useRef<SVGPathElement>(null);
-  const glint = useRef<SVGPathElement>(null);
-  const nodeLeft = useRef<SVGCircleElement>(null);
-  const nodeRight = useRef<SVGCircleElement>(null);
-  const ringLeft = useRef<SVGCircleElement>(null);
-  const ringRight = useRef<SVGCircleElement>(null);
   const leave = useRef<() => void>(() => {});
 
   useLayoutEffect(() => {
@@ -124,8 +112,8 @@ function IntroOverlay({ reason, onDone }: { reason: IntroReason; onDone: () => v
   useEffect(() => {
     const state = liveState.current;
     // The clock starts on the first painted frame, the same moment the CSS
-    // parts (the wordmark, the status line) start, so the two stay in step
-    // even when the first frame is late (a busy load, a background window).
+    // animation starts, so "ready" and leaving stay in step with what's on
+    // screen even when the first frame is late (a busy load, a background window).
     let start: number | null = null;
     let raf = 0;
     let exitTimer: number | undefined;
@@ -150,9 +138,6 @@ function IntroOverlay({ reason, onDone }: { reason: IntroReason; onDone: () => v
     const step = (now: number) => {
       if (start === null) start = now;
       const t = now - start;
-      if (!reduced && t <= SETTLED_MS + 50) {
-        draw(tetherFrame(t), { line, glint, nodeLeft, nodeRight, ringLeft, ringRight });
-      }
       if (state.readyAt === null && isReady(t)) {
         state.readyAt = t;
         setReady(true);
@@ -175,8 +160,9 @@ function IntroOverlay({ reason, onDone }: { reason: IntroReason; onDone: () => v
     };
   }, [onDone, reduced, reason]);
 
-  const company = selectedCompany?.name ?? companies[0]?.name ?? APP_NAME;
-  const initial = reduced ? FINAL_FRAME : tetherFrame(0);
+  // Before setup, the company still has its placeholder name: say tethr instead.
+  const named = selectedCompany?.name ?? companies[0]?.name;
+  const company = named && named !== TETHR_STARTER_COMPANY_NAME ? named : APP_NAME;
 
   return (
     <div
@@ -192,6 +178,10 @@ function IntroOverlay({ reason, onDone }: { reason: IntroReason; onDone: () => v
         </div>
       </div>
       <div className="tethr-intro-stage" aria-hidden="true">
+        <div className="tethr-intro-nebula">
+          <Nebula />
+          <span className="tethr-intro-flare" />
+        </div>
         <div className="tethr-intro-word">
           {Array.from(APP_NAME).map((letter, i) => (
             <span key={i} style={{ "--i": i } as CSSProperties}>
@@ -199,37 +189,6 @@ function IntroOverlay({ reason, onDone }: { reason: IntroReason; onDone: () => v
             </span>
           ))}
         </div>
-        <svg
-          className="tethr-intro-tether"
-          viewBox={`0 0 ${INTRO.width} ${INTRO.height}`}
-          fill="none"
-          aria-hidden="true"
-        >
-          <defs>
-            <filter id={glowId} x="-20%" y="-200%" width="140%" height="500%">
-              <feGaussianBlur stdDeviation="2.4" />
-            </filter>
-          </defs>
-          <path
-            ref={glint}
-            className="tethr-intro-glint"
-            pathLength={1}
-            filter={`url(#${glowId})`}
-            d={tetherPath(initial)}
-            style={{ opacity: 0 }}
-          />
-          <path
-            ref={line}
-            className="tethr-intro-line"
-            pathLength={1}
-            d={tetherPath(initial)}
-            style={reduced ? undefined : { visibility: "hidden" }}
-          />
-          <circle ref={ringLeft} className="tethr-intro-ring" cx={initial.xLeft} cy={INTRO.y} r={3} style={{ opacity: 0 }} />
-          <circle ref={ringRight} className="tethr-intro-ring" cx={initial.xRight} cy={INTRO.y} r={3} style={{ opacity: 0 }} />
-          <circle ref={nodeLeft} className="tethr-intro-node" cx={initial.xLeft} cy={INTRO.y} r={reduced ? 3 : 0} />
-          <circle ref={nodeRight} className="tethr-intro-node" cx={initial.xRight} cy={INTRO.y} r={reduced ? 3 : 0} />
-        </svg>
         <div className="tethr-intro-status tethr-eyebrow">
           <StatusDot tone={ready ? "ok" : "live"} />
           <span>{ready ? `${company} · ready` : "connecting"}</span>
@@ -237,50 +196,4 @@ function IntroOverlay({ reason, onDone }: { reason: IntroReason; onDone: () => v
       </div>
     </div>
   );
-}
-
-type Refs = {
-  line: React.RefObject<SVGPathElement | null>;
-  glint: React.RefObject<SVGPathElement | null>;
-  nodeLeft: React.RefObject<SVGCircleElement | null>;
-  nodeRight: React.RefObject<SVGCircleElement | null>;
-  ringLeft: React.RefObject<SVGCircleElement | null>;
-  ringRight: React.RefObject<SVGCircleElement | null>;
-};
-
-/** Paint one frame straight onto the SVG (no React render per frame). */
-function draw(f: TetherFrame, r: Refs) {
-  const d = tetherPath(f);
-  const line = r.line.current;
-  if (line) {
-    line.setAttribute("d", d);
-    line.style.visibility = f.drawn > 0 ? "visible" : "hidden";
-    line.style.strokeDasharray = f.drawn >= 1 ? "none" : `${f.drawn} 1`;
-  }
-  const glint = r.glint.current;
-  if (glint) {
-    glint.setAttribute("d", d);
-    glint.style.opacity = f.glint ? String(f.glint.opacity) : "0";
-    if (f.glint) glint.style.strokeDashoffset = String(-f.glint.at);
-  }
-  const nodes: Array<[SVGCircleElement | null, number, TetherFrame["nodeLeft"]]> = [
-    [r.nodeLeft.current, f.xLeft, f.nodeLeft],
-    [r.nodeRight.current, f.xRight, f.nodeRight],
-  ];
-  for (const [el, x, n] of nodes) {
-    if (!el) continue;
-    el.setAttribute("cx", String(x));
-    el.setAttribute("r", String(Math.max(0, 3 * n.scale)));
-    el.style.opacity = String(n.opacity);
-  }
-  const rings: Array<[SVGCircleElement | null, number]> = [
-    [r.ringLeft.current, f.xLeft],
-    [r.ringRight.current, f.xRight],
-  ];
-  for (const [el, x] of rings) {
-    if (!el) continue;
-    el.setAttribute("cx", String(x));
-    el.setAttribute("r", String(f.pulse?.radius ?? 3));
-    el.style.opacity = String(f.pulse?.opacity ?? 0);
-  }
 }

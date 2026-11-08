@@ -1182,7 +1182,8 @@ a[role="button"]:active {
    ends. Two soft spiral arms (blurred conic gradients, faded at the edge) swirl
    and breathe at different speeds around a pulsing core, and three motes ride
    tilted, flattened orbits. All currentColor, so it stays monochrome in Day and
-   Night. In a layer so size utilities (h-6 w-6) still win. ===== */
+   Night. Sized by font-size (1em square, everything inside in em), so
+   text-[24px] or a bigger font-size scales the whole thing. ===== */
 @keyframes tethr-nebula-swirl {
   to { transform: rotate(360deg); }
 }
@@ -1200,8 +1201,9 @@ a[role="button"]:active {
     position: relative;
     display: inline-block;
     flex: none;
-    width: 22px;
-    height: 22px;
+    font-size: 22px;
+    width: 1em;
+    height: 1em;
   }
   .tethr-nebula > span {
     position: absolute;
@@ -1220,7 +1222,7 @@ a[role="button"]:active {
     );
     -webkit-mask: radial-gradient(circle, #000 24%, rgb(0 0 0 / 0.6) 46%, transparent 71%);
     mask: radial-gradient(circle, #000 24%, rgb(0 0 0 / 0.6) 46%, transparent 71%);
-    filter: blur(0.9px);
+    filter: blur(0.041em);
     animation:
       tethr-nebula-swirl 3.2s linear infinite,
       tethr-nebula-breathe 2.4s ease-in-out infinite alternate;
@@ -1268,16 +1270,17 @@ a[role="button"]:active {
     position: absolute;
     top: 0;
     left: 50%;
-    width: 2.2px;
-    height: 2.2px;
-    margin-left: -1.1px;
+    width: 0.1em;
+    height: 0.1em;
+    margin-left: -0.05em;
     border-radius: 9999px;
     background: currentColor;
-    box-shadow: 0 0 2.5px currentColor;
+    box-shadow: 0 0 0.115em currentColor;
   }
   .tethr-nebula-orbit-wide > i {
-    width: 1.8px;
-    height: 1.8px;
+    width: 0.082em;
+    height: 0.082em;
+    margin-left: -0.041em;
     opacity: 0.65;
   }
 }
@@ -1401,17 +1404,15 @@ a[role="button"]:active {
 /* ===== Startup intro (2026-11-08) ------------------------------------------
    Plays when the desktop app starts and right after signing in
    (components/tethr/StartupIntro.tsx). Same ground as the app, so it leaves
-   without a color change: a slack line is thrown between two nodes, pulls
-   taut, the wordmark rises above it, light passes over the reeds, and the
-   shell's own entrance plays as the overlay lifts. Monochrome; the only color
-   is the status dot. */
+   without a color change: tethr's nebula swirls in out of a blur and settles,
+   its core flares once, the wordmark rises under it, light passes over the
+   reeds, and the shell's own entrance plays as the overlay lifts. Monochrome;
+   the only color is the status dot. */
 :root {
   --tethr-intro-reed: rgba(255, 255, 255, 0.42);
-  --tethr-intro-glint: rgba(255, 255, 255, 0.95);
 }
 .dark {
   --tethr-intro-reed: rgba(235, 214, 186, 0.09);
-  --tethr-intro-glint: rgba(255, 236, 210, 0.7);
 }
 
 /* The shell's entrance waits while the intro covers it. */
@@ -1532,39 +1533,63 @@ html.tethr-intro-hold [data-slot="card"] {
   to { letter-spacing: -0.035em; }
 }
 
-.tethr-intro-tether {
-  display: block;
-  width: 100%;
-  height: auto;
-  overflow: visible;
-  margin-top: calc(var(--w) * -0.035);
+/* The nebula forms: it swirls in out of a blur and settles, then keeps turning
+   (its own loop) until the intro leaves. Sized from the stage width. */
+.tethr-intro-nebula {
+  position: relative;
+  display: grid;
+  place-items: center;
+  margin-bottom: calc(var(--w) * 0.05);
+  color: var(--foreground);
+  animation: tethr-intro-form 1300ms cubic-bezier(0.2, 0.7, 0.2, 1) 60ms both;
 }
-.tethr-intro-line {
-  stroke: var(--foreground);
-  stroke-width: 1.25;
-  stroke-linecap: round;
-  opacity: 0.85;
+.tethr-intro-nebula > .tethr-nebula {
+  font-size: calc(var(--w) * 0.34);
 }
-.tethr-intro-glint {
-  stroke: var(--tethr-intro-glint);
-  stroke-width: 5;
-  stroke-linecap: round;
-  stroke-dasharray: 0.15 2;
+@keyframes tethr-intro-form {
+  0% {
+    opacity: 0;
+    scale: 0.3;
+    rotate: -150deg;
+    filter: blur(16px);
+  }
+  55% {
+    opacity: 1;
+    filter: blur(3px);
+  }
+  100% {
+    opacity: 1;
+    scale: 1;
+    rotate: 0deg;
+    filter: blur(0);
+  }
 }
-.tethr-intro-node {
-  fill: var(--foreground);
+/* As it settles, the core flares once. */
+.tethr-intro-flare {
+  position: absolute;
+  inset: 34%;
+  border-radius: 9999px;
+  border: 1px solid currentColor;
+  opacity: 0;
+  pointer-events: none;
+  animation: tethr-intro-flare 900ms cubic-bezier(0.2, 0.7, 0.2, 1) 1050ms both;
 }
-.tethr-intro-ring {
-  fill: none;
-  stroke: var(--foreground);
-  stroke-width: 1;
+@keyframes tethr-intro-flare {
+  0% {
+    opacity: 0.55;
+    scale: 0.5;
+  }
+  100% {
+    opacity: 0;
+    scale: 3;
+  }
 }
 
 .tethr-intro-status {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-top: calc(var(--w) * -0.01);
+  margin-top: calc(var(--w) * 0.05);
   white-space: nowrap;
   animation: tethr-fade 420ms ease 1400ms both;
 }
@@ -1591,8 +1616,12 @@ html.tethr-intro-hold [data-slot="card"] {
 .tethr-intro.is-reduced .tethr-intro-word,
 .tethr-intro.is-reduced .tethr-intro-word > span,
 .tethr-intro.is-reduced .tethr-intro-status,
-.tethr-intro.is-reduced .tethr-intro-reeds {
+.tethr-intro.is-reduced .tethr-intro-reeds,
+.tethr-intro.is-reduced .tethr-intro-nebula {
   animation: none;
+}
+.tethr-intro.is-reduced .tethr-intro-flare {
+  display: none;
 }
 .tethr-intro.is-reduced .tethr-intro-stage {
   animation: tethr-fade 250ms ease both;
