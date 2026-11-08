@@ -293,12 +293,12 @@ export function TethrChat() {
           const el = e.currentTarget;
           stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
         }}
-        className="min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent_0,#000_44px,#000_calc(100%-14px),transparent_100%)]"
+        className="min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent_0,transparent_40px,#000_68px,#000_calc(100%-14px),transparent_100%)]"
       >
         {empty ? (
           <ChatEmpty isDraft={isDraft} onPick={(s) => send.mutate({ text: s, attachments: [] })} />
         ) : (
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-9 px-4 pb-6 pt-16 md:px-6">
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-9 px-4 pb-6 pt-[72px] md:px-6">
             {visibleRuns.length >= limit && limit < 100 ? (
               <button
                 type="button"
@@ -434,7 +434,7 @@ function SideChats({
         >
           {open ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
           {sideChats.length && !open ? (
-            <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 font-mono text-[9px] text-primary-foreground">
+            <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 font-mono text-[10px] text-primary-foreground">
               {sideChats.length}
             </span>
           ) : null}
@@ -971,7 +971,7 @@ function HopChips({ hops }: { hops: TethrRouteHop[] }) {
           {i > 0 ? <span className="h-px w-3 bg-[var(--tethr-rim-strong)]" /> : null}
           <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--tethr-frost)] py-0.5 pl-2.5 pr-2 text-[12px] shadow-[inset_0_0_0_1px_var(--tethr-rim)]">
             <span className="font-mono">{hop.actorTag}</span>
-            <span className="font-mono text-[9px] uppercase tracking-[0.16em] tethr-text-3">{LAYER_LABEL[hop.layer]}</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] tethr-text-3">{LAYER_LABEL[hop.layer]}</span>
           </span>
         </span>
       ))}
@@ -1038,7 +1038,7 @@ function ApprovalCard({ output, companyId, threadId }: { output: TethrChatOutput
         </button>
         <Link
           to={`/queue/${output.id}`}
-          className="ml-auto inline-flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground"
+          className="-my-2 ml-auto inline-flex items-center gap-1 py-2 text-[12px] text-muted-foreground hover:text-foreground"
         >
           Open in Queue
           <ArrowRight className="h-3 w-3" />

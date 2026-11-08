@@ -145,7 +145,7 @@ Every core file touched, with reason. Everything else Tethr lives in new files.
 | `ui/src/App.tsx` | + route entries for Tethr pages; Phase 15: `/inbox*` → redirect to `/queue` (Inbox retired — its Approve flipped the approvals row without calling `gating.decide`, so Tethr outputs never published/applied; Queue is the single approval surface) | route table |
 | `ui/src/components/Sidebar.tsx` | + "Operate" nav section; Phase 12 de-dup: dropped overlapping core nav items (Runs→Routines, Costs→Budgets, Org→Company, Activity→the Tethr trail) per Mark — routes untouched, only nav links; Phase 15: Inbox nav item removed (see App.tsx row) | nav registration point |
 | `ui/src/components/CommandPalette.tsx` | + page entries; Phase 15: Inbox entry removed | palette registration point |
-| `ui/src/components/MobileBottomNav.tsx` | Phase 15: Inbox tab → Queue tab (same reason as the App.tsx inbox row) | mobile nav registration point |
+| `ui/src/components/MobileBottomNav.tsx` | Phase 15: Inbox tab → Queue tab (same reason as the App.tsx inbox row). 2026-11-08 mobile pass: the five tabs are Chat · Growth · Queue · Drive · Issues (Home, Create and Agents stay in the drawer), since the chat is tethr's main screen and was missing from the phone bar | mobile nav registration point |
 | `ui/src/lib/company-routes.ts` | + Tethr route roots in `BOARD_ROUTE_ROOTS` | prefix resolver allowlist |
 | `packages/db/src/migrations/meta/_journal.json` | + entries 0086–0089 | inherent to adding migrations |
 | `server/src/services/companies.ts` | remove(): FK-order fix + routine/budget/tethr tables | pre-existing core bug (V1 log), now fixed + tested |

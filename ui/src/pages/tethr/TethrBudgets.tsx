@@ -89,7 +89,10 @@ export function TethrBudgets() {
         {/* 30-day spend chart */}
         <div className="mt-7">
           <MonoTag>spend · last 30 days</MonoTag>
-          <div className="mt-3 flex h-24 items-end gap-[3px]">
+          <div className="relative mt-3 flex h-24 items-end gap-[3px]">
+            {daily.every((point) => point.costCents === 0) ? (
+              <p className="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[12px] tethr-text-3">No spend in the last 30 days.</p>
+            ) : null}
             {daily.map((point) => (
               <div
                 key={point.day}
@@ -110,7 +113,7 @@ export function TethrBudgets() {
               </div>
             ))}
           </div>
-          <div className="mt-2 flex justify-between tethr-eyebrow text-[9.5px]">
+          <div className="mt-2 flex justify-between tethr-eyebrow text-[10px]">
             <span>30 days ago</span>
             <span>today</span>
           </div>
@@ -143,11 +146,11 @@ export function TethrBudgets() {
                     <p className="truncate text-[15px] font-medium leading-tight tracking-[-0.01em]">
                       {agent.name}
                     </p>
-                    <p className="tethr-eyebrow mt-0.5 text-[9.5px]">{agent.tag}</p>
+                    <p className="tethr-eyebrow mt-0.5 text-[10px]">{agent.tag}</p>
                   </div>
                 </div>
                 {agent.policy?.hardStopEnabled ? (
-                  <span className="tethr-pill shrink-0 px-2 py-0.5 text-[9.5px] leading-4">
+                  <span className="tethr-pill shrink-0 px-2 py-0.5 text-[10px] leading-4">
                     <OctagonAlert className="h-2.5 w-2.5" />
                     hard stop
                   </span>

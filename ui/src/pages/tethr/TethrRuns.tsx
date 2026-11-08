@@ -56,6 +56,9 @@ export function TethrRuns() {
           <CalendarClock className="h-3.5 w-3.5 text-muted-foreground" />
           <MonoTag>schedule</MonoTag>
         </div>
+        {data && !data.schedules.length ? (
+          <div className="tethr-empty px-4 py-6 text-center text-sm">Nothing runs on a schedule yet.</div>
+        ) : null}
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" data-tethr-stagger>
           {data?.schedules.map((schedule) => (
             <div

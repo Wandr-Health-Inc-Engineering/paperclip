@@ -112,18 +112,29 @@ function WorkflowRow({ wf }: { wf: TethrGrowthWorkflow }) {
   );
 }
 
-function Stat({ label, value, tone, sub }: { label: string; value: string; tone?: StatusTone; sub?: string }) {
-  return (
-    <div className="tethr-panel flex flex-col gap-1.5 px-4 py-3.5">
+/** A count tile; with `to`, the whole tile links there. */
+function Stat({ label, value, tone, sub, to }: { label: string; value: string; tone?: StatusTone; sub?: string; to?: string }) {
+  const body = (
+    <>
       <div className="flex items-center gap-2">
         {tone ? <StatusDot tone={tone} /> : null}
         <MonoTag>{label}</MonoTag>
       </div>
       <span className="tethr-figure text-[28px]">{value}</span>
       {sub ? <span className="text-[12px] text-muted-foreground">{sub}</span> : null}
-    </div>
+    </>
+  );
+  const className = "tethr-panel flex flex-col gap-1.5 px-4 py-3.5";
+  return to ? (
+    <Link to={to} className={cn(className, "transition-colors hover:bg-[var(--tethr-frost-strong)]")}>
+      {body}
+    </Link>
+  ) : (
+    <div className={className}>{body}</div>
   );
 }
+
+const PENDING_STATUSES = ["gated", "changes_requested"];
 
 export function TethrGrowth() {
   const { selectedCompanyId } = useCompany();
@@ -139,11 +150,20 @@ export function TethrGrowth() {
     enabled: !!selectedCompanyId,
     refetchInterval: 15_000,
   });
+  // "Waiting on you" is everything the Queue holds for a decision (the same list
+  // the Queue's Pending tab shows), not only items tied to a task.
+  const { data: outputs } = useQuery({
+    queryKey: tethrKeys.outputs(selectedCompanyId!),
+    queryFn: () => tethrApi.outputs(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+    refetchInterval: 15_000,
+  });
 
   if (isLoading || !data) return <PageSkeleton />;
 
   const { lanes, counts, workflows } = data;
   const nothingInFlight = counts.open === 0 && counts.doneThisWeek === 0;
+  const waitingOnYou = outputs ? outputs.filter((o) => PENDING_STATUSES.includes(o.status)).length : counts.waitingOnYou;
 
   return (
     <div className="space-y-8">
@@ -152,16 +172,17 @@ export function TethrGrowth() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" data-tethr-stagger>
         <Stat
           label="waiting on you"
-          value={String(counts.waitingOnYou)}
-          tone={counts.waitingOnYou ? "warn" : undefined}
-          sub={counts.waitingOnYou ? "decide in the Queue" : "nothing to decide"}
+          value={String(waitingOnYou)}
+          tone={waitingOnYou ? "warn" : undefined}
+          sub={waitingOnYou ? "decide in the Queue" : "nothing to decide"}
+          to={waitingOnYou ? "/queue" : undefined}
         />
         <Stat label="open tasks" value={String(counts.open)} tone={lanes.working.length ? "live" : undefined} sub={`${lanes.working.length} being worked now`} />
         <Stat label="done this week" value={String(counts.doneThisWeek)} tone={counts.doneThisWeek ? "ok" : undefined} />
         <Stat
           label="workflows on"
           value={`${counts.workflowsOn}`}
-          sub={`of ${counts.workflowsTotal} · each starts paused`}
+          sub={counts.workflowsTotal ? `of ${counts.workflowsTotal} · each starts paused` : "none set up"}
         />
       </div>
 
@@ -198,8 +219,8 @@ export function TethrGrowth() {
         <div className="tethr-empty tethr-reeds px-6 py-10 text-center">
           <p className="text-[15px] text-foreground">No growth work in flight.</p>
           <p className="mx-auto mt-2 max-w-[56ch] text-[13px]">
-            Ask tethr to plan a push, for example “plan our spring-break malaria push: delegate keyword research to
-            @rank and a GEO audit of the malaria page to @tank”, or switch on a workflow below.
+            Ask tethr in the chat to plan a push or take on a piece of work. Tasks it opens show up here while
+            they're being worked, and anything that needs your OK waits in the Queue.
           </p>
           <Link to="/chat" className="tethr-btn tethr-btn-primary mt-5 h-9 px-4 text-sm">
             Open the chat
@@ -249,24 +270,22 @@ export function TethrGrowth() {
         </section>
       ) : null}
 
-      <section className="tethr-panel">
-        <header className="border-b tethr-rule px-4 py-3">
-          <h2 className="text-[15px] font-medium tracking-[-0.01em]">Growth workflows</h2>
-          <p className="mt-1 text-[12px] text-muted-foreground">
-            Each one is a playbook that opens a task for its owner on schedule. They start paused; switch one on
-            from its routine page when you're ready for it to run on its own.
-          </p>
-        </header>
-        {workflows.length ? (
+      {workflows.length ? (
+        <section className="tethr-panel">
+          <header className="border-b tethr-rule px-4 py-3">
+            <h2 className="text-[15px] font-medium tracking-[-0.01em]">Growth workflows</h2>
+            <p className="mt-1 text-[12px] text-muted-foreground">
+              Each one is a playbook that opens a task for its owner on schedule. They start paused; switch one on
+              from its routine page when you're ready for it to run on its own.
+            </p>
+          </header>
           <div className="divide-y divide-[var(--tethr-rim)]">
             {workflows.map((wf) => (
               <WorkflowRow key={wf.routineId} wf={wf} />
             ))}
           </div>
-        ) : (
-          <p className="px-4 py-4 text-[13px] tethr-text-3">No workflows yet. Re-seed to add the growth playbooks.</p>
-        )}
-      </section>
+        </section>
+      ) : null}
     </div>
   );
 }

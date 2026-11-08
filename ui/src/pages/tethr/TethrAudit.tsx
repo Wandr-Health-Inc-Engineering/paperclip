@@ -96,7 +96,7 @@ export function TethrAudit() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex max-w-full flex-wrap items-center gap-0.5 rounded-[18px] bg-[var(--tethr-frost)] p-0.5 shadow-[inset_0_0_0_1px_var(--tethr-rim)]">
+        <div className="inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full bg-[var(--tethr-frost)] p-0.5 shadow-[inset_0_0_0_1px_var(--tethr-rim)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {KINDS.map((option) => (
             <button
               key={option.value}
@@ -104,7 +104,7 @@ export function TethrAudit() {
               aria-pressed={kind === option.value}
               onClick={() => setKind(option.value)}
               className={cn(
-                "tethr-btn h-7 px-3 text-[12.5px]",
+                "tethr-btn tethr-touch-sized h-7 shrink-0 px-3 text-[12.5px] pointer-coarse:h-8",
                 kind === option.value
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -117,8 +117,8 @@ export function TethrAudit() {
         <Input
           value={actor}
           onChange={(e) => setActor(e.target.value)}
-          placeholder="filter by actor (@sonar, mark…)"
-          className="ml-auto h-8 w-56 px-3 font-mono text-xs max-md:ml-0 max-md:w-full"
+          placeholder="filter by actor (@tethr, a name…)"
+          className="ml-auto h-8 w-72 px-3 font-mono text-xs max-md:ml-0 max-md:w-full"
         />
       </div>
 
@@ -235,7 +235,7 @@ function AuditRow({ event, last }: { event: TethrAuditEvent; last: boolean }) {
           </span>
         ) : null}
       </span>
-      <span className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-[var(--tethr-text-3)]">
+      <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--tethr-text-3)]">
         {event.entityType.replace("tethr_", "")}
       </span>
     </div>

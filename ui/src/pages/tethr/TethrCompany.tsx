@@ -307,8 +307,8 @@ export function TethrCompany() {
             <div className="h-px flex-1 bg-[var(--tethr-rim)]" />
           </div>
           <p className="mx-auto mb-4 max-w-2xl text-center text-xs text-muted-foreground">
-            Built to run the org, not staff it — the conductor, the mechanic, the debugger. They
-            sit beside the command chain, not in it.
+            The agents that run the work for the team. They sit beside the command chain, not
+            in it.
           </p>
           <div className="mx-auto grid max-w-5xl grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {systemAgents.map((entry) => (
@@ -565,12 +565,12 @@ function OrgChangeLog({ companyId }: { companyId: string }) {
               {change.appliedBy}
             </span>
             {change.status === "reverted" ? (
-              <span className="tethr-pill px-2 py-0.5 text-[9.5px]">
+              <span className="tethr-pill px-2 py-0.5 text-[10px]">
                 <StatusDot tone="paused" />
                 reverted
               </span>
             ) : change.revertOfChangeId ? (
-              <span className="tethr-pill px-2 py-0.5 text-[9.5px] text-foreground">
+              <span className="tethr-pill px-2 py-0.5 text-[10px] text-foreground">
                 revert
               </span>
             ) : (
@@ -838,7 +838,7 @@ function AgentRow({
           <span className="flex items-center gap-2">
             last run {formatRelative(lastRunAt)}
             {pendingApprovals > 0 ? (
-              <span className="tethr-pill px-1.5 py-0.5 text-[9px] text-foreground">
+              <span className="tethr-pill px-1.5 py-0.5 text-[10px] text-foreground">
                 <StatusDot tone="warn" />
                 {pendingApprovals} in queue
               </span>
@@ -876,17 +876,17 @@ function AgentRow({
 
       <dl className="mt-auto grid grid-cols-3 gap-2 border-t tethr-rule pt-3">
         <div className="min-w-0">
-          <dt className="tethr-eyebrow text-[9px]">reports to</dt>
+          <dt className="tethr-eyebrow text-[10px]">reports to</dt>
           <dd className="mt-1 truncate text-[12.5px]">{reportsToTag ?? "none"}</dd>
         </div>
         <div className="min-w-0">
-          <dt className="tethr-eyebrow text-[9px]">cap</dt>
+          <dt className="tethr-eyebrow text-[10px]">cap</dt>
           <dd className="mt-1 truncate text-[12.5px] tabular-nums">
             {agent.budgetMonthlyCents > 0 ? `${formatCents(agent.budgetMonthlyCents)} / mo` : "none"}
           </dd>
         </div>
         <div className="min-w-0">
-          <dt className="tethr-eyebrow text-[9px]">heartbeat</dt>
+          <dt className="tethr-eyebrow text-[10px]">heartbeat</dt>
           <dd className="mt-1 truncate text-[12.5px]">{describeCron(profile.heartbeatCron)}</dd>
         </div>
       </dl>

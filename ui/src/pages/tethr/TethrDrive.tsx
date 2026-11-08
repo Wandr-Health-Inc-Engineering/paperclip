@@ -85,7 +85,8 @@ export function TethrDrive() {
   }
 
   return (
-    <div className="space-y-4">
+    // One screen tall; the Finder window takes whatever the note above it leaves.
+    <div className="flex h-[calc(100dvh-10rem)] min-h-[480px] flex-col gap-4 md:h-[calc(100dvh-6rem)]">
       {status && !mirrorOn ? (
         <div className="tethr-empty px-4 py-3 text-[13px] text-muted-foreground">
           Google Drive isn't connected, so only the working drive is shown. Set{" "}

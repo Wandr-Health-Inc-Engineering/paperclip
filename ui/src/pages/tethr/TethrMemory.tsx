@@ -32,7 +32,8 @@ export function TethrMemory() {
     return <EmptyState icon={Brain} message="Select a company to see what tethr remembers." />;
   }
   return (
-    <div className="space-y-8">
+    // A reading width: the file is prose, and full-width lines on a desktop are hard to follow.
+    <div className="mx-auto max-w-4xl space-y-8">
       <MemoryFile companyId={selectedCompanyId} />
       <LegacyLog companyId={selectedCompanyId} />
     </div>
@@ -184,7 +185,7 @@ function MemoryFile({ companyId: c }: { companyId: string }) {
         />
       ) : (
         <div className="tethr-panel px-5 py-5 md:px-8 md:py-7">
-          <MarkdownBody className="text-[14px] leading-relaxed">{data.content}</MarkdownBody>
+          <MarkdownBody className="tethr-doc-md">{data.content}</MarkdownBody>
         </div>
       )}
       <p className="text-[12px] tethr-text-3">

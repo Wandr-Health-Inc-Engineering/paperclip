@@ -108,7 +108,7 @@ export function Scorecard({ companyId }: { companyId: string }) {
           </Link>
         </div>
       </div>
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
         {goals.map((g) => (
           <div key={g.id} className="tethr-panel flex flex-col gap-3 p-4">
             <div className="flex items-baseline justify-between gap-3">

@@ -271,7 +271,7 @@ function ConnectorRow({
           <div className="flex items-center gap-2">
             <StatusDot tone={MODE_TONE[connector.mode]} />
             <span className="text-[14px] font-medium">{connector.label}</span>
-            {!connector.explicit ? <span className="tethr-eyebrow text-[9.5px]">default</span> : null}
+            {!connector.explicit ? <span className="tethr-eyebrow text-[10px]">default</span> : null}
           </div>
           <p className="mt-0.5 text-[12.5px] text-muted-foreground">{connector.blurb}</p>
           <p className="mt-0.5 text-[11.5px] tethr-text-3">
@@ -417,12 +417,12 @@ function ThrottleCard({ companyId }: { companyId: string }) {
             onToggle={() => mutation.mutate(!paused)}
             label={paused ? "Paused" : "Active"}
           />
-          <span className="tethr-eyebrow text-[9px]">
+          <span className="tethr-eyebrow text-[10px]">
             {paused ? "paused" : "active"}
           </span>
         </div>
       </div>
-      <p className="tethr-eyebrow mt-3 text-[9.5px]">
+      <p className="tethr-eyebrow mt-3 text-[10px]">
         also toggle from Slack — say “pause agents” / “resume agents”
       </p>
     </div>
@@ -472,12 +472,12 @@ function LlmModeCard({
             onToggle={() => mutation.mutate(isLive ? "mock" : "live")}
             label={isLive ? "Live Claude" : "Mock"}
           />
-          <span className="tethr-eyebrow text-[9px]">
+          <span className="tethr-eyebrow text-[10px]">
             {isLive ? "live" : "mock"}
           </span>
         </div>
       </div>
-      <p className="tethr-eyebrow mt-3 text-[9.5px]">
+      <p className="tethr-eyebrow mt-3 text-[10px]">
         {!canGoLive
           ? "set ANTHROPIC_API_KEY to enable live · resets to env default on restart"
           : "instance-wide · takes effect on the next request · resets to env default on restart"}
@@ -548,13 +548,13 @@ function ProviderCard({
     <div className="tethr-panel p-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-[15px] font-medium tracking-[-0.01em]">{name}</p>
-        <span className={cn("tethr-pill px-2 py-0.5 text-[9.5px] leading-4", live && "text-foreground")}>
+        <span className={cn("tethr-pill px-2 py-0.5 text-[10px] leading-4", live && "text-foreground")}>
           <StatusDot tone={live ? "ok" : "idle"} />
           {state}
         </span>
       </div>
       <p className="mt-1.5 break-words text-sm text-muted-foreground">{detail}</p>
-      <p className="tethr-eyebrow mt-2 text-[9.5px]">
+      <p className="tethr-eyebrow mt-2 text-[10px]">
         cloud swap: {swap}
       </p>
     </div>
@@ -613,7 +613,7 @@ function OverseerRosterCard({ companyId }: { companyId: string }) {
           >
             <div>
               <p className="text-sm font-medium">{label}</p>
-              <p className="tethr-eyebrow text-[9px] tracking-[0.12em]">{hint}</p>
+              <p className="tethr-eyebrow text-[10px] tracking-[0.12em]">{hint}</p>
             </div>
             <Input value={val(role, "name")} onChange={(e) => set(role, "name", e.target.value)} placeholder="Name" />
             <Input

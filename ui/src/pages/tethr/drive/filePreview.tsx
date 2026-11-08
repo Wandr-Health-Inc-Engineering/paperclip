@@ -141,7 +141,7 @@ export function PreviewBody({
             ))}
           </dl>
         ) : null}
-        <MarkdownBody className={cn("leading-relaxed", full ? "text-[15px]" : "text-[13px]")}>{body}</MarkdownBody>
+        <MarkdownBody className={cn("tethr-doc-md", full ? "tethr-doc-lg" : "tethr-doc-sm")}>{body}</MarkdownBody>
       </div>
     );
   }

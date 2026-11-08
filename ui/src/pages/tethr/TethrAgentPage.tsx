@@ -175,7 +175,7 @@ export function TethrAgentPage() {
                   : "No monthly cap"}
               </p>
               {policy?.hardStopEnabled ? (
-                <span className="tethr-pill tethr-pill-solid px-2 py-0.5 text-[9px]">
+                <span className="tethr-pill tethr-pill-solid px-2 py-0.5 text-[10px]">
                   hard stop
                 </span>
               ) : null}
@@ -249,7 +249,7 @@ export function TethrAgentPage() {
                     <span className="block truncate text-sm font-medium">
                       {output.title}
                     </span>
-                    <span className="tethr-eyebrow text-[9.5px] tracking-[0.14em]">
+                    <span className="tethr-eyebrow text-[10px] tracking-[0.14em]">
                       {output.kind.replace(/_/g, " ")} · {formatRelative(output.createdAt)}
                     </span>
                   </span>
@@ -280,11 +280,11 @@ export function TethrAgentPage() {
                     <span className="block truncate text-sm font-medium">
                       {run.summary ?? run.triggerDetail ?? "Heartbeat"}
                     </span>
-                    <span className="tethr-eyebrow text-[9.5px] tracking-[0.14em]">
+                    <span className="tethr-eyebrow text-[10px] tracking-[0.14em]">
                       {run.invocationSource} · {formatRelative(run.startedAt)}
                     </span>
                   </span>
-                  <span className="tethr-pill shrink-0 px-2 py-0.5 text-[9.5px]">
+                  <span className="tethr-pill shrink-0 px-2 py-0.5 text-[10px]">
                     <StatusDot status={run.status} />
                     {run.status}
                   </span>

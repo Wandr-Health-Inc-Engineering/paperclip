@@ -1239,6 +1239,54 @@ a[role="button"]:active {
   font-size: 13px;
 }
 
+/* ---- Touch sizing ------------------------------------------------------------
+   index.css gives every button a 44px min-height on touch screens, unlayered, so
+   no Tailwind utility can undo it; compact controls stretch into tall ovals.
+   Controls that size themselves for touch (pointer-coarse:h-9 …) opt out here. */
+@media (pointer: coarse) {
+  .tethr-touch-sized {
+    min-height: 0;
+  }
+}
+
+/* ---- Documents (Queue preview, Memory, Drive reader) -----------------------
+   Same reasoning as chat answers: upstream's unlayered `.paperclip-markdown`
+   sets 15px text and 600-700 headings over any Tailwind size. Documents read a
+   step larger than chat; headings stay within the brand's 200-500. */
+.paperclip-markdown.tethr-doc-md {
+  font-size: 14px;
+  line-height: 1.65;
+}
+.paperclip-markdown.tethr-doc-md.tethr-doc-lg {
+  font-size: 15px;
+}
+.paperclip-markdown.tethr-doc-md.tethr-doc-sm {
+  font-size: 13px;
+}
+.paperclip-markdown.tethr-doc-md :where(h1, h2, h3, h4) {
+  margin-top: 1.2em;
+  margin-bottom: 0.4em;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+.paperclip-markdown.tethr-doc-md > :first-child {
+  margin-top: 0;
+}
+.paperclip-markdown.tethr-doc-md h1 {
+  font-size: 1.45em;
+  font-weight: 400;
+}
+.paperclip-markdown.tethr-doc-md h2 {
+  font-size: 1.2em;
+}
+.paperclip-markdown.tethr-doc-md :where(h3, h4) {
+  font-size: 1.05em;
+}
+.paperclip-markdown.tethr-doc-md :where(strong, b, th) {
+  font-weight: 500;
+}
+
 /* ===== Startup intro (2026-11-08) ------------------------------------------
    Plays when the desktop app starts and right after signing in
    (components/tethr/StartupIntro.tsx). Same ground as the app, so it leaves

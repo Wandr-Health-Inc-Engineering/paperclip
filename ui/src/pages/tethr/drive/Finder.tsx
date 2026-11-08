@@ -104,6 +104,7 @@ function rootPlace(l: FinderLocation): Place {
   return { locId: l.id, crumbs: [{ ref: "", name: l.label }] };
 }
 
+/** The Finder window. It fills its parent, so put it in a flex column that has a height. */
 export function Finder(props: {
   locations: FinderLocation[];
   onAddLocation?: () => void;
@@ -492,7 +493,7 @@ function FinderWindow({
     <div
       className={cn(
         "tethr-finder tethr-window @container/win flex min-h-0 min-w-0 flex-col overflow-hidden",
-        fullscreen ? "tethr-window-lifted h-full w-full" : "h-[calc(100dvh-10rem)] min-h-[440px] md:h-[calc(100dvh-6rem)]",
+        fullscreen ? "tethr-window-lifted h-full w-full" : "min-h-[440px] flex-1",
       )}
     >
       <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
@@ -504,9 +505,11 @@ function FinderWindow({
           <ToolButton title="Forward (Cmd+])" onClick={forward} disabled={!canForward}>
             <ChevronRight className="h-4 w-4" />
           </ToolButton>
-          <span className="ml-1.5 min-w-0 flex-1 truncate text-[13.5px] font-medium tracking-[-0.01em]">
+          {/* Narrow windows: the folder's name is in the path bar below, so the buttons get the room. */}
+          <span className="ml-1.5 hidden min-w-0 flex-1 truncate text-[13.5px] font-medium tracking-[-0.01em] @md/win:block">
             {current.name}
           </span>
+          <span className="flex-1 @md/win:hidden" />
           <div className="mr-1 flex items-center rounded-full p-0.5 shadow-[inset_0_0_0_1px_var(--tethr-rim-strong)]">
             <ToolButton title="View as list" onClick={() => setView("list")} active={view === "list"} small>
               <List className="h-3.5 w-3.5" />
@@ -539,7 +542,7 @@ function FinderWindow({
             title={fullscreen ? "Collapse (Esc)" : "Expand to full screen"}
             aria-label={fullscreen ? "Collapse" : "Expand"}
             onClick={() => onFullscreenChange(!fullscreen)}
-            className="ml-1 inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-full px-2 text-[12.5px] text-foreground/80 shadow-[inset_0_0_0_1px_var(--tethr-rim-strong)] transition-colors hover:bg-[var(--tethr-select-blur)] hover:text-foreground @sm/win:px-3"
+            className="ml-1 inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-full px-2 text-[12.5px] text-foreground/80 shadow-[inset_0_0_0_1px_var(--tethr-rim-strong)] transition-colors hover:bg-[var(--tethr-select-blur)] hover:text-foreground tethr-touch-sized pointer-coarse:h-9 pointer-coarse:px-2.5 @sm/win:px-3"
           >
             {fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
             <span className="hidden @sm/win:inline">{fullscreen ? "Collapse" : "Expand"}</span>
@@ -726,7 +729,7 @@ function FinderWindow({
     <>
       {fullscreen ? (
         <>
-          <div className="tethr-empty flex h-[calc(100dvh-10rem)] min-h-[440px] md:h-[calc(100dvh-6rem)] items-center justify-center text-[13px] text-muted-foreground">
+          <div className="tethr-empty flex min-h-[440px] flex-1 items-center justify-center text-[13px] text-muted-foreground">
             Expanded to full screen. Press Esc to collapse.
           </div>
           {createPortal(
@@ -819,7 +822,9 @@ function ToolButton({
       disabled={disabled}
       className={cn(
         "inline-flex shrink-0 items-center justify-center rounded-full text-foreground/80 transition-colors hover:bg-[var(--tethr-select-blur)] hover:text-foreground disabled:pointer-events-none disabled:opacity-30",
-        small ? "h-6 w-7" : "h-7 w-7",
+        // Touch: bigger targets, sized here instead of by index.css's 44px min-height (tethr-touch-sized).
+        "tethr-touch-sized",
+        small ? "h-6 w-7 pointer-coarse:h-8 pointer-coarse:w-8" : "h-7 w-7 pointer-coarse:h-9 pointer-coarse:w-9",
         active && "bg-[var(--tethr-select-blur)] text-foreground",
       )}
     >

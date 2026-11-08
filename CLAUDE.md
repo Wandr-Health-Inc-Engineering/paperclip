@@ -1229,6 +1229,17 @@ Frosted panels floating over warm ink: the Aina glass card + Oura's calm and big
   (Oura ring) / `BudgetBar`.
 - **Gradients:** only the ambient ground light and the reeded `tethr-reeds` texture (Console hero
   + empty states). No emoji. Product name lowercase **"tethr"** (logo lockup still TBD).
+- **Phones and touch (UI pass, 2026-11-08):**
+  - upstream `index.css` gives every button/input a 44px min-height on touch screens, **unlayered**, so no
+    Tailwind utility can undo it. Switches opt out with `data-slot="toggle"`; compact controls that size
+    themselves for touch (`pointer-coarse:h-9 …`) add **`tethr-touch-sized`** (tethr-theme.css).
+  - The phone bottom bar (`MobileBottomNav.tsx`, core, logged in DECISIONS.md) is Chat · Growth · Queue ·
+    Drive · Issues.
+  - Rendered documents (Queue preview, Memory, Drive reader) use **`tethr-doc-md`**; chat answers use
+    `tethr-chat-md`. Both exist because upstream's unlayered `.paperclip-markdown` (15px, 600-700 headings)
+    beats Tailwind sizes. No new 9px text: 10px is the floor.
+  - The Drive's `Finder` fills its parent (a flex column with a height), so a note above it can't push it
+    off screen. Growth's "waiting on you" counts the Queue's pending items, not only tasks in review.
 - **Theme:** Auto (follows the computer/phone — the default) · Day · Night, via
   `TethrThemeSwitch` (top bar) and the account menu. `paperclip.theme` stores
   `system|light|dark`; `ThemeContext` exposes `preference/setPreference` + the old API.

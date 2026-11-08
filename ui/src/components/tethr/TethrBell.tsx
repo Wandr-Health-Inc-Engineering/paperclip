@@ -73,7 +73,7 @@ export function TethrBell() {
         <button
           onClick={() => navigate("/tethr-settings")}
           title="Agents are paused (usage throttle) — click to manage"
-          className="tethr-pill tethr-pill-solid mr-1 h-6 px-2.5 text-[9.5px]"
+          className="tethr-pill tethr-pill-solid mr-1 h-6 px-2.5 text-[10px]"
         >
           <span className="tethr-dot bg-primary-foreground" />
           agents paused
@@ -97,7 +97,7 @@ export function TethrBell() {
         </PopoverTrigger>
         <PopoverContent align="end" className="w-96 overflow-hidden p-0">
           <div className="tethr-rule flex items-center justify-between border-b px-4 py-2.5">
-            <MonoTag>beacon · notifications</MonoTag>
+            <MonoTag>notifications</MonoTag>
             {unread.length > 0 ? (
               <button
                 onClick={() => markAllRead.mutate()}
@@ -130,7 +130,7 @@ export function TethrBell() {
                         <span className="flex items-center gap-2">
                           <span className="block flex-1 text-sm font-medium leading-snug">{n.title}</span>
                           {pendingOutputId ? (
-                            <span className="tethr-pill shrink-0 px-2 py-0.5 text-[9px]">
+                            <span className="tethr-pill shrink-0 px-2 py-0.5 text-[10px]">
                               needs you
                             </span>
                           ) : null}
@@ -140,7 +140,7 @@ export function TethrBell() {
                             {n.body}
                           </span>
                         ) : null}
-                        <span className="tethr-eyebrow mt-1.5 block text-[9.5px] tracking-[0.14em]">
+                        <span className="tethr-eyebrow mt-1.5 block text-[10px] tracking-[0.14em]">
                           {n.agentTag ? `${n.agentTag} · ` : ""}
                           {n.kind} · {formatRelative(n.createdAt)}
                         </span>
@@ -229,7 +229,7 @@ function NotificationDetail({
         <div className="tethr-rule flex items-start justify-between gap-3 border-b px-5 py-4">
           <div className="min-w-0">
             <h3 className="text-[15px] font-medium leading-snug tracking-[-0.01em]">{n.title}</h3>
-            <p className="tethr-eyebrow mt-1 text-[9.5px] tracking-[0.14em]">
+            <p className="tethr-eyebrow mt-1 text-[10px] tracking-[0.14em]">
               {n.agentTag ? `${n.agentTag} · ` : ""}
               {n.kind} · {formatRelative(n.createdAt)}
             </p>

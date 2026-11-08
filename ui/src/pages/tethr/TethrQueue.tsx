@@ -384,7 +384,7 @@ function QueueDetail({
               // An outward action is shown as plain text: exactly what will be sent.
               <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">{output.body}</pre>
             ) : (
-              <MarkdownBody className="text-sm leading-relaxed">{output.body}</MarkdownBody>
+              <MarkdownBody className="tethr-doc-md">{output.body}</MarkdownBody>
             )}
           </div>
         </div>
@@ -448,8 +448,8 @@ function QueueDetail({
                 {(decideMutation.error as Error).message}
               </p>
             ) : null}
-            <p className="flex items-center gap-1.5 text-[11.5px] text-[var(--tethr-text-3)]">
-              <FileWarning className="h-3 w-3" />
+            <p className="flex items-start gap-1.5 text-[11.5px] text-[var(--tethr-text-3)]">
+              <FileWarning className="mt-[3px] h-3 w-3 shrink-0" />
               Approve writes the file to the Drive. Reject and request-changes send it
               back to the agent. All three are audit-logged with your name.
             </p>
