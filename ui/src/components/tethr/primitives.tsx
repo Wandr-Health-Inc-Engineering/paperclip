@@ -118,11 +118,14 @@ export const SENSITIVITY_LABEL: Record<string, string> = {
   public: "public",
   spend: "spend",
   pr: "pr",
+  org: "org",
+  destructive: "destructive",
+  external: "outward",
   internal: "internal",
   safe: "safe",
 };
 
-const SENSITIVITY_GATED = new Set(["medical", "public", "spend", "pr"]);
+const SENSITIVITY_GATED = new Set(["medical", "public", "spend", "pr", "org", "destructive", "external"]);
 
 export function isGated(sensitivity: string): boolean {
   return SENSITIVITY_GATED.has(sensitivity);

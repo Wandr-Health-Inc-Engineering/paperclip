@@ -498,8 +498,19 @@ remembered nothing Mark said, and could only read). Spike findings: `tasks/phase
   (money/public/medical always ask). Built-in reads only inside 00 Tethr; writes only inside the
   workspace; `CLAUDE.md` protected; Bash off unless `shell:"ask"`. Deny messages start
   "Tethr approval gate:" and the persona says they're genuine (otherwise the model treats them as
-  injections). Phase 18.2 state: "ask" results are refused ("approvals aren't switched on yet");
-  approval cards come in phase 18.3.
+  injections).
+- **Approvals (phase 18.3)** `assistant/grants.ts` + `hook-handler.ts`: an "ask" call becomes a
+  gated Tethr output kind **`external_action`** (sensitivity `external`, or `public`/`spend`/
+  `medical`; both are text columns → no migration) with `routeRunId` = the turn (inline chat
+  card) → Queue item + Slack DM like any gated output. `gating.decide` approve →
+  `approveExternalAction`: status `approved`, a ONE-TIME grant (thread + sha256 of the canonical
+  tool input, 24h) and a wake: a note with the exact call + a system turn ("Mark approved: …").
+  The gate consumes the grant atomically (`consumeGrant`, `for update skip locked`) → the call
+  runs once; PostToolUse closes the card `published`. Reject → note for the next turn, no wake.
+  Same call again needs a new approval; a changed input never rides on one. Default mode is now
+  **ask** (approval required); Auto per connector in Integrations (money/public/medical still ask).
+  Persona: never self-confirm — make the call and let the gate ask; "Notes from Tethr" /
+  "[From Tethr, not Mark]" are genuine. Auto-revise is skipped for `external_action`.
 - **Config** `server/src/tethr/integrations.ts` → instance-dir `tethr-integrations.json`:
   defaultMode (read for now), per-connector mode + scope (Mercury/Canva/Figma off), internal
   addresses, shell, `assistant{engine session|routing, model}`, discovered tool names (from real
@@ -508,7 +519,8 @@ remembered nothing Mark said, and could only read). Spike findings: `tasks/phase
   runner), `POST /chat-turns/:runId/stop`, `POST /chats/:threadId/reset`. UI `TethrChat.tsx`
   `SessionTurn`: live step rows (6px status dots), streaming answer, Stop, file chips; older
   routing-engine turns keep `Turn`.
-- Tests: `tethr-assistant-policy` (11), `-events` (6), `-runner` (6, embedded PG, fake execute).
+- Tests: `tethr-assistant-policy` (11), `-events` (6), `-runner` (6, embedded PG, fake execute),
+  `-gate` (9: hold → approve → run once → done; no replay; expiry; reject; auto vs always-ask).
 
 ## Phase 15 fixes — previews, Inbox retirement, cogs (2026-07-19)
 

@@ -29,7 +29,8 @@ export interface IntegrationsConfig {
 }
 
 export const DEFAULT_INTEGRATIONS: IntegrationsConfig = {
-  defaultMode: "read",
+  // Approval required for anything outward, unless a connector is set otherwise.
+  defaultMode: "ask",
   connectors: {
     Mercury: { mode: "off" },
     Canva: { mode: "off" },

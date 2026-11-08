@@ -408,6 +408,11 @@ export function getAssistantRunner(db: Db) {
   return singleton;
 }
 
+/** Tests only: make getAssistantRunner() return this runner (e.g. one with a fake execute). */
+export function setAssistantRunnerForTests(runner: ReturnType<typeof assistantRunner> | null) {
+  singleton = runner;
+}
+
 /** Tests only. */
 export function resetAssistantRunnerForTests() {
   singleton = null;

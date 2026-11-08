@@ -506,6 +506,11 @@ function SessionTurn({ run, companyId }: { run: TethrChatRun; companyId: string 
       {gated.map((o) => (
         <ApprovalCard key={o.id} output={o} companyId={companyId} threadId={run.threadId ?? ""} />
       ))}
+      {run.outputs
+        .filter((o) => o.kind === "external_action" && !DECIDABLE.has(o.status))
+        .map((o) => (
+          <ActionStatus key={o.id} output={o} />
+        ))}
       {running ? (
         <div>
           <button
@@ -567,6 +572,29 @@ function ActivityRows({ hops, live }: { hops: TethrRouteHop[]; live: boolean }) 
           ) : null}
         </div>
       ))}
+    </div>
+  );
+}
+
+/** An outward action after Mark decided it: approved (running), done, or rejected. */
+function ActionStatus({ output }: { output: TethrChatOutput }) {
+  const grant = ((output.meta as Record<string, unknown>)?.grant ?? {}) as Record<string, unknown>;
+  const expired = output.status === "approved" && typeof grant.expiresAt === "string" && Date.parse(grant.expiresAt) < Date.now();
+  const [tone, label] =
+    output.status === "published"
+      ? (["ok", "Done"] as const)
+      : output.status === "rejected"
+        ? (["bad", "Rejected"] as const)
+        : expired
+          ? (["paused", "Approval expired"] as const)
+          : grant.status === "used"
+            ? (["live", "Running"] as const)
+            : (["live", "Approved, running"] as const);
+  return (
+    <div className="flex min-w-0 items-center gap-2 text-[12.5px]">
+      <StatusDot tone={tone} />
+      <span className="shrink-0 font-medium">{label}</span>
+      <span className="min-w-0 truncate text-muted-foreground">{output.title}</span>
     </div>
   );
 }
@@ -718,15 +746,26 @@ function ApprovalCard({ output, companyId, threadId }: { output: TethrChatOutput
     },
   });
   const snippet = useMemo(() => previewText(output.body), [output.body]);
+  const isAction = output.kind === "external_action";
+  const actionBody = isAction ? output.body.split("\n").slice(2).join("\n").trim() : "";
   return (
     <div className="tethr-glass flex max-w-2xl flex-col gap-2.5 p-4">
       <span className="tethr-eyebrow inline-flex items-center gap-1.5">
         <Lock className="h-3 w-3" />
-        {output.status === "changes_requested" ? "changes requested" : "awaiting review"} · {kindLabel(output.kind)} ·{" "}
-        {output.sensitivity}
+        {isAction
+          ? `needs your ok · ${String((output.meta as Record<string, unknown>)?.connector ?? "action")}${output.sensitivity !== "external" ? ` · ${output.sensitivity === "spend" ? "money" : output.sensitivity}` : ""}`
+          : `${output.status === "changes_requested" ? "changes requested" : "awaiting review"} · ${kindLabel(output.kind)} · ${output.sensitivity}`}
       </span>
       <p className="text-[14.5px] font-medium leading-snug">{output.title}</p>
-      {snippet ? <p className="line-clamp-3 text-[13px] leading-relaxed text-muted-foreground">{snippet}</p> : null}
+      {isAction ? (
+        actionBody ? (
+          <div className="tethr-inset max-h-64 overflow-y-auto px-3.5 py-2.5">
+            <MarkdownBody className="text-[13px] leading-relaxed">{actionBody}</MarkdownBody>
+          </div>
+        ) : null
+      ) : snippet ? (
+        <p className="line-clamp-3 text-[13px] leading-relaxed text-muted-foreground">{snippet}</p>
+      ) : null}
       <div className="mt-1 flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -734,7 +773,7 @@ function ApprovalCard({ output, companyId, threadId }: { output: TethrChatOutput
           onClick={() => decide.mutate("approve")}
           className="tethr-btn tethr-btn-primary h-8 px-4 text-[12.5px]"
         >
-          Approve
+          {isAction ? "Approve & run" : "Approve"}
         </button>
         <button
           type="button"

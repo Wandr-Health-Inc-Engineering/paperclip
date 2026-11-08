@@ -470,6 +470,10 @@ export function gatingService(db: Db) {
       if (output.kind === "drive_change") {
         return approveDriveChange(output, input.companyId, input.reviewer);
       }
+      // Phase 18: approving an outward action arms a one-time grant and wakes the chat.
+      if (output.kind === "external_action") {
+        return approveExternalAction(output, input.companyId, input.reviewer);
+      }
       const published = await publishToDrive(output.id, input.companyId, input.reviewer);
       await notify.send({
         companyId: input.companyId,
@@ -487,6 +491,16 @@ export function gatingService(db: Db) {
       .set({ status: nextStatus, updatedAt: new Date() })
       .where(eq(tethrOutputs.id, output.id))
       .returning();
+    if (output.kind === "external_action" && input.decision === "reject") {
+      // Tell the chat on its next turn (no wake: it's just context).
+      const meta = (output.meta ?? {}) as Record<string, unknown>;
+      if (typeof meta.threadId === "string") {
+        const chats = await import("./chats.js");
+        await chats
+          .addNote(input.companyId, meta.threadId, `Mark rejected: ${String(meta.summary ?? output.title)}${input.note ? ` (${input.note})` : ""}. Don't do it unless he asks again.`)
+          .catch(() => {});
+      }
+    }
     await notify.send({
       companyId: input.companyId,
       kind: "approval",
@@ -497,6 +511,60 @@ export function gatingService(db: Db) {
       body: input.note,
       href: `/queue/${output.id}`,
     });
+    return updated;
+  }
+
+  // Phase 18: approving an `external_action` (an outward connector call the Chat's
+  // Claude session wanted to make) arms a ONE-TIME grant for that exact call,
+  // bound to the thread, valid 24h, and wakes the chat so it runs it. The grant
+  // is consumed by the approval gate (assistant/grants.ts consumeGrant).
+  async function approveExternalAction(output: typeof tethrOutputs.$inferSelect, companyId: string, reviewer: string) {
+    const meta = (output.meta ?? {}) as Record<string, unknown>;
+    const now = new Date();
+    const [updated] = await db
+      .update(tethrOutputs)
+      .set({
+        status: "approved",
+        meta: {
+          ...meta,
+          grant: {
+            status: "active",
+            expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+            approvedBy: reviewer,
+            approvedAt: now.toISOString(),
+          },
+        },
+        updatedAt: now,
+      })
+      .where(eq(tethrOutputs.id, output.id))
+      .returning();
+    await notify.send({
+      companyId,
+      kind: "approval",
+      title: `Approved: ${output.title}`,
+      href: `/queue/${output.id}`,
+    });
+    const threadId = typeof meta.threadId === "string" ? meta.threadId : null;
+    if (threadId) {
+      try {
+        const chats = await import("./chats.js");
+        await chats.addNote(
+          companyId,
+          threadId,
+          `Mark approved this action: run this exact call now, changing nothing — tool ${String(meta.toolName)} with input ${JSON.stringify(meta.toolInput ?? {})}. Then confirm in one line.`,
+        );
+        const { getAssistantRunner } = await import("./assistant/runner.js");
+        await getAssistantRunner(db).send({
+          companyId,
+          threadId,
+          kind: "system",
+          text: `Mark approved: ${String(meta.summary ?? output.title)}`,
+          requestedByUserId: reviewer.startsWith("auto:") ? null : reviewer,
+        });
+      } catch (err) {
+        logger.warn({ err, outputId: output.id }, "[tethr] couldn't wake the chat after an approval (grant is still armed)");
+      }
+    }
     return updated;
   }
 

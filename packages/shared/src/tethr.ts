@@ -16,6 +16,10 @@ export const TETHR_SENSITIVITIES = [
   // Gated AND structurally excluded from auto-approve (which fires only for
   // "org"), so a deletion can never happen without an explicit human yes.
   "destructive",
+  // Phase 18: an outward action from the Chat's Claude session (send an email,
+  // post to Slack, change a calendar…) held by the approval gate. Gated; never
+  // auto-approved (auto-approve fires only for "org").
+  "external",
   "internal",
   "safe",
 ] as const;
@@ -29,6 +33,7 @@ export const TETHR_GATED_SENSITIVITIES: readonly TethrSensitivity[] = [
   "pr",
   "org",
   "destructive",
+  "external",
 ];
 
 export const TETHR_OUTPUT_STATUSES = [
@@ -68,6 +73,11 @@ export const TETHR_OUTPUT_KINDS = [
   // `meta.driveChange`; approving it moves the file to the archive folder —
   // never a hard delete. Never mirrors (not in MIRROR_FOLDERS).
   "drive_change",
+  // Phase 18: a connector call the Chat's Claude session wants to make, held by
+  // the approval gate. `meta` carries {threadId, toolName, toolInput, inputHash,
+  // connector, cls, grant}. Approving grants ONE matching call; it never
+  // publishes or mirrors.
+  "external_action",
 ] as const;
 export type TethrOutputKind = (typeof TETHR_OUTPUT_KINDS)[number];
 

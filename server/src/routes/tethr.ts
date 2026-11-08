@@ -40,9 +40,8 @@ import { routingService } from "../tethr/routing.js";
 import * as chats from "../tethr/chats.js";
 import { getAssistantRunner } from "../tethr/assistant/runner.js";
 import { resolveHookToken } from "../tethr/assistant/gate.js";
-import { classify, decide } from "../tethr/assistant/policy.js";
-import { readableRoots, workspaceDir } from "../tethr/assistant/workspace.js";
-import { getIntegrations, modeFor, updateIntegrations } from "../tethr/integrations.js";
+import { handlePostToolUse, handlePreToolUse } from "../tethr/assistant/hook-handler.js";
+import { getIntegrations, updateIntegrations } from "../tethr/integrations.js";
 import {
   interpretSlackEvent,
   routeInboundKickoff,
@@ -94,36 +93,13 @@ export function tethrRoutes(db: Db) {
       );
       return;
     }
-    if (phase === "post") {
-      res.json({ exitCode: 0 });
-      return;
+    try {
+      const payload = (req.body ?? {}) as Record<string, unknown>;
+      res.json(phase === "pre" ? await handlePreToolUse(db, ctx, payload) : await handlePostToolUse(db, ctx, payload));
+    } catch (err) {
+      logger.warn({ err }, "tethr approval gate failed");
+      res.json(phase === "pre" ? { exitCode: 2, stderr: "Tethr approval gate: something went wrong, so the action was blocked." } : { exitCode: 0 });
     }
-    const toolName = String(req.body?.tool_name ?? "");
-    const toolInput = (req.body?.tool_input ?? {}) as Record<string, unknown>;
-    const cfg = getIntegrations(ctx.companyId);
-    const c = classify(toolName, toolInput, {
-      workspaceDir: workspaceDir().dir,
-      readableRoots: readableRoots(),
-      internalAddresses: cfg.internalAddresses,
-    });
-    let d = decide(c, { mode: modeFor(cfg, c.connector), shell: cfg.shell });
-    if (d.action === "ask") {
-      // Approval cards arrive in phase 18.3; until then anything needing Mark is refused.
-      d = {
-        action: "deny",
-        reason: `Tethr approval gate: approvals aren't switched on yet, so this was not done — ${c.summary}. Tell Mark what you would have done.`,
-      };
-    }
-    res.json({
-      exitCode: 0,
-      stdout: JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: d.action === "allow" ? "allow" : "deny",
-          permissionDecisionReason: d.action === "allow" ? "Allowed by Tethr." : d.reason,
-        },
-      }),
-    });
   });
 
   // ---- Slack inbound events (Phase 2) -------------------------------------
@@ -631,7 +607,7 @@ export function tethrRoutes(db: Db) {
       });
       // Auto-revise: the agent picks the note up and produces v(n+1)
       // (TETHR_AUTO_REVISE=false disables; the Queue also has a manual button).
-      if (decision === "request_changes" && process.env.TETHR_AUTO_REVISE !== "false") {
+      if (decision === "request_changes" && updated?.kind !== "external_action" && process.env.TETHR_AUTO_REVISE !== "false") {
         void worker
           .reviseOutput({ companyId, outputId: req.params.id as string })
           .catch((err) => logger.warn({ err }, "tethr auto-revise failed"));
