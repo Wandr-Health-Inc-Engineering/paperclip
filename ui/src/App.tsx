@@ -62,6 +62,7 @@ import { TethrBudgets } from "./pages/tethr/TethrBudgets";
 import { TethrAudit } from "./pages/tethr/TethrAudit";
 import { TethrAgentPage } from "./pages/tethr/TethrAgentPage";
 import { TethrSettings } from "./pages/tethr/TethrSettings";
+import { TethrEnv } from "./pages/tethr/TethrEnv";
 import { TethrMemory } from "./pages/tethr/TethrMemory";
 import { useCompany } from "./context/CompanyContext";
 import { useDialogActions } from "./context/DialogContext";
@@ -86,6 +87,7 @@ function boardRoutes() {
       <Route path="audit" element={<TethrAudit />} />
       <Route path="crew/:agentId" element={<TethrAgentPage />} />
       <Route path="tethr-settings" element={<TethrSettings />} />
+      <Route path="environment" element={<TethrEnv />} />
       <Route path="memory" element={<Navigate to="/company/settings/memory" replace />} />
       <Route path="onboarding" element={<OnboardingRoutePage />} />
       <Route path="companies" element={<Companies />} />

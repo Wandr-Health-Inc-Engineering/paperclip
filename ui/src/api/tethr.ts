@@ -167,6 +167,27 @@ export interface TethrChatRun extends TethrRouteRun {
   attachments?: TethrChatAttachment[];
 }
 
+export interface TethrEnvEntry {
+  key: string;
+  set: boolean;
+  length: number;
+  secret: boolean;
+  /** The server itself depends on it (database, login, ports). */
+  core: boolean;
+  /** Spans several lines in the file: edit it there. */
+  multiline: boolean;
+  /** The running server uses the file's value. */
+  active: boolean;
+}
+
+export interface TethrEnv {
+  path: string;
+  exists: boolean;
+  entries: TethrEnvEntry[];
+  /** Settings tethr knows about that aren't in the file yet. */
+  suggestions: Array<{ key: string; description: string }>;
+}
+
 export interface TethrChatAttachment {
   /** Workspace-relative path ("files/uploads/2026-11-07/report.pdf"). */
   path: string;
@@ -489,6 +510,7 @@ export const tethrKeys = {
   routeRuns: (c: string) => ["tethr", c, "route-runs"] as const,
   chats: (c: string) => ["tethr", c, "chats"] as const,
   integrations: (c: string) => ["tethr", c, "integrations"] as const,
+  env: (c: string) => ["tethr", c, "env"] as const,
   assistantMemory: (c: string) => ["tethr", c, "assistant-memory"] as const,
   chatRuns: (c: string, threadId: string) => ["tethr", c, "chats", threadId, "runs"] as const,
   routeRun: (c: string, id: string) => ["tethr", c, "route-runs", id] as const,
@@ -599,6 +621,11 @@ export const tethrApi = {
   sendChatMessage: (c: string, threadId: string, text: string, attachments: string[] = []) =>
     api.post<{ routeRunId: string; threadId: string }>(`/tethr/${c}/chats/${threadId}/messages`, { text, attachments }),
   integrations: (c: string) => api.get<TethrIntegrations>(`/tethr/${c}/integrations`),
+  /** Phase 19.2: the instance .env (names and status only; values via reveal). */
+  env: (c: string) => api.get<TethrEnv>(`/tethr/${c}/env`),
+  revealEnv: (c: string, key: string) => api.post<{ key: string; value: string }>(`/tethr/${c}/env/reveal`, { key }),
+  setEnv: (c: string, key: string, value: string) => api.put<{ ok: true }>(`/tethr/${c}/env`, { key, value }),
+  deleteEnv: (c: string, key: string) => api.delete<{ ok: true }>(`/tethr/${c}/env/${encodeURIComponent(key)}`),
   /** Phase 18.5: the chat's long-term memory file (Memory.md in the workspace). */
   assistantMemory: (c: string) =>
     api.get<{ content: string; mtime: number; path: string; inDrive: boolean }>(`/tethr/${c}/assistant/memory`),

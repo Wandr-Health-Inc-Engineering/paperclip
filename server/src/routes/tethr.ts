@@ -53,6 +53,7 @@ import {
   withAttachments,
 } from "../tethr/assistant/attachments.js";
 import { jevConfigured } from "../tethr/jev.js";
+import * as envFile from "../tethr/env-file.js";
 import { mirrorDir } from "../tethr/mirror.js";
 import multer from "multer";
 import { getIntegrations, integrationRulesText, KNOWN_CONNECTORS, modeFor, sanitizeIntegrationsPatch, updateIntegrations } from "../tethr/integrations.js";
@@ -693,6 +694,72 @@ export function tethrRoutes(db: Db) {
       }),
       discoveredAt: cfg.discovered?.at ?? null,
     });
+  });
+
+  // ---- Environment (phase 19.2): the instance .env, like a hosting dashboard ----
+  // Instance admins only (a person, never an agent). Listing never returns a
+  // value; a value comes back only from the explicit reveal POST.
+  const requireEnvAdmin = (req: Request, res: Response): boolean => {
+    assertCompanyAccess(req, req.params.companyId as string);
+    if (req.actor?.type === "board" && req.actor.isInstanceAdmin === true) return true;
+    res.status(403).json({ error: "Only an instance admin can see or change the environment." });
+    return false;
+  };
+  const logEnv = (req: Request, action: string, key: string) =>
+    logActivity(db, {
+      companyId: req.params.companyId as string,
+      actorType: "user",
+      actorId: getActorInfo(req).actorId,
+      action,
+      entityType: "company",
+      entityId: req.params.companyId as string,
+      details: { key }, // the name only, never the value
+    }).catch(() => {});
+
+  router.get("/tethr/:companyId/env", async (req, res) => {
+    if (!requireEnvAdmin(req, res)) return;
+    const env = await envFile.listEnv();
+    const have = new Set(env.entries.map((e) => e.key));
+    const suggestions = (await envFile.envSuggestions()).filter((s) => !have.has(s.key));
+    res.json({ ...env, suggestions });
+  });
+
+  router.post("/tethr/:companyId/env/reveal", async (req, res) => {
+    if (!requireEnvAdmin(req, res)) return;
+    const key = String(req.body?.key ?? "");
+    const value = await envFile.readEnvValue(key);
+    if (value === null) {
+      res.status(404).json({ error: `${key} isn't in the file.` });
+      return;
+    }
+    await logEnv(req, "tethr_env_revealed", key);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ key, value });
+  });
+
+  router.put("/tethr/:companyId/env", async (req, res) => {
+    if (!requireEnvAdmin(req, res)) return;
+    const key = String(req.body?.key ?? "").trim();
+    const value = typeof req.body?.value === "string" ? req.body.value : "";
+    const result = await envFile.setEnv(key, value);
+    if ("error" in result) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    await logEnv(req, "tethr_env_updated", key);
+    res.json({ ok: true });
+  });
+
+  router.delete("/tethr/:companyId/env/:key", async (req, res) => {
+    if (!requireEnvAdmin(req, res)) return;
+    const key = req.params.key as string;
+    const result = await envFile.deleteEnv(key);
+    if ("error" in result) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    await logEnv(req, "tethr_env_deleted", key);
+    res.json({ ok: true });
   });
 
   router.put("/tethr/:companyId/integrations", async (req, res) => {

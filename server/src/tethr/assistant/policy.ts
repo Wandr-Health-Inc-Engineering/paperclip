@@ -260,7 +260,12 @@ export function classify(tool: string, input: Record<string, unknown> | undefine
       } catch {
         host = "";
       }
-      return { tool, connector: null, server: null, cls: "web", summary: builtinSummary(tool, args), internalHost: !!host && isInternalHost(host, ctx.internalAddresses) };
+      // Never this Mac or its network: tethr's own API answers loopback requests
+      // as Mark (local_trusted), so a page fetch there would read his data.
+      if (!host || isPrivateHost(host)) {
+        return { tool, connector: null, server: null, cls: "blocked", summary: builtinSummary(tool, args), blockedReason: "the chat can't open pages on this computer or its local network" };
+      }
+      return { tool, connector: null, server: null, cls: "web", summary: builtinSummary(tool, args), internalHost: isInternalHost(host, ctx.internalAddresses) };
     }
     if (SAFE_BUILTINS.has(tool)) return { tool, connector: null, server: null, cls: "builtin", summary: builtinSummary(tool, args) };
     if (READ_BUILTINS.has(tool)) {
@@ -309,6 +314,27 @@ export function classify(tool: string, input: Record<string, unknown> | undefine
     if (MEDICAL.test(JSON.stringify(args))) cls = "medical";
   }
   return { tool, connector, server, cls, summary: summarize(connector, name, args) };
+}
+
+/** This machine or a private network: localhost names, loopback, private,
+ * link-local and CGNAT/Tailscale ranges, IPv6 loopback/ULA/link-local. */
+export function isPrivateHost(host: string): boolean {
+  const h = host.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
+  if (!h) return true;
+  if (h === "localhost" || /\.(localhost|local|internal|lan|home\.arpa)$/.test(h)) return true;
+  if (h.includes(":")) {
+    return h === "::" || h === "::1" || /^(fe8|fe9|fea|feb|fc|fd)/.test(h) || h.startsWith("::ffff:");
+  }
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
+  if (!v4) return false;
+  const [a, b] = [Number(v4[1]), Number(v4[2])];
+  return (
+    a === 0 || a === 10 || a === 127 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 100 && b >= 64 && b <= 127)
+  );
 }
 
 /** Is a web host one of Wandr's own (a domain from internalAddresses, or a subdomain)? */

@@ -16,6 +16,7 @@ import {
   HardDrive,
   Wallet,
   Plug,
+  KeyRound,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { NavLink } from "@/lib/router";
@@ -105,6 +106,7 @@ export function Sidebar() {
           <SidebarNavItem to="/budgets" label="Budgets" icon={Wallet} />
           <SidebarNavItem to="/audit" label="Activity" icon={History} />
           <SidebarNavItem to="/tethr-settings" label="Integrations" icon={Plug} />
+          <SidebarNavItem to="/environment" label="Environment" icon={KeyRound} />
         </SidebarSection>
 
         <SidebarSection label="Work">

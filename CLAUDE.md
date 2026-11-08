@@ -642,6 +642,32 @@ growth lists**. The chat's Claude session gets Tethr's own tools as an MCP serve
   - Verified live: an attached CSV was read and answered in 8s. Tests:
     `tethr-attachments.test.ts` (5).
 
+**Environment page (phase 19.2, Mark: "like Vercel"):** `/environment` (`TethrEnv.tsx`, nav under
+Integrations) edits the instance `.env` (`resolvePaperclipEnvPath()`, i.e.
+`~/.paperclip/instances/default/.env`; `TETHR_ENV_FILE` overrides it in tests) through
+`server/src/tethr/env-file.ts`.
+- **Who can use it:** instance admins only (board actor with `isInstanceAdmin`); agents and plain
+  members get 403.
+- **Values:** `GET /tethr/:companyId/env` lists names and status only, never values. A value comes
+  back only from `POST /env/reveal` (`Cache-Control: no-store`). The activity log records key
+  names, never values.
+- **Writes:**
+  - `PUT /env` and `DELETE /env/:key` keep every other line and comment.
+  - A later duplicate of the edited key is dropped, since it would win.
+  - Values are quoted so dotenv reads them back exactly; values spanning several lines are
+    read-only here.
+  - The file is written atomically and set to mode 600.
+  - Saving also sets `process.env`, so settings read on demand apply immediately. Boot-time ones
+    need a restart, and rows show when the running server's value differs from the file.
+- **Page:** "core" keys (`PAPERCLIP_*`, `BETTER_AUTH_*`, `DATABASE_URL`…) ask before changing.
+  Pasting `KEY=value` lines adds them in bulk. "Other settings tethr understands" lists the keys in
+  `.env.example` that aren't set yet, with their comment notes.
+- **Chat hardening that came with it:** the chat's `WebFetch` is blocked for loopback and
+  private-network hosts (`isPrivateHost` in policy.ts). In local_trusted mode the Tethr API
+  answers loopback requests as Mark, so a fetched page there would read his data.
+- Tests: `tethr-env.test.ts` (7). Verified live: added and removed a dummy key, and the real .env
+  came back byte-identical.
+
 ## Phase 15 fixes — previews, Inbox retirement, cogs (2026-07-19)
 
 - **Content previews in completion messages.** `preview.ts` `contentPreview(body)` → first ~3

@@ -31,6 +31,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "audit",
   "crew",
   "tethr-settings",
+  "environment",
   "memory",
 ]);
 
