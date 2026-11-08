@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
 import { serialize, writeAtomic } from "./atomic.js";
+import { PACE_LABEL, PACE_UPLIFT, type GrowthPace } from "./goal-pace.js";
+import type { IdeasLevel } from "./pace.js";
 
 // Tethr's setup (onboarding) state, phase 20: which steps are done, the goal
 // areas Mark chose, his time zone, the working rhythm he picked, and the side
@@ -21,8 +23,19 @@ export interface RhythmChoice {
   routineId?: string;
 }
 
-export type SetupStep = "basics" | "connect" | "interview" | "rhythm";
-export const SETUP_STEPS: SetupStep[] = ["basics", "connect", "interview", "rhythm"];
+/** Phase 21: "company" (you and the company) and "focus" (areas + growth pace)
+ * replace the old "basics" step (which asked for a typed mission). */
+export type SetupStep = "company" | "focus" | "connect" | "interview" | "rhythm";
+export const SETUP_STEPS: SetupStep[] = ["company", "focus", "connect", "interview", "rhythm"];
+
+export interface IdeasSettings {
+  /** Where the adaptive pace starts and stays within. */
+  level: IdeasLevel;
+  /** Adapt to how people respond (on), or keep the level's fixed pace. */
+  adaptive: boolean;
+  /** Listen to Slack conversations tethr is invited into and chime in with ideas. */
+  slackListen: boolean;
+}
 
 export interface SetupState {
   /** When each step was finished (ISO). */
@@ -33,6 +46,11 @@ export interface SetupState {
   rhythm: Record<RhythmKey, RhythmChoice>;
   /** The side chat the goals interview runs in. */
   interviewThreadId: string | null;
+  /** How hard the goals push (the interview's uplift, and how targets adjust). */
+  growthPace: GrowthPace;
+  /** Let tethr move targets on its own to keep them realistic. */
+  autoAdjust: boolean;
+  ideas: IdeasSettings;
 }
 
 export const DEFAULT_AREAS = ["New customers", "Revenue", "Partnerships & distribution"];
@@ -51,6 +69,9 @@ export function defaultSetup(): SetupState {
     timezone: "America/New_York",
     rhythm: structuredClone(DEFAULT_RHYTHM),
     interviewThreadId: null,
+    growthPace: "balanced",
+    autoAdjust: true,
+    ideas: { level: "normal", adaptive: true, slackListen: true },
   };
 }
 
@@ -76,6 +97,7 @@ export function getSetup(companyId: string): SetupState {
     steps: { ...(saved.steps ?? {}) },
     rhythm: Object.fromEntries(RHYTHM_KEYS.map((k) => [k, { ...base.rhythm[k], ...(saved.rhythm?.[k] ?? {}) }])) as SetupState["rhythm"],
     areas: Array.isArray(saved.areas) && saved.areas.length ? saved.areas : base.areas,
+    ideas: { ...base.ideas, ...(saved.ideas ?? {}) },
   };
 }
 
@@ -109,20 +131,28 @@ export async function forgetSetup(companyIds: string[]): Promise<void> {
 
 /** The first message of the goals interview (a system turn in its own side chat).
  * Its first line is what the chat shows; the rest is tethr's brief. */
-export function interviewBrief(areas: string[]): string {
+export function interviewBrief(
+  areas: string[],
+  opts: { person?: string | null; company?: string | null; pace?: GrowthPace } = {},
+): string {
   const list = areas.length ? areas.join(", ") : DEFAULT_AREAS.join(", ");
+  const person = opts.person?.trim() || "the person you're working with";
+  const company = opts.company?.trim() || "the company";
+  const pace = opts.pace ?? "balanced";
+  const uplift = `${Math.round(PACE_UPLIFT[pace] * 100)}%`;
   return `Setup: goals interview
-[Setup brief for tethr] You're setting up Wandr's goals with Mark, one area at a time: ${list}. This is a conversation: ask one or two questions at a time and wait for his answers.
+[Setup brief for tethr] You're setting up ${company}'s goals with ${person}, one area at a time: ${list}. This is a conversation: ask one or two questions at a time and wait for the answers.
 
 For each area:
-1. Ask where things stand and what good would look like, by a date he cares about.
-2. Before proposing numbers, pull a baseline from the connected tools: aggregate counts and revenue for the last 90 days (Stripe), traffic and conversion (PostHog), ad spend and cost per customer (Google Ads), whichever fits. Say what you measured and how.
-3. Propose 1 to 3 metrics, each with a baseline, a target and a target date, and exactly how it will be measured every week (source and method). If something can only be counted by hand (often true for partnerships), say so and make it a manual metric.
-4. When Mark agrees, save it: save_goal for the area if it isn't saved yet, then save_metric with the baseline, target, date and method. Never save numbers he hasn't agreed to.
+1. Ask where things stand and what good would look like, by a date that matters.
+2. Before proposing numbers, pull a starting point from the connected tools: aggregate counts and revenue for the last 90 days (Stripe), traffic and conversion (PostHog), ad spend and cost per customer (Google Ads), whichever fits. Say what you measured and how.
+3. Make every target realistic: take the recent trend, project it to the date, then add the growth pace they chose, ${PACE_LABEL[pace]} (about ${uplift} on top of the trend). Show that math in one line. If something can only be counted by hand (often true for partnerships), say so and make it a manual metric.
+4. Propose 1 to 3 metrics, each with a starting point, a target, a date and exactly how it will be measured every week (source and method). When they agree, save it: save_goal for the area if it isn't saved yet, then save_metric. Never save numbers they haven't agreed to.
+5. Say once that tethr will ease or raise targets on its own as real numbers come in, so they stay realistic.
 
-Along the way, fill in Memory.md's sections (Products & prices, Who buys, Channels & partners, Voice & constraints, How Mark works) with what you learn. Facts only.
+Along the way, fill in Memory.md's sections (The company, Products & prices, Who buys, Channels & partners, Voice & constraints, How the team works) with what you learn. Facts only.
 
-The mission and the areas are already saved as goals: call goals_list first. Then greet Mark in one line and start with ${areas[0] ?? DEFAULT_AREAS[0]}.
+The areas are already saved as goals: call goals_list first. Then greet ${person} in one line and start with ${areas[0] ?? DEFAULT_AREAS[0]}.
 Aggregates only: never write down a customer's name, email or health details. Don't send, post or spend anything during setup.`;
 }
 

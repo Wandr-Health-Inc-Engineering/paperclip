@@ -107,7 +107,7 @@ describePg("tethr assistant gate — approvals", () => {
     const ctx = { companyId, threadId, runId: run.id };
     const first = decisionOf(await handlePreToolUse(db, ctx, { tool_name: SEND, tool_input: email }));
     expect(first.permissionDecision).toBe("deny");
-    expect(first.permissionDecisionReason).toMatch(/^Tethr approval gate: sent to Mark for approval/);
+    expect(first.permissionDecisionReason).toMatch(/^Tethr approval gate: sent for approval in tethr/);
     const again = decisionOf(await handlePreToolUse(db, ctx, { tool_name: SEND, tool_input: email }));
     expect(again.permissionDecisionReason).toMatch(/still waiting/);
     const held = await cards();
@@ -128,7 +128,7 @@ describePg("tethr assistant gate — approvals", () => {
     for (let i = 0; i < 100 && !prompts.length; i++) await new Promise((r) => setTimeout(r, 20));
     expect(prompts[0]).toMatch(/Notes from Tethr:/);
     expect(prompts[0]).toContain(SEND);
-    expect(prompts[0]).toContain("[From Tethr, not Mark] Mark approved: Email to mark@travelwithwandr.com");
+    expect(prompts[0]).toContain("[From Tethr, not the user] Approved: Email to mark@travelwithwandr.com");
 
     const run = await turnRow();
     const ctx = { companyId, threadId, runId: run.id };
@@ -141,7 +141,7 @@ describePg("tethr assistant gate — approvals", () => {
     // No replay: the same call again needs a fresh approval.
     const replay = decisionOf(await handlePreToolUse(db, ctx, { tool_name: SEND, tool_input: email }));
     expect(replay.permissionDecision).toBe("deny");
-    expect(replay.permissionDecisionReason).toMatch(/sent to Mark for approval/);
+    expect(replay.permissionDecisionReason).toMatch(/sent for approval in tethr/);
   });
 
   it("a different message never rides on an approval", async () => {
@@ -176,7 +176,7 @@ describePg("tethr assistant gate — approvals", () => {
     await new Promise((r) => setTimeout(r, 100));
     expect(prompts).toHaveLength(0);
     const notes = await takeNotes(companyId, threadId);
-    expect(notes.some((n) => n.includes("Mark rejected: Email to mark@travelwithwandr.com — “Reject me”"))).toBe(true);
+    expect(notes.some((n) => n.includes("Rejected in tethr: Email to mark@travelwithwandr.com — “Reject me”"))).toBe(true);
   });
 
   it("auto mode sends internal mail without a card but still asks for outsiders and money", async () => {
@@ -185,9 +185,9 @@ describePg("tethr assistant gate — approvals", () => {
     const ctx = { companyId, threadId, runId: run.id };
     expect(decisionOf(await handlePreToolUse(db, ctx, { tool_name: SEND, tool_input: { ...email, subject: "Auto" } })).permissionDecision).toBe("allow");
     const outside = decisionOf(await handlePreToolUse(db, ctx, { tool_name: SEND, tool_input: { to: ["x@gmail.com"], subject: "Out" } }));
-    expect(outside.permissionDecisionReason).toMatch(/sent to Mark for approval/);
+    expect(outside.permissionDecisionReason).toMatch(/sent for approval in tethr/);
     const money = decisionOf(await handlePreToolUse(db, ctx, { tool_name: "mcp__claude_ai_Stripe__stripe_api_write", tool_input: { op: "refund" } }));
-    expect(money.permissionDecisionReason).toMatch(/sent to Mark for approval/);
+    expect(money.permissionDecisionReason).toMatch(/sent for approval in tethr/);
     const [moneyCard] = (await cards()).filter((c) => c.sensitivity === "spend");
     expect(moneyCard).toBeTruthy();
   });
@@ -243,7 +243,7 @@ describePg("tethr assistant gate — approvals", () => {
     // …so an outside page now needs Mark (a URL can carry data out), Wandr's own doesn't.
     const held = decisionOf(await handlePreToolUse(db, ctx, fetch("https://example.com/c?d=secret")));
     expect(held.permissionDecision).toBe("deny");
-    expect(held.permissionDecisionReason).toMatch(/sent to Mark for approval/);
+    expect(held.permissionDecisionReason).toMatch(/sent for approval in tethr/);
     expect(decisionOf(await handlePreToolUse(db, ctx, fetch("https://www.travelwithwandr.com/malaria"))).permissionDecision).toBe("allow");
   });
 

@@ -143,7 +143,7 @@ describe("tethr assistant policy — decide", () => {
     expect(decide(draft, { mode: "ask", shell: "off" }).action).toBe("allow");
     const d = decide(send, { mode: "ask", shell: "off" });
     expect(d.action).toBe("ask");
-    expect(d.action === "ask" && d.reason).toMatch(/^Tethr approval gate: waiting for Mark's approval/);
+    expect(d.action === "ask" && d.reason).toMatch(/^Tethr approval gate: waiting for approval in tethr/);
   });
 
   it("auto allows plain writes but always asks for money, outsiders and medical", () => {

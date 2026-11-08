@@ -14,6 +14,15 @@ export interface TethrMetricPoint {
   note?: string;
 }
 
+/** A target tethr moved on its own to keep the goal realistic (phase 21). */
+export interface TethrMetricAdjustment {
+  at: string;
+  from: number;
+  to: number;
+  /** In plain words, e.g. "the trend points to about 150 by Mar 31". */
+  why: string;
+}
+
 export const tethrGoalMetrics = pgTable(
   "tethr_goal_metrics",
   {
@@ -40,6 +49,8 @@ export const tethrGoalMetrics = pgTable(
     current: doublePrecision("current"),
     currentAt: timestamp("current_at", { withTimezone: true }),
     history: jsonb("history").$type<TethrMetricPoint[]>().notNull().default([]),
+    /** Targets tethr adjusted on its own, newest last (phase 21). */
+    adjustments: jsonb("adjustments").$type<TethrMetricAdjustment[]>().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

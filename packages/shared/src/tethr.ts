@@ -153,6 +153,9 @@ export const TETHR_NOTIFICATION_KINDS = [
   "lead",
   "budget",
   "system",
+  // phase 21: an idea tethr offered on its own, and a goal target it adjusted
+  "idea",
+  "goal",
 ] as const;
 export type TethrNotificationKind = (typeof TETHR_NOTIFICATION_KINDS)[number];
 

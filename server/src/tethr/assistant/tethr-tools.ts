@@ -73,7 +73,7 @@ export const TETHR_TOOL_DEFS: McpToolDef[] = [
   {
     name: "score_list",
     description:
-      "Score and rank a long list (keywords, leads, companies, Reddit posts, ideas) with Jev, a fast decision model: it rates every item against your criteria in seconds for a fraction of a cent. Use it instead of judging more than ~15 items yourself. Give `items` (strings or objects) or `from_file` (a CSV, JSON or one-per-line file in ./files/, e.g. one keyword_ideas saved). Each criterion is ONE narrow question: type \"score\" with `levels` ordered worst to best, \"yes_no\" (set want:\"no\" when a yes is bad), or \"choice\" with `options`. Weights combine score and yes_no criteria into a 0-100 composite. Put shared background (what Wandr sells, who it's for) in `context`. Returns the top rows; pass `save_as` to keep every row as a CSV in ./files/.",
+      "Score and rank a long list (keywords, leads, companies, Reddit posts, ideas) with Jev, a fast decision model: it rates every item against your criteria in seconds for a fraction of a cent. Use it instead of judging more than ~15 items yourself. Give `items` (strings or objects) or `from_file` (a CSV, JSON or one-per-line file in ./files/, e.g. one keyword_ideas saved). Each criterion is ONE narrow question: type \"score\" with `levels` ordered worst to best, \"yes_no\" (set want:\"no\" when a yes is bad), or \"choice\" with `options`. Weights combine score and yes_no criteria into a 0-100 composite. Put shared background (what the company sells, who it's for) in `context`. Returns the top rows; pass `save_as` to keep every row as a CSV in ./files/.",
     inputSchema: {
       type: "object",
       properties: {
@@ -122,20 +122,19 @@ export const TETHR_TOOL_DEFS: McpToolDef[] = [
   {
     name: "goals_list",
     description:
-      "Wandr's goals as stored in Tethr: the mission, each goal with its id, and each metric with its id, baseline, current value, target and date, and how it's measured.",
+      "The company's goals as stored in Tethr: each goal with its id, and each metric with its id, baseline, current value, target and date, and how it's measured.",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "save_goal",
     description:
-      "Create or update one of Wandr's goals in Tethr. level \"company\" is the one-line mission (there's only one); \"team\" (default) is a goal area such as New customers. Pass id to update. Only save what Mark agreed to.",
+      "Create or update one of the company's goals in Tethr: a goal area such as New customers. Pass id to update. Only save what the person you're working with agreed to.",
     inputSchema: {
       type: "object",
       properties: {
         id: { type: "string", description: "Existing goal id, to update it." },
         title: { type: "string", description: "Short title, e.g. \"New customers\"." },
         description: { type: "string", description: "What this goal means and why it matters, in a sentence or two." },
-        level: { type: "string", enum: ["company", "team"] },
         status: { type: "string", enum: ["planned", "active", "achieved", "cancelled"] },
       },
     },
@@ -143,7 +142,7 @@ export const TETHR_TOOL_DEFS: McpToolDef[] = [
   {
     name: "save_metric",
     description:
-      "Create or update the metric that measures a goal: name, unit, baseline, target and target date, and EXACTLY how to measure it (source + method, e.g. \"Stripe: count of first successful charges per new customer in the last 30 days\"). Pass id to update. Numbers only, aggregates only: never a customer's name, email or health details. Only save targets Mark agreed to.",
+      "Create or update the metric that measures a goal: name, unit, baseline, target and target date, and EXACTLY how to measure it (source + method, e.g. \"Stripe: count of first successful charges per new customer in the last 30 days\"). Pass id to update. Numbers only, aggregates only: never a customer's name, email or health details. Only save targets the person you're working with agreed to.",
     inputSchema: {
       type: "object",
       properties: {
@@ -473,7 +472,7 @@ interface Scored {
 export async function runScoreList(args: Record<string, unknown>, ctx: TethrToolContext): Promise<TethrToolResult> {
   if (!jevConfigured()) {
     return {
-      text: "Jev isn't set up in Tethr yet (no TYPESAFE_API_KEY), so nothing was scored. Score the items yourself this time, and tell Mark that adding a Jev key makes this instant.",
+      text: "Jev isn't set up in Tethr yet (no TYPESAFE_API_KEY), so nothing was scored. Score the items yourself this time, and mention that adding a Jev key makes this instant.",
       isError: true,
       meta: { configured: false },
     };
@@ -651,8 +650,16 @@ async function runGoalTool(name: string, args: Record<string, unknown>, ctx: Tet
     return { text: goalsContextText(view), meta: { goals: view.goals.length } };
   }
   if (name === "save_goal") {
-    const g = await svc.saveGoal(ctx.companyId, args);
-    return { text: `Saved ${g.level === "company" ? "the mission" : "goal"} "${g.title}" [goal ${g.id}].`, meta: { goalId: g.id } };
+    // The top goal follows the company's name and tethr's built-in mission; the
+    // chat saves goal areas only.
+    if (typeof args.id === "string" && args.id) {
+      const view = await svc.list(ctx.companyId);
+      if (view.company?.id === args.id) {
+        return { text: "save_goal: the top goal follows the company's name and tethr's mission; save or change a goal area instead.", isError: true };
+      }
+    }
+    const g = await svc.saveGoal(ctx.companyId, { ...args, level: "team" });
+    return { text: `Saved goal "${g.title}" [goal ${g.id}].`, meta: { goalId: g.id } };
   }
   if (name === "save_metric") {
     const m = await svc.saveMetric(ctx.companyId, args);

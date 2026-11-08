@@ -64,6 +64,7 @@ function storeFiles(): string[] {
     pick("TETHR_ARCHIVE_FILE", "tethr-archive.json"),
     pick("TETHR_MOUNTS_FILE", "tethr-drive-mounts.json"),
     pick("TETHR_SETUP_FILE", "tethr-setup.json"),
+    pick("TETHR_PACE_FILE", "tethr-pace.json"),
   ];
 }
 

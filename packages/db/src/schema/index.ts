@@ -92,4 +92,6 @@ export { tethrMemories } from "./tethr_memories.js";
 export { tethrNotifications } from "./tethr_notifications.js";
 export { tethrOrgChanges } from "./tethr_org_changes.js";
 export { tethrGoalMetrics } from "./tethr_goal_metrics.js";
-export type { TethrMetricPoint } from "./tethr_goal_metrics.js";
+export type { TethrMetricAdjustment, TethrMetricPoint } from "./tethr_goal_metrics.js";
+export { tethrMembers } from "./tethr_members.js";
+export { tethrIdeas } from "./tethr_ideas.js";

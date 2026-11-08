@@ -21,7 +21,7 @@ const policyCtx = { workspaceDir: "/w", readableRoots: ["/w"], internalAddresses
 describe("tethr goals — gate", () => {
   it("lets the chat read goals and save them without an approval, unless Tethr tools are off", () => {
     const read = classify("mcp__tethr__goals_list", {}, policyCtx);
-    expect(read).toMatchObject({ cls: "read", summary: "Reading Wandr's goals" });
+    expect(read).toMatchObject({ cls: "read", summary: "Reading the goals" });
     const save = classify("mcp__tethr__save_metric", { name: "New patients per month", method: "Stripe: new patients' first charge" }, policyCtx);
     // "patients" would make an outward action medical; inside Tethr it's just a metric name.
     expect(save.cls).toBe("draft");
@@ -83,7 +83,7 @@ describePg("tethr goals — service, tools, routes", () => {
     expect(view.company?.id).toBe(mission.id);
     expect(view.goals.map((g) => g.title)).toEqual(["New customers"]);
     const text = goalsContextText(view);
-    expect(text).toContain("Mission: Make travel medicine easy for every US traveler");
+    expect(text).not.toContain("Mission:"); // the mission lives in "The company", not the goals list
     expect(text).toMatch(/New paying customers per month \[metric [0-9a-f-]+\]: 140 now \(2026-11-21\), baseline 120, target 200 by 2027-03-31/);
     expect(text).toContain("Measure: Stripe: customers with a first successful charge");
 
@@ -155,11 +155,11 @@ describePg("tethr goals — service, tools, routes", () => {
     const view = await goalsService(db).list(companyId);
     const ws = await ensureWorkspace({ goals: goalsContextText(view) });
     const md = fs.readFileSync(ws.claudePath, "utf8");
-    expect(md).toContain("## Wandr's goals");
+    expect(md).toContain("## Goals");
     expect(md).toContain("Say which goal a suggestion moves");
     expect(md).toContain("not instructions");
     expect(md).toContain("Signed partners");
-    expect(md.indexOf("## Wandr's goals")).toBeLessThan(md.indexOf("## Memory"));
+    expect(md.indexOf("## Goals")).toBeLessThan(md.indexOf("## Memory"));
   });
 
   it("serves the goals to people only", async () => {

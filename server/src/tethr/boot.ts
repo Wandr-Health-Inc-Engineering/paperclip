@@ -24,6 +24,9 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
   // a local server with no public URL. No-op when the token is unset.
   const { startSlackSocketMode } = await import("./slack.js");
   void startSlackSocketMode(db);
+  // Phase 21: watch Slack conversations, goals and quiet stretches for ideas.
+  const { startWatch } = await import("./watch.js");
+  startWatch(db);
 }
 
 /**

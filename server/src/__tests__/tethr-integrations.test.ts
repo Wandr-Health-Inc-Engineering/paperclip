@@ -72,7 +72,7 @@ describe("tethr integrations config", () => {
     const text = integrationRulesText(getIntegrations(C));
     expect(text).toContain("- Slack: Only #growth and #tethr.");
     expect(text).toMatch(/Turned off: .*Mercury/);
-    expect(text).toContain("Inside Wandr: travelwithwandr.com");
+    expect(text).toContain("Inside the company: travelwithwandr.com");
   });
 
   it("remembers connector tool names seen on real turns", async () => {

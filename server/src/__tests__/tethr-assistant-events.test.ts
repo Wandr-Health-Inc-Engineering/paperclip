@@ -54,12 +54,12 @@ describe("tethr assistant events", () => {
       s,
       line({
         type: "user",
-        message: { content: [{ type: "tool_result", tool_use_id: "t2", is_error: true, content: [{ type: "text", text: "Tethr approval gate: waiting for Mark's approval — Email to x@gmail.com." }] }] },
+        message: { content: [{ type: "tool_result", tool_use_id: "t2", is_error: true, content: [{ type: "text", text: "Tethr approval gate: waiting for approval in tethr — Email to x@gmail.com." }] }] },
       }),
       ctx,
     );
     expect(s.hops[0].status).toBe("blocked");
-    expect(s.hops[0].reason).toBe("waiting for Mark's approval — Email to x@gmail.com.");
+    expect(s.hops[0].reason).toBe("waiting for approval in tethr — Email to x@gmail.com.");
   });
 
   it("notes file writes relative to 00 Tethr and harvests ToolSearch results", () => {

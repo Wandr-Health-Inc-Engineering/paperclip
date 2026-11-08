@@ -917,7 +917,13 @@ export async function routeInboundKickoff(
     if (decision) {
       const pending = await findPendingGatedForThread(db, companyId, sourceKey);
       if (pending) {
-        const approver = resolveSlackApprover(getRoster(companyId), interp.userId);
+        let approver = resolveSlackApprover(getRoster(companyId), interp.userId);
+        // Phase 21: the company's admin (Slack member id from setup) may approve too.
+        if (!approver && interp.userId) {
+          const { companyProfileService } = await import("./company.js");
+          const admin = (await companyProfileService(db).adminSlackIds(companyId)).find((a) => a.slackId === interp.userId);
+          if (admin) approver = { slackId: admin.slackId, name: admin.name };
+        }
         if (!approver) {
           logger.warn(
             { companyId, outputId: pending.id, slackUser: interp.userId ?? null },
@@ -1313,6 +1319,8 @@ export async function startSlackSocketMode(db: Db): Promise<void> {
         return;
       }
       if (msg.type === "events_api" && msg.payload) {
+        // Phase 21: the watcher hears channel conversations tethr is in (memory only).
+        void import("./watch.js").then((w) => w.hear(msg.payload)).catch(() => {});
         const interp = interpretSlackEvent(msg.payload);
         if (interp.type === "kickoff") {
           void routeInboundKickoff(db, interp).catch((err) =>

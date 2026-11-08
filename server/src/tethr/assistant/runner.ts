@@ -10,6 +10,7 @@ import { costService } from "../../services/costs.js";
 import * as chats from "../chats.js";
 import { denyRulesFor, getIntegrations, integrationRulesText, modeFor, recordDiscoveredTools } from "../integrations.js";
 import { goalsContextText, goalsService } from "../goals.js";
+import { companyContextText, companyProfileService } from "../company.js";
 import { mirrorDir } from "../mirror.js";
 import { orgService } from "../org.js";
 import { isAgentsPaused, PAUSED_MESSAGE } from "../throttle.js";
@@ -42,7 +43,15 @@ export interface SendInput {
   /** "system" = a turn Tethr starts (e.g. after an approval); shown as a status line. */
   kind?: "user" | "system";
   requestedByUserId?: string | null;
+  /** Phase 21: a one-off private turn (the watcher's idea check). The model gets
+   * this prompt; tethr's record keeps only `text` (a one-line summary). It
+   * neither resumes nor saves a Claude session (--no-session-persistence), so
+   * what it was given (a Slack conversation) isn't written anywhere. */
+  privatePrompt?: string;
 }
+
+/** Prompts of private turns waiting to run (memory only, by run id). */
+const privatePrompts = new Map<string, string>();
 
 interface QueueState {
   threads: Map<string, string[]>;
@@ -83,6 +92,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       })
       .returning();
     const threadId = input.threadId ?? row.id;
+    if (input.privatePrompt) privatePrompts.set(row.id, input.privatePrompt);
     if (!input.threadId) {
       await db.update(tethrRouteRuns).set({ threadId }).where(eq(tethrRouteRuns.id, row.id));
     }
@@ -141,7 +151,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     if (!turns.length) return "";
     return [
       "Earlier in this conversation (for context):",
-      ...turns.map((p) => `Mark: ${p.requestText.slice(0, 400)}\nYou: ${(p.resultText ?? "").slice(0, 800)}`),
+      ...turns.map((p) => `Them: ${p.requestText.slice(0, 400)}\nYou: ${(p.resultText ?? "").slice(0, 800)}`),
     ].join("\n\n");
   }
 
@@ -204,7 +214,8 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     try {
       cfg = getIntegrations(companyId);
       const goals = goalsContextText(await goalsService(db).list(companyId));
-      ws = await ensureWorkspace({ integrationRules: integrationRulesText(cfg), goals });
+      const company = companyContextText(await companyProfileService(db).get(companyId));
+      ws = await ensureWorkspace({ integrationRules: integrationRulesText(cfg), goals, company });
       ({ personaPath, skillDir } = await ensurePersona());
       const hookScript = await ensureHookScript();
       if (modeFor(cfg, TETHR_TOOLS_LABEL) !== "off") bridgeScript = await ensureToolsBridge();
@@ -232,8 +243,12 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       }).catch(() => {});
     }
 
+    // A private turn (see SendInput.privatePrompt) starts fresh and leaves no session.
+    const privatePrompt = privatePrompts.get(runId) ?? null;
+    privatePrompts.delete(runId);
+    const ephemeral = privatePrompt !== null;
     // Session: resume the thread's, unless its context has grown too big.
-    let session = chats.getSession(companyId, threadId);
+    let session = ephemeral ? null : chats.getSession(companyId, threadId);
     let rotated = false;
     if (session && session.contextTokens > ROTATE_CONTEXT_TOKENS) {
       await chats.clearSession(companyId, threadId);
@@ -244,13 +259,14 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       await finish(runId, { status: "stopped", resultText: "Stopped before it started." });
       return;
     }
-    const notes = await chats.takeNotes(companyId, threadId);
-    const context = !session ? await legacyContext(companyId, threadId, runId) : "";
+    const notes = ephemeral ? [] : await chats.takeNotes(companyId, threadId);
+    const context = !session && !ephemeral ? await legacyContext(companyId, threadId, runId) : "";
+    const ask = privatePrompt ?? row.requestText;
     const prompt = [
       notes.length ? `Notes from Tethr:\n${notes.map((n) => `- ${n}`).join("\n")}` : "",
       rotated ? "(This conversation continues from an earlier session that got long.)" : "",
       context,
-      row.sourceKey === "chat-system" ? `[From Tethr, not Mark] ${row.requestText}` : row.requestText,
+      row.sourceKey === "chat-system" ? `[From Tethr, not the user] ${ask}` : ask,
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -344,6 +360,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
             ...(process.env.TETHR_ASSISTANT_BILLING === "api" ? {} : { ANTHROPIC_API_KEY: "" }),
           },
           extraArgs: [
+            ...(ephemeral ? ["--no-session-persistence"] : []),
             ...(mcpConfigPath ? ["--mcp-config", mcpConfigPath] : []),
             "--settings",
             settingsPath,
@@ -401,8 +418,8 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       durationMs: Date.now() - started,
     });
 
-    // Session bookkeeping.
-    if (result) {
+    // Session bookkeeping (a private turn keeps none).
+    if (result && !ephemeral) {
       if (result.clearSession) {
         await chats.clearSession(companyId, threadId);
       } else if (result.sessionParams || result.sessionId || turn.sessionId) {
@@ -455,6 +472,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       if (idx >= 0) {
         queue.splice(idx, 1);
         state.threads.set(key, queue);
+        privatePrompts.delete(runId);
         await finish(runId, { status: "stopped", resultText: "Stopped before it started." });
         return true;
       }

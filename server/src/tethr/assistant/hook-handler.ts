@@ -90,20 +90,20 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
       entityId: granted,
       details: { tool: toolName, summary: c.summary },
     }).catch(() => {});
-    return preDecision("allow", "Approved by Mark.");
+    return preDecision("allow", "Approved in tethr.");
   }
   const pending = await findPending(db, ctx.companyId, ctx.threadId, hash);
   if (pending) {
     return preDecision(
       "deny",
-      `Tethr approval gate: still waiting for Mark's approval (${shortId(pending.id)}) — ${c.summary}. Don't retry it; it runs once he approves.`,
+      `Tethr approval gate: still waiting for approval in tethr (${shortId(pending.id)}) — ${c.summary}. Don't retry it; it runs once it's approved.`,
     );
   }
   try {
     const card = await createPendingAction(db, { ...ctx, classified: c, toolName, toolInput, hash });
     return preDecision(
       "deny",
-      `Tethr approval gate: sent to Mark for approval (${shortId(card.id)}) — ${c.summary}. It runs once he approves; don't retry it or work around it.`,
+      `Tethr approval gate: sent for approval in tethr (${shortId(card.id)}) — ${c.summary}. It runs once it's approved; don't retry it or work around it.`,
     );
   } catch {
     return preDecision("deny", `Tethr approval gate: couldn't create the approval for this, so it was not done — ${c.summary}.`);

@@ -497,7 +497,7 @@ export function gatingService(db: Db) {
       if (typeof meta.threadId === "string") {
         const chats = await import("./chats.js");
         await chats
-          .addNote(input.companyId, meta.threadId, `Mark rejected: ${String(meta.summary ?? output.title)}${input.note ? ` (${input.note})` : ""}. Don't do it unless he asks again.`)
+          .addNote(input.companyId, meta.threadId, `Rejected in tethr: ${String(meta.summary ?? output.title)}${input.note ? ` (${input.note})` : ""}. Don't do it unless someone asks again.`)
           .catch(() => {});
       }
     }
@@ -551,14 +551,14 @@ export function gatingService(db: Db) {
         await chats.addNote(
           companyId,
           threadId,
-          `Mark approved this action: run this exact call now, changing nothing — tool ${String(meta.toolName)} with input ${JSON.stringify(meta.toolInput ?? {})}. Then confirm in one line.`,
+          `Approved in tethr: run this exact call now, changing nothing — tool ${String(meta.toolName)} with input ${JSON.stringify(meta.toolInput ?? {})}. Then confirm in one line.`,
         );
         const { getAssistantRunner } = await import("./assistant/runner.js");
         await getAssistantRunner(db).send({
           companyId,
           threadId,
           kind: "system",
-          text: `Mark approved: ${String(meta.summary ?? output.title)}`,
+          text: `Approved: ${String(meta.summary ?? output.title)}`,
           requestedByUserId: reviewer.startsWith("auto:") ? null : reviewer,
         });
       } catch (err) {

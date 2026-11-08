@@ -198,7 +198,11 @@ export function goalsService(db: Db) {
         })
         .where(eq(tethrGoalMetrics.id, metricId))
         .returning();
-      return row;
+      // Phase 21: keep the target realistic (moves it only when the trend says
+      // so, within the growth pace chosen in setup). Never fails the recording.
+      const { adjustAfterMeasurement } = await import("./goal-pace.js");
+      const adjusted = await adjustAfterMeasurement(db, companyId, row).catch(() => null);
+      return adjusted ?? row;
     },
 
     async deleteMetric(companyId: string, metricId: string): Promise<void> {
@@ -219,14 +223,10 @@ const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
 
 /** The goals block written into the chat's CLAUDE.md every turn. */
 export function goalsContextText(view: GoalsView): string {
-  if (!view.company && !view.goals.length) {
-    return "- No goals are set yet. If Mark asks for plans or priorities, suggest finishing tethr's setup (the goals interview) first.";
+  if (!view.goals.length) {
+    return "- No goals are set yet. If someone asks for plans or priorities, suggest finishing tethr's setup (the goals interview) first.";
   }
   const lines: string[] = [];
-  if (view.company) {
-    const detail = oneLine(view.company.description, 200);
-    lines.push(`Mission: ${oneLine(view.company.title, 200)}${detail ? ` (${detail})` : ""}`);
-  }
   for (const g of view.goals) {
     lines.push(`- ${oneLine(g.title, 200)} [goal ${g.id}${g.status !== "active" ? `, ${g.status}` : ""}]`);
     if (!g.metrics.length) lines.push("  - no metric yet");

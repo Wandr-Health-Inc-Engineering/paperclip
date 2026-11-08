@@ -27,10 +27,13 @@ describe("tethr setup — pure bits", () => {
     expect(validCron("0 8 * * 1; rm -rf /")).toBe(false);
     expect(validTimezone("America/Chicago")).toBe(true);
     expect(validTimezone("Mars/Base")).toBe(false);
-    const brief = interviewBrief(["New customers", "Revenue"]);
+    const brief = interviewBrief(["New customers", "Revenue"], { person: "Mark", company: "Wandr Health", pace: "ambitious" });
     expect(brief.split("\n")[0]).toBe("Setup: goals interview");
     expect(brief).toContain("start with New customers");
-    expect(brief).toContain("Never save numbers he hasn't agreed to");
+    expect(brief).toContain("Never save numbers they haven't agreed to");
+    expect(brief).toContain("setting up Wandr Health's goals with Mark");
+    expect(brief).toContain("Ambitious (about 30% on top of the trend)");
+    expect(interviewBrief(["Revenue"])).toContain("with the person you're working with");
     expect(brief).toContain("Aggregates only");
     expect(operationsThreadId("c1")).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(operationsThreadId("c1")).toBe(operationsThreadId("c1"));
@@ -90,30 +93,44 @@ describePg("tethr setup — routes, rhythm, operations chat, wipe", () => {
     await tempDb?.cleanup();
   });
 
-  it("saves the basics as goals and lists what's connected", async () => {
+  it("saves the company and you (its admin), then the focus areas and growth pace", async () => {
     const app = await appFor(mark);
     const before = await request(app).get(`/api/tethr/${companyId}/setup`).expect(200);
     expect(before.body.state.completedAt).toBeNull();
-    expect(before.body.checks.map((c: { key: string }) => c.key)).toEqual(expect.arrayContaining(["stripe", "posthog", "google_ads", "slack_bot", "jev"]));
+    expect(before.body.checks.map((c: { key: string }) => c.key)).toEqual(expect.arrayContaining(["stripe", "posthog", "google_ads", "slack_bot", "jev", "slack_listen"]));
+    expect(before.body.mission).toMatch(/small team/);
+    expect(before.body.positions.map((p: { key: string }) => p.key)).toContain("cto");
+    expect(before.body.state).toMatchObject({ growthPace: "balanced", autoAdjust: true, ideas: { level: "normal", adaptive: true, slackListen: true } });
 
-    await request(app).put(`/api/tethr/${companyId}/setup/basics`).send({ mission: "", areas: ["Revenue"] }).expect(400);
-    const saved = await request(app)
-      .put(`/api/tethr/${companyId}/setup/basics`)
-      .send({ mission: "Make travel medicine easy", areas: ["New customers", "Revenue", "Partnerships & distribution"], timezone: "America/Chicago" })
+    // Step 1: the company and you.
+    await request(app).put(`/api/tethr/${companyId}/setup/company`).send({ companyName: "", adminName: "Mark", position: "coo" }).expect(400);
+    await request(app).put(`/api/tethr/${companyId}/setup/company`).send({ companyName: "Wandr Health", adminName: "Mark", position: "nope" }).expect(400);
+    await request(app).put(`/api/tethr/${companyId}/setup/company`).send({ companyName: "Wandr Health", adminName: "Mark", position: "coo", slackUserId: "bad" }).expect(400);
+    const company = await request(app)
+      .put(`/api/tethr/${companyId}/setup/company`)
+      .send({ companyName: "Wandr Health", sells: "Travel medicine online", adminName: "Mark Karam", adminEmail: "mark@travelwithwandr.com", position: "coo", slackUserId: "u0abcdef1", timezone: "America/Chicago", internalAddresses: ["travelwithwandr.com"] })
       .expect(200);
-    expect(saved.body.goals.company.title).toBe("Make travel medicine easy");
-    expect(saved.body.goals.goals.map((g: { title: string }) => g.title)).toEqual(["New customers", "Revenue", "Partnerships & distribution"]);
-    expect(saved.body.state.timezone).toBe("America/Chicago");
+    expect(company.body.profile).toMatchObject({ name: "Wandr Health", sells: "Travel medicine online" });
+    expect(company.body.profile.admin).toMatchObject({ name: "Mark Karam", position: "coo", title: "COO / Operations", role: "admin", slackUserId: "U0ABCDEF1" });
+    expect(company.body.state.timezone).toBe("America/Chicago");
+    expect(company.body.state.steps.company).toBeTruthy();
+
+    // Step 2: what to work on first, and how hard to push.
+    await request(app).put(`/api/tethr/${companyId}/setup/focus`).send({ areas: [] }).expect(400);
+    const focus = await request(app)
+      .put(`/api/tethr/${companyId}/setup/focus`)
+      .send({ areas: ["New customers", "Revenue", "Partnerships & distribution"], growthPace: "ambitious", autoAdjust: true })
+      .expect(200);
+    expect(focus.body.goals.company.title).toBe("Wandr Health: grow with a small team");
+    expect(focus.body.goals.goals.map((g: { title: string }) => g.title)).toEqual(["New customers", "Revenue", "Partnerships & distribution"]);
+    expect(focus.body.state.growthPace).toBe("ambitious");
 
     // Dropping an area with no numbers cancels it (kept, not deleted).
-    const again = await request(app)
-      .put(`/api/tethr/${companyId}/setup/basics`)
-      .send({ mission: "Make travel medicine easy", areas: ["New customers", "Revenue"], timezone: "America/Chicago" })
-      .expect(200);
+    const again = await request(app).put(`/api/tethr/${companyId}/setup/focus`).send({ areas: ["New customers", "Revenue"] }).expect(200);
     expect(again.body.goals.goals.map((g: { title: string }) => g.title)).toEqual(["New customers", "Revenue"]);
 
     const agent = await appFor({ type: "agent", agentId: "a1", companyId });
-    await request(agent).put(`/api/tethr/${companyId}/setup/basics`).send({ mission: "x", areas: ["x"] }).expect(403);
+    await request(agent).put(`/api/tethr/${companyId}/setup/company`).send({ companyName: "x", adminName: "x", position: "coo" }).expect(403);
   });
 
   it("starts the goals interview once, in its own side chat", async () => {
@@ -180,7 +197,7 @@ describePg("tethr setup — routes, rhythm, operations chat, wipe", () => {
     const [turn] = await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.id, out.runId!));
     expect(turn.threadId).toBe(ops);
     expect(turn.requestText).toMatch(/^Scheduled: Weekly scorecard \(WD-9\)/);
-    expect(prompts.at(-1)).toContain("[From Tethr, not Mark] Scheduled: Weekly scorecard");
+    expect(prompts.at(-1)).toContain("[From Tethr, not the user] Scheduled: Weekly scorecard");
   });
 
   it("skips a scheduled turn when agents are paused, instead of calling it done", async () => {

@@ -240,7 +240,7 @@ function summarize(connector: string, name: string, input: Record<string, unknow
     const from = typeof input.from_file === "string" ? path.basename(input.from_file) : "";
     return `Scoring ${n ? `${n} items` : from ? from : "a list"} with Jev`;
   }
-  if (connector === "Tethr tools" && name === "goals_list") return "Reading Wandr's goals";
+  if (connector === "Tethr tools" && name === "goals_list") return "Reading the goals";
   if (connector === "Tethr tools" && name === "save_goal") {
     return `Saving goal${typeof input.title === "string" ? ` “${input.title.slice(0, 60)}”` : ""}`;
   }
@@ -395,13 +395,13 @@ export function decide(c: Classified, opts: { mode: ConnectorMode; shell: "off" 
       return { action: "allow" };
     case "web":
       return opts.tainted && !c.internalHost
-        ? { action: "ask", reason: `Tethr approval gate: waiting for Mark's approval (this chat has read your connected tools, so opening outside pages needs his ok) — ${c.summary}.` }
+        ? { action: "ask", reason: `Tethr approval gate: waiting for approval in tethr (this chat has read your connected tools, so opening outside pages needs an ok) — ${c.summary}.` }
         : { action: "allow" };
     case "blocked":
       return { action: "deny", reason: `Tethr approval gate: blocked — ${c.blockedReason ?? "not allowed"}.` };
     case "shell":
       return opts.shell === "ask"
-        ? { action: "ask", reason: `Tethr approval gate: shell command waiting for Mark's approval — ${c.summary}` }
+        ? { action: "ask", reason: `Tethr approval gate: shell command waiting for approval in tethr — ${c.summary}` }
         : { action: "deny", reason: "Tethr approval gate: shell commands are turned off in Tethr." };
     default:
       break;
@@ -418,13 +418,13 @@ export function decide(c: Classified, opts: { mode: ConnectorMode; shell: "off" 
     c.cls === "money"
       ? " (moves money)"
       : c.cls === "public"
-        ? " (goes outside Wandr)"
+        ? " (goes outside the company)"
         : c.cls === "medical"
           ? " (mentions medical details)"
           : c.cls === "destructive"
             ? " (deletes or overwrites)"
             : "";
-  return { action: "ask", reason: `Tethr approval gate: waiting for Mark's approval${why} — ${c.summary}.` };
+  return { action: "ask", reason: `Tethr approval gate: waiting for approval in tethr${why} — ${c.summary}.` };
 }
 
 function builtinSummary(tool: string, args: Record<string, unknown>): string {

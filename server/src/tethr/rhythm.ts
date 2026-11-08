@@ -18,23 +18,23 @@ import { postSlackMessage, slackChannel, slackConfigured } from "./slack.js";
 // Claude session in a fixed "Operations" side chat, with Mark's connectors and
 // the goals in its instructions, instead of the old multi-agent engine.
 
-const SAFETY = "Aggregates only: never write down a customer's name, email or health details. Don't send, post, share or spend anything as part of this; anything outward waits for Mark's approval.";
+const SAFETY = "Aggregates only: never write down a customer's name, email or health details. Don't send, post, share or spend anything as part of this; anything outward waits for approval in tethr.";
 
 export const RHYTHMS: Record<RhythmKey, { title: string; label: string; playbook: string }> = {
   plan: {
     title: "Weekly plan",
     label: "Monday plan",
-    playbook: `Plan Wandr's week around the goals.
+    playbook: `Plan the team's week around the goals.
 1. Call goals_list for the goals and their latest numbers.
 2. Look at last week: the newest scorecard in files/scorecards/ (if any), what's waiting in the Queue, and what moved in the connected tools (Stripe, PostHog, Google Ads).
-3. Propose 3 to 5 moves for this week. For each: the goal and metric it moves, exactly what to do, who does it (tethr or Mark), and how we'll know it worked.
+3. Propose 3 to 5 moves for this week. For each: the goal and metric it moves, exactly what to do, who does it (tethr, or which person on the team, by position), and how we'll know it worked.
 4. Save the plan as files/plans/<YYYY-MM-DD> plan.md, then reply with a short summary that leads with the single most important move.
 ${SAFETY}`,
   },
   scorecard: {
     title: "Weekly scorecard",
     label: "Friday scorecard",
-    playbook: `Measure Wandr's goals.
+    playbook: `Measure the company's goals.
 1. Call goals_list.
 2. Measure every metric exactly the way its method says, for the period it describes, with the connected tools.
 3. Record each value with record_metric, noting the window you measured.
@@ -45,9 +45,9 @@ ${SAFETY}`,
   brief: {
     title: "Morning brief",
     label: "Daily brief",
-    playbook: `Write Mark's morning brief, under 150 words.
+    playbook: `Write the admin's morning brief, under 150 words.
 - What changed since yesterday that matters for the goals (new customers, revenue, partner conversations), as numbers.
-- What's waiting on Mark: approvals in the Queue, emails or Slack threads that need him.
+- What's waiting on them: approvals in the Queue, emails or Slack threads that need a reply.
 - Today's single most useful focus, tied to a goal.
 No file needed unless something is worth keeping.
 ${SAFETY}`,
