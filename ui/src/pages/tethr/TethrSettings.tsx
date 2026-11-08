@@ -507,6 +507,8 @@ function Switch({
     <button
       type="button"
       role="switch"
+      // Opts out of index.css's 44px touch-target min-height, which would stretch the pill into a circle on phones.
+      data-slot="toggle"
       aria-checked={on}
       aria-label={label}
       disabled={disabled}

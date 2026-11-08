@@ -24,6 +24,8 @@ export function Toggle({ on, onChange, label }: { on: boolean; onChange: (on: bo
     <button
       type="button"
       role="switch"
+      // Opts out of index.css's 44px touch-target min-height, which would stretch the pill into a circle on phones.
+      data-slot="toggle"
       aria-checked={on}
       aria-label={label}
       onClick={() => onChange(!on)}
