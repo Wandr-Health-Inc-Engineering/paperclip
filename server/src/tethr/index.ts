@@ -106,7 +106,7 @@ async function reapOrphanedRouteRuns(db: Db): Promise<void> {
         error: "Interrupted — the server restarted while this run was in progress.",
         updatedAt: new Date(),
       })
-      .where(inArray(tethrRouteRuns.status, ["routing", "working"]))
+      .where(inArray(tethrRouteRuns.status, ["routing", "working", "queued", "running"]))
       .returning({ id: tethrRouteRuns.id });
     if (reaped.length) {
       const { logger } = await import("../middleware/logger.js");

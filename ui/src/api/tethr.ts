@@ -97,6 +97,11 @@ export interface TethrRouteHop {
   decision: string;
   reason: string;
   at: string;
+  // Phase 18 chat turns: raw tool name, call id, outcome, and file path (relative to 00 Tethr).
+  tool?: string;
+  toolUseId?: string;
+  status?: "running" | "ok" | "failed" | "blocked";
+  file?: string;
 }
 
 export interface TethrRouteResult {
@@ -121,6 +126,8 @@ export interface TethrRouteRun {
   requestText: string;
   requestedByUserId: string | null;
   invocationSource: string;
+  /** "chat-system" marks a turn Tethr started (e.g. after an approval). */
+  sourceKey?: string | null;
   threadId: string | null;
   status: string;
   hops: TethrRouteHop[];
@@ -532,6 +539,13 @@ export const tethrApi = {
     api.delete<{ removed: boolean }>(`/tethr/${c}/chats/${threadId}`),
   chatRuns: (c: string, threadId: string, limit = 40) =>
     api.get<TethrChatRun[]>(`/tethr/${c}/chats/${threadId}/runs?limit=${limit}`),
+  /** Phase 18: send a message into a chat thread (runs as a turn of its Claude session). */
+  sendChatMessage: (c: string, threadId: string, text: string) =>
+    api.post<{ routeRunId: string; threadId: string }>(`/tethr/${c}/chats/${threadId}/messages`, { text }),
+  stopChatTurn: (c: string, runId: string) =>
+    api.post<{ stopped: boolean }>(`/tethr/${c}/chat-turns/${runId}/stop`, {}),
+  resetChatSession: (c: string, threadId: string) =>
+    api.post<{ reset: boolean }>(`/tethr/${c}/chats/${threadId}/reset`, {}),
   outputs: (c: string, status?: string) =>
     api.get<TethrOutputListItem[]>(
       `/tethr/${c}/outputs${status ? `?status=${status}` : ""}`,

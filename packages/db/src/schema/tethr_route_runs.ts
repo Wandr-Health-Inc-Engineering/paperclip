@@ -18,6 +18,14 @@ export interface TethrRouteHop {
   decision: string;
   reason: string;
   at: string;
+  // Phase 18 chat turns (assistant runner) — optional, type-only additions.
+  /** Raw tool name, e.g. "mcp__claude_ai_Gmail__search_threads". */
+  tool?: string;
+  /** Claude's tool_use id, to match the result to the call. */
+  toolUseId?: string;
+  status?: "running" | "ok" | "failed" | "blocked";
+  /** For file writes/edits: path relative to the 00 Tethr folder. */
+  file?: string;
 }
 
 export const tethrRouteRuns = pgTable(

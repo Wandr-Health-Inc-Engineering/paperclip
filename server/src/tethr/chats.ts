@@ -24,8 +24,24 @@ export interface SideChat {
   createdAt: string;
 }
 
+/** Phase 18: the Claude Code session a chat thread resumes. */
+export interface ChatSession {
+  sessionId: string | null;
+  sessionParams: Record<string, unknown> | null;
+  lastTurnAt: string;
+  /** Rough size of the conversation context after the last turn (input + cached tokens). */
+  contextTokens: number;
+}
+
+interface CompanyChats {
+  sideChats: SideChat[];
+  sessions?: Record<string, ChatSession>;
+  /** Notes to prepend to a thread's next turn (e.g. "Mark rejected …"). */
+  notes?: Record<string, string[]>;
+}
+
 interface ChatsFile {
-  [companyId: string]: { sideChats: SideChat[] };
+  [companyId: string]: CompanyChats;
 }
 
 const TITLE_MAX = 60;
@@ -78,9 +94,51 @@ export async function addSideChat(companyId: string, threadId: string, title: st
   const existing = list.find((c) => c.threadId === threadId);
   if (existing) return existing;
   const chat: SideChat = { threadId, title: chatTitle(title), createdAt: new Date().toISOString() };
-  data[companyId] = { sideChats: [chat, ...list] };
+  data[companyId] = { ...(data[companyId] ?? { sideChats: [] }), sideChats: [chat, ...list] };
   await writeFile(data);
   return chat;
+}
+
+// ---- Phase 18: per-thread Claude sessions + next-turn notes ----------------
+
+export function getSession(companyId: string, threadId: string): ChatSession | null {
+  return readFile()[companyId]?.sessions?.[threadId] ?? null;
+}
+
+export async function setSession(companyId: string, threadId: string, session: ChatSession): Promise<void> {
+  const data = readFile();
+  const c = data[companyId] ?? { sideChats: [] };
+  data[companyId] = { ...c, sessions: { ...(c.sessions ?? {}), [threadId]: session } };
+  await writeFile(data);
+}
+
+export async function clearSession(companyId: string, threadId: string): Promise<void> {
+  const data = readFile();
+  const c = data[companyId];
+  if (!c?.sessions?.[threadId]) return;
+  const { [threadId]: _dropped, ...rest } = c.sessions;
+  data[companyId] = { ...c, sessions: rest };
+  await writeFile(data);
+}
+
+export async function addNote(companyId: string, threadId: string, note: string): Promise<void> {
+  const data = readFile();
+  const c = data[companyId] ?? { sideChats: [] };
+  const notes = c.notes ?? {};
+  data[companyId] = { ...c, notes: { ...notes, [threadId]: [...(notes[threadId] ?? []), note] } };
+  await writeFile(data);
+}
+
+/** Read and clear the notes waiting for a thread's next turn. */
+export async function takeNotes(companyId: string, threadId: string): Promise<string[]> {
+  const data = readFile();
+  const c = data[companyId];
+  const list = c?.notes?.[threadId] ?? [];
+  if (!list.length || !c) return [];
+  const { [threadId]: _taken, ...rest } = c.notes ?? {};
+  data[companyId] = { ...c, notes: rest };
+  await writeFile(data);
+  return list;
 }
 
 /** Drop a side chat from the list. Its runs are untouched. */
@@ -89,7 +147,7 @@ export async function removeSideChat(companyId: string, threadId: string): Promi
   const list = data[companyId]?.sideChats ?? [];
   const next = list.filter((c) => c.threadId !== threadId);
   if (next.length === list.length) return false;
-  data[companyId] = { sideChats: next };
+  data[companyId] = { ...(data[companyId] ?? { sideChats: [] }), sideChats: next };
   await writeFile(data);
   return true;
 }

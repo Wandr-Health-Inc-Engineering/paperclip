@@ -464,6 +464,52 @@ label "Chat". Run records still store `invocationSource: "console"` (data, uncha
   Queue** — same gate, the Queue still lists everything. The bell's "ask tethr" now routes into
   the main chat. Locked by `tethr-chats.test.ts`.
 
+## Chat on a real Claude session (phase 18, 2026-11-07) — the v1 core
+
+Approved plan: each Chat thread drives ONE Claude Code session (resumed per thread) with
+Mark's claude.ai connectors, instead of Tethr's multi-agent routing (which averaged 35s/reply,
+remembered nothing Mark said, and could only read). Spike findings: `tasks/phase-18-0-spike.md`.
+- **Runner** `server/src/tethr/assistant/runner.ts` (`getAssistantRunner(db).send/stop`) calls
+  core's claude-local adapter `execute()` directly (`getServerAdapter("claude_local")`):
+  `promptTemplate:"{{context.tethrPrompt}}"` (no work-loop contract), persona via
+  `instructionsFilePath` (static — changing it forces fresh sessions), one Tethr skill via
+  `paperclipRuntimeSkills` (keeps Paperclip's curl skill out), `dangerouslySkipPermissions:false`,
+  extraArgs `--settings <per-turn> --permission-mode dontAsk --include-partial-messages --tools
+  <builtins>`. One row in `tethr_route_runs` per turn (`invocationSource:"chat"`, statuses
+  queued/running/done/failed/stopped; text streams into `resultText`, tool steps into `hops` —
+  no raw tool results stored). One turn per thread, ≤2 concurrent. Checks throttle + budget
+  block before each turn; records tokens via `costService.createEvent` (heartbeatRunId null;
+  subscription = 0¢). Session per thread in `tethr-chats.json` (`sessions`); rotates past ~150k
+  context tokens.
+- **Two env must-haves (verified):** `ANTHROPIC_API_KEY: ""` in the child env (the instance
+  .env holds an old API key; without blanking it the CLI fails "Invalid API key" instead of using
+  Mark's subscription login; opt out with `TETHR_ASSISTANT_BILLING=api`), and
+  `MCP_CONNECTION_NONBLOCKING: "false"` (otherwise a RESUMED turn starts before claude.ai
+  connectors reconnect, Claude Code marks their tools "removed", and the model says the connector
+  is down). Never pass `--strict-mcp-config` (it drops the connectors) or `--bare` (drops hooks).
+- **Workspace** `assistant/workspace.ts`: `00 Tethr/tethr/` (Drive-synced; fallback instance
+  dir): generated `CLAUDE.md` (rewritten only if it carries the marker) + `@Memory.md` (long-term
+  memory Claude edits on "remember…"; edits are seen on resume) + `files/` for deliverables.
+- **Approval gate** (`assistant/gate.ts` + `policy.ts` + `POST /tethr/hooks/:phase`): a
+  PreToolUse/PostToolUse hook script (content-addressed in the instance dir) forwards every tool
+  call with a per-turn bearer token; pre **fails closed**. `classify()` → read / draft / write /
+  public (email or invite outside `internalAddresses`) / money (Stripe writes, all Mercury) /
+  medical / builtin / workspace / shell / blocked; `decide()` by connector mode off/read/ask/auto
+  (money/public/medical always ask). Built-in reads only inside 00 Tethr; writes only inside the
+  workspace; `CLAUDE.md` protected; Bash off unless `shell:"ask"`. Deny messages start
+  "Tethr approval gate:" and the persona says they're genuine (otherwise the model treats them as
+  injections). Phase 18.2 state: "ask" results are refused ("approvals aren't switched on yet");
+  approval cards come in phase 18.3.
+- **Config** `server/src/tethr/integrations.ts` → instance-dir `tethr-integrations.json`:
+  defaultMode (read for now), per-connector mode + scope (Mercury/Canva/Figma off), internal
+  addresses, shell, `assistant{engine session|routing, model}`, discovered tool names (from real
+  turns). `GET|POST /tethr/:companyId/chat-engine` is the rollback switch.
+- **Routes:** `POST /tethr/:companyId/chats/:threadId/messages`, `POST /chats` (side chat via the
+  runner), `POST /chat-turns/:runId/stop`, `POST /chats/:threadId/reset`. UI `TethrChat.tsx`
+  `SessionTurn`: live step rows (6px status dots), streaming answer, Stop, file chips; older
+  routing-engine turns keep `Turn`.
+- Tests: `tethr-assistant-policy` (11), `-events` (6), `-runner` (6, embedded PG, fake execute).
+
 ## Phase 15 fixes — previews, Inbox retirement, cogs (2026-07-19)
 
 - **Content previews in completion messages.** `preview.ts` `contentPreview(body)` → first ~3

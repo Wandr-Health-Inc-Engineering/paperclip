@@ -14,6 +14,7 @@ import {
   PanelLeftClose,
   Plus,
   Send,
+  Square,
   Wrench,
   X,
 } from "lucide-react";
@@ -36,16 +37,17 @@ import {
 
 // Chat (phase 17, formerly the Console; Mark's model): one ONGOING chat with
 // @tethr that everything goes into by default, plus SIDE chats he opens on
-// purpose for a focused task or side project. Each message routes through the
-// same engine as before; the reply shows which agents handled it (expandable
-// to the full route), the answer, anything filed, and an inline approval card
-// for gated work (same gate as the Queue).
+// purpose for a focused task or side project. Since phase 18 each thread runs
+// as ONE Claude Code session with Mark's connectors (SessionTurn: live activity
+// rows, streaming answer, Stop); older turns from the multi-agent engine keep
+// their route view (Turn). Gated outputs show as inline approval cards (same
+// gate as the Queue).
 //
 // URL: /chat = the ongoing chat · ?chat=<threadId> = a side chat · ?chat=new =
 // a side chat being started (it gets its thread on the first message). The old
 // /console route redirects here.
 
-const TERMINAL = new Set(["done", "gated", "failed"]);
+const TERMINAL = new Set(["done", "gated", "failed", "stopped"]);
 const DECIDABLE = new Set(["gated", "changes_requested"]);
 const PAGE = 40;
 
@@ -103,7 +105,7 @@ export function TethrChat() {
     queryKey: tethrKeys.chatRuns(c, threadId ?? "none"),
     queryFn: () => tethrApi.chatRuns(c, threadId!, limit),
     enabled: !!selectedCompanyId && !!threadId,
-    refetchInterval: (q) => (q.state.data?.some((r) => !TERMINAL.has(r.status)) || pending ? 800 : 15_000),
+    refetchInterval: (q) => (q.state.data?.some((r) => !TERMINAL.has(r.status)) || pending ? 500 : 15_000),
   });
 
   // Drop the optimistic bubble once its run shows up in the thread.
@@ -131,7 +133,7 @@ export function TethrChat() {
         const res = await tethrApi.openSideChat(c, text);
         return { ...res, opened: true };
       }
-      const res = await tethrApi.route(c, text, threadId);
+      const res = await tethrApi.sendChatMessage(c, threadId!, text);
       return { ...res, opened: false };
     },
     onMutate: (text) => {
@@ -163,7 +165,7 @@ export function TethrChat() {
 
   // Follow the conversation down while the reader is at the bottom.
   const last = runs?.[runs.length - 1];
-  const tick = `${threadId}|${runs?.length ?? 0}|${last?.status}|${last?.hops.length}|${pending?.text ?? ""}`;
+  const tick = `${threadId}|${runs?.length ?? 0}|${last?.status}|${last?.hops.length}|${last?.resultText?.length ?? 0}|${pending?.text ?? ""}`;
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
@@ -218,7 +220,11 @@ export function TethrChat() {
             ) : null}
             {isLoading ? <p className="text-center font-mono text-[11px] tethr-text-3">Loading…</p> : null}
             {visibleRuns.map((run) => (
-              <Turn key={run.id} run={run} companyId={c} />
+              run.invocationSource === "chat" ? (
+                <SessionTurn key={run.id} run={run} companyId={c} />
+              ) : (
+                <Turn key={run.id} run={run} companyId={c} />
+              )
             ))}
             {showPending && !visibleRuns.some((r) => r.id === pending?.runId) ? (
               <div className="flex flex-col gap-4">
@@ -449,6 +455,129 @@ function Working({ label }: { label: string }) {
     <div className="flex items-center gap-2.5 text-[13px]">
       <CogDuo className="h-5 w-5 text-muted-foreground" />
       <span className="shimmer-text font-medium">{label}</span>
+    </div>
+  );
+}
+
+const ACTIVE = new Set(["queued", "running"]);
+
+/** A phase-18 turn: one step of the thread's Claude session. */
+function SessionTurn({ run, companyId }: { run: TethrChatRun; companyId: string }) {
+  const queryClient = useQueryClient();
+  const running = ACTIVE.has(run.status);
+  const isSystem = run.sourceKey === "chat-system";
+  const tools = run.hops.filter((h) => h.layer === "tool");
+  const files = [...new Set(tools.filter((h) => h.file && h.status === "ok").map((h) => h.file as string))];
+  const gated = run.outputs.filter((o) => DECIDABLE.has(o.status));
+  const stop = useMutation({
+    mutationFn: () => tethrApi.stopChatTurn(companyId, run.id),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: tethrKeys.chatRuns(companyId, run.threadId ?? "") }),
+  });
+
+  return (
+    <div className="flex flex-col gap-3">
+      {isSystem ? <SystemLine text={run.requestText} /> : <UserBubble text={run.requestText} at={run.createdAt} />}
+      {tools.length ? <ActivityRows hops={tools} live={running} /> : null}
+      {run.resultText ? (
+        <MarkdownBody className="text-[14px] leading-relaxed">{run.resultText}</MarkdownBody>
+      ) : running ? (
+        <Working label={run.status === "queued" ? "waiting for the previous message…" : tools.length ? "working…" : "thinking…"} />
+      ) : null}
+      {running && run.resultText ? <StatusDot tone="live" className="self-start" /> : null}
+      {run.status === "failed" ? (
+        <p className="text-[13.5px] text-[var(--tethr-bad)]">{run.error || "Something went wrong."}</p>
+      ) : null}
+      {run.status === "stopped" ? <p className="text-[12.5px] tethr-text-3">Stopped.</p> : null}
+      {files.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {files.map((f) => (
+            <Link
+              key={f}
+              to="/drive"
+              title={f}
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--tethr-frost)] px-2.5 py-1 text-[12px] shadow-[inset_0_0_0_1px_var(--tethr-rim)] hover:bg-[var(--tethr-frost-strong)]"
+            >
+              <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate">{f.split("/").pop()}</span>
+            </Link>
+          ))}
+        </div>
+      ) : null}
+      {gated.map((o) => (
+        <ApprovalCard key={o.id} output={o} companyId={companyId} threadId={run.threadId ?? ""} />
+      ))}
+      {running ? (
+        <div>
+          <button
+            type="button"
+            onClick={() => stop.mutate()}
+            disabled={stop.isPending}
+            className="tethr-btn tethr-btn-ghost h-7 px-3 text-[12px]"
+          >
+            <Square className="h-3 w-3" />
+            Stop
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Tool steps: live while the turn runs, then folded into a one-line summary. */
+function ActivityRows({ hops, live }: { hops: TethrRouteHop[]; live: boolean }) {
+  const [open, setOpen] = useState(false);
+  const connectors = [...new Set(hops.map((h) => h.actorTag).filter((t) => t && t !== "tethr"))];
+  const blocked = hops.filter((h) => h.status === "blocked").length;
+  if (!live && !open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 self-start text-[12px] tethr-text-3 transition-colors hover:text-foreground"
+      >
+        <ChevronRight className="h-3.5 w-3.5" />
+        {hops.length} {hops.length === 1 ? "step" : "steps"}
+        {connectors.length ? ` · ${connectors.join(", ")}` : ""}
+        {blocked ? ` · ${blocked} blocked` : ""}
+      </button>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      {!live ? (
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="flex items-center gap-1.5 self-start text-[12px] tethr-text-3 transition-colors hover:text-foreground"
+        >
+          <ChevronDown className="h-3.5 w-3.5" />
+          Hide steps
+        </button>
+      ) : null}
+      {hops.map((h, i) => (
+        <div key={`${h.toolUseId ?? i}`} className="flex min-w-0 items-center gap-2 text-[12.5px]">
+          <StatusDot
+            tone={h.status === "ok" ? "ok" : h.status === "failed" ? "bad" : h.status === "blocked" ? "warn" : "live"}
+            title={h.status}
+          />
+          <span className="shrink-0 font-mono text-[11.5px] tethr-text-3">{h.actorTag}</span>
+          <span className="min-w-0 truncate text-muted-foreground">{h.decision}</span>
+          {h.status === "blocked" && h.reason ? (
+            <span className="min-w-0 truncate text-[11.5px] tethr-text-3">· {h.reason}</span>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** A turn Tethr started itself (e.g. after an approval): a quiet centered line. */
+function SystemLine({ text }: { text: string }) {
+  return (
+    <div className="flex items-center gap-3 text-[11.5px] tethr-text-3">
+      <span className="h-px flex-1 bg-[var(--tethr-rim)]" />
+      <span className="max-w-[70%] truncate">{text}</span>
+      <span className="h-px flex-1 bg-[var(--tethr-rim)]" />
     </div>
   );
 }

@@ -38,6 +38,11 @@ import { notificationService } from "../tethr/notify.js";
 import { orgService } from "../tethr/org.js";
 import { routingService } from "../tethr/routing.js";
 import * as chats from "../tethr/chats.js";
+import { getAssistantRunner } from "../tethr/assistant/runner.js";
+import { resolveHookToken } from "../tethr/assistant/gate.js";
+import { classify, decide } from "../tethr/assistant/policy.js";
+import { readableRoots, workspaceDir } from "../tethr/assistant/workspace.js";
+import { getIntegrations, modeFor, updateIntegrations } from "../tethr/integrations.js";
 import {
   interpretSlackEvent,
   routeInboundKickoff,
@@ -72,6 +77,54 @@ export function tethrRoutes(db: Db) {
   const memory = memoryService(db);
   const notify = notificationService(db);
   const worker = workerService(db);
+
+  // ---- Chat approval gate (phase 18) ----------------------------------------
+  // Called by the hook script Claude Code runs before/after every tool call in
+  // a chat turn. Authenticated by the per-turn token (not a browser session),
+  // like the Slack webhook below. Pre decides allow/deny; it fails closed.
+  router.post("/tethr/hooks/:phase", async (req, res) => {
+    const phase = req.params.phase === "post" ? "post" : "pre";
+    const auth = String(req.headers.authorization ?? "");
+    const ctx = resolveHookToken(auth.startsWith("Bearer ") ? auth.slice(7) : null);
+    if (!ctx) {
+      res.status(401).json(
+        phase === "pre"
+          ? { exitCode: 2, stderr: "Tethr approval gate: this chat turn is no longer authorized, so the action was blocked." }
+          : { exitCode: 0 },
+      );
+      return;
+    }
+    if (phase === "post") {
+      res.json({ exitCode: 0 });
+      return;
+    }
+    const toolName = String(req.body?.tool_name ?? "");
+    const toolInput = (req.body?.tool_input ?? {}) as Record<string, unknown>;
+    const cfg = getIntegrations(ctx.companyId);
+    const c = classify(toolName, toolInput, {
+      workspaceDir: workspaceDir().dir,
+      readableRoots: readableRoots(),
+      internalAddresses: cfg.internalAddresses,
+    });
+    let d = decide(c, { mode: modeFor(cfg, c.connector), shell: cfg.shell });
+    if (d.action === "ask") {
+      // Approval cards arrive in phase 18.3; until then anything needing Mark is refused.
+      d = {
+        action: "deny",
+        reason: `Tethr approval gate: approvals aren't switched on yet, so this was not done — ${c.summary}. Tell Mark what you would have done.`,
+      };
+    }
+    res.json({
+      exitCode: 0,
+      stdout: JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: d.action === "allow" ? "allow" : "deny",
+          permissionDecisionReason: d.action === "allow" ? "Allowed by Tethr." : d.reason,
+        },
+      }),
+    });
+  });
 
   // ---- Slack inbound events (Phase 2) -------------------------------------
   // Public webhook — authenticated by Slack's request signature, not a
@@ -347,22 +400,26 @@ export function tethrRoutes(db: Db) {
       res.status(400).json({ error: "request is required" });
       return;
     }
-    const ids = await new Promise<{ routeRunId: string; threadId: string }>((resolve, reject) => {
-      routing
-        .routeRequest({
-          companyId,
-          requestText,
-          invocationSource: "console",
-          requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
-          threadId: null,
-          hopDelayMs: 350,
-          onStarted: resolve,
-        })
-        .catch((err) => {
-          logger.warn({ err }, "tethr side chat route failed");
-          reject(err instanceof Error ? err : new Error(String(err)));
-        });
-    });
+    const requestedByUserId = actor.actorType === "user" ? actor.actorId : null;
+    const ids =
+      getIntegrations(companyId).assistant.engine === "session"
+        ? await getAssistantRunner(db).send({ companyId, threadId: null, text: requestText, requestedByUserId })
+        : await new Promise<{ routeRunId: string; threadId: string }>((resolve, reject) => {
+            routing
+              .routeRequest({
+                companyId,
+                requestText,
+                invocationSource: "console",
+                requestedByUserId,
+                threadId: null,
+                hopDelayMs: 350,
+                onStarted: resolve,
+              })
+              .catch((err) => {
+                logger.warn({ err }, "tethr side chat route failed");
+                reject(err instanceof Error ? err : new Error(String(err)));
+              });
+          });
     const chat = await chats.addSideChat(companyId, ids.threadId, requestText);
     res.json({ ...ids, chat });
   });
@@ -405,6 +462,67 @@ export function tethrRoutes(db: Db) {
           )
       : [];
     res.json(runs.map((run) => ({ ...run, outputs: outputs.filter((o) => o.routeRunId === run.id) })));
+  });
+
+  // Phase 18: send a message into a chat thread. The session engine (default)
+  // runs it as a turn of the thread's Claude Code session; "routing" keeps the
+  // old multi-agent engine as a rollback switch.
+  router.post("/tethr/:companyId/chats/:threadId/messages", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    const text = String(req.body?.text ?? "").trim();
+    if (!text) {
+      res.status(400).json({ error: "text is required" });
+      return;
+    }
+    const threadId = req.params.threadId as string;
+    const requestedByUserId = actor.actorType === "user" ? actor.actorId : null;
+    if (getIntegrations(companyId).assistant.engine === "routing") {
+      const ids = await new Promise<{ routeRunId: string; threadId: string }>((resolve, reject) => {
+        routing
+          .routeRequest({ companyId, requestText: text, invocationSource: "console", requestedByUserId, threadId, hopDelayMs: 350, onStarted: resolve })
+          .catch((err) => reject(err instanceof Error ? err : new Error(String(err))));
+      });
+      res.json(ids);
+      return;
+    }
+    res.json(await getAssistantRunner(db).send({ companyId, threadId, text, requestedByUserId }));
+  });
+
+  router.post("/tethr/:companyId/chat-turns/:runId/stop", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const runId = req.params.runId as string;
+    const [run] = await db.select().from(tethrRouteRuns).where(and(eq(tethrRouteRuns.id, runId), eq(tethrRouteRuns.companyId, companyId)));
+    if (!run) {
+      res.status(404).json({ error: "Turn not found" });
+      return;
+    }
+    res.json({ stopped: await getAssistantRunner(db).stop(runId) });
+  });
+
+  // Start the thread's Claude session over (the chat history stays).
+  router.post("/tethr/:companyId/chats/:threadId/reset", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    await chats.clearSession(companyId, req.params.threadId as string);
+    res.json({ reset: true });
+  });
+
+  router.get("/tethr/:companyId/chat-engine", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    res.json(getIntegrations(companyId).assistant);
+  });
+
+  router.post("/tethr/:companyId/chat-engine", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const engine = req.body?.engine === "routing" ? "routing" : "session";
+    const model = typeof req.body?.model === "string" && req.body.model.trim() ? req.body.model.trim() : undefined;
+    const cfg = await updateIntegrations(companyId, { assistant: { ...getIntegrations(companyId).assistant, engine, ...(model ? { model } : {}) } });
+    res.json(cfg.assistant);
   });
 
   // ---- Queue (gated outputs) --------------------------------------------------

@@ -105,6 +105,10 @@ export const TETHR_ROUTE_RUN_STATUSES = [
   "gated",
   "done",
   "failed",
+  // Phase 18: chat turns driven by a Claude Code session (assistant runner).
+  "queued",
+  "running",
+  "stopped",
 ] as const;
 export type TethrRouteRunStatus = (typeof TETHR_ROUTE_RUN_STATUSES)[number];
 
@@ -114,6 +118,8 @@ export const TETHR_ROUTE_INVOCATION_SOURCES = [
   "api",
   // Phase 16a: an agent working a Paperclip task (assignment / roll-up wake).
   "task",
+  // Phase 18: a Chat turn run by one Claude Code session per thread.
+  "chat",
 ] as const;
 export type TethrRouteInvocationSource =
   (typeof TETHR_ROUTE_INVOCATION_SOURCES)[number];
