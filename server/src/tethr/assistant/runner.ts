@@ -43,15 +43,32 @@ export interface SendInput {
   /** "system" = a turn Tethr starts (e.g. after an approval); shown as a status line. */
   kind?: "user" | "system";
   requestedByUserId?: string | null;
-  /** Phase 21: a one-off private turn (the watcher's idea check). The model gets
-   * this prompt; tethr's record keeps only `text` (a one-line summary). It
-   * neither resumes nor saves a Claude session (--no-session-persistence), so
-   * what it was given (a Slack conversation) isn't written anywhere. */
-  privatePrompt?: string;
+}
+
+/** Phase 21: a one-off private turn (the watcher's idea check). The model gets
+ * `prompt`; tethr's record keeps only `summary`. It neither resumes nor saves a
+ * Claude session (--no-session-persistence), so what it was given (a Slack
+ * conversation) isn't written anywhere. */
+export interface PrivateTurnInput {
+  companyId: string;
+  threadId: string;
+  summary: string;
+  prompt: string;
 }
 
 /** Prompts of private turns waiting to run (memory only, by run id). */
 const privatePrompts = new Map<string, string>();
+
+/** How a turn uses its thread's Claude session. */
+interface TurnStyle {
+  resumesSession: boolean;
+  /** Next-turn notes and the earlier-conversation recap. */
+  carriesContext: boolean;
+  savesSession: boolean;
+  extraArgs: string[];
+}
+const SESSION_TURN: TurnStyle = { resumesSession: true, carriesContext: true, savesSession: true, extraArgs: [] };
+const PRIVATE_TURN: TurnStyle = { resumesSession: false, carriesContext: false, savesSession: false, extraArgs: ["--no-session-persistence"] };
 
 interface QueueState {
   threads: Map<string, string[]>;
@@ -75,7 +92,17 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
   const execute: ExecuteFn = deps.execute ?? ((ctx) => getServerAdapter("claude_local").execute(ctx));
   const org = orgService(db);
 
-  async function send(input: SendInput): Promise<{ routeRunId: string; threadId: string }> {
+  /** A message to a chat thread (Mark's, or a system turn tethr starts). */
+  function send(input: SendInput): Promise<{ routeRunId: string; threadId: string }> {
+    return enqueue(input, null);
+  }
+
+  /** A private one-off turn (see PrivateTurnInput). */
+  function sendPrivate(input: PrivateTurnInput): Promise<{ routeRunId: string; threadId: string }> {
+    return enqueue({ companyId: input.companyId, threadId: input.threadId, text: input.summary, kind: "system" }, input.prompt);
+  }
+
+  async function enqueue(input: SendInput, privatePrompt: string | null): Promise<{ routeRunId: string; threadId: string }> {
     const router = await org.getRouterProfile(input.companyId);
     const [row] = await db
       .insert(tethrRouteRuns)
@@ -92,7 +119,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       })
       .returning();
     const threadId = input.threadId ?? row.id;
-    if (input.privatePrompt) privatePrompts.set(row.id, input.privatePrompt);
+    if (privatePrompt !== null) privatePrompts.set(row.id, privatePrompt);
     if (!input.threadId) {
       await db.update(tethrRouteRuns).set({ threadId }).where(eq(tethrRouteRuns.id, row.id));
     }
@@ -243,12 +270,12 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       }).catch(() => {});
     }
 
-    // A private turn (see SendInput.privatePrompt) starts fresh and leaves no session.
+    // A private turn (see PrivateTurnInput) starts fresh and leaves no session.
     const privatePrompt = privatePrompts.get(runId) ?? null;
     privatePrompts.delete(runId);
-    const ephemeral = privatePrompt !== null;
+    const style = privatePrompt === null ? SESSION_TURN : PRIVATE_TURN;
     // Session: resume the thread's, unless its context has grown too big.
-    let session = ephemeral ? null : chats.getSession(companyId, threadId);
+    let session = style.resumesSession ? chats.getSession(companyId, threadId) : null;
     let rotated = false;
     if (session && session.contextTokens > ROTATE_CONTEXT_TOKENS) {
       await chats.clearSession(companyId, threadId);
@@ -259,8 +286,8 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       await finish(runId, { status: "stopped", resultText: "Stopped before it started." });
       return;
     }
-    const notes = ephemeral ? [] : await chats.takeNotes(companyId, threadId);
-    const context = !session && !ephemeral ? await legacyContext(companyId, threadId, runId) : "";
+    const notes = style.carriesContext ? await chats.takeNotes(companyId, threadId) : [];
+    const context = !session && style.carriesContext ? await legacyContext(companyId, threadId, runId) : "";
     const ask = privatePrompt ?? row.requestText;
     const prompt = [
       notes.length ? `Notes from Tethr:\n${notes.map((n) => `- ${n}`).join("\n")}` : "",
@@ -360,7 +387,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
             ...(process.env.TETHR_ASSISTANT_BILLING === "api" ? {} : { ANTHROPIC_API_KEY: "" }),
           },
           extraArgs: [
-            ...(ephemeral ? ["--no-session-persistence"] : []),
+            ...style.extraArgs,
             ...(mcpConfigPath ? ["--mcp-config", mcpConfigPath] : []),
             "--settings",
             settingsPath,
@@ -419,7 +446,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     });
 
     // Session bookkeeping (a private turn keeps none).
-    if (result && !ephemeral) {
+    if (result && style.savesSession) {
       if (result.clearSession) {
         await chats.clearSession(companyId, threadId);
       } else if (result.sessionParams || result.sessionId || turn.sessionId) {
@@ -494,7 +521,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     return true;
   }
 
-  return { send, stop };
+  return { send, sendPrivate, stop };
 }
 
 let singleton: ReturnType<typeof assistantRunner> | null = null;

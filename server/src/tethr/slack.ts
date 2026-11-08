@@ -17,6 +17,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { companies, tethrAgentProfiles, tethrOutputs, tethrRouteRuns } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
+import { logFailure } from "./best-effort.js";
 import { matchMetaCommand, renderHelpMessage } from "./commands.js";
 import type { LLMImageAttachment } from "./llm/types.js";
 import { memoryService } from "./memory.js";
@@ -1320,7 +1321,7 @@ export async function startSlackSocketMode(db: Db): Promise<void> {
       }
       if (msg.type === "events_api" && msg.payload) {
         // Phase 21: the watcher hears channel conversations tethr is in (memory only).
-        void import("./watch.js").then((w) => w.hear(msg.payload)).catch(() => {});
+        void import("./watch.js").then((w) => w.hearSlackEvent(msg.payload)).catch(logFailure("watcher hearing a Slack event"));
         const interp = interpretSlackEvent(msg.payload);
         if (interp.type === "kickoff") {
           void routeInboundKickoff(db, interp).catch((err) =>
@@ -1339,4 +1340,44 @@ export async function startSlackSocketMode(db: Db): Promise<void> {
     };
   };
   void connect();
+}
+
+// ---- Phase 21: small read-only lookups (cached) ------------------------------------
+
+let botUserIdCache: string | null = null;
+
+/** tethr's own Slack user id, to spot messages addressed to it. Null when Slack isn't set up or the lookup fails. */
+export async function slackBotUserId(): Promise<string | null> {
+  if (botUserIdCache) return botUserIdCache;
+  const token = slackBotToken();
+  if (!token) return null;
+  try {
+    const res = await fetch(`${SLACK_API}/auth.test`, { method: "POST", headers: { authorization: `Bearer ${token}` } });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; user_id?: string };
+    botUserIdCache = data.ok && data.user_id ? data.user_id : null;
+  } catch {
+    botUserIdCache = null;
+  }
+  return botUserIdCache;
+}
+
+const channelLabelCache = new Map<string, string>();
+
+/** How to name a conversation to people: "#growth", "a group DM", or "Slack" when it can't be looked up. */
+export async function slackChannelLabel(channel: string): Promise<string> {
+  const known = channelLabelCache.get(channel);
+  if (known) return known;
+  const token = slackBotToken();
+  let label = "Slack";
+  if (token) {
+    try {
+      const res = await fetch(`${SLACK_API}/conversations.info?channel=${encodeURIComponent(channel)}`, { headers: { authorization: `Bearer ${token}` } });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; channel?: { name?: string; is_mpim?: boolean } };
+      if (data.ok && data.channel?.name) label = data.channel.is_mpim ? "a group DM" : `#${data.channel.name}`;
+    } catch {
+      // keep "Slack"
+    }
+  }
+  channelLabelCache.set(channel, label);
+  return label;
 }

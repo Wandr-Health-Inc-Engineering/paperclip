@@ -16,6 +16,7 @@ export async function writeAtomic(absPath: string, data: string | Buffer): Promi
     await fsp.writeFile(tmp, data);
     await fsp.rename(tmp, absPath);
   } catch (err) {
+    // The write's own error is what matters; a temp file left behind is harmless.
     await fsp.unlink(tmp).catch(() => {});
     throw err;
   }
@@ -49,6 +50,7 @@ export async function writeNewFile(
     try {
       await writeAtomic(abs, data);
     } catch (err) {
+      // Give the claimed name back; the write's own error is what matters.
       await fsp.unlink(abs).catch(() => {});
       throw err;
     }

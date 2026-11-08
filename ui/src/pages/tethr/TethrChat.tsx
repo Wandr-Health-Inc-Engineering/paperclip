@@ -25,6 +25,7 @@ import {
 import { EmptyState } from "@/components/EmptyState";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import { RouteFlow } from "@/components/tethr/RouteFlow";
+import { CHIP_HOVER, CHIP_SURFACE } from "@/components/tethr/Chip";
 import { OutputPanel, type PanelFile } from "@/components/tethr/OutputPanel";
 import { TethrSetupNudge } from "@/components/tethr/SetupNavItem";
 import { CogDuo, OutputStatusBadge, StatusDot, formatRelative } from "@/components/tethr/primitives";
@@ -615,9 +616,8 @@ function FileChip({
       {detail ? <span className="shrink-0 font-mono text-[10.5px] tethr-text-3">{detail}</span> : null}
     </>
   );
-  const chip = "inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--tethr-frost)] py-1 text-[12px] shadow-[inset_0_0_0_1px_var(--tethr-rim)]";
   return (
-    <span className={cn(chip, onRemove ? "pl-2.5 pr-1" : "px-2.5", onClick && "hover:bg-[var(--tethr-frost-strong)]")}>
+    <span className={cn("inline-flex max-w-full items-center gap-1.5 rounded-full py-1 text-[12px]", CHIP_SURFACE, onRemove ? "pl-2.5 pr-1" : "px-2.5", onClick && CHIP_HOVER)}>
       {onClick ? (
         <button type="button" onClick={onClick} title={`Open ${name}`} className="inline-flex min-w-0 items-center gap-1.5">
           {body}

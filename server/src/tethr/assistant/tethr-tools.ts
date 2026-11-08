@@ -667,7 +667,8 @@ async function runGoalTool(name: string, args: Record<string, unknown>, ctx: Tet
   }
   const metricId = typeof args.metric_id === "string" ? args.metric_id : "";
   if (!metricId) return { text: "record_metric: give metric_id.", isError: true };
-  const m = await svc.recordMeasurement(ctx.companyId, metricId, { value: args.value, at: args.at, note: args.note });
+  const { recordMeasurementAndReviewTarget } = await import("../goal-pace.js");
+  const m = await recordMeasurementAndReviewTarget(ctx.db, ctx.companyId, metricId, { value: args.value, at: args.at, note: args.note });
   return { text: `Recorded ${m.current} for "${m.name}" (${m.currentAt?.toISOString().slice(0, 10)}).`, meta: { metricId: m.id } };
 }
 

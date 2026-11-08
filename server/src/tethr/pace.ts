@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
 import { serialize, writeAtomic } from "./atomic.js";
+import { DAY } from "./time.js";
 
 // How often tethr offers ideas on its own (phase 21). The point is to keep
 // people working with tethr without overwhelming them into abandoning it, so
@@ -54,7 +55,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 export function refill(state: PaceState, settings: PaceSettings, now: Date = new Date()): PaceState {
   const lv = IDEAS_LEVELS[settings.level];
   const allowance = settings.adaptive ? clamp(state.allowance, lv.min, lv.max) : lv.perDay;
-  const days = Math.max(0, (now.getTime() - Date.parse(state.refilledAt)) / 86_400_000);
+  const days = Math.max(0, (now.getTime() - Date.parse(state.refilledAt)) / DAY);
   const cap = Math.max(1, allowance);
   return { ...state, allowance, bank: clamp(state.bank + allowance * days, 0, cap), refilledAt: now.toISOString() };
 }

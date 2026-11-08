@@ -2,6 +2,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { goals, tethrGoalMetrics, type TethrMetricPoint } from "@paperclipai/db";
 import { getDefaultCompanyGoal, goalService } from "../services/goals.js";
+import { formatMetricValue } from "./metric-format.js";
 
 // Goals with numbers (phase 20). Core goals hold the tree (the company goal =
 // the mission, one team goal per area); tethr_goal_metrics adds a measurable
@@ -171,7 +172,9 @@ export function goalsService(db: Db) {
       return row;
     },
 
-    /** A new measurement: becomes the current value and joins the history. */
+    /** A new measurement: becomes the current value and joins the history. Only
+     * records; recordMeasurementAndReviewTarget (goal-pace.ts) also keeps the
+     * target realistic. */
     async recordMeasurement(companyId: string, metricId: string, input: { value: unknown; at?: unknown; note?: unknown }): Promise<MetricRow> {
       const metric = await ownMetric(companyId, metricId);
       const value = num(input.value);
@@ -198,11 +201,25 @@ export function goalsService(db: Db) {
         })
         .where(eq(tethrGoalMetrics.id, metricId))
         .returning();
-      // Phase 21: keep the target realistic (moves it only when the trend says
-      // so, within the growth pace chosen in setup). Never fails the recording.
-      const { adjustAfterMeasurement } = await import("./goal-pace.js");
-      const adjusted = await adjustAfterMeasurement(db, companyId, row).catch(() => null);
-      return adjusted ?? row;
+      return row;
+    },
+
+    /** Make the goal areas match the chosen list: add new ones, bring back
+     * cancelled ones, and cancel (never delete) areas taken off the list that
+     * have no numbers yet. Returns the goals afterwards. */
+    async syncAreas(companyId: string, areas: string[]): Promise<GoalsView> {
+      const sameTitle = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+      const existing = (await this.list(companyId)).goals;
+      for (const area of areas) {
+        const found = existing.find((g) => sameTitle(g.title, area));
+        if (!found) await this.saveGoal(companyId, { title: area, level: "team" });
+        else if (found.status === "cancelled") await this.saveGoal(companyId, { id: found.id, status: "active" });
+      }
+      for (const goal of existing) {
+        const dropped = !areas.some((a) => sameTitle(a, goal.title));
+        if (dropped && goal.status !== "cancelled" && !goal.metrics.length) await this.saveGoal(companyId, { id: goal.id, status: "cancelled" });
+      }
+      return this.list(companyId);
     },
 
     async deleteMetric(companyId: string, metricId: string): Promise<void> {
@@ -210,13 +227,6 @@ export function goalsService(db: Db) {
       await db.delete(tethrGoalMetrics).where(eq(tethrGoalMetrics.id, metricId));
     },
   };
-}
-
-function fmt(value: number | null, unit: string): string {
-  if (value === null || value === undefined) return "?";
-  if (unit === "usd") return `$${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-  if (unit === "percent") return `${Number(value.toFixed(2))}%`;
-  return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
 }
 
 const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
@@ -233,7 +243,7 @@ export function goalsContextText(view: GoalsView): string {
     for (const m of g.metrics) {
       const by = day(m.targetDate);
       lines.push(
-        `  - ${oneLine(m.name, 120)} [metric ${m.id}]: ${fmt(m.current, m.unit)} now${m.currentAt ? ` (${day(m.currentAt)})` : ""}, baseline ${fmt(m.baseline, m.unit)}, target ${fmt(m.target, m.unit)}${by ? ` by ${by}` : ""}${m.direction === "down" ? " (lower is better)" : ""}. Measure: ${oneLine(m.method, 600) || "not written down yet"} [${m.source}]`,
+        `  - ${oneLine(m.name, 120)} [metric ${m.id}]: ${formatMetricValue(m.current, m.unit)} now${m.currentAt ? ` (${day(m.currentAt)})` : ""}, baseline ${formatMetricValue(m.baseline, m.unit)}, target ${formatMetricValue(m.target, m.unit)}${by ? ` by ${by}` : ""}${m.direction === "down" ? " (lower is better)" : ""}. Measure: ${oneLine(m.method, 600) || "not written down yet"} [${m.source}]`,
       );
     }
   }
@@ -249,7 +259,7 @@ export function metricSummaryLines(view: GoalsView): string[] {
     for (const m of g.metrics) {
       const by = day(m.targetDate);
       out.push(
-        `${oneLine(m.name, 120)}: ${fmt(m.current, m.unit)}${m.currentAt ? ` (${day(m.currentAt)})` : ""}, target ${fmt(m.target, m.unit)}${by ? ` by ${by}` : ""}`,
+        `${oneLine(m.name, 120)}: ${formatMetricValue(m.current, m.unit)}${m.currentAt ? ` (${day(m.currentAt)})` : ""}, target ${formatMetricValue(m.target, m.unit)}${by ? ` by ${by}` : ""}`,
       );
     }
   }

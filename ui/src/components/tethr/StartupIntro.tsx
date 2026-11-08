@@ -11,6 +11,7 @@ import {
   introReason,
   isPublicPath,
   markIntroPlayed,
+  sessionStorageOrNull,
   tetherFrame,
   tetherPath,
   type IntroReason,
@@ -32,14 +33,6 @@ const READY_SELECTOR = "#main-content";
 /** After the line catches, the drawing has settled by then: stop redrawing. */
 const SETTLED_MS = INTRO.pullTo + 1000;
 
-function sessionStore(): Storage | null {
-  try {
-    return window.sessionStorage;
-  } catch {
-    return null;
-  }
-}
-
 function prefersReducedMotion(): boolean {
   try {
     return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -58,7 +51,7 @@ export function TethrStartupIntro() {
       pathname: location.pathname,
       search: location.search,
       userAgent: navigator.userAgent,
-      session: sessionStore(),
+      session: sessionStorageOrNull(),
       initial: true,
     });
     return reason ? { reason, id: 1 } : null;
@@ -73,7 +66,7 @@ export function TethrStartupIntro() {
         pathname: where.current.pathname,
         search: where.current.search,
         userAgent: navigator.userAgent,
-        session: sessionStore(),
+        session: sessionStorageOrNull(),
         initial: false,
       });
       return reason ? { reason, id: Date.now() } : null;
@@ -109,9 +102,9 @@ function IntroOverlay({ reason, onDone }: { reason: IntroReason; onDone: () => v
 
   const [leaving, setLeaving] = useState(false);
   const [ready, setReady] = useState(false);
-  const live = useRef({ companyLoading: loading, publicPage: false, leaving: false, readyAt: null as number | null });
-  live.current.companyLoading = loading;
-  live.current.publicPage = isPublicPath(location.pathname);
+  const liveState = useRef({ companyLoading: loading, publicPage: false, leaving: false, readyAt: null as number | null });
+  liveState.current.companyLoading = loading;
+  liveState.current.publicPage = isPublicPath(location.pathname);
 
   const line = useRef<SVGPathElement>(null);
   const glint = useRef<SVGPathElement>(null);
@@ -129,7 +122,7 @@ function IntroOverlay({ reason, onDone }: { reason: IntroReason; onDone: () => v
   }, []);
 
   useEffect(() => {
-    const state = live.current;
+    const state = liveState.current;
     // The clock starts on the first painted frame, the same moment the CSS
     // parts (the wordmark, the status line) start, so the two stay in step
     // even when the first frame is late (a busy load, a background window).

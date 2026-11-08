@@ -765,7 +765,9 @@ Slack, it suggests an idea). Plan: `tasks/phase-21.md`.
 - **Goals that adjust themselves (21.2, `goal-pace.ts`).**
   - **Setup choice:** growth pace Steady/Balanced/Ambitious (+5/15/30% on the trend) and
     `autoAdjust` (on by default).
-  - **When:** after each `recordMeasurement` with 3 or more points, if the target is more than 15%
+  - **When:** after each measurement recorded through `recordMeasurementAndReviewTarget` (the chat's
+    `record_metric` and the REST route; `goals.recordMeasurement` itself only records), with 3 or
+    more points, if the target is more than 15%
     off "realistic" (trend projected to the date, plus uplift, never below the start or latest) and
     the last 2 points agree it's behind or ahead.
   - **How far:** halfway there, at most ±25% per change, once every 14 days, never in the last week.
@@ -780,7 +782,9 @@ Slack, it suggests an idea). Plan: `tasks/phase-21.md`.
   - **Hours:** 8am to 7pm in the setup time zone, weekdays (Busy: weekends too). Ideas outside
     hours are dropped, not queued.
 - **The watcher (21.3, `watch.ts`).**
-  - **Hearing Slack:** `hear()` is fed by Socket Mode and the events route. It takes human messages
+  - **Shape:** one `Watcher` class holds the in-memory state (conversations, cooldowns, idea
+    threads); `startWatch(db)` makes the running one and `hearSlackEvent(payload)` feeds it.
+  - **Hearing Slack:** `hearSlackEvent` is fed by Socket Mode and the events route. It takes human messages
     in channels, private channels and group DMs tethr is in. DMs to tethr stay requests; a message
     that @mentions tethr puts the conversation on cooldown. Messages stay **in memory only, at most
     2 hours**.
@@ -788,11 +792,11 @@ Slack, it suggests an idea). Plan: `tasks/phase-21.md`.
     substance. Cooldowns: 6 hours per conversation, 2 hours per channel.
   - **Other sources:** a goal behind pace twice or a target just hit (once a week per metric), and
     a quiet stretch.
-  - **The idea check:** `askForIdea` sends a **private one-off turn** (`runner.send({ privatePrompt
-    })`) in the "Ideas" side chat. The model gets the excerpt; tethr's record keeps a one-line
+  - **The idea check:** `askForIdea` sends a **private one-off turn** (`runner.sendPrivate(...)`,
+    the `PRIVATE_TURN` style in runner.ts) in the "Ideas" side chat. The model gets the excerpt; tethr's record keeps a one-line
     summary. `--no-session-persistence` means no Claude transcript, and no session resumes. The
     model replies with one 2-4 sentence idea or `NO_IDEA`.
-  - **Delivery (`deliverIdea`):**
+  - **Delivery (`deliverIdea`: `saveIdea`, then Slack, main-chat card, bell):**
     - Slack: a reply in that thread (a channel conversation gets a thread under its last message).
       Goal and quiet ideas go to the admin by DM, else #tethr.
     - The main chat: a card (route run with sourceKey `tethr-idea`, Useful / Not now) plus a
@@ -808,6 +812,10 @@ Slack, it suggests an idea). Plan: `tasks/phase-21.md`.
   Rhythm and ideas, Finish. Routes `PUT /setup/company` and `PUT /setup/focus` replace
   `/setup/basics`; `PUT /setup/rhythm` also takes `ideas`. Slack scopes for listening are
   MANUAL-STEPS C6e.
+  - **Where it lives:** the goals, setup and ideas routes are in `server/src/routes/tethr-setup.ts`
+    (mounted by `routes/tethr.ts`; `requirePerson` is in `routes/tethr-people.ts`). The page is
+    `TethrSetup.tsx` plus one file per step in `ui/src/pages/tethr/setup/` (`shared.ts` = steps,
+    done rules, `useRefreshSetup`; `controls.tsx` = Field, Toggle, Segmented, buttons).
 - **Verified live on a throwaway instance** (`PAPERCLIP_INSTANCE_ID=tethr-verify`, deleted
   after):
   - The six steps, in light, dark and phone.
@@ -815,8 +823,14 @@ Slack, it suggests an idea). Plan: `tasks/phase-21.md`.
   - An idea card in the main chat; Useful raised the pace to 1.25 a day.
 - **Not run live:** a real Slack conversation turning into an idea (needs C6e). The watcher's
   pipeline is covered end to end in tests with a fake runner and poster.
-- **Tests:** `tethr-company` (5), `tethr-goal-pace` (7), `tethr-pace` (6), `tethr-watch` (9),
+- **Tests:** `tethr-company` (5), `tethr-goal-pace` (7), `tethr-pace` (6), `tethr-watch` (15),
   `tethr-setup` updated.
+- **Shared helpers (clean-code pass, 2026-11-08):** `time.ts` (`SECOND`/`MINUTE`/`HOUR`/`DAY`),
+  `ids.ts` `stableThreadId(name, companyId)` (the Operations and Ideas chats), `metric-format.ts`
+  (`formatMetricValue`, `roundForUnit`), `best-effort.ts` `logFailure(what)` for `.catch()` on
+  side effects that must not fail the caller, `assistant/turns.ts` `waitForTurn` (polls a chat turn,
+  stops it past its limit). `ui/src/components/tethr/Chip.tsx` = the shared chip surface and
+  `ChoiceChip`. Use these instead of re-writing them.
 
 ## Review fixes (2026-11-08) — invariants to keep
 

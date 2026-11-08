@@ -60,7 +60,8 @@ export function introReason(input: {
   return null;
 }
 
-function session(): Storage | null {
+/** This window's sessionStorage, or null where the browser blocks it. */
+export function sessionStorageOrNull(): Storage | null {
   try {
     return window.sessionStorage;
   } catch {
@@ -71,7 +72,7 @@ function session(): Storage | null {
 /** Ask for the intro (the sign-in page calls this when sign-in succeeds). */
 export function requestIntro(): void {
   try {
-    session()?.setItem(INTRO_PENDING_KEY, "1");
+    sessionStorageOrNull()?.setItem(INTRO_PENDING_KEY, "1");
   } catch {
     /* storage blocked: the intro just won't play */
   }
@@ -81,11 +82,11 @@ export function requestIntro(): void {
 /** Played: don't play again in this window (a reload mid-intro doesn't replay it). */
 export function markIntroPlayed(): void {
   try {
-    const s = session();
-    s?.removeItem(INTRO_PENDING_KEY);
-    s?.setItem(INTRO_SEEN_KEY, "1");
+    const storage = sessionStorageOrNull();
+    storage?.removeItem(INTRO_PENDING_KEY);
+    storage?.setItem(INTRO_SEEN_KEY, "1");
   } catch {
-    /* ignore */
+    /* storage blocked: it may replay on reload, which is harmless */
   }
 }
 

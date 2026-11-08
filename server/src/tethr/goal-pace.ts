@@ -2,7 +2,9 @@ import { eq } from "drizzle-orm";
 import type { Db, TethrMetricAdjustment, TethrMetricPoint } from "@paperclipai/db";
 import { tethrGoalMetrics } from "@paperclipai/db";
 import { logActivity } from "../services/activity-log.js";
-import { logger } from "../middleware/logger.js";
+import { logFailure } from "./best-effort.js";
+import { formatMetricValue, roundForUnit } from "./metric-format.js";
+import { DAY } from "./time.js";
 
 // Goals that stay realistic on their own (phase 21, Mark's call: "done in the
 // background autonomously to speed up or slow down", within a growth pace set
@@ -36,7 +38,6 @@ export const ADJUST = {
   keep: 20,
 };
 
-const DAY = 86_400_000;
 
 export interface PaceMetric {
   name?: string;
@@ -95,20 +96,6 @@ export function realisticTarget(m: PaceMetric, pace: GrowthPace): { value: numbe
   return { value: up ? floor * (1 + u) : floor * (1 - u), projected };
 }
 
-function roundFor(value: number, unit: string): number {
-  if (unit === "count") return Math.round(value);
-  if (unit === "usd") return Math.abs(value) >= 1000 ? Math.round(value / 10) * 10 : Math.round(value);
-  if (unit === "percent") return Math.round(value * 10) / 10;
-  return Math.round(value * 100) / 100;
-}
-
-function fmt(value: number, unit: string): string {
-  const v = roundFor(value, unit);
-  if (unit === "usd") return `$${v.toLocaleString("en-US")}`;
-  if (unit === "percent") return `${v}%`;
-  return v.toLocaleString("en-US");
-}
-
 const shortDate = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
 export interface Adjustment {
@@ -119,46 +106,64 @@ export interface Adjustment {
 
 /** Should the target move now, and to what? Null when it should stay. */
 export function proposeAdjustment(m: PaceMetric, pace: GrowthPace, now: number = Date.now()): Adjustment | null {
-  if (m.target === null || !m.targetDate || m.baseline === null || !m.baselineAt) return null;
-  const pts = sorted(m.history);
-  if (pts.length < ADJUST.minPoints) return null;
-  if (m.targetDate.getTime() - now < ADJUST.minDaysLeft * DAY) return null;
-  const last = m.adjustments.at(-1);
-  if (last && now - Date.parse(last.at) < ADJUST.cooldownDays * DAY) return null;
-
-  const up = m.direction !== "down";
-  // +1 = ahead of the start-to-target line, -1 = behind it.
-  const side = (p: TethrMetricPoint) => {
-    const e = expectedAt(m, Date.parse(p.at));
-    if (e === null || p.value === e) return 0;
-    return (p.value > e) === up ? 1 : -1;
-  };
-  const [a, b] = pts.slice(-2).map(side);
-  if (a === 0 || a !== b) return null;
-  const ahead = a > 0;
-
+  if (!isAdjustable(m, now)) return null;
+  const trendSide = agreedSideOfPace(m);
+  if (trendSide === null) return null;
   const real = realisticTarget(m, pace);
-  if (!real) return null;
+  if (!real || m.target === null || !m.targetDate) return null;
   if (Math.abs(real.value - m.target) / Math.max(Math.abs(m.target), 1e-9) <= ADJUST.offBy) return null;
-  const easing = up ? real.value < m.target : real.value > m.target;
-  // Behind: only ever ease. Ahead: only ever raise.
-  if (ahead === easing) return null;
 
-  const step = Math.abs(m.target) * ADJUST.maxStep;
-  let to = m.target + (real.value - m.target) * ADJUST.damping;
-  to = Math.max(m.target - step, Math.min(m.target + step, to));
-  const latest = pts[pts.length - 1].value;
-  to = up ? Math.max(to, m.baseline, latest) : Math.min(to, m.baseline, latest);
-  if (m.unit === "percent") to = Math.max(0, Math.min(100, to));
-  else if (m.unit !== "number") to = Math.max(0, to);
-  to = roundFor(to, m.unit);
+  const easing = isEasier(m, real.value);
+  // Behind: only ever ease. Ahead: only ever raise.
+  if ((trendSide === "ahead") === easing) return null;
+  const to = boundedTarget(m, m.target + (real.value - m.target) * ADJUST.damping);
   if (to === m.target) return null;
 
   return {
     to,
     kind: easing ? "eased" : "raised",
-    why: `the trend points to about ${fmt(real.projected, m.unit)} by ${shortDate(m.targetDate)}, and the last two measurements were ${ahead ? "ahead of" : "behind"} pace`,
+    why: `the trend points to about ${formatMetricValue(real.projected, m.unit)} by ${shortDate(m.targetDate)}, and the last two measurements were ${trendSide === "ahead" ? "ahead of" : "behind"} pace`,
   };
+}
+
+/** Enough to judge, not too close to the date, and not changed recently. */
+function isAdjustable(m: PaceMetric, now: number): boolean {
+  if (m.target === null || !m.targetDate || m.baseline === null || !m.baselineAt) return false;
+  if (m.history.length < ADJUST.minPoints) return false;
+  if (m.targetDate.getTime() - now < ADJUST.minDaysLeft * DAY) return false;
+  const last = m.adjustments.at(-1);
+  return !last || now - Date.parse(last.at) >= ADJUST.cooldownDays * DAY;
+}
+
+/** "ahead" or "behind" when the last two measurements agree about the start-to-target line; null otherwise. */
+function agreedSideOfPace(m: PaceMetric): "ahead" | "behind" | null {
+  const [a, b] = sorted(m.history).slice(-2).map((p) => sideOfPace(m, p));
+  return a !== null && a === b ? a : null;
+}
+
+function sideOfPace(m: PaceMetric, point: TethrMetricPoint): "ahead" | "behind" | null {
+  const expected = expectedAt(m, Date.parse(point.at));
+  if (expected === null || point.value === expected) return null;
+  const higherIsBetter = m.direction !== "down";
+  return (point.value > expected) === higherIsBetter ? "ahead" : "behind";
+}
+
+/** Would this value make the target easier to reach? */
+function isEasier(m: PaceMetric, value: number): boolean {
+  return m.direction !== "down" ? value < m.target! : value > m.target!;
+}
+
+/** Keep a new target within one step of the old one, never past where the
+ * metric started or stands now, inside its unit's range, and rounded. */
+function boundedTarget(m: PaceMetric, proposed: number): number {
+  const current = m.target!;
+  const step = Math.abs(current) * ADJUST.maxStep;
+  let to = Math.max(current - step, Math.min(current + step, proposed));
+  const latest = sorted(m.history).at(-1)!.value;
+  to = m.direction !== "down" ? Math.max(to, m.baseline!, latest) : Math.min(to, m.baseline!, latest);
+  if (m.unit === "percent") to = Math.max(0, Math.min(100, to));
+  else if (m.unit !== "number") to = Math.max(0, to);
+  return roundForUnit(to, m.unit);
 }
 
 type MetricRow = typeof tethrGoalMetrics.$inferSelect;
@@ -177,7 +182,7 @@ export async function adjustAfterMeasurement(db: Db, companyId: string, row: Met
     .set({ target: change.to, adjustments: [...(row.adjustments ?? []), entry].slice(-ADJUST.keep), updatedAt: now })
     .where(eq(tethrGoalMetrics.id, row.id))
     .returning();
-  const title = `tethr ${change.kind} "${row.name}" to ${fmt(change.to, row.unit)} (was ${fmt(row.target, row.unit)})`;
+  const title = `tethr ${change.kind} "${row.name}" to ${formatMetricValue(change.to, row.unit)} (was ${formatMetricValue(row.target, row.unit)})`;
   await logActivity(db, {
     companyId,
     actorType: "agent",
@@ -186,10 +191,27 @@ export async function adjustAfterMeasurement(db: Db, companyId: string, row: Met
     entityType: "company",
     entityId: companyId,
     details: { metricId: row.id, metric: row.name, from: row.target, to: change.to, why: change.why, pace: setup.growthPace },
-  }).catch(() => {});
+  }).catch(logFailure("target adjustment activity log", { metricId: row.id }));
   const { notificationService } = await import("./notify.js");
   await notificationService(db)
     .send({ companyId, kind: "goal", title, body: `Because ${change.why}. Growth pace: ${PACE_LABEL[setup.growthPace]}.`, href: "/growth", agentTag: "@tethr" })
-    .catch((err) => logger.warn({ err }, "[tethr] goal adjustment notification failed"));
+    .catch(logFailure("target adjustment bell", { metricId: row.id }));
   return updated ?? null;
+}
+
+/** Record a measurement, then review the metric's target: it may move (see
+ * proposeAdjustment). What the chat's record_metric and the REST route use. */
+export async function recordMeasurementAndReviewTarget(
+  db: Db,
+  companyId: string,
+  metricId: string,
+  input: { value: unknown; at?: unknown; note?: unknown },
+): Promise<MetricRow> {
+  const { goalsService } = await import("./goals.js");
+  const recorded = await goalsService(db).recordMeasurement(companyId, metricId, input);
+  const adjusted = await adjustAfterMeasurement(db, companyId, recorded).catch((err) => {
+    logFailure("target review", { metricId })(err);
+    return null;
+  });
+  return adjusted ?? recorded;
 }

@@ -38,6 +38,37 @@ export interface CompanyStepInput {
   slackUserId?: unknown;
 }
 
+interface AdminFields {
+  name: string;
+  email: string | null;
+  position: string;
+  title: string;
+  slackUserId: string | null;
+}
+
+/** Check and tidy setup step 1's form. Throws CompanyInputError with a plain message. */
+export function parseCompanyStep(input: CompanyStepInput): { companyName: string; sells: string; admin: AdminFields } {
+  const companyName = oneLine(input.companyName, 80);
+  if (!companyName) throw new CompanyInputError("Give the company a name.");
+  const name = oneLine(input.adminName, 80);
+  if (!name) throw new CompanyInputError("Add your name.");
+  const email = oneLine(input.adminEmail, 160).toLowerCase();
+  if (email && !EMAIL.test(email)) throw new CompanyInputError("That email doesn't look right.");
+  const position = typeof input.position === "string" && POSITIONS.some((p) => p.key === input.position) ? input.position : null;
+  if (!position) throw new CompanyInputError("Pick your position.");
+  const customTitle = oneLine(input.positionTitle, 60);
+  if (position === "other" && !customTitle) throw new CompanyInputError("Say what your position is.");
+  const slackUserId = oneLine(input.slackUserId, 24).toUpperCase();
+  if (slackUserId && !SLACK_ID.test(slackUserId)) {
+    throw new CompanyInputError("A Slack member ID looks like U0123ABCD (Profile → ⋯ → Copy member ID).");
+  }
+  return {
+    companyName,
+    sells: oneLine(input.sells, 240),
+    admin: { name, email: email || null, position, title: customTitle || positionOf(position).title, slackUserId: slackUserId || null },
+  };
+}
+
 export function companyProfileService(db: Db) {
   async function get(companyId: string): Promise<CompanyProfile | null> {
     const [company] = await db.select().from(companies).where(eq(companies.id, companyId));
@@ -58,40 +89,28 @@ export function companyProfileService(db: Db) {
     };
   }
 
+  async function saveAdmin(companyId: string, admin: AdminFields, now: Date): Promise<void> {
+    const [existing] = await db
+      .select({ id: tethrMembers.id })
+      .from(tethrMembers)
+      .where(and(eq(tethrMembers.companyId, companyId), eq(tethrMembers.role, "admin")))
+      .limit(1);
+    const fields = { ...admin, status: "active", updatedAt: now };
+    if (existing) await db.update(tethrMembers).set(fields).where(eq(tethrMembers.id, existing.id));
+    else await db.insert(tethrMembers).values({ companyId, role: "admin", ...fields });
+  }
+
   return {
     get,
 
     /** Setup step 1: the company, and you as its admin. Returns the new profile. */
     async saveCompanyStep(companyId: string, input: CompanyStepInput): Promise<CompanyProfile> {
-      const name = oneLine(input.companyName, 80);
-      if (!name) throw new CompanyInputError("Give the company a name.");
-      const sells = oneLine(input.sells, 240);
-      const adminName = oneLine(input.adminName, 80);
-      if (!adminName) throw new CompanyInputError("Add your name.");
-      const email = oneLine(input.adminEmail, 160).toLowerCase();
-      if (email && !EMAIL.test(email)) throw new CompanyInputError("That email doesn't look right.");
-      const positionKey = typeof input.position === "string" && POSITIONS.some((p) => p.key === input.position) ? input.position : null;
-      if (!positionKey) throw new CompanyInputError("Pick your position.");
-      const customTitle = oneLine(input.positionTitle, 60);
-      if (positionKey === "other" && !customTitle) throw new CompanyInputError("Say what your position is.");
-      const title = customTitle || positionOf(positionKey).title;
-      const slack = oneLine(input.slackUserId, 24).toUpperCase();
-      if (slack && !SLACK_ID.test(slack)) throw new CompanyInputError("A Slack member ID looks like U0123ABCD (Profile → ⋯ → Copy member ID).");
-
+      const step = parseCompanyStep(input);
       const now = new Date();
-      await db.update(companies).set({ name, description: sells || null, updatedAt: now }).where(eq(companies.id, companyId));
-      const [admin] = await db
-        .select()
-        .from(tethrMembers)
-        .where(and(eq(tethrMembers.companyId, companyId), eq(tethrMembers.role, "admin")))
-        .limit(1);
-      const fields = { name: adminName, email: email || null, position: positionKey, title, slackUserId: slack || null, status: "active", updatedAt: now };
-      if (admin) await db.update(tethrMembers).set(fields).where(eq(tethrMembers.id, admin.id));
-      else await db.insert(tethrMembers).values({ companyId, role: "admin", ...fields });
-
-      // The root goal everything hangs under follows the company's name; the
-      // mission itself is built in.
-      await goalsService(db).saveGoal(companyId, { level: "company", title: companyGoalTitle(name), description: TETHR_MISSION });
+      await db.update(companies).set({ name: step.companyName, description: step.sells || null, updatedAt: now }).where(eq(companies.id, companyId));
+      await saveAdmin(companyId, step.admin, now);
+      // The root goal everything hangs under follows the company's name; the mission is built in.
+      await goalsService(db).saveGoal(companyId, { level: "company", title: companyGoalTitle(step.companyName), description: TETHR_MISSION });
       return (await get(companyId))!;
     },
 

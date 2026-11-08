@@ -1,12 +1,14 @@
-import crypto from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { issues, routines, routineTriggers, tethrOutputs, tethrRouteRuns } from "@paperclipai/db";
+import { issues, routines, routineTriggers, tethrOutputs } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { getDefaultCompanyGoal } from "../services/goals.js";
 import { goalsService, metricSummaryLines } from "./goals.js";
 import { routineService } from "../services/routines.js";
+import { waitForTurn, wasSkippedByThrottle, type TurnRow } from "./assistant/turns.js";
 import * as chats from "./chats.js";
+import { stableThreadId } from "./ids.js";
+import { MINUTE, SECOND } from "./time.js";
 import { orgService } from "./org.js";
 import { getSetup, RHYTHM_KEYS, type RhythmChoice, type RhythmKey, updateSetup } from "./setup.js";
 import { postSlackMessage, slackChannel, slackConfigured } from "./slack.js";
@@ -56,9 +58,7 @@ ${SAFETY}`,
 
 /** The fixed "Operations" side chat where scheduled work runs (a stable uuid per company). */
 export function operationsThreadId(companyId: string): string {
-  const h = crypto.createHash("sha256").update(`tethr-operations:${companyId}`).digest("hex");
-  const variant = ((parseInt(h[16]!, 16) & 0x3) | 0x8).toString(16);
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${variant}${h.slice(17, 20)}-${h.slice(20, 32)}`;
+  return stableThreadId("operations", companyId);
 }
 
 type Actor = { userId?: string | null; agentId?: string | null };
@@ -185,9 +185,7 @@ export interface ChatTaskResult {
 
 /** The longest a scheduled turn may take, queue included. Past it the turn is
  * STOPPED (not left running), so the task's result and the chat agree. */
-const WAIT_MS = 20 * 60 * 1000;
-const STOP_GRACE_MS = 30 * 1000;
-const TERMINAL = new Set(["done", "failed", "stopped"]);
+const SCHEDULED_TURN_MAX_MS = 20 * MINUTE;
 
 /** Run a scheduled task as a turn in the company's Operations chat and wait for it. */
 export async function runTaskInOperationsChat(
@@ -197,70 +195,65 @@ export async function runTaskInOperationsChat(
   const { companyId, issue } = input;
   const threadId = operationsThreadId(companyId);
   await chats.addSideChat(companyId, threadId, "Operations");
-  const when = (input.now?.() ?? new Date()).toLocaleString("en-US", {
-    timeZone: getSetup(companyId).timezone,
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-  const text = `Scheduled: ${issue.title}${issue.identifier ? ` (${issue.identifier})` : ""}, ${when}.\n\n${issue.description ?? ""}`.trim();
   const { getAssistantRunner } = await import("./assistant/runner.js");
-  const { routeRunId } = await getAssistantRunner(db).send({ companyId, threadId, text, kind: "system" });
+  const { routeRunId } = await getAssistantRunner(db).send({
+    companyId,
+    threadId,
+    text: scheduledTurnText(issue, getSetup(companyId).timezone, input.now?.() ?? new Date()),
+    kind: "system",
+  });
+  const waitMs = input.waitMs ?? SCHEDULED_TURN_MAX_MS;
+  const { row, timedOut } = await waitForTurn(db, routeRunId, { waitMs, pollMs: input.pollMs ?? 2 * SECOND });
+  const result = chatTaskResult(row, { runId: routeRunId, timedOut, waitMs, outputs: await turnOutputs(db, routeRunId) });
+  if (result.status === "done") await postRhythmHeadsUp(db, companyId, issue);
+  return result;
+}
 
-  const runner = getAssistantRunner(db);
-  const poll = () => new Promise((r) => setTimeout(r, input.pollMs ?? 2000));
-  const read = async () => (await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.id, routeRunId)))[0];
-  let row = await read();
-  const deadline = Date.now() + (input.waitMs ?? WAIT_MS);
-  while (row && !TERMINAL.has(row.status) && Date.now() < deadline) {
-    await poll();
-    row = await read();
-  }
-  let timedOut = false;
-  if (row && !TERMINAL.has(row.status)) {
-    timedOut = true;
-    await runner.stop(routeRunId).catch(() => false);
-    const grace = Date.now() + STOP_GRACE_MS;
-    while (row && !TERMINAL.has(row.status) && Date.now() < grace) {
-      await poll();
-      row = await read();
-    }
-  }
-  const outputs = await db
+/** What the Operations chat sees: which scheduled item, when, and its playbook. */
+function scheduledTurnText(issue: typeof issues.$inferSelect, timeZone: string, now: Date): string {
+  const when = now.toLocaleString("en-US", { timeZone, weekday: "long", month: "short", day: "numeric", year: "numeric" });
+  return `Scheduled: ${issue.title}${issue.identifier ? ` (${issue.identifier})` : ""}, ${when}.\n\n${issue.description ?? ""}`.trim();
+}
+
+async function turnOutputs(db: Db, runId: string): Promise<ChatTaskResult["outputs"]> {
+  const rows = await db
     .select({ id: tethrOutputs.id, title: tethrOutputs.title, status: tethrOutputs.status })
     .from(tethrOutputs)
-    .where(eq(tethrOutputs.routeRunId, routeRunId));
-  const minutes = Math.max(1, Math.round((input.waitMs ?? WAIT_MS) / 60000));
-  // The usage throttle answers a turn with a canned "paused" reply marked done:
-  // that's a skipped run, not a finished one.
-  const paused = row?.status === "done" && row.llmProvider === "throttle";
-  const done = row?.status === "done" && !paused;
-  const result: ChatTaskResult = {
-    status: paused ? "skipped" : done ? "done" : "failed",
-    text: paused
-      ? "Skipped: agents were paused when this was due."
-      : done
-        ? row?.resultText || "Done."
-        : timedOut
-          ? `Took longer than ${minutes} minutes, so it was stopped. What it did so far is in the Operations chat.`
-          : row?.error || "The scheduled turn didn't finish.",
-    runId: routeRunId,
-    outputs: outputs.map((o) => ({ outputId: o.id, title: o.title, status: o.status, gated: o.status === "gated" || o.status === "changes_requested" })),
-  };
+    .where(eq(tethrOutputs.routeRunId, runId));
+  return rows.map((o) => ({ outputId: o.id, title: o.title, status: o.status, gated: o.status === "gated" || o.status === "changes_requested" }));
+}
 
-  // Slack #tethr, only for the rhythm items Mark chose to post. The post is a
-  // heads-up, never the write-up itself: that is model-written from Gmail and
-  // Slack and could carry a customer's name or health details, and nothing
-  // outward skips the approval gate. The scorecard adds its numbers straight
-  // from the goals store (aggregates Mark agreed to).
-  const key = RHYTHM_KEYS.find((k) => getSetup(companyId).rhythm[k].routineId === issue.originId);
-  if (done && key && getSetup(companyId).rhythm[key].slack && slackConfigured()) {
-    const text = await rhythmSlackText(db, companyId, key);
-    const res = await postSlackMessage({ channel: slackChannel(), text }).catch((err) => ({ ok: false, error: String(err) }));
-    if (!res.ok) logger.warn({ companyId, key, error: (res as { error?: string }).error }, "[tethr] rhythm Slack post failed");
+/** How a scheduled turn ended, for its task. A turn the usage throttle answered is "skipped": nothing ran. */
+export function chatTaskResult(
+  row: TurnRow | undefined,
+  run: { runId: string; timedOut: boolean; waitMs: number; outputs: ChatTaskResult["outputs"] },
+): ChatTaskResult {
+  const base = { runId: run.runId, outputs: run.outputs };
+  if (wasSkippedByThrottle(row)) return { ...base, status: "skipped", text: "Skipped: agents were paused when this was due." };
+  if (row?.status === "done") return { ...base, status: "done", text: row.resultText || "Done." };
+  if (run.timedOut) {
+    const minutes = Math.max(1, Math.round(run.waitMs / MINUTE));
+    return { ...base, status: "failed", text: `Took longer than ${minutes} minutes, so it was stopped. What it did so far is in the Operations chat.` };
   }
-  return result;
+  return { ...base, status: "failed", text: row?.error || "The scheduled turn didn't finish." };
+}
+
+/**
+ * Slack #tethr, only for the rhythm items the team chose to post. The post is a
+ * heads-up, never the write-up itself: that is model-written from Gmail and
+ * Slack and could carry a customer's name or health details, and nothing
+ * outward skips the approval gate. The scorecard adds its numbers straight from
+ * the goals store (aggregates the team agreed to).
+ */
+async function postRhythmHeadsUp(db: Db, companyId: string, issue: typeof issues.$inferSelect): Promise<void> {
+  const rhythm = getSetup(companyId).rhythm;
+  const key = RHYTHM_KEYS.find((k) => rhythm[k].routineId === issue.originId);
+  if (!key || !rhythm[key].slack || !slackConfigured()) return;
+  const res = await postSlackMessage({ channel: slackChannel(), text: await rhythmSlackText(db, companyId, key) }).catch((err) => ({
+    ok: false,
+    error: String(err),
+  }));
+  if (!res.ok) logger.warn({ companyId, key, error: (res as { error?: string }).error }, "[tethr] rhythm Slack post failed");
 }
 
 /** The Slack heads-up for a finished rhythm item: what's ready and where, plus
