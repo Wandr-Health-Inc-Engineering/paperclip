@@ -4,18 +4,31 @@ import type { Db } from "@paperclipai/db";
 import { companies } from "@paperclipai/db";
 import { logActivity } from "../services/activity-log.js";
 import { memoryPath, workspaceDir } from "../tethr/assistant/workspace.js";
-import { ensureProfile, findHermes, freeProfileName, HermesError, lockdownGaps, profileNameFor, profileExists, readProfileConfig, runHelper } from "../tethr/hermes/bridge.js";
+import {
+  ensureProfile,
+  findHermes,
+  freeProfileName,
+  HermesError,
+  lockdownGaps,
+  profileNameFor,
+  profileExists,
+  readProfileConfig,
+  readProfileId,
+  runHelper,
+} from "../tethr/hermes/bridge.js";
 import { logFailure } from "../tethr/best-effort.js";
 import { MEMORY_TARGETS, MemoryOpError, validateOps, type MemoryTarget } from "../tethr/hermes/entries.js";
-import { backfillIndex, drainIndex } from "../tethr/hermes/indexer.js";
+import { backfillIndex, drainIndex, isImported } from "../tethr/hermes/indexer.js";
 import {
   changeMemory,
   copyHermesIntoBuiltin,
   deleteSkill,
+  dismissNotMoved,
   MemoryChangeError,
   memorySnapshot,
+  mergeBuiltinIntoHermes,
   migrateFreeformMemory,
-  moveBuiltinIntoHermes,
+  notMovedNotes,
   searchPast,
   SKILL_NAME_RE,
   viewSkill,
@@ -55,11 +68,38 @@ export function tethrMemoryRoutes(db: Db): Router {
         on: Boolean(profile && !state.hermesOff),
         ready: Boolean(profile && profileExists(profile)),
         lockdownGaps: profile && profileExists(profile) ? lockdownGaps(readProfileConfig(profile)) : [],
-        indexed: Object.keys(state.imported ?? {}).length,
+        // Turns really in Hermes (not the ones deliberately left out).
+        indexed: Object.values(state.imported ?? {}).filter(isImported).length,
         lastImportAt: state.lastImportAt ?? null,
         lastImportError: state.lastImportError ?? null,
+        wakeGateway: state.wakeGateway !== false,
       },
+      notMoved: notMovedNotes(companyId),
     });
+  });
+
+  /** Dismiss notes that couldn't be moved (after re-adding them by hand, or to drop them). */
+  router.post("/tethr/:companyId/memory/not-moved/dismiss", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
+    const index = req.body?.index;
+    await dismissNotMoved(companyId, Number.isInteger(index) ? (index as number) : "all");
+    res.json({ notMoved: notMovedNotes(companyId) });
+  });
+
+  /** Whether tethr may start Hermes's background service to save conversations. */
+  router.post("/tethr/:companyId/memory/wake-gateway", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!isInstanceAdmin(req)) {
+      res.status(403).json({ error: "Only an instance admin can change this" });
+      return;
+    }
+    const allowed = req.body?.allowed === true;
+    await updateMemoryState(companyId, (s) => ({ ...s, wakeGateway: allowed }));
+    if (allowed) void backfillIndex(db, companyId).then(() => drainIndex(db)).catch(logFailure("catching up past chats in Hermes", { companyId }));
+    res.json({ wakeGateway: allowed });
   });
 
   router.post("/tethr/:companyId/memory/entries", async (req, res) => {
@@ -158,17 +198,33 @@ export function tethrMemoryRoutes(db: Db): Router {
       return;
     }
     let moved = 0;
+    let notMoved = 0;
     if (on) {
       const [company] = await db.select({ prefix: companies.issuePrefix }).from(companies).where(eq(companies.id, companyId));
       // Its own profile if it has one; else a new one under a name nothing else holds.
       const profile = getMemoryState(companyId).hermesProfile ?? freeProfileName(profileNameFor(company?.prefix));
       const { created } = await ensureProfile(profile);
+      // Hermes has to work BEFORE memory is pointed at it: a failure here leaves everything as it was.
+      try {
+        await runHelper(profile, "status");
+      } catch (err) {
+        res.status(503).json({ error: `Hermes didn't answer, so memory stays where it is. ${err instanceof Error ? err.message : ""}`.trim() });
+        return;
+      }
       // As "hermes profile create" does: ask a running gateway to serve the new profile.
       if (created) await runHelper(profile, "gateway.rescan").catch(logFailure("asking Hermes to pick up tethr's profile"));
-      await updateMemoryState(companyId, (s) => ({ ...s, hermesProfile: profile, hermesOff: false }));
-      moved = (await moveBuiltinIntoHermes(companyId)).moved + (await migrateFreeformMemory(companyId)).moved;
+      await updateMemoryState(companyId, (s) => ({
+        ...s,
+        hermesProfile: profile,
+        hermesOff: false,
+        // A new folder holds nothing the old ledger lists.
+        ...(created ? { profileId: readProfileId(profile) ?? undefined, imported: {}, lastByThread: {} } : {}),
+      }));
+      const merged = await mergeBuiltinIntoHermes(companyId);
+      moved = merged.moved + (await migrateFreeformMemory(companyId)).moved;
+      notMoved = notMovedNotes(companyId).length;
       // Past conversations go in in the background.
-      void backfillIndex(db, companyId).then(() => drainIndex(db)).catch(() => {});
+      void backfillIndex(db, companyId).then(() => drainIndex(db)).catch(logFailure("catching up past chats in Hermes", { companyId }));
     } else {
       await copyHermesIntoBuiltin(companyId);
       await updateMemoryState(companyId, (s) => ({ ...s, hermesOff: true }));
@@ -181,9 +237,9 @@ export function tethrMemoryRoutes(db: Db): Router {
       action: on ? "tethr_memory_hermes_on" : "tethr_memory_hermes_off",
       entityType: "company",
       entityId: companyId,
-      details: { profile: getMemoryState(companyId).hermesProfile ?? null, moved },
+      details: { profile: getMemoryState(companyId).hermesProfile ?? null, moved, notMoved },
     }).catch(() => {});
-    res.json({ on, moved, ...memorySnapshot(companyId) });
+    res.json({ on, moved, notMoved, ...memorySnapshot(companyId) });
   });
 
   return router;

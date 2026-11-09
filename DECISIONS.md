@@ -206,6 +206,20 @@ Branch: `mark-sandbox` (local only). Date started: 2026-06-11.
     Slack) and never private turns. An agent's recall searches only its own chats (a lead's
     also covers its sub-agents'). A recall taints the thread like a connector read.
 
+39. **After the independent review (2026-11-09): memory changes are checked in one place, and
+    nothing is dropped silently.** `changeMemory` is the only way in. A note that can't be saved
+    during a switch or a migration waits on the Memory page with its reason. An agent adds notes
+    and changes only its own (Hermes's rule for its own background workers). A private turn only
+    reads.
+40. **tethr may start Hermes's background service, and that is a switch.** A session write needs
+    the service; when it's down Hermes starts it, and it then runs whatever the owner set up in
+    their default profile. Default on, because a Hermes installed only for tethr has nothing else
+    to run and would otherwise never index. Off for someone who stops their own Hermes on purpose.
+41. **The health check is a tripwire about a person, not a word list.** The business is travel
+    medicine, so health words must pass. A sentence has to tie one person (a name, "the patient",
+    he/she, contact details) to a health detail. It runs on the Mac before text is saved, indexed
+    or, from phase 26, sent to Jev.
+
 ## Core changes (keep merge-safe)
 
 Every core file touched, with reason. Everything else Tethr lives in new files.

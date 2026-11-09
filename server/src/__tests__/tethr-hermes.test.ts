@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { memoryToolRefusal } from "../tethr/assistant/memory-tools.js";
+import { agentMemoryRefusal, memoryToolRefusal } from "../tethr/assistant/memory-tools.js";
 import {
   ensureProfile,
   findHermes,
@@ -20,9 +20,12 @@ import { HELPER_OPS, HELPER_SOURCE } from "../tethr/hermes/helper.js";
 import { agentSource, indexable, turnRecord } from "../tethr/hermes/indexer.js";
 import {
   changeMemory,
+  copyHermesIntoBuiltin,
   deleteSkill,
   MemoryChangeError,
   memorySnapshot,
+  mergeBuiltinIntoHermes,
+  notMovedNotes,
   readPast,
   saveSkill,
   searchPast,
@@ -55,7 +58,9 @@ describe("Hermes bridge: no model calls by construction", () => {
     expect(ops).toEqual([...HELPER_OPS]);
     // Only these Hermes modules are imported.
     const imports = [...HELPER_SOURCE.matchAll(/^\s*from ([\w.]+) import/gm)].map((m) => m[1]).sort();
-    expect([...new Set(imports)]).toEqual(["gateway.control_socket", "hermes_cli.gateway_session_store", "hermes_constants", "hermes_state", "hermes_state_ids", "tools.memory_tool", "tools.skill_manager_tool", "tools.skills_tool"]);
+    expect([...new Set(imports)]).toEqual(["datetime", "gateway.control_socket", "hermes_cli.gateway_runtime", "hermes_cli.gateway_session_store", "hermes_constants", "hermes_state", "tools.memory_tool", "tools.skill_manager_tool", "tools.skills_tool"]);
+    // Looking whether Hermes's service is up never starts it; starting it is only allowed with "wake".
+    expect(HELPER_SOURCE).toMatch(/if not a\.get\("wake"\) and not gateway_up\(\):\n\s+return \{"gateway": "absent"/);
   });
 
   it("tethr's profile is locked down: no provider, no borrowed logins, no background model work", () => {
@@ -106,9 +111,31 @@ describe("Hermes bridge: no model calls by construction", () => {
     expect(memoryToolRefusal("score_list", { private: true, member: null }, "builtin")).toBeNull();
   });
 
+  it("an agent adds notes but changes or removes only its own", () => {
+    const entries = [
+      { text: "Partner payouts go out on the 16th.", savedBy: "@tethr" },
+      { text: "Top malaria keyword: malaria pills for travel.", savedBy: "@rank" },
+      { text: "Old note with no record of who saved it." },
+    ];
+    expect(agentMemoryRefusal("@rank", [{ action: "add", content: "New finding." }], entries)).toBeNull();
+    expect(agentMemoryRefusal("@rank", [{ action: "patch", old_text: "malaria pills", content: "malaria tablets" }], entries)).toBeNull();
+    expect(agentMemoryRefusal("@rank", [{ action: "remove", old_text: "Top malaria keyword: malaria pills for travel." }], entries)).toBeNull();
+    // tethr's note, a note nobody is recorded for, and text that matches nothing here: all refused.
+    expect(agentMemoryRefusal("@rank", [{ action: "remove", old_text: "Partner payouts" }], entries)).toMatch(/only the ones it saved/);
+    expect(agentMemoryRefusal("@rank", [{ action: "patch", old_text: "Old note", content: "x" }], entries)).toMatch(/blocked/);
+    expect(agentMemoryRefusal("@rank", [{ action: "remove", old_text: "partner  payouts" }], entries)).toMatch(/blocked/);
+    // One bad change refuses the whole batch.
+    expect(agentMemoryRefusal("@rank", [{ action: "add", content: "ok" }, { action: "remove", old_text: "16th" }], entries)).toMatch(/blocked/);
+  });
+
   it("indexes finished chat turns only, as the message and the answer (never tool results)", () => {
     const companyId = "22222222-2222-4222-8222-222222222222";
-    const base = { companyId, invocationSource: "chat", status: "done", resultText: "Payouts go out on the 16th.", llmProvider: "claude-code:sonnet", threadId: companyId };
+    const base = { companyId, invocationSource: "chat", status: "done", resultText: "Payouts go out on the 16th.", llmProvider: "claude-code:sonnet", threadId: companyId, sourceKey: null as string | null };
+    // Turns the runner ran: a person's message or one tethr started. Cards written into a chat
+    // (an idea, which comes out of a private turn; an agent's report) are not indexed.
+    expect(indexable({ ...base, sourceKey: "chat-system" })).toBe(true);
+    expect(indexable({ ...base, sourceKey: "tethr-idea" })).toBe(false);
+    expect(indexable({ ...base, sourceKey: "tethr-agent-report" })).toBe(false);
     expect(indexable(base)).toBe(true);
     expect(indexable({ ...base, status: "failed" })).toBe(false);
     expect(indexable({ ...base, resultText: " " })).toBe(false);
@@ -130,6 +157,8 @@ describe("Hermes bridge: no model calls by construction", () => {
     ]);
     expect(JSON.stringify(rec)).not.toContain("raw email");
     expect(rec.title).toBe("tethr · main chat · 2026-11-09 18:00 · 333333");
+    // The same turn always gets the same Hermes id, so a cut-short batch can be sent again.
+    expect(rec.hex).toBe("333333333333");
     expect(turnRecord({ ...row, sourceKey: "chat-system" } as typeof row, { name: "x", source: "tethr" }).messages[0]!.content).toMatch(/^\(tethr\) /);
     expect(agentSource("@rank")).toBe("tethr-agent-rank");
   });
@@ -197,25 +226,32 @@ describe.skipIf(!TEST_ROOT)("Hermes memory layer, against a real Hermes (throwaw
   }, 60_000);
 
   it("imports turns once per call, finds them by search, keeps an agent to its own chats, and opens a thread", async () => {
+    const t0 = Math.floor(Date.now() / 1000);
+    const hexOf = (key: string) => `${process.pid.toString(16).padStart(6, "0")}${Buffer.from(key).toString("hex").padEnd(6, "0")}`.slice(0, 12);
     const turn = (key: string, source: string, title: string, q: string, a: string, extra = {}) => ({
       key,
+      hex: hexOf(key),
       source,
       title,
-      started_at: Date.now() / 1000,
+      started_at: t0,
       messages: [
         { role: "user", content: q },
         { role: "assistant", content: a },
       ],
       ...extra,
     });
-    const res = await runHelper<{ results: Array<{ key: string; session_id?: string; error?: string }> }>(profile, "sessions.import", {
-      turns: [
-        turn("r1", "tethr", `main · 1 · ${process.pid}`, "How do we pay affiliates?", "Affiliates are paid by PayPal on the first Monday."),
-        turn("r2", "tethr", `main · 2 · ${process.pid}`, "And the clinic partners?", "Clinic partners get a quarterly bank transfer.", { parent_key: "r1" }),
-        turn("r3", agentSource("@rank"), `@rank · 1 · ${process.pid}`, "Task WD-4: malaria keywords", "Top malaria keyword: malaria pills for travel."),
-      ],
-    });
+    type Reply = { gateway?: string; results: Array<{ key: string; session_id?: string; error?: string; existed?: boolean }> };
+    const turns = [
+      turn("r1", "tethr", `main · 1 · ${process.pid}`, "How do we pay affiliates?", "Affiliates are paid by PayPal on the first Monday."),
+      turn("r2", "tethr", `main · 2 · ${process.pid}`, "And the clinic partners?", "Clinic partners get a quarterly bank transfer.", { parent_key: "r1" }),
+      turn("r3", agentSource("@rank"), `@rank · 1 · ${process.pid}`, "Task WD-4: malaria keywords", "Top malaria keyword: malaria pills for travel."),
+    ];
+    const res = await runHelper<Reply>(profile, "sessions.import", { turns, wake: true });
     expect(res.results.map((r) => r.error ?? "ok")).toEqual(["ok", "ok", "ok"]);
+    // Sent again (a batch cut short is retried whole): same ids, nothing added twice.
+    const again = await runHelper<Reply>(profile, "sessions.import", { turns, wake: true });
+    expect(again.results.map((r) => [r.session_id, r.existed])).toEqual(res.results.map((r) => [r.session_id, true]));
+    expect((await searchPast(companyId, "affiliates", { sources: null, limit: 10 })).filter((h) => h.user === "How do we pay affiliates?")).toHaveLength(1);
     const all = await searchPast(companyId, "affiliates", { sources: null });
     expect(all[0]).toMatchObject({ source: "tethr", user: "How do we pay affiliates?" });
     expect(await searchPast(companyId, "affiliates", { sources: [agentSource("@rank")] })).toEqual([]);
@@ -224,6 +260,50 @@ describe.skipIf(!TEST_ROOT)("Hermes memory layer, against a real Hermes (throwaw
     expect((await readPast(companyId, r2, { sources: null })).map((t) => t.user)).toEqual(["How do we pay affiliates?", "And the clinic partners?"]);
     expect(await readPast(companyId, r2, { sources: [agentSource("@rank")] })).toEqual([]);
   }, 180_000);
+
+  it("switching between stores never loses a note, and a removed note doesn't come back", async () => {
+    const company = "88888888-8888-4888-8888-888888888888";
+    const profile2 = `${profile}-switch`;
+    await ensureProfile(profile2);
+    try {
+      // Built-in first: Hermes is set up but off.
+      await updateMemoryState(company, (s) => ({ ...s, hermesProfile: profile2, hermesOff: true }));
+      await changeMemory(company, "company", [{ action: "add", content: "Partner payouts go out on the 15th." }], { by: "@tethr", threadId: company, at: "2026-01-02T03:04:05.000Z" });
+      // Fine for the built-in store, but Hermes's own scan refuses it (a "send … to a URL" pattern).
+      const refusedByHermes = "Send the weekly brief to https://docs.example.com/d/abc every Friday.";
+      await changeMemory(company, "company", [{ action: "add", content: refusedByHermes }], { by: "Memory page" });
+      await changeMemory(company, "people", [{ action: "add", content: "Alec prefers Slack." }], { by: "@tethr" });
+
+      // On: what can move, moves, with who saved it and when; what can't is kept in the list.
+      await updateMemoryState(company, (s) => ({ ...s, hermesOff: false }));
+      const first = await mergeBuiltinIntoHermes(company);
+      expect(first.moved).toBeGreaterThanOrEqual(2);
+      let snap = memorySnapshot(company);
+      expect(snap.backend).toBe("hermes");
+      expect(snap.stores.company.entries).toEqual([{ text: "Partner payouts go out on the 15th.", savedBy: "@tethr", savedAt: "2026-01-02T03:04:05.000Z", threadId: company }]);
+      expect(snap.stores.people.entries[0]).toMatchObject({ text: "Alec prefers Slack.", savedBy: "@tethr" });
+      const held = notMovedNotes(company);
+      if (first.notMoved) {
+        expect(held).toEqual([expect.objectContaining({ target: "company", text: refusedByHermes, reason: expect.any(String) })]);
+      } else {
+        expect(snap.stores.company.entries.map((e) => e.text)).toContain(refusedByHermes); // this Hermes version accepts it
+      }
+
+      // Off, change a note and remove another on the Memory page, on again.
+      await copyHermesIntoBuiltin(company);
+      await updateMemoryState(company, (s) => ({ ...s, hermesOff: true }));
+      expect(memorySnapshot(company).stores.company.entries.map((e) => e.text)).toEqual(["Partner payouts go out on the 15th."]);
+      await changeMemory(company, "company", [{ action: "patch", old_text: "15th", content: "16th" }], { by: "Memory page" });
+      await changeMemory(company, "people", [{ action: "remove", old_text: "Alec prefers Slack." }], { by: "Memory page" });
+      await updateMemoryState(company, (s) => ({ ...s, hermesOff: false }));
+      await mergeBuiltinIntoHermes(company);
+      snap = memorySnapshot(company);
+      expect(snap.stores.company.entries.map((e) => e.text)).toEqual(["Partner payouts go out on the 16th."]);
+      expect(snap.stores.people.entries).toEqual([]);
+    } finally {
+      fs.rmSync(profileHome(profile2), { recursive: true, force: true });
+    }
+  }, 120_000);
 
   it("saves, lists, loads and removes a skill in tethr's category", async () => {
     await saveSkill(companyId, { name: "friday-scorecard", description: "How tethr builds the Friday scorecard", body: "1. goals_list\n2. record_metric for each\n3. write files/scorecards/<date>.md" });

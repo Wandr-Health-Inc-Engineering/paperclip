@@ -1211,46 +1211,88 @@ utilize it but stick with the subscription style not API for now." Plan: `tasks/
     Mark's Mac, whose gateway ran alone with one profile.
   - Tests use Hermes only with `TETHR_HERMES_TEST_ROOT`, a throwaway data root.
 - **Entries** (`hermes/entries.ts`): Hermes's `§` format in two stores, "company" (MEMORY.md, 6,000
-  chars) and "people" (USER.md, 2,000).
+  chars) and "people" (USER.md, 2,000). The limits shown are the profile's own.
   - CLAUDE.md v4 renders them every turn as "## Memory" (data, not instructions), replacing the
     `@Memory.md` import. CLAUDE.md is one file for every chat of the company and turns run side by
     side, so `renderMemoryBlock` takes company-level facts only, never what one thread may use.
+  - **A note is one line** (`oneLine`): line breaks could pass a note off as a heading or a rule
+    in CLAUDE.md.
   - **Memory.md is now a read-only copy for the team** (`workspaceWriteRefusal` refuses it).
-  - Without Hermes, a built-in store keeps the same entries (`hermes/memory-layer.ts`).
+    `writeMemoryCopy` never writes over a file it didn't generate.
+  - Without Hermes, a built-in store keeps the same entries, one folder per company
+    (`hermes/memory-layer.ts`).
   - Provenance (who saved what, from which chat) is in `tethr-memory.json` (`hermes/state.ts`).
-  - The old free-form Memory.md migrates once, with a backup outside Drive.
-- **Index** (`hermes/indexer.ts`): every finished chat turn is imported, one at a time.
-  - Only the person's message and tethr's answer. **Never tool results, never private turns (the
-    Ideas chat), never throttled ones.**
-  - A ledger means once only. Backfill runs at boot and every 10 minutes (`startMemoryIndexer`).
-  - One lineage per chat; an agent's chats use source `tethr-agent-<tag>`.
+- **Every way into memory goes through `changeMemory`** (the chat's tool, the Memory page, the
+  migration, a switch between stores). It refuses:
+  - a particular person's health details (`tethr/screen.ts` `personalHealthReason`: a sentence
+    has to tie a person to a health detail, so ordinary travel-medicine notes pass). Skills are
+    screened the same way. It's a tripwire, not a guarantee.
+  - text that reads like instructions to tethr (`injectionReason` for the built-in store;
+    Hermes runs its own scan, reported in plain words by `plainHermesRefusal`).
+- **Nothing is dropped silently.** A note that can't be saved during a switch or the migration
+  goes to `notMoved` in the state and shows on the Memory page with its reason.
+- **Switching stores** (`routes/tethr-memory.ts`):
+  - On: Hermes has to answer (`status`) before memory points at it. Then
+    `mergeBuiltinIntoHermes` adds what the built-in store has, keeping who saved each note and
+    when, and removes from Hermes what a person removed or changed while it was off (the base is
+    `offBase`, recorded at switch-off). The built-in files are kept under a dated name.
+  - Off: `copyHermesIntoBuiltin` makes the built-in store exactly what Hermes holds.
+- **The Memory.md migration is per file path** (`migrated` in the state). The workspace falls back
+  to the instance folder when Drive is away, so a Memory.md that shows up later is still migrated.
+  The original is backed up outside Drive before anything else.
+- **Index** (`hermes/indexer.ts`): every finished chat turn is imported, one at a time, oldest
+  first.
+  - Only turns the runner ran (`sourceKey` null or `chat-system`): the person's message and
+    tethr's answer. **Never tool results, never private turns or the idea cards that come out of
+    them, never agent-report cards (the report is in the agent's own chat), never throttled turns,
+    never a turn that trips the health screen** (ledger value `skipped:health`).
+  - A turn always gets the same Hermes id (its time + 12 hex of the run id), and the helper checks
+    whether it's already there, so a batch that was cut short can be sent again.
+  - The ledger is tied to the profile folder by an id tethr writes into it (`tethr-profile.json`):
+    a folder that was replaced starts the ledger over.
+  - One lineage per chat (`lastByThread` keeps the newest turn's time, so a late older turn never
+    becomes the tail); an agent's chats use source `tethr-agent-<tag>`.
+  - Backfill runs at boot and every 10 minutes (`startMemoryIndexer`).
+  - **Hermes's background service:** a session write needs it, and Hermes starts it when it's
+    down; it then also runs whatever its owner set up in their default profile. The helper only
+    does that when `wakeGateway` is on (the default; Integrations, Memory card). Off: turns wait.
 - **Tools** (`assistant/memory-tools.ts`):
-  - `memory` (draft): add, patch or remove; health details are refused.
+  - `memory` (draft): add, patch or remove. **An agent can add, and change or remove only notes it
+    saved itself** (`agentMemoryRefusal`): agents run unattended and read the web.
   - `recall` (read): search past chats or open a turn. An agent searches only its own chats (a
     lead also its sub-agents'). **A recall taints the thread.**
   - `skill_view`, `skill_save`. Only tethr's own chats save skills; descriptions are at most 60
     characters.
-  - **None of them in a private turn** (the hook token carries `privateTurn`).
-  - Every 10th message from a person, a note reminds tethr to save what's durable.
+  - **A private turn gets read-only tethr tools and no memory tools** (the hook token carries
+    `privateTurn`; the tools endpoint refuses anything that isn't class `read`). Its prompt is
+    other people's Slack words, so it must not save goals, assign work or create agents.
+  - **Whose chat it is decides what's allowed, and a failed lookup refuses** (the tools endpoint,
+    the hook gate and the memory tools never fall back to tethr's own rights).
+  - Every 10th message from a person, a note reminds tethr to save what's durable (only in chats
+    that have the memory tool).
 - **UI:**
   - The Memory page (`TethrMemory.tsx`) has entries with who saved them, edit, remove, add, usage
-    bars, a past-conversation search and skills.
-  - The Integrations "Memory" card has Hermes on/off (instance admins), the lockdown checks, the
-    indexed count and the last import error.
+    bars, the "Not moved" list, a past-conversation search and skills.
+  - The Integrations "Memory" card has Hermes on/off (instance admins), the lockdown checks, a
+    missing-profile warning, the indexed count, the last import error and "Start Hermes when it
+    isn't running".
   - Routes are in `server/src/routes/tethr-memory.ts`.
-- **Tests:** `tethr-hermes.test.ts` (11: no-model guards, the queue after an empty drain;
-  real-Hermes memory, import, search, skills, the chat end to end, 0 tokens) and
-  `tethr-assistant-memory.test.ts` (7).
+- **Tests:** `tethr-hermes.test.ts` (13: no-model guards, the queue, agent memory limits; on a real
+  Hermes: memory, repeat-safe import, search, the store switch, skills, the chat end to end, 0
+  tokens), `tethr-assistant-memory.test.ts` (11), `tethr-screen.test.ts` (27).
 - **Verified live** on a throwaway tethr with a throwaway Hermes root and real Claude:
   - "remember …" was saved into Hermes with provenance, and a NEW side chat answered it from the
     Memory block with no tool call.
   - A fact said but not saved was found by recall from a fresh chat, which tainted that thread.
   - A skill was saved, then loaded from a new chat.
-  - The Memory page (edit, search, skills) and the Integrations card render in light, dark and
-    phone.
+  - The Memory page (edit, search, skills, Not moved) and the Integrations card render in light,
+    dark and phone.
   - `hermes insights` showed 0 tokens over 6 sessions.
   - The live run caught a bug: an empty drain left the import queue stuck. Fixed, with a
     regression test.
+- **Independent review (2026-11-09)** found 14 defects in the first version; all are fixed above.
+  The two serious ones were data loss on switching stores and a migration that could be skipped
+  and the original then overwritten. Neither hit Mark's instance (its memory was empty).
 
 ## Onboarding from scratch: goals with numbers, setup, rhythm (phase 20, 2026-11-07)
 

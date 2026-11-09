@@ -375,7 +375,8 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     }
     const notes = style.carriesContext ? await chats.takeNotes(companyId, threadId) : [];
     // Like Hermes: every 10 messages from a person, a reminder to save what's durable.
-    if (style.carriesContext && tethrTools && row.sourceKey === null && (await personTurns(threadId)) % MEMORY_NUDGE_EVERY === 0) {
+    const hasMemoryTool = modeFor(cfg, TETHR_TOOLS_LABEL) !== "off" && (!member || member.connectors.includes(TETHR_TOOLS_LABEL));
+    if (style.carriesContext && hasMemoryTool && row.sourceKey === null && (await personTurns(threadId)) % MEMORY_NUDGE_EVERY === 0) {
       notes.push(MEMORY_NUDGE);
     }
     const context = !session && style.carriesContext ? await legacyContext(companyId, threadId, runId) : "";

@@ -55,6 +55,15 @@ export function entryHash(entry: string): string {
 
 export class MemoryOpError extends Error {}
 
+/** A note as one line (line breaks become " / "). */
+export function oneLine(text: string): string {
+  return text
+    .split(/\s*\n+\s*/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .join(" / ");
+}
+
 /** Normalize the tool's operations; throws MemoryOpError on a bad shape. */
 export function validateOps(raw: unknown): MemoryOp[] {
   if (!Array.isArray(raw) || raw.length === 0) throw new MemoryOpError("operations must be a non-empty list of {action, content?, old_text?}.");
@@ -65,7 +74,9 @@ export function validateOps(raw: unknown): MemoryOp[] {
     if (action !== "add" && action !== "patch" && action !== "remove") {
       throw new MemoryOpError(`Change ${i + 1}: action must be add, patch or remove.`);
     }
-    const content = typeof o.content === "string" ? o.content.trim() : undefined;
+    // One line per note: memory is rendered into every chat's CLAUDE.md, and a
+    // note with line breaks could pass itself off as a heading or a rule there.
+    const content = typeof o.content === "string" ? oneLine(o.content) : undefined;
     const oldText = typeof o.old_text === "string" ? o.old_text : undefined;
     if ((action === "add" || action === "patch") && !content) throw new MemoryOpError(`Change ${i + 1}: ${action} needs content.`);
     if ((action === "patch" || action === "remove") && !oldText?.trim()) throw new MemoryOpError(`Change ${i + 1}: ${action} needs old_text.`);
@@ -141,9 +152,9 @@ function usageLine(snapshot: MemorySnapshot, target: MemoryTarget): string {
   return `${TARGET_LABEL[target].toLowerCase()} ${pct}% · ${s.used.toLocaleString("en-US")}/${s.limit.toLocaleString("en-US")}`;
 }
 
-/** An entry as a Markdown bullet (continuation lines indented). */
+/** An entry as one Markdown bullet (an older multi-line note is flattened: see oneLine). */
 function bullet(text: string): string {
-  return `- ${text.replace(/\n/g, "\n  ")}`;
+  return `- ${oneLine(text)}`;
 }
 
 /** The "## Memory" block of the chat's CLAUDE.md, rebuilt every turn. CLAUDE.md

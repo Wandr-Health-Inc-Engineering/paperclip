@@ -41,7 +41,13 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
   // Phase 23: in an agent's thread, only its own connectors (and never the
   // shell or tethr's team tools). The turn's deny rules say the same; this is
   // the gate's own check.
-  const member = await teamService(db).byThread(ctx.companyId, ctx.threadId).catch(() => null);
+  let member: Awaited<ReturnType<ReturnType<typeof teamService>["byThread"]>>;
+  try {
+    member = await teamService(db).byThread(ctx.companyId, ctx.threadId);
+  } catch {
+    // An agent's limits can't be checked, so nothing runs (never fall back to tethr's own rights).
+    return preDecision("deny", "Tethr approval gate: couldn't check whose chat this is, so this was not done. Try again.");
+  }
   if (member) {
     const refusal = agentToolRefusal(member, toolName, c.connector);
     if (refusal) return preDecision("deny", refusal);

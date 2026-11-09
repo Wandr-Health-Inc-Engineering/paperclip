@@ -97,6 +97,8 @@ function MemoryStores({ companyId: c }: { companyId: string }) {
         </p>
       </header>
 
+      {data.notMoved.length ? <NotMoved companyId={c} notes={data.notMoved} /> : null}
+
       {TARGETS.map((t) => (
         <StoreSection key={t.id} companyId={c} target={t.id} label={t.label} hint={t.hint} store={data.stores[t.id]} />
       ))}
@@ -104,6 +106,50 @@ function MemoryStores({ companyId: c }: { companyId: string }) {
       {hermes ? <PastConversations companyId={c} state={data} /> : null}
       {hermes ? <Skills companyId={c} skills={data.skills} /> : null}
     </>
+  );
+}
+
+/** Notes that couldn't be moved when memory changed stores (or from the old
+ * Memory.md), with the reason. Nothing is dropped silently: each one stays here
+ * until it's been reworded and added, or dismissed. */
+function NotMoved({ companyId: c, notes }: { companyId: string; notes: TethrMemoryState["notMoved"] }) {
+  const queryClient = useQueryClient();
+  const dismiss = useMutation({
+    mutationFn: (index: number | "all") => tethrApi.dismissNotMoved(c, index),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: tethrKeys.memory(c) }),
+  });
+  return (
+    <section className="space-y-2.5">
+      <div className="flex items-end gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 className="flex items-center gap-2 text-[13.5px] font-medium">
+            <StatusDot tone="warn" />
+            Not moved ({notes.length})
+          </h3>
+          <p className="text-[12px] tethr-text-3">
+            These notes couldn't be saved where memory lives now. Reword one and add it below, or dismiss it. The original file is backed up either way.
+          </p>
+        </div>
+        <button type="button" disabled={dismiss.isPending} onClick={() => dismiss.mutate("all")} className="tethr-btn tethr-btn-ghost h-7 shrink-0 px-2.5 text-[12px]">
+          Dismiss all
+        </button>
+      </div>
+      <div className="tethr-panel overflow-hidden">
+        {notes.map((n, i) => (
+          <div key={`${n.at}-${i}`} className={cn("flex items-start gap-3 px-4 py-3", i < notes.length - 1 && "tethr-rule border-b")}>
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="whitespace-pre-wrap text-[13px] leading-relaxed">{n.text}</p>
+              <p className="text-[12px] tethr-text-3">
+                {n.target === "people" ? "People" : "Company notes"} · {n.reason}
+              </p>
+            </div>
+            <button type="button" disabled={dismiss.isPending} onClick={() => dismiss.mutate(i)} className="tethr-btn tethr-btn-ghost h-7 shrink-0 px-2.5 text-[12px]">
+              Dismiss
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -310,7 +356,7 @@ function hitChat(h: TethrRecallHit): string {
 function PastConversations({ companyId: c, state }: { companyId: string; state: TethrMemoryState }) {
   const [q, setQ] = useState("");
   const [asked, setAsked] = useState("");
-  const { data, isFetching, error } = useQuery({
+  const { data, isFetching, error, refetch } = useQuery({
     queryKey: tethrKeys.memorySearch(c, asked),
     queryFn: () => tethrApi.searchMemory(c, asked),
     enabled: asked.length > 0,
@@ -329,7 +375,9 @@ function PastConversations({ companyId: c, state }: { companyId: string; state: 
         className="flex items-center gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          setAsked(q.trim());
+          // The same words again: search again (new conversations may have been added).
+          if (q.trim() === asked) void refetch();
+          else setAsked(q.trim());
         }}
       >
         <div className="relative min-w-0 flex-1">

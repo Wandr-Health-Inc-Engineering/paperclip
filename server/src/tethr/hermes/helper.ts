@@ -59,7 +59,8 @@ def status(a):
     from hermes_constants import get_hermes_home
     from tools.memory_tool import load_on_disk_store
     store = load_on_disk_store()
-    return {"home": str(get_hermes_home()), "limits": {"memory": store.memory_char_limit, "user": store.user_char_limit}}
+    return {"home": str(get_hermes_home()), "limits": {"memory": store.memory_char_limit, "user": store.user_char_limit},
+            "gateway": "up" if gateway_up() else "absent"}
 
 
 def gateway_rescan(a):
@@ -77,17 +78,55 @@ def memory_apply(a):
     return json.loads(memory_tool(target=target, operations=a.get("operations") or [], store=load_on_disk_store()))
 
 
+def gateway_up():
+    # Whether Hermes's background service (its only session writer) is running now.
+    # Only looks; never starts one.
+    from hermes_cli.gateway_runtime import discover_gateway_endpoint
+    from hermes_constants import get_hermes_home
+    try:
+        return discover_gateway_endpoint(get_hermes_home(), timeout=2.0).state != "absent"
+    except Exception:
+        return False
+
+
+def session_id_for(t, started):
+    # The same turn always gets the same id (its time + 12 hex of tethr's run id), so
+    # a batch that was cut short can be sent again without making duplicates.
+    from datetime import datetime, timezone
+    stamp = datetime.fromtimestamp(started, tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
+    return stamp + "_" + str(t["hex"])[:12]
+
+
+def session_exists(sid):
+    try:
+        db = open_db()
+    except Exception:
+        return False  # no store yet: nothing is in it
+    try:
+        return db.get_session(sid) is not None
+    finally:
+        close_db(db)
+
+
 def sessions_import(a):
+    # A session write makes Hermes start its background service when none is running,
+    # and that service runs whatever its owner set up in Hermes. tethr only does that
+    # when it's allowed to ("wake"); otherwise the turns wait.
+    if not a.get("wake") and not gateway_up():
+        return {"gateway": "absent", "results": []}
     from hermes_cli.gateway_session_store import session_store
-    from hermes_state_ids import new_session_id
     store = session_store()
     results = []
     rescanned = False
     by_key = {}  # a turn's parent can be an earlier turn of the same batch (parent_key)
     for t in a.get("turns") or []:
         try:
-            sid = new_session_id()
             started = float(t.get("started_at") or time.time())
+            sid = session_id_for(t, started)
+            if session_exists(sid):
+                by_key[t.get("key")] = sid
+                results.append({"key": t.get("key"), "session_id": sid, "existed": True})
+                continue
             row = {"id": sid, "source": str(t["source"]), "started_at": started, "messages": t["messages"]}
             if t.get("ended_at"):
                 row["ended_at"] = float(t["ended_at"])
@@ -114,7 +153,7 @@ def sessions_import(a):
             results.append({"key": t.get("key"), "session_id": sid})
         except Exception as e:
             results.append({"key": t.get("key"), "error": (type(e).__name__ + ": " + str(e))[:300]})
-    return {"results": results}
+    return {"gateway": "up", "results": results}
 
 
 def brief(db, sid, snippet=None):

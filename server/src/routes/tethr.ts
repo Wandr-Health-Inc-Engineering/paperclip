@@ -143,7 +143,18 @@ export function tethrRoutes(db: Db) {
       return;
     }
     // Phase 23: an agent's thread gets Tethr's tools minus tethr's team tools.
-    const member = await teamService(db).byThread(ctx.companyId, ctx.threadId).catch(() => null);
+    // Whose chat this is decides what's allowed: if that can't be looked up, nothing runs.
+    let member: Awaited<ReturnType<ReturnType<typeof teamService>["byThread"]>>;
+    try {
+      member = await teamService(db).byThread(ctx.companyId, ctx.threadId);
+    } catch {
+      res.status(503).json({ error: "Tethr couldn't check whose chat this is. Try again." });
+      return;
+    }
+    // A one-off private turn (the idea check) reads other people's Slack words, so
+    // it only gets tools that look things up: nothing that saves, assigns or creates.
+    const readOnly = (toolName: string) =>
+      classify(`mcp__${TETHR_TOOLS_SERVER}__${toolName}`, {}, { workspaceDir: workspaceDir().dir, readableRoots: readableRoots(), internalAddresses: [] }).cls === "read";
     if (req.params.op === "list") {
       const isTeamTool = (name: string) => (TEAM_TOOL_NAMES as readonly string[]).includes(name);
       // tethr: everything. A lead: its team tools, plus the rest if it has "Tethr tools". Any other agent: no team tools.
@@ -153,7 +164,9 @@ export function tethrRoutes(db: Db) {
         !member
           ? TETHR_TOOL_DEFS
           : TETHR_TOOL_DEFS.filter((d) => (isTeamTool(d.name) ? member.lead : member.connectors.includes(TETHR_TOOLS_LABEL)))
-      ).filter((d) => !memoryToolRefusal(d.name, { private: ctx.privateTurn === true, member }, backend));
+      )
+        .filter((d) => !memoryToolRefusal(d.name, { private: ctx.privateTurn === true, member }, backend))
+        .filter((d) => ctx.privateTurn !== true || readOnly(d.name));
       res.json({ tools });
       return;
     }
@@ -174,7 +187,9 @@ export function tethrRoutes(db: Db) {
       internalAddresses: cfg.internalAddresses,
     });
     const decision = decide(classified, { mode: modeFor(cfg, TETHR_TOOLS_LABEL), shell: cfg.shell });
-    const refusal = member ? agentToolRefusal(member, `mcp__${TETHR_TOOLS_SERVER}__${name}`, TETHR_TOOLS_LABEL) : null;
+    const refusal =
+      (member ? agentToolRefusal(member, `mcp__${TETHR_TOOLS_SERVER}__${name}`, TETHR_TOOLS_LABEL) : null) ??
+      (ctx.privateTurn === true && classified.cls !== "read" ? `Tethr approval gate: blocked. ${name} isn't available in this one-off check.` : null);
     if (decision.action !== "allow" || refusal) {
       const text = refusal ?? (decision.action === "deny" ? decision.reason : `Tethr approval gate: ${name} can't run from here.`);
       res.json({ content: [{ type: "text", text }], isError: true });

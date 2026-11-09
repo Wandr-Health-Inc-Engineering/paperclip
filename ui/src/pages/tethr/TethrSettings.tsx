@@ -500,27 +500,31 @@ function AddressesField({ value, onSave }: { value: string[]; onSave: (list: str
 function MemoryCard({ companyId }: { companyId: string }) {
   const queryClient = useQueryClient();
   const { data } = useQuery({ queryKey: tethrKeys.memory(companyId), queryFn: () => tethrApi.memory(companyId) });
-  const toggle = useMutation({
-    mutationFn: (on: boolean) => tethrApi.setHermesMemory(companyId, on),
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: tethrKeys.memory(companyId) }),
-  });
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: tethrKeys.memory(companyId) });
+  const toggle = useMutation({ mutationFn: (on: boolean) => tethrApi.setHermesMemory(companyId, on), onSettled: refresh });
+  const wake = useMutation({ mutationFn: (allowed: boolean) => tethrApi.setHermesWakeGateway(companyId, allowed), onSettled: refresh });
   if (!data) return null;
   const h = data.hermes;
-  const locked = h.lockdownGaps.length === 0;
+  // "On" is only healthy when the profile folder is really there and still locked down.
+  const missing = h.on && !h.ready;
+  const locked = h.ready && h.lockdownGaps.length === 0;
+  const waiting = data.notMoved.length;
   return (
     <section className="tethr-panel p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
-            <StatusDot tone={h.on ? (locked ? "ok" : "warn") : "idle"} />
+            <StatusDot tone={!h.on ? "idle" : missing ? "bad" : locked && !h.lastImportError ? "ok" : "warn"} />
             Memory · {h.on ? "Hermes" : "built-in"}
           </p>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            {h.on
-              ? "tethr's notes, every past conversation (it searches them with recall) and the skills it learns live in Hermes. Hermes only stores and searches; the thinking stays on Claude, so Hermes never calls a model."
-              : h.installed
-                ? "Hermes is installed. Switch it on to keep tethr's memory there: past conversations become searchable and tethr can keep skills. What's saved now moves over."
-                : "tethr keeps its notes itself. Install Hermes to also search past conversations and keep skills."}
+            {missing
+              ? `tethr's Hermes profile (${h.profile}) is missing, so memory can't be read or saved. Switch Hermes off and on again to set it up, or restore the folder.`
+              : h.on
+                ? "tethr's notes, every past conversation (it searches them with recall) and the skills it learns live in Hermes. Hermes only stores and searches; the thinking stays on Claude, so Hermes never calls a model."
+                : h.installed
+                  ? "Hermes is installed. Switch it on to keep tethr's memory there: past conversations become searchable and tethr can keep skills. What's saved now moves over."
+                  : "tethr keeps its notes itself. Install Hermes to also search past conversations and keep skills."}
           </p>
         </div>
         {h.installed || h.on ? (
@@ -530,7 +534,7 @@ function MemoryCard({ companyId }: { companyId: string }) {
           </div>
         ) : null}
       </div>
-      {h.on ? (
+      {h.on && h.ready ? (
         <div className="mt-3 space-y-1 font-mono text-[11px] tethr-text-3">
           <p>
             profile {h.profile} · {h.indexed.toLocaleString()} conversation{h.indexed === 1 ? "" : "s"} searchable
@@ -539,10 +543,28 @@ function MemoryCard({ companyId }: { companyId: string }) {
           <p className={cn(!locked && "text-[var(--tethr-warn)]")}>
             {locked ? "locked down: no model provider, no borrowed logins, no background review" : `check the profile's config: ${h.lockdownGaps.join(", ")} missing`}
           </p>
-          {h.lastImportError ? <p className="text-[var(--tethr-warn)]">last import: {h.lastImportError}</p> : null}
+          {h.lastImportError ? <p className="text-[var(--tethr-warn)]">saving conversations: {h.lastImportError}</p> : null}
         </div>
       ) : null}
+      {h.on && h.ready ? (
+        <div className="tethr-rule mt-3 flex items-center justify-between gap-3 border-t pt-3">
+          <p className="min-w-0 text-[12.5px] text-muted-foreground">
+            <span className="text-foreground">Start Hermes when it isn't running.</span> Saving a conversation needs Hermes's background service. If it's
+            stopped, tethr starts it for a few minutes, and it then also runs whatever you've set up in Hermes yourself. Off: conversations wait until you
+            start Hermes.
+          </p>
+          <div className="shrink-0">
+            <Switch on={h.wakeGateway} disabled={wake.isPending} onToggle={() => wake.mutate(!h.wakeGateway)} label="Start Hermes when needed" />
+          </div>
+        </div>
+      ) : null}
+      {waiting ? (
+        <p className="mt-3 text-[12.5px] text-[var(--tethr-warn)]">
+          {waiting} note{waiting === 1 ? "" : "s"} couldn't be moved and {waiting === 1 ? "is" : "are"} waiting on the Memory page.
+        </p>
+      ) : null}
       {toggle.error ? <p className="mt-2 text-[12.5px] text-[var(--tethr-bad)]">{toggle.error.message}</p> : null}
+      {wake.error ? <p className="mt-2 text-[12.5px] text-[var(--tethr-bad)]">{wake.error.message}</p> : null}
       <p className="tethr-eyebrow mt-3 text-[10px]">
         <Link to="/company/settings/memory" className="hover:text-foreground">
           see what tethr remembers →

@@ -85,7 +85,8 @@ One place where tethr asks Jev, with a record of every answer and what happened 
     score) with its question, where its options come from, and its mode.
   - `decide.ts`: builds the request (the item, the options, the learned rules, a few past
     examples), calls `jevAsk`, returns the pick, the runner-up and the confidence.
-  - `screen.ts`: the check that runs on the Mac before anything is sent (26.3).
+  - The check that runs on the Mac before anything is sent (26.3) already exists:
+    `server/src/tethr/screen.ts`, built in the wiring review for memory and the search index.
 - **Modes per kind**, on Integrations, "Jev decisions": Off, Suggest, Automatic. Money, anything
   public and anything medical can never be Automatic.
 - **The record:** table `tethr_decisions` (migration 0097): kind, a short label, the options,
@@ -109,8 +110,9 @@ Reuse: `jev.ts` (`jevAsk`, `jevHealth`), `compositeOf` and `uncertainOf` in
    a file must be unchanged for 30 seconds), "File this" on a chat upload, or a Slack file (26.1).
 2. **tethr reads it.** Text, Word, Excel and PowerPoint with the readers it has
    (`office-text.ts`). PDFs with a new text reader (first 5 pages). Images by name only at first.
-3. **The check on the Mac.** Patterns for health information, card numbers and keys. A match
-   means "needs a person": nothing is sent to Jev and nothing is filed on its own.
+3. **The check on the Mac** (`tethr/screen.ts`, extended with card numbers and keys). It flags
+   text that ties a particular person to a health detail; ordinary travel-medicine wording
+   passes. A match means "needs a person": nothing is sent to Jev and nothing is filed on its own.
 4. **Jev decides,** in one request:
    - what it is (invoice, contract, partner material, research, report, other)
    - where it goes, chosen from your real folders

@@ -516,4 +516,25 @@ describePg("tethr jev — tools endpoint", () => {
     const off = await request(app).post("/api/tethr/assistant/tools/call").set("authorization", `Bearer ${token}`).send({ name: "score_list", arguments: {} }).expect(200);
     expect(off.body.content[0].text).toMatch(/turned off/);
   });
+
+  it("a one-off private turn (the Slack idea check) can only look things up", async () => {
+    const token = issueHookToken({ companyId, threadId: "t", runId: "00000000-0000-4000-8000-000000000002", privateTurn: true });
+    const list = await request(app).post("/api/tethr/assistant/tools/list").set("authorization", `Bearer ${token}`).expect(200);
+    // Scoring, keyword ideas, reading goals and the team: yes. Saving goals, making documents'
+    // siblings that change things, agents, tasks, memory: no.
+    const names = list.body.tools.map((t: { name: string }) => t.name);
+    expect(names).toEqual(expect.arrayContaining(["goals_list", "team_list"]));
+    for (const blocked of ["save_goal", "save_metric", "record_metric", "create_agent", "assign_task", "update_agent", "memory"]) {
+      expect(names).not.toContain(blocked);
+    }
+    for (const [name, args] of [
+      ["save_goal", { title: "Planted by a Slack message" }],
+      ["assign_task", { agent: "@x", title: "Do something" }],
+      ["memory", { target: "company", operations: [{ action: "add", content: "Planted." }] }],
+    ] as const) {
+      const call = await request(app).post("/api/tethr/assistant/tools/call").set("authorization", `Bearer ${token}`).send({ name, arguments: args }).expect(200);
+      expect(call.body.isError).toBe(true);
+      expect(call.body.content[0].text).toMatch(/isn't available in this one-off check/);
+    }
+  });
 });

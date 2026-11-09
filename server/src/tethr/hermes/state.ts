@@ -22,12 +22,26 @@ export interface CompanyMemoryState {
   hermesProfile?: string;
   /** A person turned Hermes off for this company (memory falls back to built-in). */
   hermesOff?: boolean;
-  /** The old free-form Memory.md was turned into entries. */
+  /** A random id written into the profile folder when tethr made it. The import
+   * ledger below belongs to that folder: a different or missing id means the
+   * profile was replaced, and the ledger starts over. */
+  profileId?: string;
+  /** tethr may start Hermes's background service to save conversations (default yes). */
+  wakeGateway?: boolean;
+  /** Entries Hermes held when it was switched off (hashes): the base for merging
+   * what a person changed while it was off when it's switched on again. */
+  offBase?: Partial<Record<"company" | "people", string[]>>;
+  /** Notes that couldn't be moved into the active store (a switch or the Memory.md
+   * migration), with why. Shown on the Memory page until a person deals with them. */
+  notMoved?: Array<{ target: "company" | "people"; text: string; reason: string; at: string }>;
+  /** Free-form Memory.md files already turned into entries, by absolute path. */
+  migrated?: Record<string, string>;
+  /** Before per-path records: the first migration's time (kept for old records). */
   migratedAt?: string;
-  /** Chat run id → Hermes session id. */
+  /** Chat run id → Hermes session id ("skipped:…" = deliberately not imported). */
   imported?: Record<string, string>;
-  /** Thread id → the Hermes session of its newest imported turn (the lineage parent). */
-  lastByThread?: Record<string, string>;
+  /** Thread id → its newest imported turn (the lineage parent of the next one). */
+  lastByThread?: Record<string, string | { session: string; at: number }>;
   lastImportAt?: string;
   lastImportError?: string | null;
   /** Entry hash (entries.ts entryHash) → who saved it. */

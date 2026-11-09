@@ -164,6 +164,7 @@ export async function ensureProfile(profile: string): Promise<{ home: string; cr
   await fsp.writeFile(config, PROFILE_CONFIG, { encoding: "utf8", mode: 0o600, flag: "wx" }).catch((err: NodeJS.ErrnoException) => {
     if (err.code !== "EEXIST") throw err;
   });
+  await writeProfileId(profile);
   return { home, created: true };
 }
 
@@ -175,6 +176,25 @@ export function freeProfileName(base: string): string {
   if (!fs.existsSync(profileHome(base))) return base;
   for (let n = 2; n < 100; n++) if (!fs.existsSync(profileHome(`${base}-${n}`))) return `${base}-${n}`;
   throw new HermesError(`Too many Hermes profiles named ${base}.`);
+}
+
+const PROFILE_ID_FILE = "tethr-profile.json";
+
+/** The id tethr wrote into this profile folder, or null (none, or no folder). */
+export function readProfileId(profile: string): string | null {
+  try {
+    const id = (JSON.parse(fs.readFileSync(path.join(profileHome(profile), PROFILE_ID_FILE), "utf8")) as { id?: unknown }).id;
+    return typeof id === "string" && id ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Give the profile folder an id (tethr's import ledger is tied to it). */
+export async function writeProfileId(profile: string): Promise<string> {
+  const id = crypto.randomUUID();
+  await fsp.writeFile(path.join(profileHome(profile), PROFILE_ID_FILE), JSON.stringify({ id, madeBy: "tethr" }, null, 2), { encoding: "utf8", mode: 0o600 });
+  return id;
 }
 
 export function profileExists(profile: string): boolean {
@@ -225,10 +245,16 @@ export async function runHelper<T = unknown>(profile: string, op: HelperOp, args
       child.kill("SIGKILL");
       reject(new HermesError(`Hermes took too long (${op}).`));
     }, timeout);
-    child.stdout.on("data", (c) => (stdout += c));
-    child.stderr.on("data", (c) => {
+    // Decoded as a stream, so a character split across two chunks isn't garbled.
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (c: string) => (stdout += c));
+    child.stderr.on("data", (c: string) => {
       if (stderr.length < 4000) stderr += c;
     });
+    // A helper that dies before reading its input must not take the server down
+    // (an unhandled EPIPE on stdin is an uncaught error); "close" reports it.
+    child.stdin.on("error", () => {});
     child.on("error", (err) => {
       clearTimeout(timer);
       reject(new HermesError(`Couldn't start Hermes: ${err.message}`));

@@ -713,7 +713,11 @@ export interface TethrMemoryState extends TethrMemorySnapshot {
     indexed: number;
     lastImportAt: string | null;
     lastImportError: string | null;
+    /** tethr may start Hermes's background service to save conversations. */
+    wakeGateway: boolean;
   };
+  /** Notes that couldn't be moved into the active store, with why. */
+  notMoved: Array<{ target: TethrMemoryTarget; text: string; reason: string; at: string }>;
 }
 export interface TethrRecallHit {
   sessionId: string;
@@ -927,7 +931,10 @@ export const tethrApi = {
     api.get<{ name: string; description: string; content: string }>(`/tethr/${c}/memory/skills/${encodeURIComponent(name)}`),
   deleteMemorySkill: (c: string, name: string) => api.delete<TethrMemorySnapshot>(`/tethr/${c}/memory/skills/${encodeURIComponent(name)}`),
   setHermesMemory: (c: string, on: boolean) =>
-    api.post<TethrMemorySnapshot & { on: boolean; moved: number }>(`/tethr/${c}/memory/hermes`, { on }),
+    api.post<TethrMemorySnapshot & { on: boolean; moved: number; notMoved: number }>(`/tethr/${c}/memory/hermes`, { on }),
+  setHermesWakeGateway: (c: string, allowed: boolean) => api.post<{ wakeGateway: boolean }>(`/tethr/${c}/memory/wake-gateway`, { allowed }),
+  dismissNotMoved: (c: string, index: number | "all") =>
+    api.post<{ notMoved: TethrMemoryState["notMoved"] }>(`/tethr/${c}/memory/not-moved/dismiss`, index === "all" ? {} : { index }),
   /** Phase 23: tethr's team of agents. */
   team: (c: string) => api.get<TethrTeam>(`/tethr/${c}/team`),
   setTeamAgentPaused: (c: string, tag: string, paused: boolean) =>
