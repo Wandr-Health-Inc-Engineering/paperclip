@@ -779,18 +779,29 @@ Mark: "a small icon at the bottom I can click… so I don't have a separate term
 app's window has a terminal panel at the bottom.
 - **How to open it:** the terminal icon beside the account row at the foot of the sidebar
   (`ui/src/components/tethr/DesktopTerminalButton.tsx`, mounted in core `SidebarAccountMenu.tsx`,
-  logged in DECISIONS.md), View → Terminal, or ⌃`. Hide keeps the shell running; Restart starts a
-  fresh one. The divider drags, and the height is remembered.
+  logged in DECISIONS.md), View → Terminal, or ⌃`. ⌃` puts the keyboard in it; the icon only
+  shows it (click into it to type). Hide keeps the shell running; Restart starts a fresh one.
+  The divider drags, and the height is remembered.
 - **Where it runs:** in the launcher itself (`scripts/tethr-launcher/TerminalPanel.swift`,
   local-only). `forkpty` starts your login shell (`$SHELL`, as `-zsh`) in the repo, with
-  `TERM=xterm-256color`. xterm.js 6 (`vendor/xterm/`, MIT, bundled, no CDN) draws it in a second
-  WKWebView that loads `terminal.html` from the app bundle. Quitting the app hangs up the shell's
-  process group (SIGHUP, then SIGKILL after 1.5s).
-- **What the web page can do:** only post `{terminal: "toggle" | "open" | "close" | "state"}` to
-  the existing `tethrApp` handler; the app answers with a `tethr-terminal` window event
-  `{open}`. Keys and output pass only between the terminal's own view and the app (handler
-  `term`, main-frame `file://` messages only, every navigation refused). The Tethr server never
-  sees the shell, and no Tethr page can type into it or read from it.
+  `TERM=xterm-256color`, the first time the panel opens (not at every launch). xterm.js 6
+  (`vendor/xterm/`, MIT, bundled, no CDN) draws it in a second WKWebView that loads `terminal.html`
+  from the app bundle. Quitting the app or Restart hangs up the shell and reaps it.
+- **Invariants (security review, 2026-11-09):**
+  - The page's only command is `{terminal: "toggle" | "state"}` on `tethrApp`, accepted from the
+    tethr page's main frame only (`isAppURL`); the app answers with a `tethr-terminal` window
+    event `{open}`. **A page never moves the keyboard:** its toggle opens the panel without focus
+    and won't close it while you're typing in it (`pageToggleTerminal`). Otherwise a bad page
+    could send your typing, Enter included, into the shell, or catch keys meant for it.
+  - Keys and output pass only between the terminal's own view and the app (handler `term`,
+    accepted only from the exact bundled `terminal.html`, main frame; every navigation refused).
+    The Tethr server never sees the shell, and no Tethr page can type into it or read from it.
+  - The shell starts clean: signals at their defaults with none blocked (the app ignores
+    SIGINT/SIGTERM, and ignored signals survive execve), and no file descriptor but 0-2 (the
+    app's other files, like the dev server's log pipe, are closed in the child; the PTY master
+    is close-on-exec).
+  - Keys the shell can't take yet wait in an outbox and are retried, so a big paste is never cut
+    short and the UI never blocks.
 - The icon renders only inside the desktop app (user agent `TethrDesktop/` and the `tethrApp`
   handler), never in a browser. Test: `DesktopTerminalButton.test.tsx` (2).
 - **It wears tethr's theme** (Mark: "needs to be cohesive"). The app window's theme probe sends
