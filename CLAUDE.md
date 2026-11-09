@@ -793,6 +793,22 @@ app's window has a terminal panel at the bottom.
   sees the shell, and no Tethr page can type into it or read from it.
 - The icon renders only inside the desktop app (user agent `TethrDesktop/` and the `tethrApp`
   handler), never in a browser. Test: `DesktopTerminalButton.test.tsx` (2).
+- **It wears tethr's theme** (Mark: "needs to be cohesive"). The app window's theme probe sends
+  tethr's stored choice (`paperclip.theme`: system/light/dark, polled each second because Night →
+  Auto on a dark Mac changes no class) and the page's color tokens. The window's appearance is
+  pinned for Day/Night and left to the Mac for Auto (pinning on the resolved color froze Auto,
+  since the page reads the Mac through the window). The terminal takes Day/Night from its own
+  view's appearance (pushed by `viewDidChangeEffectiveAppearance`, because a background page's
+  media-query event doesn't always fire), and the tokens (`TerminalTheme`: known names, plain
+  hex/rgb() values only) color it as the Finder's `tethr-window` surface on the ground with the
+  12px gutter. Geist/Geist Mono are bundled in `vendor/geist/` (OFL); the terminal loads nothing
+  from the network. The widget and the status page follow the same choice.
+- **One window (Mark, 2026-11-09):** the app opens the Tethr window only, and it shows a status page
+  (starting / not running / error with Start and Copy error) until the server answers. Closing it
+  (X) keeps tethr running in the background and brings up the small widget (preference *Show the
+  Widget When the Window Closes*); opening the window hides the widget; Window → Widget (⇧⌘L)
+  toggles it. Closing windows never quits (`applicationShouldTerminateAfterLastWindowClosed` is
+  false); ⌘Q does, and stops tethr only if the app started it.
 - **Rebuild** the app with `scripts/tethr-launcher/build.sh` after changing the launcher; a
   running app picks up the new build when it's reopened.
 
