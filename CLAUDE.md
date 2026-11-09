@@ -773,6 +773,29 @@ Mark asked for a startup animation when signing in or opening the desktop client
   pill buttons, and the transcript as a black terminal with `$` prompts. The native window
   background matches the ground (main.swift), so nothing flashes white. Rebuild with `build.sh`.
 
+## Desktop app terminal (2026-11-09)
+
+Mark: "a small icon at the bottom I can click… so I don't have a separate terminal." The desktop
+app's window has a terminal panel at the bottom.
+- **How to open it:** the terminal icon beside the account row at the foot of the sidebar
+  (`ui/src/components/tethr/DesktopTerminalButton.tsx`, mounted in core `SidebarAccountMenu.tsx`,
+  logged in DECISIONS.md), View → Terminal, or ⌃`. Hide keeps the shell running; Restart starts a
+  fresh one. The divider drags, and the height is remembered.
+- **Where it runs:** in the launcher itself (`scripts/tethr-launcher/TerminalPanel.swift`,
+  local-only). `forkpty` starts your login shell (`$SHELL`, as `-zsh`) in the repo, with
+  `TERM=xterm-256color`. xterm.js 6 (`vendor/xterm/`, MIT, bundled, no CDN) draws it in a second
+  WKWebView that loads `terminal.html` from the app bundle. Quitting the app hangs up the shell's
+  process group (SIGHUP, then SIGKILL after 1.5s).
+- **What the web page can do:** only post `{terminal: "toggle" | "open" | "close" | "state"}` to
+  the existing `tethrApp` handler; the app answers with a `tethr-terminal` window event
+  `{open}`. Keys and output pass only between the terminal's own view and the app (handler
+  `term`, main-frame `file://` messages only, every navigation refused). The Tethr server never
+  sees the shell, and no Tethr page can type into it or read from it.
+- The icon renders only inside the desktop app (user agent `TethrDesktop/` and the `tethrApp`
+  handler), never in a browser. Test: `DesktopTerminalButton.test.tsx` (2).
+- **Rebuild** the app with `scripts/tethr-launcher/build.sh` after changing the launcher; a
+  running app picks up the new build when it's reopened.
+
 ## tethr as a product: company, team, goals that adjust, ideas (phase 21, 2026-11-08)
 
 Mark's notes after the onboarding walkthrough: tethr will be sold as its own product, so onboarding

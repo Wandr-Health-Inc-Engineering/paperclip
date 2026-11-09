@@ -18,6 +18,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import { useSidebar } from "../context/SidebarContext";
 import { useTheme } from "../context/ThemeContext";
 import { nextThemePreference, themePreferenceLabel } from "@/components/tethr/TethrThemeSwitch";
+import { DesktopTerminalButton } from "@/components/tethr/DesktopTerminalButton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "../lib/utils";
@@ -137,12 +138,12 @@ export function SidebarAccountMenu({
   }
 
   return (
-    <div className="border-t border-r border-border bg-background px-3 py-2">
+    <div className="flex items-center gap-1 border-t border-r border-border bg-background px-3 py-2">
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] font-medium text-foreground/80 transition-colors hover:bg-accent/50 hover:text-foreground"
+            className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2 text-left text-[13px] font-medium text-foreground/80 transition-colors hover:bg-accent/50 hover:text-foreground"
             aria-label="Open account menu"
           >
             <Avatar size="sm">
@@ -230,6 +231,8 @@ export function SidebarAccountMenu({
           </div>
         </PopoverContent>
       </Popover>
+      {/* tethr desktop app only: its built-in terminal. */}
+      <DesktopTerminalButton />
     </div>
   );
 }
