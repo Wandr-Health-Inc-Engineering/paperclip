@@ -70,8 +70,8 @@ function MemoryStores({ companyId: c }: { companyId: string }) {
     <>
       <header className="space-y-1">
         <h2 className="text-[15px] font-medium">What tethr remembers</h2>
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] tethr-text-3">
-          <StatusDot tone={hermes ? "ok" : "idle"} />
+        <p className="flex items-start gap-2 text-[12.5px] tethr-text-3">
+          <StatusDot tone={hermes ? "ok" : "idle"} className="mt-[5px] shrink-0" />
           {hermes ? (
             <span>
               In Hermes (profile <span className="font-mono">{data.hermes.profile}</span>) · {data.hermes.indexed.toLocaleString()} past conversation

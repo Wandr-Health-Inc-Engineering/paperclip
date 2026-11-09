@@ -28,7 +28,7 @@ import {
   viewSkill,
 } from "../tethr/hermes/memory-layer.js";
 import { getMemoryState, updateMemoryState } from "../tethr/hermes/state.js";
-import { drainIndex } from "../tethr/hermes/indexer.js";
+import { drainIndex, indexTurnSoon } from "../tethr/hermes/indexer.js";
 import { eq } from "drizzle-orm";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
 import { createDb, tethrRouteRuns } from "@paperclipai/db";
@@ -118,6 +118,24 @@ describe("Hermes bridge: no model calls by construction", () => {
     expect(rec.title).toBe("tethr · main chat · 2026-11-09 18:00 · 333333");
     expect(turnRecord({ ...row, sourceKey: "chat-system" } as typeof row, { name: "x", source: "tethr" }).messages[0]!.content).toMatch(/^\(tethr\) /);
     expect(agentSource("@rank")).toBe("tethr-agent-rank");
+  });
+
+  it("keeps importing after a drain of an empty queue (the boot catch-up)", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tethr-index-"));
+    process.env.TETHR_MEMORY_FILE = path.join(dir, "memory.json");
+    try {
+      const companyId = "66666666-6666-4666-8666-666666666666";
+      await updateMemoryState(companyId, (s) => ({ ...s, hermesProfile: "tethr-x" }));
+      let reads = 0;
+      const fakeDb = { select: () => ({ from: () => ({ where: async () => ((reads += 1), []) }) }) } as unknown as Parameters<typeof drainIndex>[0];
+      await drainIndex(fakeDb); // nothing queued: settles at once
+      indexTurnSoon(fakeDb, "77777777-7777-4777-8777-777777777777", companyId);
+      await drainIndex(fakeDb);
+      expect(reads).toBe(1);
+    } finally {
+      delete process.env.TETHR_MEMORY_FILE;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -3,6 +3,7 @@ import type { Db } from "@paperclipai/db";
 import { companies, tethrRouteRuns } from "@paperclipai/db";
 import { listSideChats, mainThreadId } from "../chats.js";
 import { stableThreadId } from "../ids.js";
+import { logFailure } from "../best-effort.js";
 import { MINUTE } from "../time.js";
 import { teamService } from "../team.js";
 import { runHelper } from "./bridge.js";
@@ -95,23 +96,28 @@ let draining: Promise<void> | null = null;
 export function indexTurnSoon(db: Db, runId: string, companyId: string): void {
   if (!activeHermesProfile(companyId)) return;
   pending.add(runId);
-  void drainIndex(db);
+  void drainIndex(db).catch(logFailure("adding a chat turn to Hermes", { runId }));
 }
 
-/** Import everything queued (one drain at a time). Resolves when it's done. */
+async function drainLoop(db: Db): Promise<void> {
+  while (pending.size) {
+    const ids = [...pending].slice(0, BATCH);
+    for (const id of ids) pending.delete(id);
+    await importRuns(db, ids);
+  }
+}
+
+/** Import everything queued (one drain at a time). Resolves when it's done. The
+ * flag is cleared in a .finally attached AFTER it's set (an empty queue settles
+ * at once, and clearing it inside the loop would leave it set for good), and a
+ * turn queued while a drain was finishing starts the next one. */
 export function drainIndex(db: Db): Promise<void> {
-  if (draining) return draining;
-  draining = (async () => {
-    try {
-      while (pending.size) {
-        const ids = [...pending].slice(0, BATCH);
-        for (const id of ids) pending.delete(id);
-        await importRuns(db, ids);
-      }
-    } finally {
+  if (!draining) {
+    draining = drainLoop(db).finally(() => {
       draining = null;
-    }
-  })();
+      if (pending.size) void drainIndex(db).catch(logFailure("adding chat turns to Hermes"));
+    });
+  }
   return draining;
 }
 
@@ -154,6 +160,7 @@ async function importRuns(db: Db, runIds: string[]): Promise<void> {
       });
     } catch (err) {
       // Left out of the ledger: the next backfill tries them again.
+      logFailure("adding chat turns to Hermes", { companyId, turns: turns.length })(err);
       await updateMemoryState(companyId, (s) => ({ ...s, lastImportError: err instanceof Error ? err.message : String(err) }));
     }
   }
