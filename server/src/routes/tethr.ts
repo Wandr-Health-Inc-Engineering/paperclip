@@ -58,7 +58,7 @@ import {
   validateAttachments,
   withAttachments,
 } from "../tethr/assistant/attachments.js";
-import { jevConfigured } from "../tethr/jev.js";
+import { jevHealth, jevHealthText } from "../tethr/jev.js";
 import * as envFile from "../tethr/env-file.js";
 import { planReset, resetAllowed, runReset } from "../tethr/reset.js";
 import { seedTethrCore } from "../tethr/seed/tethr-core.js";
@@ -69,6 +69,7 @@ import { getIntegrations, KNOWN_CONNECTORS, modeFor, sanitizeIntegrationsPatch, 
 import {
   interpretSlackEvent,
   routeInboundKickoff,
+  slackConfigured,
   verifySlackSignature,
 } from "../tethr/slack.js";
 import { workerService } from "../tethr/worker.js";
@@ -674,6 +675,9 @@ export function tethrRoutes(db: Db) {
     const cfg = getIntegrations(companyId);
     const seen = cfg.discovered?.connectors ?? {};
     const labels = [...new Set([...KNOWN_CONNECTORS.map((k) => k.label), ...Object.keys(seen), ...Object.keys(cfg.connectors)])];
+    const jev = await jevHealth();
+    const jevNote =
+      jev === "ok" ? "Jev is connected." : jev === "missing" ? "Jev isn't set up yet: add TYPESAFE_API_KEY on the Environment page." : `Jev: ${jevHealthText(jev)}`;
     res.json({
       defaultMode: cfg.defaultMode,
       internalAddresses: cfg.internalAddresses,
@@ -690,7 +694,7 @@ export function tethrRoutes(db: Db) {
           scope: cfg.connectors[label]?.scope ?? "",
           blurb:
             label === TETHR_TOOLS_LABEL
-              ? `${known?.blurb ?? ""} ${jevConfigured() ? "Jev is connected." : "Jev isn't set up yet: add TYPESAFE_API_KEY to Tethr's .env and restart."}`.trim()
+              ? `${known?.blurb ?? ""} ${jevNote}`.trim()
               : (known?.blurb ?? "Connected through your Claude account."),
           scopeHint: known?.scopeHint ?? null,
           toolsKnown: known?.tools ?? 0,
@@ -1802,7 +1806,8 @@ export function tethrRoutes(db: Db) {
         path: process.env.TETHR_BUNDLE_PATH ?? null,
       },
       notifications: {
-        channels: ["in_app (live)", "slack (mock)", "sms (mock)", "email (mock)"],
+        // Slack posts for real once the bot token is set; SMS and email only log.
+        channels: ["in_app (live)", `slack (${slackConfigured() ? "live" : "mock"})`, "sms (mock)", "email (mock)"],
       },
       mirror: await (async () => {
         const m = await import("../tethr/mirror.js");

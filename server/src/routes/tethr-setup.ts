@@ -10,7 +10,7 @@ import { adminFirstName, CompanyInputError, companyProfileService } from "../tet
 import { GROWTH_PACES, PACE_LABEL, PACE_UPLIFT, type GrowthPace } from "../tethr/goal-pace.js";
 import { GoalInputError, goalsService } from "../tethr/goals.js";
 import { getIntegrations, modeFor, sanitizeIntegrationsPatch, updateIntegrations } from "../tethr/integrations.js";
-import { jevConfigured } from "../tethr/jev.js";
+import { jevHealth, jevHealthText, type JevHealth } from "../tethr/jev.js";
 import { foldInterviewIntoMainChat } from "../tethr/main-chat.js";
 import { mirrorDir } from "../tethr/mirror.js";
 import { TETHR_MISSION } from "../tethr/mission.js";
@@ -78,7 +78,7 @@ export function tethrSetupRoutes(db: Db): Router {
   }));
 
   // ---- Setup / onboarding (phase 20) -------------------------------------------
-  const setupChecks = (companyId: string, adminSlackId: string | null = null) => {
+  const setupChecks = (companyId: string, adminSlackId: string | null, jev: JevHealth) => {
     const cfg = getIntegrations(companyId);
     const mode = (label: string) => modeFor(cfg, label);
     const growth = getRoster(companyId).growth;
@@ -102,7 +102,8 @@ export function tethrSetupRoutes(db: Db): Router {
         href: "/environment",
         optional: true,
       },
-      { key: "jev", label: "Jev (fast list scoring)", ok: jevConfigured(), detail: jevConfigured() ? "Connected" : "Optional: add TYPESAFE_API_KEY", href: "/environment", optional: true },
+      // "ok" only when TypeSafe accepts the key (a saved key can still be rejected).
+      { key: "jev", label: "Jev (fast decisions and list scoring)", ok: jev === "ok", detail: jevHealthText(jev), href: "/environment", optional: true },
       { key: "drive", label: "Google Drive folder (00 Tethr)", ok: !!mirrorDir(), detail: mirrorDir() ?? "Not found", href: "/drive" },
     ];
   };
@@ -115,7 +116,7 @@ export function tethrSetupRoutes(db: Db): Router {
     const pace = getPace(companyId, state.ideas);
     res.json({
       state,
-      checks: setupChecks(companyId, profile?.admin?.slackUserId ?? null),
+      checks: setupChecks(companyId, profile?.admin?.slackUserId ?? null, await jevHealth()),
       goals: await goalsService(db).list(companyId),
       rhythms: RHYTHMS,
       profile,

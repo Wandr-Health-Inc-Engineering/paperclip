@@ -7,7 +7,7 @@ import express from "express";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createDb } from "@paperclipai/db";
-import { JevError, jevAsk } from "../tethr/jev.ts";
+import { JevError, jevAsk, jevHealth, jevHealthText } from "../tethr/jev.ts";
 import {
   compositeOf,
   csvFileName,
@@ -125,6 +125,40 @@ describe("tethr jev — client", () => {
     expect(n).toBe(3);
     delete process.env.TYPESAFE_API_KEY;
     await expect(jevAsk("x", { a: { type: "noul", instructions: "?" } })).rejects.toThrow(/isn't set up/);
+  });
+
+  it("knows whether TypeSafe accepts the key (a saved key isn't the same as a working one)", async () => {
+    const seen: string[] = [];
+    const answer = (status: number) =>
+      (async (url: string | URL | Request, init?: RequestInit) => {
+        seen.push(`${String(url)} ${(init?.headers as Record<string, string>).authorization}`);
+        return json(status, status === 200 ? { data: [] } : { detail: { error_type: "authentication_error" } });
+      }) as typeof fetch;
+    delete process.env.TYPESAFE_API_KEY;
+    expect(await jevHealth({ fetchImpl: answer(200) })).toBe("missing");
+    expect(seen).toEqual([]);
+
+    process.env.TYPESAFE_API_KEY = "bad-key";
+    expect(await jevHealth({ fetchImpl: answer(401) })).toBe("rejected");
+    expect(seen).toEqual(["https://api.typesafe.ai/v1/models Bearer bad-key"]);
+    // Cached: no second request for the same key.
+    expect(await jevHealth({ fetchImpl: answer(200) })).toBe("rejected");
+    expect(seen).toHaveLength(1);
+    expect(jevHealthText("rejected")).toMatch(/rejected the key/);
+
+    // A new key is checked at once.
+    process.env.TYPESAFE_API_KEY = "good-key";
+    expect(await jevHealth({ fetchImpl: answer(200) })).toBe("ok");
+    expect(seen).toHaveLength(2);
+
+    // A real call that gets a 401 flips it without another check.
+    await jevAsk("x", { a: { type: "noul", instructions: "?" } }, { fetchImpl: answer(401), sleep: noSleep }).catch(() => undefined);
+    expect(await jevHealth({ fetchImpl: answer(200) })).toBe("rejected");
+
+    const down = (async () => {
+      throw new Error("ECONNREFUSED");
+    }) as typeof fetch;
+    expect(await jevHealth({ fetchImpl: down, fresh: true })).toBe("unreachable");
   });
 });
 

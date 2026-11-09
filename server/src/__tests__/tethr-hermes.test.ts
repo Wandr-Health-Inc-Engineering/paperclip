@@ -7,6 +7,7 @@ import { memoryToolRefusal } from "../tethr/assistant/memory-tools.js";
 import {
   ensureProfile,
   findHermes,
+  freeProfileName,
   hermesEnv,
   lockdownGaps,
   PROFILE_CONFIG,
@@ -60,8 +61,21 @@ describe("Hermes bridge: no model calls by construction", () => {
   it("tethr's profile is locked down: no provider, no borrowed logins, no background model work", () => {
     expect(lockdownGaps(PROFILE_CONFIG)).toEqual([]);
     expect(lockdownGaps("model:\n  provider: openrouter\n")).toEqual(["no model provider", "no borrowed logins", "no background review", "no consolidation"]);
-    expect(profileNameFor("WD")).toBe("tethr-wd");
-    expect(profileNameFor(null)).toBe("tethr");
+    expect(profileNameFor("WD", "default")).toBe("tethr-wd");
+    expect(profileNameFor(null, "default")).toBe("tethr");
+    // A test copy of tethr (same company prefix) never shares the real one's profile.
+    expect(profileNameFor("WD", "tethr-verify")).toBe("tethr-tethr-verify-wd");
+    // A leftover profile (a wiped company's) is never adopted: the next one gets a new name.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tethr-hermes-root-"));
+    process.env.TETHR_HERMES_ROOT = root;
+    try {
+      expect(freeProfileName("tethr-wd")).toBe("tethr-wd");
+      fs.mkdirSync(path.join(root, "profiles", "tethr-wd"), { recursive: true });
+      expect(freeProfileName("tethr-wd")).toBe("tethr-wd-2");
+    } finally {
+      delete process.env.TETHR_HERMES_ROOT;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("Hermes runs without any key it could use to reach a model", () => {

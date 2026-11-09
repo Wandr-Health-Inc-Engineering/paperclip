@@ -154,7 +154,7 @@ describePg("tethr goals — service, tools, routes", () => {
 
   it("writes the goals into the chat's CLAUDE.md", async () => {
     const view = await goalsService(db).list(companyId);
-    const memory = renderMemoryBlock({ backend: "builtin", stores: { company: { entries: [], used: 0, limit: 6000 }, people: { entries: [], used: 0, limit: 2000 } }, skills: [] }, { recall: false });
+    const memory = renderMemoryBlock({ backend: "builtin", stores: { company: { entries: [], used: 0, limit: 6000 }, people: { entries: [], used: 0, limit: 2000 } }, skills: [] }, { tools: true });
     const ws = await ensureWorkspace({ goals: goalsContextText(view), memory });
     const md = fs.readFileSync(ws.claudePath, "utf8");
     expect(md).toContain("## Goals");

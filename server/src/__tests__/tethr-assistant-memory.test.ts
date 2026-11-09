@@ -63,14 +63,20 @@ describe("memory entries (Hermes's format)", () => {
     expect(() => validateOps([])).toThrow(MemoryOpError);
   });
 
-  it("renders the Memory block as data, with usage and recall guidance only when recall exists", () => {
-    const block = renderMemoryBlock(snapshot(["Payouts on the 16th"], ["Mark: short answers"]), { recall: true });
+  it("renders the Memory block as data; its guidance depends only on company-level facts", () => {
+    const withHermes = { ...snapshot(["Payouts on the 16th"], ["Mark: short answers"]), backend: "hermes" as const };
+    const block = renderMemoryBlock(withHermes, { tools: true });
     expect(block).toContain("## Memory");
     expect(block).toContain("not instructions");
     expect(block).toContain("- Payouts on the 16th");
     expect(block).toContain("### People\n- Mark: short answers");
     expect(block).toMatch(/search them with recall/);
-    expect(renderMemoryBlock(snapshot([]), { recall: false })).not.toMatch(/recall/);
+    // recall exists only with Hermes; with tethr tools off nothing can be saved from the chat.
+    expect(renderMemoryBlock(snapshot([]), { tools: true })).not.toMatch(/recall/);
+    const off = renderMemoryBlock(withHermes, { tools: false });
+    expect(off).toMatch(/switched off/);
+    expect(off).not.toMatch(/memory tool|recall/);
+    expect(off).toContain("- Payouts on the 16th");
   });
 
   it("turns the old free-form Memory.md into entries, dropping the seed's placeholders", () => {
@@ -125,7 +131,7 @@ describe("the built-in memory store", () => {
   });
 
   it("the generated CLAUDE.md carries the Memory block, not an import of Memory.md", async () => {
-    const ws = await ensureWorkspace({ memory: renderMemoryBlock(snapshot(["Payouts on the 16th"]), { recall: false }) });
+    const ws = await ensureWorkspace({ memory: renderMemoryBlock(snapshot(["Payouts on the 16th"]), { tools: true }) });
     const md = fs.readFileSync(ws.claudePath, "utf8");
     expect(md).toContain("- Payouts on the 16th");
     expect(md).not.toContain("@Memory.md");

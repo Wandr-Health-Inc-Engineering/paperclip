@@ -326,7 +326,8 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       // Phase 25: the Memory block, from Hermes (or the built-in store), every turn.
       await migrateFreeformMemory(companyId).catch(() => undefined);
       const snapshot = memorySnapshot(companyId);
-      const memory = renderMemoryBlock(snapshot, { recall: tethrTools && snapshot.backend === "hermes" });
+      // Company-level only: CLAUDE.md is one file for every thread (see renderMemoryBlock).
+      const memory = renderMemoryBlock(snapshot, { tools: modeFor(cfg, TETHR_TOOLS_LABEL) !== "off" });
       ws = await ensureWorkspace({ integrationRules: integrationRulesText(cfg), goals, company, team: teamText, memory });
       ({ personaPath, skillDir } = await ensurePersona());
       const hookScript = await ensureHookScript();

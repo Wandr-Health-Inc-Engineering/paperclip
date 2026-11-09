@@ -27,6 +27,52 @@ export function jevConfigured(): boolean {
   return Boolean(process.env.TYPESAFE_API_KEY?.trim());
 }
 
+/** Whether TypeSafe accepts the key: a key being present says nothing (a
+ * mistyped or revoked one answers 401 on every call). */
+export type JevHealth = "missing" | "ok" | "rejected" | "unreachable";
+
+const HEALTH_TTL_MS = 10 * 60_000;
+const HEALTH_RETRY_MS = 60_000;
+let health: { key: string; at: number; value: JevHealth } | null = null;
+
+function remember(key: string, value: JevHealth): JevHealth {
+  health = { key, at: Date.now(), value };
+  return value;
+}
+
+/** Ask TypeSafe whether the key works (its model list needs only the key).
+ * Cached: 10 minutes for a clear answer, 1 minute when it couldn't be reached;
+ * a new key is checked at once. Every real call updates it too. */
+export async function jevHealth(opts: { fetchImpl?: typeof fetch; timeoutMs?: number; fresh?: boolean } = {}): Promise<JevHealth> {
+  const key = process.env.TYPESAFE_API_KEY?.trim();
+  if (!key) return "missing";
+  if (!opts.fresh && health && health.key === key) {
+    const ttl = health.value === "unreachable" ? HEALTH_RETRY_MS : HEALTH_TTL_MS;
+    if (Date.now() - health.at < ttl) return health.value;
+  }
+  // Tests never reach the network on their own: without a fake fetch, a key counts as working.
+  if (process.env.VITEST && !opts.fetchImpl) return "ok";
+  try {
+    const res = await (opts.fetchImpl ?? fetch)(`${baseUrl()}/v1/models`, {
+      headers: { authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 5_000),
+    });
+    await res.body?.cancel().catch(() => {});
+    if (res.ok) return remember(key, "ok");
+    return remember(key, res.status === 401 || res.status === 403 ? "rejected" : "unreachable");
+  } catch {
+    return remember(key, "unreachable");
+  }
+}
+
+/** What to tell a person about Jev's connection. */
+export function jevHealthText(h: JevHealth): string {
+  if (h === "ok") return "Connected";
+  if (h === "rejected") return "TypeSafe rejected the key. Copy it again from console.typesafe.ai and save it here.";
+  if (h === "unreachable") return "Key saved, but TypeSafe couldn't be reached just now.";
+  return "Optional: add TYPESAFE_API_KEY";
+}
+
 export function jevModel(): string {
   return process.env.TETHR_JEV_MODEL?.trim() || "jev-latest";
 }
@@ -88,7 +134,7 @@ async function errorDetail(res: Response): Promise<string> {
 }
 
 function statusMessage(status: number, detail: string): string {
-  if (status === 401) return "Jev turned down the API key (check TYPESAFE_API_KEY).";
+  if (status === 401) return "TypeSafe rejected the Jev API key (TYPESAFE_API_KEY). It needs to be copied again from console.typesafe.ai.";
   if (status === 400 && /max_tokens_exceeded/.test(detail)) return "This item is too long for Jev.";
   if (status === 413) return "This request is too big for Jev.";
   if (status === 422) return `Jev couldn't read the request${detail ? `: ${detail}` : "."}`;
@@ -137,6 +183,7 @@ export async function jevAsk(state: unknown, questions: Record<string, JevQuesti
     if (res.ok) {
       const data = (await res.json().catch(() => null)) as Partial<JevResponse> | null;
       if (!data || !isAnswerMap(data.answers)) throw new JevError("Jev sent back an answer Tethr couldn't read.", res.status);
+      remember(key, "ok");
       return {
         model: typeof data.model === "string" ? data.model : jevModel(),
         answers: data.answers,
@@ -152,6 +199,7 @@ export async function jevAsk(state: unknown, questions: Record<string, JevQuesti
       await sleep(retryAfterMs(res) ?? backoffMs(attempt));
       continue;
     }
+    if (res.status === 401) remember(key, "rejected");
     throw new JevError(statusMessage(res.status, await errorDetail(res)), res.status);
   }
 }

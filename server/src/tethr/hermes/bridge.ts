@@ -4,6 +4,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { resolvePaperclipInstanceId } from "../../home-paths.js";
 import { assistantHome } from "../assistant/workspace.js";
 import { HELPER_SOURCE, RESULT_MARKER, type HelperOp } from "./helper.js";
 import { MEMORY_LIMITS } from "./entries.js";
@@ -40,10 +41,16 @@ export function profileHome(profile: string): string {
   return path.join(hermesRoot(), "profiles", profile);
 }
 
-/** A Hermes profile name for a company (Hermes: lowercase letters, digits, - and _). */
-export function profileNameFor(issuePrefix: string | null | undefined): string {
-  const slug = String(issuePrefix ?? "").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40);
-  return slug ? `tethr-${slug}` : "tethr";
+const slug = (v: string | null | undefined, max: number) => String(v ?? "").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, max);
+
+/** A Hermes profile name for a company (Hermes: lowercase letters, digits, - and _).
+ * Every tethr instance on this computer shares one Hermes, and every fresh
+ * instance starts with the same company prefix, so any instance but the default
+ * one carries its own id: a test copy can never open the real one's memory. */
+export function profileNameFor(issuePrefix: string | null | undefined, instanceId: string = resolvePaperclipInstanceId()): string {
+  const instance = slug(instanceId, 20);
+  const parts = ["tethr", instance && instance !== "default" ? instance : "", slug(issuePrefix, 30)].filter(Boolean);
+  return parts.join("-");
 }
 
 function candidateBins(): string[] {
@@ -158,6 +165,16 @@ export async function ensureProfile(profile: string): Promise<{ home: string; cr
     if (err.code !== "EEXIST") throw err;
   });
   return { home, created: true };
+}
+
+/** `base`, or `base-2`, `base-3`… when a profile folder with that name is already
+ * there. A company switching Hermes on for the first time never adopts a profile
+ * it didn't make (one left by a company wiped in a fresh start keeps its memory
+ * on disk, untouched, and the new company starts clean). */
+export function freeProfileName(base: string): string {
+  if (!fs.existsSync(profileHome(base))) return base;
+  for (let n = 2; n < 100; n++) if (!fs.existsSync(profileHome(`${base}-${n}`))) return `${base}-${n}`;
+  throw new HermesError(`Too many Hermes profiles named ${base}.`);
 }
 
 export function profileExists(profile: string): boolean {

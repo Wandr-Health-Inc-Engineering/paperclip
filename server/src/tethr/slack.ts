@@ -560,7 +560,7 @@ function slackInline(s: string): string {
   const codes: string[] = [];
   let t = s.replace(/`[^`]+`/g, (m) => {
     codes.push(m);
-    return ` ${codes.length - 1} `;
+    return `\u0000${codes.length - 1}\u0000`;
   });
   t = t
     // [text](url) → <url|text>
@@ -568,7 +568,7 @@ function slackInline(s: string): string {
     // **bold** / __bold__ → *bold* (Slack has no separate strong)
     .replace(/\*\*([^*]+)\*\*/g, "*$1*")
     .replace(/__([^_]+)__/g, "*$1*");
-  return t.replace(/ (\d+) /g, (_, n) => codes[Number(n)]);
+  return t.replace(/\u0000(\d+)\u0000/g, (_, n) => codes[Number(n)]);
 }
 
 function splitTableRow(row: string): string[] {
