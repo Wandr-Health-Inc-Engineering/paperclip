@@ -9,6 +9,7 @@ import { parseCsv, toCsv } from "../csv.js";
 import { readTextInFiles, safeFileName } from "./files.js";
 import { FORMAT_LABEL, MAKE_DOCUMENT_DEF, makeDocument } from "./make-document.js";
 import { FILES_DIR } from "./workspace.js";
+import { runTeamTool, TEAM_TOOL_DEFS, TEAM_TOOL_SET } from "./team-tools.js";
 
 export { parseCsv, toCsv };
 
@@ -67,6 +68,9 @@ export interface TethrToolContext {
   /** For the goal tools (phase 20). */
   db?: Db;
   companyId?: string;
+  /** The chat turn calling (phase 23: team tools put their cards on it). */
+  threadId?: string;
+  runId?: string;
   now?: () => Date;
   jev?: JevCallOptions;
   concurrency?: number;
@@ -180,6 +184,7 @@ export const TETHR_TOOL_DEFS: McpToolDef[] = [
     },
   },
   MAKE_DOCUMENT_DEF,
+  ...TEAM_TOOL_DEFS,
 ];
 
 // ---- criteria --------------------------------------------------------------
@@ -630,6 +635,7 @@ export async function runTethrTool(name: string, args: unknown, ctx: TethrToolCo
     if (name === "goals_list" || name === "save_goal" || name === "save_metric" || name === "record_metric") {
       return await runGoalTool(name, a, ctx);
     }
+    if (TEAM_TOOL_SET.has(name)) return await runTeamTool(name, a, ctx);
     return { text: `There's no Tethr tool called ${name}.`, isError: true };
   } catch (err) {
     if (err instanceof GoalInputError) return { text: `${name}: ${err.message}`, isError: true };

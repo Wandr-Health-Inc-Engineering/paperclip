@@ -106,8 +106,11 @@ export function buildSettings(opts: { nodePath: string; hookScript: string; deny
   };
 }
 
-export async function writeSettingsFile(companyId: string, settings: unknown): Promise<string> {
-  const file = path.join(assistantHome(), "settings", `settings-${companyId}.json`);
+/** `variant` keeps a team agent's settings (its own deny rules) apart from the
+ * main chat's, so two turns starting together never swap them. */
+export async function writeSettingsFile(companyId: string, settings: unknown, variant?: string): Promise<string> {
+  const suffix = variant ? `-${variant.replace(/[^a-z0-9-]/gi, "")}` : "";
+  const file = path.join(assistantHome(), "settings", `settings-${companyId}${suffix}.json`);
   await writeAtomic(file, JSON.stringify(settings, null, 2));
   return file;
 }

@@ -29,9 +29,23 @@ let adapterDb: Db | null = null;
 async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const taskIssueId =
     typeof ctx.context?.issueId === "string" && ctx.context.issueId.trim() ? ctx.context.issueId.trim() : null;
+  const config = (ctx.agent.adapterConfig ?? {}) as Record<string, unknown>;
+  // Phase 23: an agent on tethr's team only works tasks (its schedule is a
+  // routine, which opens a task); it has no standing heartbeat.
+  if (!taskIssueId && config.engine === "session") {
+    return {
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      provider: "claude-code",
+      model: "",
+      billingType: "fixed",
+      usage: { inputTokens: 0, outputTokens: 0 },
+      summary: "Team agents only work tasks; nothing to do.",
+    };
+  }
   if (!taskIssueId) return executeHeartbeat(ctx);
 
-  const config = (ctx.agent.adapterConfig ?? {}) as Record<string, unknown>;
   const specialMode =
     config.heartbeatMode === "digest" || config.heartbeatMode === "site_audit" || config.heartbeatMode === "pulse_audit";
   // The rhythm Mark chose in setup (phase 20) always runs as a task, even for
@@ -100,6 +114,12 @@ async function executeTask(ctx: AdapterExecutionContext, issueId: string): Promi
   }
   if (!(await tasks.start(issueId, ctx.agent.id, ctx.runId))) {
     return skipped(`${task.issue.identifier ?? "Task"} is locked by another run — skipped.`);
+  }
+
+  // Phase 23: an agent on tethr's team works the task in its own chat.
+  if (config.engine === "session") {
+    const { executeTeamTask } = await import("./team-run.js");
+    return executeTeamTask(db, { ctx, issueId, issue: task.issue, tasks, agentTag: tag });
   }
 
   const wakeReason = typeof ctx.context?.wakeReason === "string" ? ctx.context.wakeReason : null;

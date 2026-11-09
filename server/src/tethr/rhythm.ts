@@ -1,11 +1,12 @@
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { issues, routines, routineTriggers, tethrOutputs } from "@paperclipai/db";
+import { issues, routines, routineTriggers } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { getDefaultCompanyGoal } from "../services/goals.js";
 import { goalsService, metricSummaryLines } from "./goals.js";
 import { routineService } from "../services/routines.js";
-import { waitForTurn, wasSkippedByThrottle, type TurnRow } from "./assistant/turns.js";
+import { chatTaskResult, turnOutputs, waitForTurn, type ChatTaskResult } from "./assistant/turns.js";
+export { chatTaskResult, type ChatTaskResult } from "./assistant/turns.js";
 import * as chats from "./chats.js";
 import { stableThreadId } from "./ids.js";
 import { MINUTE, SECOND } from "./time.js";
@@ -175,14 +176,6 @@ export async function isRhythmTask(db: Db, companyId: string, issueId: string): 
   return !!row && row.originKind === "routine_execution" && !!row.originId && ids.includes(row.originId);
 }
 
-export interface ChatTaskResult {
-  /** skipped = agents were paused when the turn's time came; nothing ran. */
-  status: "done" | "failed" | "skipped";
-  text: string;
-  runId: string | null;
-  outputs: Array<{ outputId: string; title: string; status: string; gated: boolean }>;
-}
-
 /** The longest a scheduled turn may take, queue included. Past it the turn is
  * STOPPED (not left running), so the task's result and the chat agree. */
 const SCHEDULED_TURN_MAX_MS = 20 * MINUTE;
@@ -215,28 +208,6 @@ function scheduledTurnText(issue: typeof issues.$inferSelect, timeZone: string, 
   return `Scheduled: ${issue.title}${issue.identifier ? ` (${issue.identifier})` : ""}, ${when}.\n\n${issue.description ?? ""}`.trim();
 }
 
-async function turnOutputs(db: Db, runId: string): Promise<ChatTaskResult["outputs"]> {
-  const rows = await db
-    .select({ id: tethrOutputs.id, title: tethrOutputs.title, status: tethrOutputs.status })
-    .from(tethrOutputs)
-    .where(eq(tethrOutputs.routeRunId, runId));
-  return rows.map((o) => ({ outputId: o.id, title: o.title, status: o.status, gated: o.status === "gated" || o.status === "changes_requested" }));
-}
-
-/** How a scheduled turn ended, for its task. A turn the usage throttle answered is "skipped": nothing ran. */
-export function chatTaskResult(
-  row: TurnRow | undefined,
-  run: { runId: string; timedOut: boolean; waitMs: number; outputs: ChatTaskResult["outputs"] },
-): ChatTaskResult {
-  const base = { runId: run.runId, outputs: run.outputs };
-  if (wasSkippedByThrottle(row)) return { ...base, status: "skipped", text: "Skipped: agents were paused when this was due." };
-  if (row?.status === "done") return { ...base, status: "done", text: row.resultText || "Done." };
-  if (run.timedOut) {
-    const minutes = Math.max(1, Math.round(run.waitMs / MINUTE));
-    return { ...base, status: "failed", text: `Took longer than ${minutes} minutes, so it was stopped. What it did so far is in the Operations chat.` };
-  }
-  return { ...base, status: "failed", text: row?.error || "The scheduled turn didn't finish." };
-}
 
 /**
  * Slack #tethr, only for the rhythm items the team chose to post. The post is a

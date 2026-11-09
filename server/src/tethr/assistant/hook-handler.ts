@@ -5,6 +5,8 @@ import { getIntegrations, modeFor } from "../integrations.js";
 import type { HookTokenContext } from "./gate.js";
 import { canonicalJson, consumeGrant, createPendingAction, findPending, inputHash, MAX_APPROVAL_INPUT_CHARS, recordFailure, recordOutcome, shortId } from "./grants.js";
 import { classify, decide, resolvesToPrivateHost } from "./policy.js";
+import { agentToolRefusal } from "../team-spec.js";
+import { teamService } from "../team.js";
 import { readableRoots, workspaceDir } from "./workspace.js";
 
 // The approval gate's server side (phase 18). The hook script POSTs Claude Code's
@@ -36,6 +38,14 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
     internalAddresses: cfg.internalAddresses,
     cwd: typeof payload.cwd === "string" && payload.cwd ? payload.cwd : undefined,
   });
+  // Phase 23: in an agent's thread, only its own connectors (and never the
+  // shell or tethr's team tools). The turn's deny rules say the same; this is
+  // the gate's own check.
+  const member = await teamService(db).byThread(ctx.companyId, ctx.threadId).catch(() => null);
+  if (member) {
+    const refusal = agentToolRefusal(member, toolName, c.connector);
+    if (refusal) return preDecision("deny", refusal);
+  }
   // A web page whose name resolves to this Mac or its network is blocked like
   // a literal localhost address (tethr answers loopback requests as Mark).
   if (c.cls === "web") {
@@ -100,7 +110,14 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
     );
   }
   try {
-    const card = await createPendingAction(db, { ...ctx, classified: c, toolName, toolInput, hash });
+    const card = await createPendingAction(db, {
+      ...ctx,
+      classified: c,
+      toolName,
+      toolInput,
+      hash,
+      ...(member ? { actor: { agentId: member.agentId, tag: member.tag } } : {}),
+    });
     return preDecision(
       "deny",
       `Tethr approval gate: sent for approval in tethr (${shortId(card.id)}) — ${c.summary}. It runs once it's approved; don't retry it or work around it.`,

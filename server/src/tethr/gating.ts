@@ -474,6 +474,10 @@ export function gatingService(db: Db) {
       if (output.kind === "external_action") {
         return approveExternalAction(output, input.companyId, input.reviewer);
       }
+      // Phase 23: approving a team card builds or changes the agent.
+      if (output.kind === "team_agent" || output.kind === "team_change") {
+        return approveTeamCard(output, input.companyId, input.reviewer);
+      }
       const published = await publishToDrive(output.id, input.companyId, input.reviewer);
       await notify.send({
         companyId: input.companyId,
@@ -491,6 +495,12 @@ export function gatingService(db: Db) {
       .set({ status: nextStatus, updatedAt: new Date() })
       .where(eq(tethrOutputs.id, output.id))
       .returning();
+    if ((output.kind === "team_agent" || output.kind === "team_change") && input.decision === "reject") {
+      const chats = await import("./chats.js");
+      await chats
+        .addNote(input.companyId, chats.mainThreadId(input.companyId), `Rejected in tethr: ${output.title}${input.note ? ` (${input.note})` : ""}. Don't propose it again unless someone asks.`)
+        .catch(() => {});
+    }
     if (output.kind === "external_action" && input.decision === "reject") {
       // Tell the chat on its next turn (no wake: it's just context).
       const meta = (output.meta ?? {}) as Record<string, unknown>;
@@ -565,6 +575,58 @@ export function gatingService(db: Db) {
         logger.warn({ err, outputId: output.id }, "[tethr] couldn't wake the chat after an approval (grant is still armed)");
       }
     }
+    return updated;
+  }
+
+  // Phase 23: approving a `team_agent` card adds the agent to tethr's team
+  // (active, its schedule on, its first task started); a `team_change` card
+  // applies the change. The spec is checked again first (a tag may have been
+  // taken since): a card that can't apply closes as rejected with the reason,
+  // so the Queue never wedges. The main chat hears either way.
+  async function approveTeamCard(output: typeof tethrOutputs.$inferSelect, companyId: string, reviewer: string) {
+    const { teamConnectorLabels, teamService } = await import("./team.js");
+    const { scheduleWords, validateTeamSpec } = await import("./team-spec.js");
+    const { specFromCard } = await import("./assistant/team-tools.js");
+    const chats = await import("./chats.js");
+    const team = teamService(db);
+    const meta = (output.meta ?? {}) as Record<string, unknown>;
+    const actor = reviewer.startsWith("auto:") ? {} : { userId: reviewer };
+    let note: string;
+    try {
+      if (output.kind === "team_agent") {
+        const raw = specFromCard(meta);
+        if (!raw) throw new Error("This card has no agent spec.");
+        const spec = validateTeamSpec(
+          { ...raw, budget_usd: raw.budgetMonthlyUsd, max_runs_per_day: raw.maxRunsPerDay, owner: raw.ownerRole, first_task: raw.firstTask },
+          { takenTags: await team.takenTags(companyId), connectors: teamConnectorLabels(companyId) },
+        );
+        const agent = await team.create(companyId, spec, { ...actor, via: "approval" });
+        note = `Approved: ${agent.tag} (${agent.name}) is on the team${agent.schedule ? ` and runs ${scheduleWords(agent.schedule.cron)}` : ""}.${spec.firstTask ? ` Its first task, "${spec.firstTask.title}", has started; the report will come back here.` : " Give it work with assign_task."}`;
+      } else {
+        const tag = String(meta.tag ?? "");
+        const patch = (meta.patch ?? {}) as Parameters<typeof team.update>[2];
+        if (Object.keys(patch).length) await team.update(companyId, tag, patch, actor);
+        if (meta.resume === true) await team.setPaused(companyId, tag, false, actor);
+        note = `Approved: ${output.title}. It's applied.`;
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      const [closed] = await db
+        .update(tethrOutputs)
+        .set({ status: "rejected", meta: { ...meta, applyError: reason }, updatedAt: new Date() })
+        .where(eq(tethrOutputs.id, output.id))
+        .returning();
+      await chats.addNote(companyId, chats.mainThreadId(companyId), `"${output.title}" was approved but couldn't be applied: ${reason}`).catch(() => {});
+      await notify.send({ companyId, kind: "approval", title: `Couldn't apply: ${output.title}`, body: reason, href: `/queue/${output.id}` });
+      return closed;
+    }
+    const [updated] = await db
+      .update(tethrOutputs)
+      .set({ status: "published", updatedAt: new Date() })
+      .where(eq(tethrOutputs.id, output.id))
+      .returning();
+    await chats.addNote(companyId, chats.mainThreadId(companyId), note).catch(() => {});
+    await notify.send({ companyId, kind: "approval", title: `Approved: ${output.title}`, href: `/chat` });
     return updated;
   }
 

@@ -45,6 +45,8 @@ import { MEMORY_MAX_CHARS, ensureWorkspace, readableRoots, readMemoryFile, works
 import { handlePostToolUse, handlePreToolUse } from "../tethr/assistant/hook-handler.js";
 import { runTethrTool, TETHR_TOOL_DEFS, TETHR_TOOLS_LABEL, TETHR_TOOLS_SERVER } from "../tethr/assistant/tethr-tools.js";
 import { classify, decide } from "../tethr/assistant/policy.js";
+import { agentToolRefusal, TEAM_TOOL_NAMES } from "../tethr/team-spec.js";
+import { teamService } from "../tethr/team.js";
 import {
   ATTACH_LIMITS,
   attachmentKind,
@@ -72,6 +74,7 @@ import { toolsetForSubagent } from "../tethr/tools/index.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { isInstanceAdmin, requirePerson } from "./tethr-people.js";
 import { tethrSetupRoutes } from "./tethr-setup.js";
+import { tethrTeamRoutes } from "./tethr-team.js";
 
 const execFileAsync = promisify(execFile);
 let cachedSha: string | null = null;
@@ -135,8 +138,10 @@ export function tethrRoutes(db: Db) {
       res.status(401).json({ error: "This chat turn is no longer authorized." });
       return;
     }
+    // Phase 23: an agent's thread gets Tethr's tools minus tethr's team tools.
+    const member = await teamService(db).byThread(ctx.companyId, ctx.threadId).catch(() => null);
     if (req.params.op === "list") {
-      res.json({ tools: TETHR_TOOL_DEFS });
+      res.json({ tools: member ? TETHR_TOOL_DEFS.filter((d) => !(TEAM_TOOL_NAMES as readonly string[]).includes(d.name)) : TETHR_TOOL_DEFS });
       return;
     }
     if (req.params.op !== "call") {
@@ -156,16 +161,23 @@ export function tethrRoutes(db: Db) {
       internalAddresses: cfg.internalAddresses,
     });
     const decision = decide(classified, { mode: modeFor(cfg, TETHR_TOOLS_LABEL), shell: cfg.shell });
-    if (decision.action !== "allow") {
-      const text = decision.action === "deny" ? decision.reason : `Tethr approval gate: ${name} can't run from here.`;
+    const refusal = member ? agentToolRefusal(member, `mcp__${TETHR_TOOLS_SERVER}__${name}`, TETHR_TOOLS_LABEL) : null;
+    if (decision.action !== "allow" || refusal) {
+      const text = refusal ?? (decision.action === "deny" ? decision.reason : `Tethr approval gate: ${name} can't run from here.`);
       res.json({ content: [{ type: "text", text }], isError: true });
       return;
     }
-    const result = await runTethrTool(name, body.arguments, { workspaceDir: workspaceDir().dir, db, companyId: ctx.companyId });
+    const result = await runTethrTool(name, body.arguments, {
+      workspaceDir: workspaceDir().dir,
+      db,
+      companyId: ctx.companyId,
+      threadId: ctx.threadId,
+      runId: ctx.runId,
+    });
     await logActivity(db, {
       companyId: ctx.companyId,
       actorType: "agent",
-      actorId: "@tethr",
+      actorId: member?.tag ?? "@tethr",
       action: "tethr_tool_used",
       entityType: "tethr_route_run",
       entityId: ctx.runId,
@@ -832,6 +844,8 @@ export function tethrRoutes(db: Db) {
 
   // ---- Goals, setup (onboarding) and ideas (phases 20-21): routes/tethr-setup.ts ----
   router.use(tethrSetupRoutes(db));
+  // ---- tethr's team of agents (phase 23): routes/tethr-team.ts ----
+  router.use(tethrTeamRoutes(db));
 
   router.put("/tethr/:companyId/integrations", async (req, res) => {
     const companyId = req.params.companyId as string;

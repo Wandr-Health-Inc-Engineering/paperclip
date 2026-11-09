@@ -140,9 +140,12 @@ const CONNECTOR_RULES: Record<string, Rule[]> = {
   // run in the Tethr server; they change nothing outside its files/ folder.
   "Tethr tools": [
     // make_document only writes a new file into Tethr's own files/ folder.
-    [/^(score_list|keyword_ideas|goals_list|make_document)$/, "read"],
+    [/^(score_list|keyword_ideas|goals_list|make_document|team_list)$/, "read"],
     // Goals live in Tethr itself: saving one changes nothing outside Tethr.
     [/^(save_goal|save_metric|record_metric)$/, "draft"],
+    // Phase 23: running tethr's team happens inside Tethr. New agents and
+    // changes still follow the Team setting (an approval card under "Ask me").
+    [/^(create_agent|assign_task|update_agent)$/, "draft"],
     [/.*/, "blocked"],
   ],
 };

@@ -119,6 +119,8 @@ export interface PendingActionInput {
   toolName: string;
   toolInput: Record<string, unknown>;
   hash: string;
+  /** The team agent asking (phase 23), so the card names it and its owner hears. Default @tethr. */
+  actor?: { agentId: string; tag: string };
 }
 
 /** Hold an outward action for Mark: a gated external_action output. */
@@ -127,8 +129,8 @@ export async function createPendingAction(db: Db, input: PendingActionInput) {
   if (!router) throw new Error("No @tethr agent in this company");
   return gatingService(db).createOutput({
     companyId: input.companyId,
-    agentId: router.agent.id,
-    agentTag: router.profile.tag,
+    agentId: input.actor?.agentId ?? router.agent.id,
+    agentTag: input.actor?.tag ?? router.profile.tag,
     routeRunId: input.runId,
     kind: "external_action",
     title: input.classified.summary.slice(0, 160),

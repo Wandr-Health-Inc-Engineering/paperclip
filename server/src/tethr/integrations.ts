@@ -12,6 +12,19 @@ import type { ConnectorMode } from "./assistant/policy.js";
 
 export type ChatEngine = "session" | "routing";
 
+/** Phase 23: how tethr may grow its team (Mark: "can be set to autonomous or manual approval"). */
+export interface TeamSettings {
+  /** ask = a card for every new agent (and every change); auto = tethr creates them within the limits below. */
+  newAgents: "ask" | "auto";
+  /** Active agents at most. */
+  maxAgents: number;
+  /** What all active agents together may spend a month, in dollars. */
+  monthlyBudgetUsd: number;
+}
+
+export const DEFAULT_TEAM: TeamSettings = { newAgents: "ask", maxAgents: 6, monthlyBudgetUsd: 100 };
+export const TEAM_SETTING_LIMITS = { maxAgents: 12, monthlyBudgetUsd: 500 } as const;
+
 export interface ConnectorSetting {
   mode: ConnectorMode;
   /** Plain-language scope for reads, written into the workspace CLAUDE.md (e.g. Gmail labels). */
@@ -24,6 +37,7 @@ export interface IntegrationsConfig {
   internalAddresses: string[];
   shell: "off" | "ask";
   assistant: { engine: ChatEngine; model: string };
+  team: TeamSettings;
   /** Tool names seen per connector (filled from real turns). */
   discovered?: { at: string; connectors: Record<string, string[]> };
 }
@@ -39,6 +53,7 @@ export const DEFAULT_INTEGRATIONS: IntegrationsConfig = {
   internalAddresses: ["travelwithwandr.com"],
   shell: "off",
   assistant: { engine: "session", model: "sonnet" },
+  team: DEFAULT_TEAM,
 };
 
 interface FileShape {
@@ -66,6 +81,7 @@ export function getIntegrations(companyId: string): IntegrationsConfig {
     ...saved,
     connectors: { ...DEFAULT_INTEGRATIONS.connectors, ...(saved.connectors ?? {}) },
     assistant: { ...DEFAULT_INTEGRATIONS.assistant, ...(saved.assistant ?? {}) },
+    team: { ...DEFAULT_TEAM, ...(saved.team ?? {}) },
     internalAddresses: saved.internalAddresses ?? DEFAULT_INTEGRATIONS.internalAddresses,
   };
 }
@@ -85,6 +101,7 @@ export async function updateIntegrations(
       ...patch,
       connectors: { ...(current.connectors ?? {}), ...(patch.connectors ?? {}) },
       assistant: { ...(current.assistant ?? DEFAULT_INTEGRATIONS.assistant), ...(patch.assistant ?? {}) },
+      team: { ...DEFAULT_TEAM, ...(current.team ?? {}), ...(patch.team ?? {}) },
     };
     await writeAtomic(file, JSON.stringify(data, null, 2));
   });
@@ -105,7 +122,7 @@ export const KNOWN_CONNECTORS: Array<{ label: string; blurb: string; tools: numb
   { label: "Canva", blurb: "Designs (large tool set, off by default).", tools: 47 },
   { label: "Figma", blurb: "Design files (large tool set, off by default).", tools: 40 },
   { label: "Mercury", blurb: "Bank account. Never moves money on its own.", tools: 0 },
-  { label: "Tethr tools", blurb: "Tethr's own tools: score long lists with Jev, and Google keyword ideas. Read-only.", tools: 2 },
+  { label: "Tethr tools", blurb: "Tethr's own tools: score long lists with Jev, Google keyword ideas, goals, documents, and running its team of agents.", tools: 11 },
 ];
 
 const MODES = new Set(["off", "read", "ask", "auto"]);
@@ -144,6 +161,16 @@ export function sanitizeIntegrationsPatch(body: Record<string, unknown>): Partia
     // dash (it's passed to the CLI as --model <value>).
     if (typeof a.model === "string" && /^[a-z0-9][a-z0-9.\-]{1,59}$/i.test(a.model.trim())) assistant.model = a.model.trim();
     patch.assistant = assistant as IntegrationsConfig["assistant"];
+  }
+  if (body.team && typeof body.team === "object") {
+    const t = body.team as Record<string, unknown>;
+    const team: Partial<TeamSettings> = {};
+    if (t.newAgents === "ask" || t.newAgents === "auto") team.newAgents = t.newAgents;
+    const maxAgents = Number(t.maxAgents);
+    if (Number.isInteger(maxAgents) && maxAgents >= 1 && maxAgents <= TEAM_SETTING_LIMITS.maxAgents) team.maxAgents = maxAgents;
+    const budget = Number(t.monthlyBudgetUsd);
+    if (Number.isFinite(budget) && budget >= 1 && budget <= TEAM_SETTING_LIMITS.monthlyBudgetUsd) team.monthlyBudgetUsd = Math.round(budget);
+    patch.team = team as TeamSettings;
   }
   return patch;
 }

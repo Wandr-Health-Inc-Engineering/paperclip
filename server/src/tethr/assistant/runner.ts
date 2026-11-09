@@ -14,6 +14,10 @@ import { companyContextText, companyProfileService } from "../company.js";
 import { mirrorDir } from "../mirror.js";
 import { orgService } from "../org.js";
 import { isAgentsPaused, PAUSED_MESSAGE } from "../throttle.js";
+import { agentDenyRules, agentIdentityText } from "../team-spec.js";
+import { teamConnectorLabels, teamContextText, teamService, type TeamAgent } from "../team.js";
+import { getRoster } from "../overseers.js";
+import { getSetup } from "../setup.js";
 import { applyStreamLine, newTurnState } from "./events.js";
 import { buildSettings, ensureHookScript, issueHookToken, revokeHookToken, writeSettingsFile } from "./gate.js";
 import { ensurePersona } from "./persona.js";
@@ -27,10 +31,19 @@ import { ensureWorkspace, readableRoots } from "./workspace.js";
 // text streams into resultText, tool activity into hops. One turn at a time per
 // thread, at most MAX_CONCURRENT turns overall. The approval gate (hooks) is
 // wired through --settings; see gate.ts / policy.ts / routes POST /tethr/hooks.
+//
+// Phase 23: a thread can belong to an agent on tethr's team (team.ts). Its turns
+// run AS that agent: its id on the run, its budget, its cost, its connector
+// allowlist (deny rules), no shell, and on a fresh session its instructions.
+// Agent turns use at most MAX_AGENT_CONCURRENT slots, so the chats with people
+// stay responsive. When a turn tethr started in an agent's thread finishes and
+// it wasn't a task (team-run.ts reports those), e.g. the follow-up after an
+// approval, the agent reports back too.
 
 type ExecuteFn = (ctx: AdapterExecutionContext) => Promise<AdapterExecutionResult>;
 
-const MAX_CONCURRENT = 2;
+const MAX_CONCURRENT = 3;
+const MAX_AGENT_CONCURRENT = 2;
 const FLUSH_MS = 250;
 const ROTATE_CONTEXT_TOKENS = 150_000;
 const TERMINAL = new Set(["done", "failed", "stopped", "gated"]);
@@ -43,6 +56,8 @@ export interface SendInput {
   /** "system" = a turn Tethr starts (e.g. after an approval); shown as a status line. */
   kind?: "user" | "system";
   requestedByUserId?: string | null;
+  /** An agent's task turn: team-run.ts waits for it and reports it itself. */
+  task?: boolean;
 }
 
 /** Phase 21: a one-off private turn (the watcher's idea check). The model gets
@@ -74,12 +89,26 @@ interface QueueState {
   threads: Map<string, string[]>;
   active: Set<string>;
   running: number;
+  /** Queue keys that are agents' threads, and how many of their turns run now. */
+  agentKeys: Set<string>;
+  agentRunning: number;
+  /** Agents' task turns (reported by team-run.ts, not here). */
+  taskTurns: Set<string>;
   stopped: Set<string>;
   /** Turns dequeued but not spawned yet (Stop must still work in that window). */
   preparing: Set<string>;
 }
 
-const state: QueueState = { threads: new Map(), active: new Set(), running: 0, stopped: new Set(), preparing: new Set() };
+const state: QueueState = {
+  threads: new Map(),
+  active: new Set(),
+  running: 0,
+  agentKeys: new Set(),
+  agentRunning: 0,
+  taskTurns: new Set(),
+  stopped: new Set(),
+  preparing: new Set(),
+};
 
 /** Lines of builtin tools the chat session may use (Bash only when the shell is on). */
 function builtinTools(shell: "off" | "ask"): string {
@@ -91,6 +120,7 @@ function builtinTools(shell: "off" | "ask"): string {
 export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
   const execute: ExecuteFn = deps.execute ?? ((ctx) => getServerAdapter("claude_local").execute(ctx));
   const org = orgService(db);
+  const team = teamService(db);
 
   /** A message to a chat thread (Mark's, or a system turn tethr starts). */
   function send(input: SendInput): Promise<{ routeRunId: string; threadId: string }> {
@@ -108,6 +138,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
 
   async function enqueue(input: SendInput, privatePrompt: string | null): Promise<{ routeRunId: string; threadId: string }> {
     const router = await org.getRouterProfile(input.companyId);
+    const member = input.threadId ? await team.byThread(input.companyId, input.threadId) : null;
     const [row] = await db
       .insert(tethrRouteRuns)
       .values({
@@ -119,15 +150,17 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
         sourceKey: input.kind === "system" ? "chat-system" : null,
         status: "queued",
         hops: [],
-        agentId: router?.agent.id ?? null,
+        agentId: member?.agentId ?? router?.agent.id ?? null,
       })
       .returning();
     const threadId = input.threadId ?? row.id;
+    if (input.task) state.taskTurns.add(row.id);
     if (privatePrompt !== null) privatePrompts.set(row.id, privatePrompt);
     if (!input.threadId) {
       await db.update(tethrRouteRuns).set({ threadId }).where(eq(tethrRouteRuns.id, row.id));
     }
     const key = `${input.companyId}:${threadId}`;
+    if (member) state.agentKeys.add(key);
     state.threads.set(key, [...(state.threads.get(key) ?? []), row.id]);
     void pump(key);
     return { routeRunId: row.id, threadId };
@@ -138,9 +171,12 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     const queue = state.threads.get(key) ?? [];
     if (!queue.length) return;
     if (state.running >= MAX_CONCURRENT) return; // picked up when a slot frees
+    const isAgent = state.agentKeys.has(key);
+    if (isAgent && state.agentRunning >= MAX_AGENT_CONCURRENT) return;
     const runId = queue.shift()!;
     state.active.add(key);
     state.running += 1;
+    if (isAgent) state.agentRunning += 1;
     try {
       await runTurn(runId);
     } catch (err) {
@@ -153,6 +189,8 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     } finally {
       state.active.delete(key);
       state.running -= 1;
+      if (isAgent) state.agentRunning -= 1;
+      state.taskTurns.delete(runId);
       void pump(key);
       for (const other of state.threads.keys()) if (other !== key) void pump(other);
     }
@@ -206,8 +244,14 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       await finish(runId, { status: "failed", error: "No @tethr agent in this company." });
       return;
     }
+    const member = row.threadId ? await team.byThread(companyId, row.threadId) : null;
+    // A paused agent does no work tethr starts; a person can still talk to it.
+    if (member?.paused && row.sourceKey === "chat-system") {
+      await finish(runId, { status: "done", resultText: `${member.tag} is paused, so this didn't run.`, llmProvider: "throttle" });
+      return;
+    }
     try {
-      const block = await budgetService(db).getInvocationBlock(companyId, router.agent.id);
+      const block = await budgetService(db).getInvocationBlock(companyId, member?.agentId ?? router.agent.id);
       if (block) {
         await finish(runId, { status: "failed", error: `Budget: ${block.reason}` });
         return;
@@ -219,7 +263,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     await finish(runId, { status: "running" });
     state.preparing.add(runId);
     try {
-      await prepareAndRun(runId, row, router, started);
+      await prepareAndRun(runId, row, router, member, started);
     } finally {
       state.preparing.delete(runId);
     }
@@ -229,10 +273,13 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     runId: string,
     row: typeof tethrRouteRuns.$inferSelect,
     router: NonNullable<Awaited<ReturnType<typeof org.getRouterProfile>>>,
+    member: TeamAgent | null,
     started: number,
   ): Promise<void> {
     const companyId = row.companyId;
     const threadId = row.threadId ?? row.id;
+    // Who this turn runs as: an agent on the team in its own thread, else @tethr.
+    const actor = member ? { id: member.agentId, name: member.name, tag: member.tag } : { id: router.agent.id, name: router.agent.name, tag: router.profile.tag };
 
     // Setup. Any failure here (Drive offline, a file we can't write) ends the
     // turn as failed instead of leaving it "running" forever.
@@ -246,14 +293,22 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       cfg = getIntegrations(companyId);
       const goals = goalsContextText(await goalsService(db).list(companyId));
       const company = companyContextText(await companyProfileService(db).get(companyId));
-      ws = await ensureWorkspace({ integrationRules: integrationRulesText(cfg), goals, company });
+      // The team section needs Tethr's tools (create_agent, assign_task…).
+      const teamText =
+        modeFor(cfg, TETHR_TOOLS_LABEL) === "off"
+          ? null
+          : teamContextText(await team.list(companyId), {
+              settings: cfg.team,
+              timezone: getSetup(companyId).timezone,
+              ownerNames: Object.fromEntries(Object.entries(getRoster(companyId)).map(([role, o]) => [role, o.name])),
+            });
+      ws = await ensureWorkspace({ integrationRules: integrationRulesText(cfg), goals, company, team: teamText });
       ({ personaPath, skillDir } = await ensurePersona());
       const hookScript = await ensureHookScript();
-      if (modeFor(cfg, TETHR_TOOLS_LABEL) !== "off") bridgeScript = await ensureToolsBridge();
-      settingsPath = await writeSettingsFile(
-        companyId,
-        buildSettings({ nodePath: process.execPath, hookScript, deny: denyRulesFor(cfg) }),
-      );
+      const tethrTools = modeFor(cfg, TETHR_TOOLS_LABEL) !== "off" && (!member || member.connectors.includes(TETHR_TOOLS_LABEL));
+      if (tethrTools) bridgeScript = await ensureToolsBridge();
+      const deny = [...denyRulesFor(cfg), ...(member ? agentDenyRules(member.connectors, teamConnectorLabels(companyId)) : [])];
+      settingsPath = await writeSettingsFile(companyId, buildSettings({ nodePath: process.execPath, hookScript, deny }), member ? `agent-${member.tag}` : undefined);
     } catch (err) {
       await finish(runId, {
         status: "failed",
@@ -293,7 +348,10 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     const notes = style.carriesContext ? await chats.takeNotes(companyId, threadId) : [];
     const context = !session && style.carriesContext ? await legacyContext(companyId, threadId, runId) : "";
     const ask = privatePrompt ?? row.requestText;
+    // An agent's fresh session learns who it is (a task turn carries that itself).
+    const identity = member && !session && row.sourceKey !== "chat-system" ? agentIdentityText(member) : "";
     const prompt = [
+      identity,
       notes.length ? `Notes from Tethr:\n${notes.map((n) => `- ${n}`).join("\n")}` : "",
       rotated ? "(This conversation continues from an earlier session that got long.)" : "",
       context,
@@ -355,9 +413,9 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       result = await execute({
         runId,
         agent: {
-          id: router.agent.id,
+          id: actor.id,
           companyId,
-          name: router.agent.name,
+          name: actor.name,
           adapterType: "claude_local",
           adapterConfig: {},
         },
@@ -399,7 +457,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
             "dontAsk",
             "--include-partial-messages",
             "--tools",
-            builtinTools(cfg.shell),
+            builtinTools(member ? "off" : cfg.shell),
             ...(mirror && !ws.dir.startsWith(mirror) ? ["--add-dir", mirror] : []),
           ],
         },
@@ -472,7 +530,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       await costService(db)
         .createEvent(companyId, {
           heartbeatRunId: null,
-          agentId: router.agent.id,
+          agentId: actor.id,
           provider: result.provider ?? "anthropic",
           biller: result.biller ?? "anthropic",
           billingType: result.billingType ?? "unknown",
@@ -488,12 +546,29 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     await logActivity(db, {
       companyId,
       actorType: "agent",
-      actorId: router.profile.tag,
+      actorId: actor.tag,
       action: "tethr_chat_turn",
       entityType: "tethr_route_run",
       entityId: runId,
       details: { threadId, status, tools: turn.hops.length, durationMs: Date.now() - started },
     }).catch(() => {});
+
+    // An agent's turn that tethr started and that isn't a task (team-run.ts
+    // reports those), e.g. the follow-up after an approval: report it back too.
+    if (member && row.sourceKey === "chat-system" && !state.taskTurns.has(runId) && status !== "stopped") {
+      const { deliverAgentReport } = await import("../team-report.js");
+      const firstLine = row.requestText.split("\n")[0]!.trim();
+      const approved = /^Approved:\s*/i.test(firstLine);
+      const title = approved ? `${firstLine.replace(/^Approved:\s*/i, "")} (after your approval)` : firstLine;
+      await deliverAgentReport(db, {
+        companyId,
+        agent: member,
+        title: title.slice(0, 200),
+        outcome: status === "done" ? "done" : "failed",
+        text: text || error || "",
+        runId,
+      }).catch(() => {});
+    }
   }
 
   /** Stop a queued, starting or running turn. */

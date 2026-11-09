@@ -78,6 +78,11 @@ export const TETHR_OUTPUT_KINDS = [
   // connector, cls, grant}. Approving grants ONE matching call; it never
   // publishes or mirrors.
   "external_action",
+  // Phase 23: tethr asking to add an agent to its team (`meta.spec`, a
+  // TeamAgentSpec) or to change one (`meta.tag`, `meta.patch`, `meta.resume`).
+  // Approving it builds or changes the agent; it never publishes or mirrors.
+  "team_agent",
+  "team_change",
 ] as const;
 export type TethrOutputKind = (typeof TETHR_OUTPUT_KINDS)[number];
 
