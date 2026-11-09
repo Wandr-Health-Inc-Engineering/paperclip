@@ -20,6 +20,7 @@ import {
   RotateCcw,
   Send,
   Square,
+  Users,
   Wrench,
   X,
 } from "lucide-react";
@@ -46,7 +47,10 @@ import {
   type TethrChatRun,
   type TethrRouteHop,
   type TethrSideChat,
+  type TethrTeamAgent,
 } from "@/api/tethr";
+import { agentForThread } from "@/lib/tethr-team";
+import { AgentChip, TeamSection } from "./chat/team";
 
 // Chat (phase 17, formerly the Console; Mark's model): one ONGOING chat with
 // @tethr that everything goes into by default, plus SIDE chats he opens on
@@ -108,12 +112,21 @@ export function TethrChat() {
     refetchInterval: 20_000,
   });
 
+  // Phase 23: tethr's team; each agent has its own chat.
+  const { data: team } = useQuery({
+    queryKey: tethrKeys.team(c),
+    queryFn: () => tethrApi.team(c),
+    enabled: !!selectedCompanyId,
+    refetchInterval: (q) => (q.state.data?.agents.some((a) => a.running) ? 4_000 : 20_000),
+  });
+
   const mainThreadId = chats?.mainThreadId ?? c;
   const chatParam = searchParams.get("chat");
   const isDraft = chatParam === "new";
   const threadId = isDraft ? null : chatParam || mainThreadId;
   const isMain = !isDraft && threadId === mainThreadId;
   const sideChat = !isMain && threadId ? chats?.sideChats.find((s) => s.threadId === threadId) : undefined;
+  const teamAgent = isMain ? undefined : agentForThread(team?.agents, threadId);
 
   const openChat = (next: string | null) => {
     setLimit(PAGE);
@@ -143,6 +156,7 @@ export function TethrChat() {
         if (settled.current.size) {
           queryClient.invalidateQueries({ queryKey: ["tethr", c, "outputs"] });
           queryClient.invalidateQueries({ queryKey: tethrKeys.chats(c) });
+          queryClient.invalidateQueries({ queryKey: tethrKeys.team(c) });
         }
         settled.current.add(r.id);
       }
@@ -187,6 +201,15 @@ export function TethrChat() {
     onSuccess: () => {
       setResetNote(true);
       window.setTimeout(() => setResetNote(false), 4000);
+    },
+  });
+
+  // "Propose a starting team": tethr thinks it through in the main chat.
+  const proposeTeam = useMutation({
+    mutationFn: () => tethrApi.proposeTeam(c),
+    onSuccess: (res) => {
+      openChat(null);
+      queryClient.invalidateQueries({ queryKey: tethrKeys.chatRuns(c, res.threadId) });
     },
   });
 
@@ -264,6 +287,11 @@ export function TethrChat() {
         isDraft={isDraft}
         sideTitle={sideChat?.title ?? "Side chat"}
         sideChats={chats?.sideChats ?? []}
+        team={team?.agents ?? []}
+        teamAgent={teamAgent}
+        companyId={c}
+        proposing={proposeTeam.isPending}
+        onProposeTeam={() => proposeTeam.mutate()}
         activeThreadId={threadId}
         onOpenMain={() => openChat(null)}
         onOpenSide={(id) => openChat(id)}
@@ -311,10 +339,10 @@ export function TethrChat() {
           const el = e.currentTarget;
           stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
         }}
-        className="min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent_0,transparent_40px,#000_68px,#000_calc(100%-14px),transparent_100%)]"
+        className="relative z-0 min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent_0,transparent_40px,#000_68px,#000_calc(100%-14px),transparent_100%)]"
       >
         {empty ? (
-          <ChatEmpty isDraft={isDraft} onPick={(s) => send.mutate({ text: s, attachments: [] })} />
+          <ChatEmpty isDraft={isDraft} agent={teamAgent} onPick={(s) => send.mutate({ text: s, attachments: [] })} />
         ) : (
           <div
             ref={setContent}
@@ -336,6 +364,14 @@ export function TethrChat() {
             {visibleRuns.map((run) => (
               run.sourceKey === "tethr-idea" ? (
                 <IdeaCard key={run.id} run={run} companyId={c} />
+              ) : run.sourceKey === "tethr-agent-report" ? (
+                <AgentReportCard
+                  key={run.id}
+                  run={run}
+                  agent={team?.agents.find((a) => a.agentId === run.agentId)}
+                  onOpenFile={setPanelPath}
+                  onOpenChat={openChat}
+                />
               ) : run.invocationSource === "chat" ? (
                 <SessionTurn key={run.id} run={run} companyId={c} onOpenFile={setPanelPath} />
               ) : (
@@ -355,7 +391,9 @@ export function TethrChat() {
       <Composer
         key={threadId ?? "draft"}
         companyId={c}
-        placeholder={isDraft ? "What's this side chat about?" : isMain ? "Message tethr…" : "Message this side chat…"}
+        placeholder={
+          isDraft ? "What's this side chat about?" : isMain ? "Message tethr…" : teamAgent ? `Message ${teamAgent.tag}…` : "Message this side chat…"
+        }
         hint={undefined}
         busy={send.isPending}
         error={sendError}
@@ -401,6 +439,11 @@ function SideChats({
   isDraft,
   sideTitle,
   sideChats,
+  team,
+  teamAgent,
+  companyId,
+  proposing,
+  onProposeTeam,
   activeThreadId,
   onOpenMain,
   onOpenSide,
@@ -411,6 +454,11 @@ function SideChats({
   isDraft: boolean;
   sideTitle: string;
   sideChats: TethrSideChat[];
+  team: TethrTeamAgent[];
+  teamAgent: TethrTeamAgent | undefined;
+  companyId: string;
+  proposing: boolean;
+  onProposeTeam: () => void;
   activeThreadId: string | null;
   onOpenMain: () => void;
   onOpenSide: (threadId: string) => void;
@@ -445,7 +493,7 @@ function SideChats({
 
   return (
     <>
-      <div className="absolute left-0 top-1 z-20 flex max-w-[calc(100%-1rem)] items-center gap-2">
+      <div className="absolute left-0 top-1 z-20 flex max-w-[calc(100%-3rem)] items-center gap-2">
         <button
           ref={toggleRef}
           type="button"
@@ -470,6 +518,8 @@ function SideChats({
             <span className="truncate">tethr</span>
             <span className="font-mono text-[10px] uppercase tracking-[0.14em] tethr-text-3">ongoing</span>
           </span>
+        ) : teamAgent ? (
+          <AgentChip agent={teamAgent} companyId={companyId} onBack={onOpenMain} />
         ) : (
           <span className="tethr-glass flex h-9 min-w-0 items-center gap-1 rounded-full pl-3.5 pr-1 text-[13px]">
             <span className="min-w-0 truncate">{isDraft ? "New side chat" : sideTitle}</span>
@@ -511,6 +561,13 @@ function SideChats({
           </span>
           <Pin className="h-3.5 w-3.5 shrink-0 tethr-text-3" aria-hidden="true" />
         </button>
+        <TeamSection
+          agents={team}
+          activeThreadId={activeThreadId}
+          onOpen={(id) => pick(() => onOpenSide(id))}
+          onPropose={() => pick(onProposeTeam)}
+          proposing={proposing}
+        />
         <div className="mt-2 flex items-center justify-between px-2 pb-1">
           <span className="tethr-eyebrow">side chats</span>
           <button
@@ -562,7 +619,23 @@ function SideChats({
 
 // ---- messages --------------------------------------------------------------------
 
-function ChatEmpty({ isDraft, onPick }: { isDraft: boolean; onPick: (text: string) => void }) {
+function ChatEmpty({ isDraft, agent, onPick }: { isDraft: boolean; agent?: TethrTeamAgent; onPick: (text: string) => void }) {
+  if (agent) {
+    return (
+      <div className="tethr-reeds flex h-full flex-col items-center justify-center gap-5 px-6 pt-12 text-center">
+        <span className="grid h-11 w-11 place-items-center rounded-[14px] bg-primary text-primary-foreground">
+          <Users className="h-5 w-5" />
+        </span>
+        <div className="space-y-2">
+          <h2 className="tethr-display text-[28px] md:text-[32px]">{agent.name}</h2>
+          <p className="mx-auto max-w-[46ch] text-[13.5px] text-muted-foreground">
+            {agent.title}. {agent.mission} It works here when tethr hands it a task{agent.schedule ? ` or its schedule comes round (${agent.schedule.words})` : ""}, and reports
+            back to tethr. You can talk to it directly too.
+          </p>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="tethr-reeds flex h-full flex-col items-center justify-center gap-5 px-6 pt-12 text-center">
       <span className="grid h-11 w-11 place-items-center rounded-[14px] bg-primary text-primary-foreground">
@@ -940,6 +1013,59 @@ function IdeaCard({ run, companyId }: { run: TethrChatRun; companyId: string }) 
           )}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** Phase 23: an agent on tethr's team reporting back (its headline, its report,
+ * its files), with a way into its own chat. */
+function AgentReportCard({
+  run,
+  agent,
+  onOpenFile,
+  onOpenChat,
+}: {
+  run: TethrChatRun;
+  agent?: TethrTeamAgent;
+  onOpenFile: (path: string) => void;
+  onOpenChat: (threadId: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const files = [...new Set(run.hops.filter((h) => h.layer === "tool" && h.file && h.status === "ok").map((h) => h.file as string))];
+  const long = (run.resultText ?? "").length > 700;
+  return (
+    <div className="tethr-glass space-y-2.5 rounded-[16px] px-4 py-3.5">
+      <div className="flex items-center gap-2 text-[11.5px] tethr-text-3">
+        <Users className="h-3.5 w-3.5 shrink-0" />
+        <span className="min-w-0 truncate">{agent ? `${agent.name} reported back` : "An agent reported back"}</span>
+        <span className="ml-auto shrink-0 font-mono text-[10.5px]">{formatRelative(run.createdAt)}</span>
+      </div>
+      <p className="text-[14px] font-medium leading-snug">{run.requestText}</p>
+      {run.resultText ? (
+        <div className={cn("relative", long && !expanded && "max-h-48 overflow-hidden [mask-image:linear-gradient(to_bottom,#000_70%,transparent)]")}>
+          <MarkdownBody className="tethr-chat-md">{run.resultText}</MarkdownBody>
+        </div>
+      ) : null}
+      {files.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {files.map((f) => (
+            <FileChip key={f} name={f.split("/").pop() ?? f} onClick={() => onOpenFile(f)} />
+          ))}
+        </div>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-2">
+        {long ? (
+          <button type="button" onClick={() => setExpanded((v) => !v)} className="tethr-btn tethr-btn-ghost h-8 px-3.5 text-[12.5px]">
+            {expanded ? "Show less" : "Show all"}
+          </button>
+        ) : null}
+        {agent ? (
+          <button type="button" onClick={() => onOpenChat(agent.threadId)} className="tethr-btn tethr-btn-glass h-8 px-3.5 text-[12.5px]">
+            Open {agent.tag}'s chat
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -1437,6 +1563,8 @@ function Composer({
 // ---- helpers -----------------------------------------------------------------------
 
 function kindLabel(kind: string): string {
+  if (kind === "team_agent") return "New agent";
+  if (kind === "team_change") return "Agent change";
   const k = kind.replace(/_/g, " ");
   return k.charAt(0).toUpperCase() + k.slice(1);
 }

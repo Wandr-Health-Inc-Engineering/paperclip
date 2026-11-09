@@ -205,7 +205,7 @@ export function teamSpecText(spec: TeamAgentSpec, opts: { ownerName?: string; ti
     `Mission: ${spec.mission}`,
     `Runs: ${spec.schedule ? `${scheduleWords(spec.schedule.cron, opts.timezone)}, and when tethr assigns it work` : "only when tethr assigns it work"}`,
     `Limits: up to ${spec.maxRunsPerDay} runs a day, $${spec.budgetMonthlyUsd} a month (hard stop)`,
-    `Tools: ${spec.connectors.length ? spec.connectors.join(", ") : "none beyond reading and writing its files"}. Anything it would send, post, spend or delete still asks first.`,
+    `Tools: web search and its files${spec.connectors.length ? `, plus ${spec.connectors.join(", ")}` : ""}. Anything it would send, post, spend or delete still asks first.`,
     `Reports to: ${opts.ownerName ? `${opts.ownerName} (${spec.ownerRole})` : spec.ownerRole} on Slack, and to the main chat`,
   ];
   if (spec.schedule) lines.push("", "Each scheduled run:", spec.schedule.brief);
@@ -229,7 +229,7 @@ export function agentIdentityText(agent: AgentIdentity): string {
   return [
     `[You are ${agent.name} (${agent.tag}), on tethr's team: ${agent.title}. ${agent.mission}]`,
     "You work for tethr, the team's lead, and report back to it; the person may also talk to you directly in this chat. You can't create agents or hand work to other agents.",
-    `Tools you may use: ${agent.connectors.length ? agent.connectors.join(", ") : "only reading and writing files"}.`,
+    `Tools you may use: web search and your files${agent.connectors.length ? `, plus ${agent.connectors.join(", ")}` : ""}.`,
     "",
     "Your instructions:",
     agent.instructions,
@@ -246,12 +246,14 @@ export function agentTaskText(agent: AgentIdentity, task: { identifier?: string 
     "The task:",
     task.brief?.trim() || task.title,
     "",
-    "When you're done: put any file you make in files/, then write a short report (what you did, what you found with the numbers, what you'd do next).",
+    'When you\'re done: put any file you make in files/, then, under a line that says "Report:", write a short report (what you did, what you found with the numbers, what you\'d do next). That part goes back to tethr.',
     `End with one line that starts "Slack summary:" and says the result in a sentence, with no customer names, emails or health details. It's the only part that goes to Slack.`,
   ].join("\n");
 }
 
 const SLACK_SUMMARY_RE = /^\s*\**slack summary:?\**:?\s*(.+)$/im;
+/** A line that's only "Report:" (or "**Report**", "## Report"): the report starts after it. */
+const REPORT_HEADING_RE = /^\s*(?:#{1,3}\s*)?\**report:?\**:?\s*$/gim;
 
 /** Pull the agent's "Slack summary:" line out of its report. */
 export function splitSlackSummary(text: string): { body: string; summary: string | null } {
@@ -260,6 +262,15 @@ export function splitSlackSummary(text: string): { body: string; summary: string
   const summary = oneLine(match[1]!.replace(/\*+$/, "")).slice(0, TEAM_LIMITS.slackSummaryChars) || null;
   const body = text.replace(match[0], "").trim();
   return { body, summary };
+}
+
+/** The report an agent wrote, without the working notes it streamed before it
+ * ("I'll look at…"): everything after its last "Report:" line, else all of it. */
+export function reportBody(text: string): string {
+  let start = -1;
+  for (const m of text.matchAll(REPORT_HEADING_RE)) start = (m.index ?? 0) + m[0].length;
+  const body = start >= 0 ? text.slice(start).trim() : text.trim();
+  return body || text.trim();
 }
 
 // ---- what an agent may not touch -------------------------------------------------

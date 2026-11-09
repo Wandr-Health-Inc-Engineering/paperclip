@@ -130,6 +130,8 @@ export interface TethrRouteRun {
   /** "chat-system" marks a turn Tethr started (e.g. after an approval). */
   sourceKey?: string | null;
   threadId: string | null;
+  /** Who ran it (phase 23: a team agent's turns and reports carry its id). */
+  agentId?: string | null;
   status: string;
   hops: TethrRouteHop[];
   resultText: string | null;
@@ -351,11 +353,19 @@ export interface TethrIntegrationConnector {
   moneyOnly: boolean;
 }
 
+/** Phase 23: how tethr may grow its team. */
+export interface TethrTeamSettings {
+  newAgents: "ask" | "auto";
+  maxAgents: number;
+  monthlyBudgetUsd: number;
+}
+
 export interface TethrIntegrations {
   defaultMode: TethrConnectorMode;
   internalAddresses: string[];
   shell: "off" | "ask";
   assistant: { engine: "session" | "routing"; model: string };
+  team: TethrTeamSettings;
   workspace: { dir: string; inDrive: boolean };
   connectors: TethrIntegrationConnector[];
   discoveredAt: string | null;
@@ -367,6 +377,36 @@ export interface TethrIntegrationsPatch {
   internalAddresses?: string[];
   shell?: "off" | "ask";
   assistant?: { engine?: "session" | "routing"; model?: string };
+  team?: Partial<TethrTeamSettings>;
+}
+
+/** Phase 23: an agent on tethr's team, with what it's doing right now. */
+export interface TethrTeamAgent {
+  agentId: string;
+  tag: string;
+  name: string;
+  title: string;
+  mission: string;
+  paused: boolean;
+  /** Its own chat (open with ?chat=<threadId>). */
+  threadId: string;
+  connectors: string[];
+  schedule: { cron: string; brief: string; words: string } | null;
+  ownerRole: "tech" | "exec" | "growth";
+  ownerName: string | null;
+  maxRunsPerDay: number;
+  runsToday: number;
+  openTasks: number;
+  running: boolean;
+  waitingOnYou: number;
+  lastReportAt: string | null;
+  budgetMonthlyCents: number;
+  spentMonthlyCents: number;
+}
+
+export interface TethrTeam {
+  settings: TethrTeamSettings;
+  agents: TethrTeamAgent[];
 }
 
 export interface TethrOutputListItem {
@@ -631,6 +671,7 @@ export const tethrKeys = {
   agent: (c: string, a: string) => ["tethr", c, "agent", a] as const,
   routeRuns: (c: string) => ["tethr", c, "route-runs"] as const,
   chats: (c: string) => ["tethr", c, "chats"] as const,
+  team: (c: string) => ["tethr", c, "team"] as const,
   integrations: (c: string) => ["tethr", c, "integrations"] as const,
   env: (c: string) => ["tethr", c, "env"] as const,
   goals: (c: string) => ["tethr", c, "goals"] as const,
@@ -819,6 +860,11 @@ export const tethrApi = {
     api.get<{ content: string; mtime: number; path: string; inDrive: boolean }>(`/tethr/${c}/assistant/memory`),
   saveAssistantMemory: (c: string, content: string, ifMtime: number) =>
     api.put<{ mtime: number }>(`/tethr/${c}/assistant/memory`, { content, ifMtime }),
+  /** Phase 23: tethr's team of agents. */
+  team: (c: string) => api.get<TethrTeam>(`/tethr/${c}/team`),
+  setTeamAgentPaused: (c: string, tag: string, paused: boolean) =>
+    api.post<{ tag: string; paused: boolean }>(`/tethr/${c}/team/${encodeURIComponent(tag)}/pause`, { paused }),
+  proposeTeam: (c: string) => api.post<{ routeRunId: string; threadId: string }>(`/tethr/${c}/team/propose`, {}),
   updateIntegrations: (c: string, patch: TethrIntegrationsPatch) =>
     api.put<{ ok: boolean }>(`/tethr/${c}/integrations`, patch),
   stopChatTurn: (c: string, runId: string) =>

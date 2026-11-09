@@ -16,6 +16,7 @@ import {
   type TethrIntegrationConnector,
   type TethrIntegrations,
   type TethrIntegrationsPatch,
+  type TethrTeamSettings,
   type TethrOverseerRole,
   type TethrOverseerRoster,
   type TethrStatus,
@@ -120,7 +121,7 @@ export function TethrSettings() {
             <ModeControl value={integrations.defaultMode} onChange={(m) => update.mutate({ defaultMode: m })} />
           </SettingRow>
           <SettingRow
-            title="Inside Wandr"
+            title="Inside your company"
             help="Email addresses or domains that count as inside the company. Sending to anyone else always asks."
           >
             <AddressesField
@@ -177,6 +178,8 @@ export function TethrSettings() {
           </SettingRow>
         </div>
       </section>
+
+      <TeamSettingsCard settings={integrations.team} onChange={(team) => update.mutate({ team })} />
 
       <OverseerRosterCard companyId={selectedCompanyId} />
 
@@ -343,6 +346,58 @@ function PillChoice({
         </button>
       ))}
     </div>
+  );
+}
+
+/** Phase 23: how tethr may grow its team (Mark: "can be set to autonomous or manual approval"). */
+function TeamSettingsCard({
+  settings,
+  onChange,
+}: {
+  settings: TethrTeamSettings;
+  onChange: (patch: Partial<TethrTeamSettings>) => void;
+}) {
+  const choices = (preset: number[], current: number) => [...new Set([...preset, current])].sort((a, b) => a - b);
+  return (
+    <section className="space-y-2">
+      <div className="flex items-baseline justify-between gap-3 px-1">
+        <MonoTag>team</MonoTag>
+        <span className="text-[11.5px] tethr-text-3">Agents tethr runs for you</span>
+      </div>
+      <div className="tethr-panel divide-y divide-[var(--tethr-rim)] overflow-hidden">
+        <SettingRow
+          title="New agents"
+          help={
+            settings.newAgents === "auto"
+              ? "tethr adds agents on its own within the limits below, and tells you. Raising an agent's budget or runs still asks."
+              : "Every new agent, and every change to one, waits for your OK in a card. Pausing one never does."
+          }
+        >
+          <PillChoice
+            value={settings.newAgents}
+            options={[
+              { value: "ask", label: "Ask me" },
+              { value: "auto", label: "Automatic" },
+            ]}
+            onChange={(v) => onChange({ newAgents: v as "ask" | "auto" })}
+          />
+        </SettingRow>
+        <SettingRow title="Agents at once" help="The most active agents tethr may run.">
+          <PillChoice
+            value={String(settings.maxAgents)}
+            options={choices([3, 6, 9, 12], settings.maxAgents).map((n) => ({ value: String(n), label: String(n) }))}
+            onChange={(v) => onChange({ maxAgents: Number(v) })}
+          />
+        </SettingRow>
+        <SettingRow title="Team budget" help="What all active agents may spend together each month. Each agent also has its own hard cap.">
+          <PillChoice
+            value={String(settings.monthlyBudgetUsd)}
+            options={choices([50, 100, 200, 500], settings.monthlyBudgetUsd).map((n) => ({ value: String(n), label: "$" + n }))}
+            onChange={(v) => onChange({ monthlyBudgetUsd: Number(v) })}
+          />
+        </SettingRow>
+      </div>
+    </section>
   );
 }
 

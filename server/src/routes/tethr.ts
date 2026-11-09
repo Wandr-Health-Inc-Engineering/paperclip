@@ -710,6 +710,7 @@ export function tethrRoutes(db: Db) {
       internalAddresses: cfg.internalAddresses,
       shell: cfg.shell,
       assistant: cfg.assistant,
+      team: cfg.team,
       workspace: workspaceDir(),
       connectors: labels.map((label) => {
         const known = KNOWN_CONNECTORS.find((k) => k.label === label);

@@ -1,5 +1,7 @@
 # Phase 23: tethr runs a team (the Hermes + Paperclip hybrid)
 
+**Status: built 2026-11-08** (23.1-23.3 plus the live check on a throwaway). What landed and the invariants are in CLAUDE.md, "tethr runs a team".
+
 ## Context
 Mark (2026-11-08): "I want the system to be a bit more autonomous… clear on spinning up agents and all that. This needs to not just be another Claude chat but really a new Hermes/paperclip hybrid."
 

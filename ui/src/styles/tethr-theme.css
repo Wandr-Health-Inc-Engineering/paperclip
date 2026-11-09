@@ -1949,7 +1949,7 @@ html.tethr-intro-hold .tethr-welcome * {
 /* Setup, Connections: a row's fix opens in place (no trip to another page). */
 @layer components {
   .tethr-fix-panel {
-    animation: tethr-fix-open 320ms var(--tethr-ease, cubic-bezier(0.16, 1, 0.3, 1)) both;
+    animation: tethr-fix-open 320ms var(--tethr-ease, cubic-bezier(0.16, 1, 0.3, 1)) backwards;
   }
 }
 @keyframes tethr-fix-open {
@@ -1983,7 +1983,7 @@ html.tethr-intro-hold .tethr-welcome * {
     font-size: 13px;
     background: var(--tethr-frost);
     box-shadow: inset 0 0 0 1px var(--tethr-rim);
-    animation: tethr-fix-open 320ms var(--tethr-ease) both;
+    animation: tethr-fix-open 320ms var(--tethr-ease) backwards;
   }
 }
 @media (prefers-reduced-motion: reduce) {

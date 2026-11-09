@@ -505,8 +505,8 @@ label "Chat". Run records still store `invocationSource: "console"` (data, uncha
 - **UI** (`TethrChat.tsx`) — **one area, no panel-in-a-panel (Mark's call):** the conversation
   sits directly on the page and scrolls (fading) to the top. A **sidebar icon** at the top-left
   (badge = side-chat count) slides out a glass drawer: the main chat pinned on top ("tethr ·
-  Your ongoing chat · always here", pin icon, no remove), then side chats (hover X removes one
-  from the list) and New. Beside the icon a chip names where you are: **"tethr ONGOING"** in the
+  Your ongoing chat · always here", pin icon, no remove), then **Team** (phase 23: each agent's
+  own chat, below), then side chats (hover X removes one from the list) and New. Beside the icon a chip names where you are: **"tethr ONGOING"** in the
   main chat (Mark, 2026-11-08: "it should be clear it's the main ongoing chat you can't delete"),
   or a side chat's title with a back-to-tethr button. The empty main chat says it's the ongoing
   chat; its suggestions are company-neutral. Messages:
@@ -1002,6 +1002,64 @@ nebula, an endless loop until it's done". Plan: `tasks/phase-22.md`.
 - Tests: `tethr-documents.test.ts` (16, including the PDF's network block against a live local
   server). Verified live on a throwaway instance: the nebula row on a running turn, the PDF from a
   chat chip in the side panel, and PDF, Word, Excel, PowerPoint and PNG previews in the Drive.
+
+## tethr runs a team: the Hermes + Paperclip hybrid (phase 23, 2026-11-08)
+
+Mark: "I need it to be clear on spinning up agents… not just another Claude chat but a new
+Hermes/paperclip hybrid." tethr (the main chat) leads a team of agents it spins up itself. Plan and
+decisions: `tasks/phase-23.md`, DECISIONS.md 27–30.
+- **An agent on the team** is a real Paperclip agent: a core `agents` row (`tethr_llm`, reports to
+  @tethr), a `tethr_agent_profiles` row (tag, mission, `overseerRole` = its owner), a hard-stop budget
+  policy, and a core routine when it has a schedule (setup time zone, trigger on while active). Its
+  `adapterConfig.engine = "session"` holds `instructions`, `connectors` (an allowlist of Integrations
+  labels), `maxRunsPerDay`, `schedule`, `routineId` and `threadId` (`stableThreadId("agent:"+tag)`).
+  No migration. Service: `server/src/tethr/team.ts` (`teamService`: list/get/byThread/create/update/
+  setPaused/assign, `teamContextText`); pure spec, wording and limits: `team-spec.ts`.
+- **It works in its own chat.** `adapter.ts` sends a session agent's tasks (assignments and its
+  routine's runs) to `team-run.ts`: a system turn "Task WD-n: …" in the agent's thread with its
+  instructions, waited ≤ 20 min; the task is commented and moved (failed or over the daily cap →
+  `blocked`, never auto-retried). The runner runs an agent thread AS the agent: run row, budget
+  check, cost event and activity actor are the agent's; deny rules block every connector outside its
+  list, tethr's team tools and `Bash` (its own settings file, `settings-<company>-agent-<tag>.json`);
+  `--tools` without Bash; a fresh session gets `agentIdentityText`. 3 turns at once overall, agents
+  at most 2. The hook gate refuses the same things (`agentToolRefusal`), and an agent's approval
+  cards carry its id/tag, so `dmOverseer` buzzes its owner. A paused agent runs nothing tethr starts.
+- **It reports back** (`team-report.ts deliverAgentReport`) after every task turn and every
+  follow-up tethr starts in its thread (e.g. after an approval): a main-chat card (route run,
+  `sourceKey: "tethr-agent-report"`, `agentId`, the agent's file hops so chips open in the panel;
+  body = what follows its last "Report:" line, `reportBody`), a next-turn note for tethr, the bell
+  (kind `run`), and a Slack DM to the owner (roster role → Slack ID, else the admin's, else #tethr)
+  with only the headline and the agent's "Slack summary:" line. Never the report itself.
+- **tethr's tools** (`assistant/team-tools.ts`, on the `tethr` MCP server; refused in agent threads
+  by deny rules, the gate and the tools endpoint, which also hides them from an agent's tool list):
+  `team_list` (read), `create_agent`, `assign_task`, `update_agent` (draft). Integrations → **Team**
+  (`integrations.ts` `team: { newAgents: "ask" | "auto", maxAgents, monthlyBudgetUsd }`): Ask = a
+  gated `team_agent` / `team_change` output (sensitivity `org`), applied by `gating.approveTeamCard`
+  (re-validated; one that can't apply closes `rejected` with `meta.applyError`); Automatic = created
+  directly inside the limits (`announceNewAgent`: bell + Slack heads-up to the admin), else a card.
+  **Raising budget or runs is always a `spend` card; pausing is always immediate.**
+  `assign_task` needs no approval (cap, 3 open tasks, budget, throttle).
+- **tethr knows its team:** CLAUDE.md v3 adds "## Your team" (the roster, as data) and "## Running
+  the team" (when to spin one up, assign, never duplicate, propose an agent for a repeated ask).
+  Company-level text, the same in every thread, so concurrent turns can't conflict.
+- **Routes** (`routes/tethr-team.ts`): `GET /tethr/:c/team` (roster + running, waiting on you, runs
+  today, open tasks, last report), `POST /team/:tag/pause {paused}` (people, immediate), `POST
+  /team/propose` (a system turn in the main chat: `teamProposalBrief`, 2–3 `create_agent` calls).
+- **UI:** drawer Team section (`pages/tethr/chat/team.tsx` `TeamSection`: dot = needs you / working /
+  paused / idle via `lib/tethr-team.ts`, "Propose a starting team" when empty); in an agent's chat
+  the chip is `AgentChip` (runs, owner, today, spend, tools, Pause/Resume), its own empty state and
+  composer; `AgentReportCard` in the main chat (clamped, Show all, file chips, "Open @x's chat");
+  approval cards label `team_agent` "New agent"; Integrations "Team" card; Company page "tethr's
+  team" group.
+- **Glass on phones:** the chat's conversation scroller is `relative z-0` (its fade mask made it a
+  layer that painted over the floating chip panels), and `.tethr-fix-panel` / `.tethr-task-pill`
+  fade in with fill `backwards` (same Chromium rule as the entrance animations).
+- Tests: `tethr-team.test.ts` (14: spec, schedule words, card text, deny rules; card → approve →
+  core wake → agent turn in its own chat → task done → report card, note, bell; caps; pause/resume;
+  Automatic limits; spend card on a raise; endpoint and gate refusals; owner DM; follow-up report;
+  CLAUDE.md roster), `ui/src/lib/tethr-team.test.ts` (3). Verified live on a throwaway: "spin up an
+  agent that checks two clinics' prices every Monday" → New agent card → approve → it ran its first
+  task in its own chat (web search, wrote `clinic-price-watch.md`) → report card + bell.
 
 ## Onboarding from scratch: goals with numbers, setup, rhythm (phase 20, 2026-11-07)
 

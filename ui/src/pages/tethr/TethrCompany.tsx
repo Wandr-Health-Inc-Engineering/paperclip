@@ -108,6 +108,11 @@ export function TethrCompany() {
           !isSystem(a.profile.tag),
       )
     : [];
+  // Phase 23: tethr's team, the agents tethr runs (they report to @tethr, no division).
+  const tethrAgent = systemAgents.find((a) => a.profile.tag === "@tethr");
+  const teamAgents = tethrAgent
+    ? agentsLive.filter((a) => a.agent.reportsTo === tethrAgent.agent.id && !a.profile.divisionId && !isSystem(a.profile.tag))
+    : [];
   // Organization divisions, minus any that only existed to host a system agent
   // (e.g. Operations, whose only head is @tethr — now shown under System).
   const orgDivisions = data.divisions.filter((division) => {
@@ -152,9 +157,20 @@ export function TethrCompany() {
         <div className="h-px flex-1 bg-[var(--tethr-rim)]" />
       </div>
 
-      {!ceo && ceoReports.length === 0 && orgDivisions.length === 0 ? (
+      {teamAgents.length ? (
+        <div>
+          <MonoTag className="mb-3 block text-center">tethr&apos;s team</MonoTag>
+          <div className="mx-auto grid max-w-4xl grid-cols-1 gap-3 md:grid-cols-2">
+            {teamAgents.map((entry) => (
+              <AgentRow key={entry.agent.id} entry={entry} reportsToTag={reportsToTag(entry)} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {!ceo && ceoReports.length === 0 && orgDivisions.length === 0 && teamAgents.length === 0 ? (
         <p className="mx-auto max-w-xl text-center text-xs text-muted-foreground">
-          Fresh start — only @tethr is active.
+          Fresh start — only @tethr is active. Ask tethr in the chat to spin up an agent.
           {archivedAgents.length ? " The specialists are archived below and can be restored." : ""}
         </p>
       ) : null}

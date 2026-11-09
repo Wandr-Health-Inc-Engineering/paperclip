@@ -7,7 +7,7 @@ import { logFailure } from "./best-effort.js";
 import * as chats from "./chats.js";
 import { companyProfileService } from "./company.js";
 import type { TeamAgent } from "./team.js";
-import { splitSlackSummary } from "./team-spec.js";
+import { reportBody, splitSlackSummary } from "./team-spec.js";
 import type { SlackPoster } from "./watch.js";
 
 // Phase 23: an agent reports back. When an agent finishes work tethr started
@@ -78,7 +78,9 @@ export function reportSlackText(r: AgentReport, summary: string | null): string 
 }
 
 export async function deliverAgentReport(db: Db, r: AgentReport, deps: { post?: SlackPoster } = {}): Promise<{ cardRunId: string }> {
-  const { body, summary } = splitSlackSummary(r.text);
+  const split = splitSlackSummary(r.text);
+  const body = reportBody(split.body);
+  const summary = split.summary;
   const headline = reportHeadline(r);
   const now = new Date();
   const [card] = await db

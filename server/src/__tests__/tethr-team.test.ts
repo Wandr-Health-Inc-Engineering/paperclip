@@ -23,6 +23,7 @@ import {
   agentDenyRules,
   agentTaskText,
   agentToolRefusal,
+  reportBody,
   scheduleWords,
   splitSlackSummary,
   TeamInputError,
@@ -98,6 +99,14 @@ describe("tethr team — the spec, in words", () => {
     expect(splitSlackSummary("Report.\n\nSlack summary: Prices up 5% at two competitors.")).toEqual({ body: "Report.", summary: "Prices up 5% at two competitors." });
     expect(splitSlackSummary("**Slack summary:** All quiet.").summary).toBe("All quiet.");
     expect(splitSlackSummary("No summary here.")).toEqual({ body: "No summary here.", summary: null });
+  });
+
+  it("keeps the report, not the working notes streamed before it", () => {
+    expect(reportBody("I'll look at the pages.\n\nFound two.\n\nReport:\nTwo clinics, $49 and $59.")).toBe("Two clinics, $49 and $59.");
+    expect(reportBody("Notes.\n\n**Report:**\n\nAll quiet.")).toBe("All quiet.");
+    expect(reportBody("## Report\nDone.")).toBe("Done.");
+    expect(reportBody("Just the answer.")).toBe("Just the answer.");
+    expect(reportBody("Report: inline text stays whole.")).toBe("Report: inline text stays whole.");
   });
 
   it("keeps an agent inside its connectors, away from the shell and tethr's team tools", () => {

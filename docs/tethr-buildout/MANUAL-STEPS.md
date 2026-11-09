@@ -187,6 +187,11 @@ can be reused instead of rewritten. (`docs/tethr-buildout/scout-audit.md`.)
 
 ### C6a · Overseer roster — buzz the right cofounder (~2 min, in-app)
 
+**Since phase 23 this also routes agents' reports.** Each agent on tethr's team has an
+owner role (tech / exec / growth, inferred from its job); when it finishes work, the owner
+gets a Slack DM with the headline and a one-line summary. With no ID for that role it goes
+to the admin's Slack ID (setup step 1), else #tethr.
+
 Slack alerts (heartbeat deliverables + things needing approval) route by an
 agent's role. Set the three people once, in **Settings → overseer roster**:
 **Tech = Frank**, **Exec = Alec**, **Growth & Ops = Mark**. For each, enter their

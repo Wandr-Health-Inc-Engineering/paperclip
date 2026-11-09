@@ -131,6 +131,33 @@ Branch: `mark-sandbox` (local only). Date started: 2026-06-11.
     `heartbeat.updateRuntimeState` bills `result.costUsd`, so live heartbeat/task runs had been
     recording $0 spend against the budget hard-stops. Tethr-only fix (`adapter.ts`).
 
+## Phase 23 decisions (tethr runs a team — 2026-11-08)
+
+27. **tethr spins up its own agents** (Mark: "a new Hermes/paperclip hybrid"). A team agent is
+    a real Paperclip agent (core agents row, profile, hard-stop budget policy, a routine when it
+    has a schedule) that works tasks as Claude session turns in its own chat thread, inside a
+    connector allowlist, with no shell. tethr creates agents, assigns tasks and gets reports
+    back; agents can't create agents or assign work (depth 1, like Hermes subagents). Rejected:
+    reviving the archived classic-engine specialists (they ran through the old routing engine,
+    with no connectors and no memory of the conversation).
+28. **New agents: "Ask me" or "Automatic"** (Integrations → Team; Mark: "can be set to
+    autonomous or manual approval"). Ask (default) = an approval card for every new agent and
+    every change. **Automatic is Mark's explicit, standing go** for tethr to create agents and
+    switch their schedules on, within the team's limits (max active agents, a monthly budget for
+    the whole team); past them it falls back to a card. For team agents this replaces the
+    hard gate "enabling any heartbeat needs an explicit go" only while Automatic is on; an
+    approved card is that go under Ask. **Raising an agent's budget or runs always asks** (a
+    `spend` card, Mark's standing budget rule); pausing never needs approval.
+29. **Delegation needs no approval** (Mark's answer): `assign_task` runs within the agent's
+    daily run cap (default 4, max 12), 3 open tasks, its budget hard stop and the usage throttle.
+    Anything outward an agent tries still follows the Integrations modes, and its approval card
+    DMs the agent's owner.
+30. **Reports go to the main chat and to the right person** (Mark: "agents should report to a
+    Slack ID based on setup and relevance"): a card + note in the main chat, the bell, and a
+    Slack DM to the owner (overseer roster role, inferred from the agent's job; else the admin;
+    else #tethr). Slack carries only the headline and the agent's one-line "Slack summary",
+    never the report. No core files changed.
+
 ## Core changes (keep merge-safe)
 
 Every core file touched, with reason. Everything else Tethr lives in new files.
