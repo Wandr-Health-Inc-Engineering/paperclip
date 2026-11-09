@@ -6,7 +6,7 @@ import { logger } from "../middleware/logger.js";
 import { logFailure } from "./best-effort.js";
 import * as chats from "./chats.js";
 import { companyProfileService } from "./company.js";
-import type { TeamAgent } from "./team.js";
+import { teamService, type TeamAgent } from "./team.js";
 import { reportBody, splitSlackSummary } from "./team-spec.js";
 import type { SlackPoster } from "./watch.js";
 
@@ -82,6 +82,10 @@ export async function deliverAgentReport(db: Db, r: AgentReport, deps: { post?: 
   const body = reportBody(split.body);
   const summary = split.summary;
   const headline = reportHeadline(r);
+  // Phase 24: a sub-agent reports to its lead (a card and a note in the lead's
+  // chat), not to the main chat, the bell or Slack; the lead reports for its team.
+  const lead = r.agent.leadTag ? await teamService(db).get(r.companyId, r.agent.leadTag) : null;
+  const threadId = lead?.threadId ?? chats.mainThreadId(r.companyId);
   const now = new Date();
   const [card] = await db
     .insert(tethrRouteRuns)
@@ -89,7 +93,7 @@ export async function deliverAgentReport(db: Db, r: AgentReport, deps: { post?: 
       companyId: r.companyId,
       requestText: headline,
       invocationSource: "chat",
-      threadId: chats.mainThreadId(r.companyId),
+      threadId,
       sourceKey: AGENT_REPORT_SOURCE,
       status: "done",
       resultText: body.slice(0, 8_000),
@@ -101,8 +105,13 @@ export async function deliverAgentReport(db: Db, r: AgentReport, deps: { post?: 
     .returning();
 
   await chats
-    .addNote(r.companyId, chats.mainThreadId(r.companyId), `${headline}${summary ? `: ${summary}` : ""}. The full report is in ${r.agent.tag}'s chat and on its card in this chat.`)
+    .addNote(r.companyId, threadId, `${headline}${summary ? `: ${summary}` : ""}. The full report is in ${r.agent.tag}'s chat and on its card in this chat.`)
     .catch(logFailure("agent report note", { tag: r.agent.tag }));
+  if (lead) return { cardRunId: card.id };
+
+  // tethr may check in on it (if the person turned that on).
+  const { noteReport } = await import("./team-brain.js");
+  await noteReport(r.companyId, { tag: r.agent.tag, title: r.title, outcome: r.outcome }, now).catch(logFailure("brain report note", { tag: r.agent.tag }));
 
   const { notificationService } = await import("./notify.js");
   await notificationService(db)

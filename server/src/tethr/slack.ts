@@ -15,7 +15,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { companies, tethrAgentProfiles, tethrOutputs, tethrRouteRuns } from "@paperclipai/db";
+import { companies, tethrAgentProfiles, tethrMembers, tethrOutputs, tethrRouteRuns } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { logFailure } from "./best-effort.js";
 import { matchMetaCommand, renderHelpMessage } from "./commands.js";
@@ -418,14 +418,30 @@ export async function resolveOverseer(
     .where(and(eq(tethrAgentProfiles.companyId, companyId), eq(tethrAgentProfiles.tag, agentTag)))
     .limit(1);
   const fromRoster = getRoster(companyId)[normalizeOverseerRole(profile?.role)];
+  // Phase 24: with nobody set for the role, the company's admin (setup step 1)
+  // hears it, so a permission request always reaches a person.
+  const admin = fromRoster.slackId || profile?.slackId?.trim() ? null : await adminSlack(db, companyId);
   const slackId =
     profile?.slackId?.trim() ||
     fromRoster.slackId ||
     process.env.TETHR_DEFAULT_OVERSEER_SLACK_ID?.trim() ||
+    admin?.slackId ||
     undefined;
+  // When the admin is the one who hears it, say so by name.
+  const viaAdmin = !!admin && slackId === admin.slackId;
   const name =
-    profile?.name?.trim() || fromRoster.name || process.env.TETHR_DEFAULT_OVERSEER_NAME?.trim() || "the overseer";
+    profile?.name?.trim() || (viaAdmin ? admin.name : fromRoster.name) || process.env.TETHR_DEFAULT_OVERSEER_NAME?.trim() || "the overseer";
   return { slackId, name };
+}
+
+/** The company admin's Slack member ID (setup step 1), if set. */
+async function adminSlack(db: Db, companyId: string): Promise<{ slackId: string; name: string } | null> {
+  const [row] = await db
+    .select({ slackId: tethrMembers.slackUserId, name: tethrMembers.name })
+    .from(tethrMembers)
+    .where(and(eq(tethrMembers.companyId, companyId), eq(tethrMembers.role, "admin")))
+    .limit(1);
+  return row?.slackId ? { slackId: row.slackId, name: row.name } : null;
 }
 
 /**

@@ -185,7 +185,7 @@ export function gatingService(db: Db) {
           db,
           input.companyId,
           input.agentTag,
-          `${input.agentTag} needs your approval: *${input.title}*. Review it in the Tethr Queue.`,
+          approvalDmText(input.agentTag, input.title, output.id),
         );
       } else if (input.heartbeatRunId) {
         await dmOverseer(
@@ -496,9 +496,12 @@ export function gatingService(db: Db) {
       .where(eq(tethrOutputs.id, output.id))
       .returning();
     if ((output.kind === "team_agent" || output.kind === "team_change") && input.decision === "reject") {
+      // The one who asked hears it: a lead (for its sub-team), else tethr's main chat.
       const chats = await import("./chats.js");
+      const leadTag = (output.meta as { leadTag?: unknown } | null)?.leadTag;
+      const lead = typeof leadTag === "string" ? await (await import("./team.js")).teamService(db).get(input.companyId, leadTag) : null;
       await chats
-        .addNote(input.companyId, chats.mainThreadId(input.companyId), `Rejected in tethr: ${output.title}${input.note ? ` (${input.note})` : ""}. Don't propose it again unless someone asks.`)
+        .addNote(input.companyId, lead?.threadId ?? chats.mainThreadId(input.companyId), `Rejected in tethr: ${output.title}${input.note ? ` (${input.note})` : ""}. Don't propose it again unless someone asks.`)
         .catch(() => {});
     }
     if (output.kind === "external_action" && input.decision === "reject") {
@@ -585,23 +588,34 @@ export function gatingService(db: Db) {
   // so the Queue never wedges. The main chat hears either way.
   async function approveTeamCard(output: typeof tethrOutputs.$inferSelect, companyId: string, reviewer: string) {
     const { teamConnectorLabels, teamService } = await import("./team.js");
-    const { scheduleWords, validateTeamSpec } = await import("./team-spec.js");
+    const { goalLine, scheduleWords, specToInput, validateTeamSpec } = await import("./team-spec.js");
     const { specFromCard } = await import("./assistant/team-tools.js");
+    const { goalsService } = await import("./goals.js");
     const chats = await import("./chats.js");
     const team = teamService(db);
     const meta = (output.meta ?? {}) as Record<string, unknown>;
     const actor = reviewer.startsWith("auto:") ? {} : { userId: reviewer };
     let note: string;
+    let noteThread = chats.mainThreadId(companyId);
     try {
       if (output.kind === "team_agent") {
         const raw = specFromCard(meta);
         if (!raw) throw new Error("This card has no agent spec.");
-        const spec = validateTeamSpec(
-          { ...raw, budget_usd: raw.budgetMonthlyUsd, max_runs_per_day: raw.maxRunsPerDay, owner: raw.ownerRole, first_task: raw.firstTask },
-          { takenTags: await team.takenTags(companyId), connectors: teamConnectorLabels(companyId) },
-        );
-        const agent = await team.create(companyId, spec, { ...actor, via: "approval" });
-        note = `Approved: ${agent.tag} (${agent.name}) is on the team${agent.schedule ? ` and runs ${scheduleWords(agent.schedule.cron)}` : ""}.${spec.firstTask ? ` Its first task, "${spec.firstTask.title}", has started; the report will come back here.` : " Give it work with assign_task."}`;
+        // Phase 24: a sub-agent joins its lead, which must still be a lead.
+        const leadTag = typeof meta.leadTag === "string" ? meta.leadTag : null;
+        const lead = leadTag ? await team.get(companyId, leadTag) : null;
+        if (leadTag && !lead?.lead) throw new Error(`${leadTag} is no longer a lead on the team.`);
+        const { goals } = await goalsService(db).list(companyId);
+        const spec = validateTeamSpec(specToInput(raw), {
+          takenTags: await team.takenTags(companyId),
+          connectors: teamConnectorLabels(companyId),
+          goals: new Map(goals.map((g) => [g.id, g.title])),
+          lead: lead ? { tag: lead.tag, connectors: lead.connectors } : null,
+        });
+        const agent = await team.create(companyId, spec, { ...actor, via: "approval" }, { lead });
+        const goal = spec.goal ? ` ${goalLine(spec.goal, { pending: false })}.` : "";
+        note = `Approved: ${agent.tag} (${agent.name}) is on ${lead ? `${lead.tag}'s team` : "the team"}${agent.schedule ? ` and runs ${scheduleWords(agent.schedule.cron)}` : ""}.${goal}${spec.firstTask ? ` Its first task, "${spec.firstTask.title}", has started; the report will come back to ${lead ? lead.tag : "you"}.` : " Give it work with assign_task."}`;
+        if (lead) noteThread = lead.threadId;
       } else {
         const tag = String(meta.tag ?? "");
         const patch = (meta.patch ?? {}) as Parameters<typeof team.update>[2];
@@ -625,7 +639,7 @@ export function gatingService(db: Db) {
       .set({ status: "published", updatedAt: new Date() })
       .where(eq(tethrOutputs.id, output.id))
       .returning();
-    await chats.addNote(companyId, chats.mainThreadId(companyId), note).catch(() => {});
+    await chats.addNote(companyId, noteThread, note).catch(() => {});
     await notify.send({ companyId, kind: "approval", title: `Approved: ${output.title}`, href: `/chat` });
     return updated;
   }
@@ -832,6 +846,14 @@ export function gatingService(db: Db) {
     publishToDrive,
     assertPublishable,
   };
+}
+
+/** The Slack DM for a card that needs a person: who's asking, what for, and a
+ * link straight to it when tethr has a public URL. */
+export function approvalDmText(agentTag: string, title: string, outputId: string): string {
+  const base = (process.env.PAPERCLIP_PUBLIC_URL ?? "").trim().replace(/\/+$/, "");
+  const where = base ? `<${base}/queue/${outputId}|Review it in tethr>` : "Review it in tethr's Queue or the chat.";
+  return `${agentTag} needs your approval: *${title}*. ${where}`;
 }
 
 function labelForSensitivity(s: TethrSensitivity): string {

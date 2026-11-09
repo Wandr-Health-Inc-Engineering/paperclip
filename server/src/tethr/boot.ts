@@ -30,6 +30,9 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
   // Phase 21: watch Slack conversations, goals and quiet stretches for ideas.
   const { startWatch } = await import("./watch.js");
   startWatch(db);
+  // Phase 24: tethr acts on its own (check-ins, daily review) once switched on.
+  const { startBrain } = await import("./team-brain.js");
+  startBrain(db);
 }
 
 /**

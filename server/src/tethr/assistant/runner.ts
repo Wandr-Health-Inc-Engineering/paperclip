@@ -14,14 +14,17 @@ import { companyContextText, companyProfileService } from "../company.js";
 import { mirrorDir } from "../mirror.js";
 import { orgService } from "../org.js";
 import { isAgentsPaused, PAUSED_MESSAGE } from "../throttle.js";
-import { agentDenyRules, agentIdentityText } from "../team-spec.js";
+import { agentDenyRules, agentIdentityText, TEAM_TOOL_NAMES } from "../team-spec.js";
 import { teamConnectorLabels, teamContextText, teamService, type TeamAgent } from "../team.js";
 import { getRoster } from "../overseers.js";
 import { getSetup } from "../setup.js";
 import { applyStreamLine, newTurnState } from "./events.js";
 import { buildSettings, ensureHookScript, issueHookToken, revokeHookToken, writeSettingsFile } from "./gate.js";
 import { ensurePersona } from "./persona.js";
-import { TETHR_TOOLS_LABEL } from "./tethr-tools.js";
+import { TETHR_TOOL_DEFS, TETHR_TOOLS_LABEL } from "./tethr-tools.js";
+
+/** Tethr tools other than the team tools (a lead without "Tethr tools" gets only the team ones). */
+const NON_TEAM_TETHR_TOOLS = TETHR_TOOL_DEFS.map((d) => d.name).filter((n) => !(TEAM_TOOL_NAMES as readonly string[]).includes(n));
 import { buildMcpConfig, ensureToolsBridge, removeMcpConfig, writeMcpConfig } from "./tools-bridge.js";
 import { ensureWorkspace, readableRoots } from "./workspace.js";
 
@@ -305,9 +308,13 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       ws = await ensureWorkspace({ integrationRules: integrationRulesText(cfg), goals, company, team: teamText });
       ({ personaPath, skillDir } = await ensurePersona());
       const hookScript = await ensureHookScript();
-      const tethrTools = modeFor(cfg, TETHR_TOOLS_LABEL) !== "off" && (!member || member.connectors.includes(TETHR_TOOLS_LABEL));
+      // A lead always gets the tethr server, for its team tools.
+      const tethrTools = modeFor(cfg, TETHR_TOOLS_LABEL) !== "off" && (!member || member.lead || member.connectors.includes(TETHR_TOOLS_LABEL));
       if (tethrTools) bridgeScript = await ensureToolsBridge();
-      const deny = [...denyRulesFor(cfg), ...(member ? agentDenyRules(member.connectors, teamConnectorLabels(companyId)) : [])];
+      const deny = [
+        ...denyRulesFor(cfg),
+        ...(member ? agentDenyRules(member.connectors, teamConnectorLabels(companyId), { lead: member.lead, otherTethrTools: NON_TEAM_TETHR_TOOLS }) : []),
+      ];
       settingsPath = await writeSettingsFile(companyId, buildSettings({ nodePath: process.execPath, hookScript, deny }), member ? `agent-${member.tag}` : undefined);
     } catch (err) {
       await finish(runId, {

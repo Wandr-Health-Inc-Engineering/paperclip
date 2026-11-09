@@ -20,10 +20,43 @@ export interface TeamSettings {
   maxAgents: number;
   /** What all active agents together may spend a month, in dollars. */
   monthlyBudgetUsd: number;
+  /** Phase 24: what tethr does on its own. All off until the person turns it on. */
+  autonomy: TeamAutonomy;
 }
 
-export const DEFAULT_TEAM: TeamSettings = { newAgents: "ask", maxAgents: 6, monthlyBudgetUsd: 100 };
-export const TEAM_SETTING_LIMITS = { maxAgents: 12, monthlyBudgetUsd: 500 } as const;
+export interface TeamAutonomy {
+  /** A check-in turn in the main chat when agents' reports come in. */
+  actOnReports: boolean;
+  /** A daily review turn in the main chat. `time` is HH:MM in the setup time zone. */
+  dailyReview: { enabled: boolean; time: string; weekdaysOnly: boolean };
+  /** Self-started turns (check-ins and reviews) a day, at most. */
+  maxSelfTurnsPerDay: number;
+}
+
+export const DEFAULT_AUTONOMY: TeamAutonomy = {
+  actOnReports: false,
+  dailyReview: { enabled: false, time: "08:30", weekdaysOnly: true },
+  maxSelfTurnsPerDay: 8,
+};
+export const DEFAULT_TEAM: TeamSettings = { newAgents: "ask", maxAgents: 9, monthlyBudgetUsd: 150, autonomy: DEFAULT_AUTONOMY };
+export const TEAM_SETTING_LIMITS = { maxAgents: 12, monthlyBudgetUsd: 500, maxSelfTurnsPerDay: 24 } as const;
+
+/** Team settings with every field filled in (older saved files lack autonomy). */
+export function mergeTeam(...parts: Array<Partial<TeamSettings> | undefined>): TeamSettings {
+  let team: TeamSettings = { ...DEFAULT_TEAM, autonomy: { ...DEFAULT_AUTONOMY, dailyReview: { ...DEFAULT_AUTONOMY.dailyReview } } };
+  for (const part of parts) {
+    if (!part) continue;
+    const autonomy = part.autonomy
+      ? {
+          ...team.autonomy,
+          ...part.autonomy,
+          dailyReview: { ...team.autonomy.dailyReview, ...(part.autonomy.dailyReview ?? {}) },
+        }
+      : team.autonomy;
+    team = { ...team, ...part, autonomy };
+  }
+  return team;
+}
 
 export interface ConnectorSetting {
   mode: ConnectorMode;
@@ -81,7 +114,7 @@ export function getIntegrations(companyId: string): IntegrationsConfig {
     ...saved,
     connectors: { ...DEFAULT_INTEGRATIONS.connectors, ...(saved.connectors ?? {}) },
     assistant: { ...DEFAULT_INTEGRATIONS.assistant, ...(saved.assistant ?? {}) },
-    team: { ...DEFAULT_TEAM, ...(saved.team ?? {}) },
+    team: mergeTeam(saved.team),
     internalAddresses: saved.internalAddresses ?? DEFAULT_INTEGRATIONS.internalAddresses,
   };
 }
@@ -101,7 +134,7 @@ export async function updateIntegrations(
       ...patch,
       connectors: { ...(current.connectors ?? {}), ...(patch.connectors ?? {}) },
       assistant: { ...(current.assistant ?? DEFAULT_INTEGRATIONS.assistant), ...(patch.assistant ?? {}) },
-      team: { ...DEFAULT_TEAM, ...(current.team ?? {}), ...(patch.team ?? {}) },
+      team: mergeTeam(current.team, patch.team),
     };
     await writeAtomic(file, JSON.stringify(data, null, 2));
   });
@@ -170,6 +203,22 @@ export function sanitizeIntegrationsPatch(body: Record<string, unknown>): Partia
     if (Number.isInteger(maxAgents) && maxAgents >= 1 && maxAgents <= TEAM_SETTING_LIMITS.maxAgents) team.maxAgents = maxAgents;
     const budget = Number(t.monthlyBudgetUsd);
     if (Number.isFinite(budget) && budget >= 1 && budget <= TEAM_SETTING_LIMITS.monthlyBudgetUsd) team.monthlyBudgetUsd = Math.round(budget);
+    if (t.autonomy && typeof t.autonomy === "object") {
+      const a = t.autonomy as Record<string, unknown>;
+      const autonomy: Partial<TeamAutonomy> = {};
+      if (typeof a.actOnReports === "boolean") autonomy.actOnReports = a.actOnReports;
+      const turns = Number(a.maxSelfTurnsPerDay);
+      if (Number.isInteger(turns) && turns >= 1 && turns <= TEAM_SETTING_LIMITS.maxSelfTurnsPerDay) autonomy.maxSelfTurnsPerDay = turns;
+      if (a.dailyReview && typeof a.dailyReview === "object") {
+        const d = a.dailyReview as Record<string, unknown>;
+        const review: Partial<TeamAutonomy["dailyReview"]> = {};
+        if (typeof d.enabled === "boolean") review.enabled = d.enabled;
+        if (typeof d.weekdaysOnly === "boolean") review.weekdaysOnly = d.weekdaysOnly;
+        if (typeof d.time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(d.time)) review.time = d.time;
+        autonomy.dailyReview = review as TeamAutonomy["dailyReview"];
+      }
+      team.autonomy = autonomy as TeamAutonomy;
+    }
     patch.team = team as TeamSettings;
   }
   return patch;

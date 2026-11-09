@@ -141,7 +141,12 @@ export function tethrRoutes(db: Db) {
     // Phase 23: an agent's thread gets Tethr's tools minus tethr's team tools.
     const member = await teamService(db).byThread(ctx.companyId, ctx.threadId).catch(() => null);
     if (req.params.op === "list") {
-      res.json({ tools: member ? TETHR_TOOL_DEFS.filter((d) => !(TEAM_TOOL_NAMES as readonly string[]).includes(d.name)) : TETHR_TOOL_DEFS });
+      const isTeamTool = (name: string) => (TEAM_TOOL_NAMES as readonly string[]).includes(name);
+      // tethr: everything. A lead: its team tools, plus the rest if it has "Tethr tools". Any other agent: no team tools.
+      const tools = !member
+        ? TETHR_TOOL_DEFS
+        : TETHR_TOOL_DEFS.filter((d) => (isTeamTool(d.name) ? member.lead : member.connectors.includes(TETHR_TOOLS_LABEL)));
+      res.json({ tools });
       return;
     }
     if (req.params.op !== "call") {
