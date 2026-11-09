@@ -1168,8 +1168,13 @@ instance, read-only: every chat turn billed to the subscription at $0; memory in
 (`tethr-wd`, locked down, 0 tokens); no schedules running; @tethr the only agent.
 - **Jev: "a key is saved" is not "connected".** `jev.ts` `jevHealth()` asks TypeSafe's model list
   whether the key works (cached 10 minutes; a new key is checked at once; real calls update it).
-  Setup → Connections and Integrations show that, never mere presence. The key on Mark's Mac was
-  rejected by TypeSafe on 2026-11-09 (MANUAL-STEPS C6c), so Jev has never run for real here.
+  Setup → Connections and Integrations show that, never mere presence.
+- **Jev through Vercel's AI Gateway.** `TYPESAFE_API_KEY` can hold a Vercel AI Gateway key
+  (`vck_…`). `jev.ts` `jevRoute` then sends requests to Vercel's TypeSafe-compatible endpoint
+  (`https://ai-gateway.vercel.sh/typesafe`, model `typesafe-ai/jev`), reads Vercel's error shapes
+  (including "out of credits"), and takes the cost Vercel reports (`costUsd`) instead of pricing
+  it from tokens. `TYPESAFE_API_URL` / `TETHR_JEV_MODEL` override. Mark's key is a Vercel key: TypeSafe's own
+  server had rejected it; through Vercel it works (2026-11-09, real requests, about $0.00002 each).
 - **Known gap: Slack and the terminal client still talk to the classic engine.**
   `slack.ts routeInboundKickoff` and `POST /tethr/:companyId/route` call `routing.routeRequest`,
   not the chat runner. So tethr in Slack has no memory, recall, connectors, goals or team, and

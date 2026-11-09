@@ -228,10 +228,11 @@ The chat's `score_list` tool ranks long lists (keyword ideas, leads, Reddit post
 3. Check it: Set up tethr → Connections shows Jev as **Connected** only when TypeSafe accepts the
    key (tethr asks TypeSafe; a saved key that TypeSafe rejects shows "TypeSafe rejected the key").
 
-**2026-11-09: the key saved on Mark's Mac is rejected by TypeSafe** (401 "Cannot authenticate"
-on both the model list and a real request; the request format matches TypeSafe's docs). Copy the
-key again from console.typesafe.ai and paste it as in step 2. Nothing that uses Jev works until
-then.
+**A Vercel AI Gateway key works too** (it starts with `vck_`, and Jev is billed through Vercel).
+tethr sees the prefix and sends requests to Vercel's TypeSafe-compatible endpoint
+(`https://ai-gateway.vercel.sh/typesafe`, model `typesafe-ai/jev`) on its own. **2026-11-09:**
+Mark's saved key is a Vercel key; TypeSafe's own server had been rejecting it. Through Vercel it
+works (checked with real requests, about $0.00002 each).
 4. Try it in Chat: "Pull keyword ideas for malaria pills and travel vaccines, save them, then
    score them for catalog fit and buying intent and show me the top 10."
 

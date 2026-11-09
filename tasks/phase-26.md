@@ -32,9 +32,10 @@ Jev never writes text and Claude is never spent on a decision Jev can make. A Je
 
 ## What the wiring review found (this plan depends on it)
 
-1. **TypeSafe rejects the saved Jev key.** The request format is right; the key is not accepted.
-   Jev has never run for real. Nothing here can be checked live until a working key is pasted
-   (MANUAL-STEPS C6c).
+1. **Jev now works, through Vercel's AI Gateway.** The saved key is a Vercel AI Gateway key,
+   which TypeSafe's own server rejects. tethr now spots it and goes through Vercel's
+   TypeSafe-compatible endpoint, billed to Vercel. Checked with real requests at about $0.00002
+   each.
 2. **Slack and the terminal client talk to the old classic engine**, not the chat brain. tethr in
    Slack has no memory, recall, connectors, goals or team, and nothing said there is remembered.
    "Send stuff to tethr" has to land on the real tethr, so this is fixed first (26.1).
@@ -251,7 +252,7 @@ separate per customer so one company's data never feeds another's lessons.
 | Step | Delivers | Needs from you |
 |---|---|---|
 | 26.1 | Slack and the terminal reach the real tethr; Slack accepts files | nothing |
-| 26.2 | Jev decisions with a record, modes and a cap | a working Jev key |
+| 26.2 | Jev decisions with a record, modes and a cap | nothing (the key works) |
 | 26.3 | The Inbox, with suggestions | first test: drop files in the Inbox folder |
 | 26.4 | Report urgency, lesson scoring | nothing |
 | 26.5 | The lessons record, the Friday review, the Learning page | nothing |

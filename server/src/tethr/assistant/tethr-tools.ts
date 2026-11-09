@@ -453,6 +453,9 @@ export async function runScoreList(args: Record<string, unknown>, ctx: TethrTool
   const questions = jevQuestions(criteria);
   const started = Date.now();
   let tokens = 0;
+  /** What the service reported the calls cost (Vercel's gateway does); else priced from tokens. */
+  let reportedCost = 0;
+  let reportedAll = true;
   let model = "";
   let fatal: string | null = null;
   const scored = await mapPool(items, ctx.concurrency ?? SCORE_LIMITS.concurrency, async (item, index): Promise<Scored> => {
@@ -463,6 +466,8 @@ export async function runScoreList(args: Record<string, unknown>, ctx: TethrTool
     try {
       const res = await jevAsk(context ? { context, item } : item, questions, ctx.jev);
       tokens += res.usage.input_tokens;
+      if (res.costUsd === null) reportedAll = false;
+      else reportedCost += res.costUsd;
       model = res.model;
       return { ...base, answers: res.answers, composite: compositeOf(criteria, res.answers), uncertain: uncertainOf(criteria, res.answers) };
     } catch (err) {
@@ -519,7 +524,7 @@ export async function runScoreList(args: Record<string, unknown>, ctx: TethrTool
   };
   const shown = ranked.slice(0, top);
   const lines = [
-    `Scored ${ok.length} of ${items.length} items with Jev (${model || "jev"}) in ${(ms / 1000).toFixed(1)}s, about $${jevCostUsd(tokens).toFixed(4)}.`,
+    `Scored ${ok.length} of ${items.length} items with Jev (${model || "jev"}) in ${(ms / 1000).toFixed(1)}s, about $${(reportedAll && ok.length ? reportedCost : jevCostUsd(tokens)).toFixed(4)}.`,
     `${hasComposite ? "Ranked by" : "Criteria"}: ${criteria.map(describe).join(", ")}.`,
     ...(note ? [note] : []),
     "",

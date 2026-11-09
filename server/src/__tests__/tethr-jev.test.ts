@@ -7,7 +7,7 @@ import express from "express";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createDb } from "@paperclipai/db";
-import { JevError, jevAsk, jevHealth, jevHealthText } from "../tethr/jev.ts";
+import { JevError, jevAsk, jevHealth, jevHealthText, jevRoute } from "../tethr/jev.ts";
 import {
   compositeOf,
   csvFileName,
@@ -159,6 +159,50 @@ describe("tethr jev — client", () => {
       throw new Error("ECONNREFUSED");
     }) as typeof fetch;
     expect(await jevHealth({ fetchImpl: down, fresh: true })).toBe("unreachable");
+  });
+
+  it("sends a Vercel AI Gateway key (vck_) to Vercel's TypeSafe endpoint, and reads its cost and errors", async () => {
+    process.env.TYPESAFE_API_KEY = "vck_test";
+    expect(jevRoute()).toBe("vercel");
+    expect(jevRoute("test-key")).toBe("typesafe");
+    const calls: FetchArgs[] = [];
+    const gateway = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init ?? {}, body: init?.body ? JSON.parse(String(init.body)) : {} });
+      if (String(url).endsWith("/v1/models")) return json(200, { data: [{ id: "typesafe-ai/jev" }] });
+      return json(200, {
+        model: "typesafe-ai/jev",
+        answers: { a: { type: "noul", noul: 0.94 } },
+        usage: { input_tokens: 444, output_tokens: 72 },
+        provider_metadata: { gateway: { cost: "0.000018648" } },
+      });
+    }) as typeof fetch;
+    const res = await jevAsk("Invoice 1042", { a: { type: "noul", instructions: "Invoice?" } }, { fetchImpl: gateway });
+    expect(calls[0].url).toBe("https://ai-gateway.vercel.sh/typesafe/v1/systemone");
+    expect((calls[0].init.headers as Record<string, string>).authorization).toBe("Bearer vck_test");
+    expect(calls[0].body.model).toBe("typesafe-ai/jev");
+    expect(res.costUsd).toBeCloseTo(0.000018648, 12);
+    expect(await jevHealth({ fetchImpl: gateway, fresh: true })).toBe("ok");
+    expect(calls.at(-1)!.url).toBe("https://ai-gateway.vercel.sh/typesafe/v1/models");
+    expect(jevHealthText("ok")).toBe("Connected through Vercel's AI Gateway");
+    expect(jevHealthText("rejected")).toMatch(/Vercel's AI Gateway rejected the key/);
+
+    // Vercel's own error shape, and running out of credits.
+    const broke = (async () => json(402, { error: { message: "Insufficient funds", type: "insufficient_funds" } })) as typeof fetch;
+    await expect(jevAsk("x", { a: { type: "noul", instructions: "?" } }, { fetchImpl: broke, sleep: noSleep })).rejects.toThrow(/out of credits/);
+    const denied = (async () => json(401, { message: "Authentication failed", error_type: "authentication_error" })) as typeof fetch;
+    await expect(jevAsk("x", { a: { type: "noul", instructions: "?" } }, { fetchImpl: denied, sleep: noSleep })).rejects.toThrow(/Vercel's AI Gateway rejected/);
+
+    // An explicit address or model still wins.
+    process.env.TYPESAFE_API_URL = "https://jev.example.test/";
+    process.env.TETHR_JEV_MODEL = "jev-1.14.0";
+    await jevAsk("x", { a: { type: "noul", instructions: "?" } }, { fetchImpl: gateway });
+    expect(calls.at(-1)!.url).toBe("https://jev.example.test/v1/systemone");
+    expect(calls.at(-1)!.body.model).toBe("jev-1.14.0");
+  });
+
+  it("reports no cost when TypeSafe doesn't say, so it's priced from tokens", async () => {
+    const res = await jevAsk("malaria pills", { fit: { type: "noul", instructions: "Fits?" } }, { fetchImpl: fakeJev([]) });
+    expect(res.costUsd).toBeNull();
   });
 });
 

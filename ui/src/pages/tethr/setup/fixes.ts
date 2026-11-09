@@ -57,8 +57,8 @@ export const CHECK_FIX: Record<string, CheckFix> = {
   },
   jev: {
     kind: "env",
-    how: "Optional. Jev (from TypeSafe AI) scores long lists quickly and cheaply. Without it, tethr scores lists itself, just slower. Get a key at console.typesafe.ai, which is in early access. If you don't have one, leave this and continue.",
-    fields: [{ key: "TYPESAFE_API_KEY", label: "TypeSafe API key", placeholder: "your TypeSafe key", secret: true }],
+    how: "Optional. Jev (from TypeSafe AI) makes fast, cheap decisions and scores long lists. Without it, tethr does that itself, just slower. Paste either a Vercel AI Gateway key (starts with vck_; billed through Vercel) or a TypeSafe key from console.typesafe.ai. tethr tells them apart on its own. If you have neither, leave this and continue.",
+    fields: [{ key: "TYPESAFE_API_KEY", label: "Jev key (Vercel AI Gateway or TypeSafe)", placeholder: "vck_… or your TypeSafe key", secret: true }],
   },
   approver: { kind: "step", step: "company", how: "Your Slack member ID is part of step 1. In Slack: your profile, then ⋯, then Copy member ID." },
   drive: {

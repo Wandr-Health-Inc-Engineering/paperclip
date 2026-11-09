@@ -3,6 +3,13 @@
 // ("choice"), or a score on an ordered rubric ("score"). It never writes text.
 // About $0.042 per million input tokens; output is free. Raw fetch, no SDK (same
 // as the Google tools). API: https://docs.typesafe.ai/api/system-one.md
+//
+// Two ways in, one request shape (TYPESAFE_API_KEY holds either key):
+// - a TypeSafe key: https://api.typesafe.ai, model "jev-latest";
+// - a Vercel AI Gateway key (vck_...): Vercel's TypeSafe-compatible endpoint,
+//   https://ai-gateway.vercel.sh/typesafe, model "typesafe-ai/jev", billed through
+//   Vercel (https://vercel.com/docs/ai-gateway/sdks-and-apis/typesafe).
+// TYPESAFE_API_URL and TETHR_JEV_MODEL override either.
 
 export type JevQuestion =
   | { type: "noul"; instructions: string; criteria?: { true?: string; false?: string } }
@@ -18,6 +25,21 @@ export interface JevResponse {
   model: string;
   answers: Record<string, JevAnswer>;
   usage: { input_tokens: number; output_tokens: number };
+  /** What the call cost in dollars, when the service says (Vercel's gateway does). */
+  costUsd: number | null;
+}
+
+/** Where Jev is reached: TypeSafe itself, or Vercel's AI Gateway. */
+export type JevRoute = "typesafe" | "vercel";
+
+const ROUTES: Record<JevRoute, { url: string; model: string; console: string }> = {
+  typesafe: { url: "https://api.typesafe.ai", model: "jev-latest", console: "console.typesafe.ai" },
+  vercel: { url: "https://ai-gateway.vercel.sh/typesafe", model: "typesafe-ai/jev", console: "Vercel (AI Gateway, API keys)" },
+};
+
+/** A Vercel AI Gateway key starts with vck_; anything else is taken as TypeSafe's own. */
+export function jevRoute(key = process.env.TYPESAFE_API_KEY?.trim() ?? ""): JevRoute {
+  return key.startsWith("vck_") ? "vercel" : "typesafe";
 }
 
 /** Dollars per million input tokens (Jev 1.13 / 1.14). */
@@ -27,7 +49,7 @@ export function jevConfigured(): boolean {
   return Boolean(process.env.TYPESAFE_API_KEY?.trim());
 }
 
-/** Whether TypeSafe accepts the key: a key being present says nothing (a
+/** Whether the service accepts the key: a key being present says nothing (a
  * mistyped or revoked one answers 401 on every call). */
 export type JevHealth = "missing" | "ok" | "rejected" | "unreachable";
 
@@ -40,7 +62,7 @@ function remember(key: string, value: JevHealth): JevHealth {
   return value;
 }
 
-/** Ask TypeSafe whether the key works (its model list needs only the key).
+/** Ask the service whether the key works (its model list needs only the key).
  * Cached: 10 minutes for a clear answer, 1 minute when it couldn't be reached;
  * a new key is checked at once. Every real call updates it too. */
 export async function jevHealth(opts: { fetchImpl?: typeof fetch; timeoutMs?: number; fresh?: boolean } = {}): Promise<JevHealth> {
@@ -53,7 +75,7 @@ export async function jevHealth(opts: { fetchImpl?: typeof fetch; timeoutMs?: nu
   // Tests never reach the network on their own: without a fake fetch, a key counts as working.
   if (process.env.VITEST && !opts.fetchImpl) return "ok";
   try {
-    const res = await (opts.fetchImpl ?? fetch)(`${baseUrl()}/v1/models`, {
+    const res = await (opts.fetchImpl ?? fetch)(`${baseUrl(key)}/v1/models`, {
       headers: { authorization: `Bearer ${key}` },
       signal: AbortSignal.timeout(opts.timeoutMs ?? 5_000),
     });
@@ -66,19 +88,20 @@ export async function jevHealth(opts: { fetchImpl?: typeof fetch; timeoutMs?: nu
 }
 
 /** What to tell a person about Jev's connection. */
-export function jevHealthText(h: JevHealth): string {
-  if (h === "ok") return "Connected";
-  if (h === "rejected") return "TypeSafe rejected the key. Copy it again from console.typesafe.ai and save it here.";
-  if (h === "unreachable") return "Key saved, but TypeSafe couldn't be reached just now.";
-  return "Optional: add TYPESAFE_API_KEY";
+export function jevHealthText(h: JevHealth, route: JevRoute = jevRoute()): string {
+  const via = route === "vercel" ? "Vercel's AI Gateway" : "TypeSafe";
+  if (h === "ok") return route === "vercel" ? "Connected through Vercel's AI Gateway" : "Connected";
+  if (h === "rejected") return `${via} rejected the key. Copy it again from ${ROUTES[route].console} and save it here.`;
+  if (h === "unreachable") return `Key saved, but ${via} couldn't be reached just now.`;
+  return "Optional: add TYPESAFE_API_KEY (a TypeSafe key, or a Vercel AI Gateway key)";
 }
 
-export function jevModel(): string {
-  return process.env.TETHR_JEV_MODEL?.trim() || "jev-latest";
+export function jevModel(key = process.env.TYPESAFE_API_KEY?.trim() ?? ""): string {
+  return process.env.TETHR_JEV_MODEL?.trim() || ROUTES[jevRoute(key)].model;
 }
 
-function baseUrl(): string {
-  return (process.env.TYPESAFE_API_URL?.trim() || "https://api.typesafe.ai").replace(/\/+$/, "");
+function baseUrl(key = process.env.TYPESAFE_API_KEY?.trim() ?? ""): string {
+  return (process.env.TYPESAFE_API_URL?.trim() || ROUTES[jevRoute(key)].url).replace(/\/+$/, "");
 }
 
 export class JevError extends Error {
@@ -117,7 +140,10 @@ function retryAfterMs(res: Response): number | null {
 async function errorDetail(res: Response): Promise<string> {
   const body = await res.text().catch(() => "");
   try {
-    const parsed = JSON.parse(body) as { detail?: unknown };
+    const parsed = JSON.parse(body) as { detail?: unknown; message?: unknown; error?: { message?: unknown } };
+    // Vercel's gateway: { error: { message, type } } or { message, error_type }.
+    if (parsed.error && typeof parsed.error.message === "string") return parsed.error.message.slice(0, 300);
+    if (typeof parsed.message === "string" && parsed.detail === undefined) return parsed.message.slice(0, 300);
     const d = parsed.detail;
     if (typeof d === "string") return d.slice(0, 300);
     if (Array.isArray(d)) {
@@ -134,7 +160,13 @@ async function errorDetail(res: Response): Promise<string> {
 }
 
 function statusMessage(status: number, detail: string): string {
-  if (status === 401) return "TypeSafe rejected the Jev API key (TYPESAFE_API_KEY). It needs to be copied again from console.typesafe.ai.";
+  const route = jevRoute();
+  if (status === 401) {
+    return `${route === "vercel" ? "Vercel's AI Gateway" : "TypeSafe"} rejected the Jev API key (TYPESAFE_API_KEY). It needs to be copied again from ${ROUTES[route].console}.`;
+  }
+  if (status === 402 || /insufficient (funds|credits)|out of credits/i.test(detail)) {
+    return route === "vercel" ? "Vercel's AI Gateway is out of credits for Jev. Add credits in Vercel, then try again." : `Jev couldn't run: ${detail || "out of credits"}.`;
+  }
   if (status === 400 && /max_tokens_exceeded/.test(detail)) return "This item is too long for Jev.";
   if (status === 413) return "This request is too big for Jev.";
   if (status === 422) return `Jev couldn't read the request${detail ? `: ${detail}` : "."}`;
@@ -162,11 +194,11 @@ export async function jevAsk(state: unknown, questions: Record<string, JevQuesti
   const f = opts.fetchImpl ?? fetch;
   const retries = opts.retries ?? 3;
   const sleep = opts.sleep ?? wait;
-  const body = JSON.stringify({ model: jevModel(), state, questions });
+  const body = JSON.stringify({ model: jevModel(key), state, questions });
   for (let attempt = 0; ; attempt++) {
     let res: Response;
     try {
-      res = await f(`${baseUrl()}/v1/systemone`, {
+      res = await f(`${baseUrl(key)}/v1/systemone`, {
         method: "POST",
         headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
         body,
@@ -181,16 +213,19 @@ export async function jevAsk(state: unknown, questions: Record<string, JevQuesti
       throw new JevError(`Couldn't reach Jev (${why}).`, null);
     }
     if (res.ok) {
-      const data = (await res.json().catch(() => null)) as Partial<JevResponse> | null;
+      const data = (await res.json().catch(() => null)) as (Partial<JevResponse> & { provider_metadata?: { gateway?: { cost?: unknown } } }) | null;
       if (!data || !isAnswerMap(data.answers)) throw new JevError("Jev sent back an answer Tethr couldn't read.", res.status);
       remember(key, "ok");
+      const reported = data.provider_metadata?.gateway?.cost;
+      const cost = reported === undefined || reported === null || reported === "" ? NaN : Number(reported);
       return {
-        model: typeof data.model === "string" ? data.model : jevModel(),
+        model: typeof data.model === "string" ? data.model : jevModel(key),
         answers: data.answers,
         usage: {
           input_tokens: Number(data.usage?.input_tokens) || 0,
           output_tokens: Number(data.usage?.output_tokens) || 0,
         },
+        costUsd: Number.isFinite(cost) && cost >= 0 ? cost : null,
       };
     }
     const retryable = res.status === 429 || res.status === 529 || res.status >= 500;
