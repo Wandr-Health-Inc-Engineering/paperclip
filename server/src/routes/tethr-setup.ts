@@ -11,6 +11,7 @@ import { GROWTH_PACES, PACE_LABEL, PACE_UPLIFT, type GrowthPace } from "../tethr
 import { GoalInputError, goalsService } from "../tethr/goals.js";
 import { getIntegrations, modeFor, sanitizeIntegrationsPatch, updateIntegrations } from "../tethr/integrations.js";
 import { jevConfigured } from "../tethr/jev.js";
+import { foldInterviewIntoMainChat } from "../tethr/main-chat.js";
 import { mirrorDir } from "../tethr/mirror.js";
 import { TETHR_MISSION } from "../tethr/mission.js";
 import { getRoster } from "../tethr/overseers.js";
@@ -191,6 +192,9 @@ export function tethrSetupRoutes(db: Db): Router {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     if (!requirePerson(req, res)) return;
+    // The interview runs in the main chat, the one ongoing conversation (an
+    // older side-chat interview is folded into it while the main chat is empty).
+    await foldInterviewIntoMainChat(db, companyId);
     const state = getSetup(companyId);
     if (state.interviewThreadId && req.body?.restart !== true) {
       res.json({ threadId: state.interviewThreadId, started: false });
@@ -200,12 +204,11 @@ export function tethrSetupRoutes(db: Db): Router {
     const profile = await companyProfileService(db).get(companyId);
     const ids = await getAssistantRunner(db).send({
       companyId,
-      threadId: null,
+      threadId: chats.mainThreadId(companyId),
       text: interviewBrief(state.areas, { person: adminFirstName(profile), company: profile?.name ?? null, pace: state.growthPace }),
       kind: "system",
       requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
     });
-    await chats.addSideChat(companyId, ids.threadId, "Goals interview");
     await updateSetup(companyId, (s) => ({ ...s, interviewThreadId: ids.threadId }));
     res.json({ threadId: ids.threadId, started: true });
   });

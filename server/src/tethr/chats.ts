@@ -191,3 +191,25 @@ export function removeSideChat(companyId: string, threadId: string): Promise<boo
     return { value: true, changed: true };
   });
 }
+
+/** Hand a thread's session, notes and taint over to another thread, and drop
+ * `from` from the side-chat list. Only fills in what `to` doesn't have yet, so
+ * it never overwrites the target's own state. Used to fold the old goals
+ * interview side chat into an empty main chat. */
+export function moveThreadState(companyId: string, from: string, to: string): Promise<void> {
+  return mutate((data) => {
+    const c = data[companyId];
+    if (!c) return { value: undefined, changed: false };
+    const sessions = { ...(c.sessions ?? {}) };
+    const notes = { ...(c.notes ?? {}) };
+    const tainted = { ...(c.tainted ?? {}) };
+    if (sessions[from] && !sessions[to]) sessions[to] = sessions[from];
+    if (notes[from]?.length) notes[to] = [...(notes[to] ?? []), ...notes[from]];
+    if (tainted[from] && !tainted[to]) tainted[to] = tainted[from];
+    delete sessions[from];
+    delete notes[from];
+    delete tainted[from];
+    data[companyId] = { ...c, sideChats: c.sideChats.filter((s) => s.threadId !== from), sessions, notes, tainted };
+    return { value: undefined, changed: true };
+  });
+}

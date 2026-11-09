@@ -20,6 +20,9 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
   const { healTethrRoutingCopy, healSystemAgentParents } = await import("./seed/tethr-core.js");
   await healTethrRoutingCopy(db);
   await healSystemAgentParents(db);
+  // The goals interview now runs in the main chat; fold an older side-chat one in.
+  const { foldInterviewsIntoMainChats } = await import("./main-chat.js");
+  await foldInterviewsIntoMainChats(db).catch(() => {});
   // Start Slack Socket Mode if configured (SLACK_APP_TOKEN) — lets tag/DM reach
   // a local server with no public URL. No-op when the token is unset.
   const { startSlackSocketMode } = await import("./slack.js");

@@ -9,9 +9,10 @@ import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclip
 import { companies, createDb, issues, routines, routineTriggers, tethrRouteRuns } from "@paperclipai/db";
 import { seedTethrCore } from "../tethr/seed/tethr-core.ts";
 import { applyRhythm, operationsThreadId, runTaskInOperationsChat } from "../tethr/rhythm.ts";
-import { DEFAULT_RHYTHM, getSetup, interviewBrief, validCron, validTimezone } from "../tethr/setup.ts";
+import { DEFAULT_RHYTHM, getSetup, interviewBrief, updateSetup, validCron, validTimezone } from "../tethr/setup.ts";
 import { assistantRunner, resetAssistantRunnerForTests, setAssistantRunnerForTests } from "../tethr/assistant/runner.ts";
-import { listSideChats } from "../tethr/chats.ts";
+import { addSideChat, clearSession, getSession, listSideChats, setSession } from "../tethr/chats.ts";
+import { foldInterviewIntoMainChat } from "../tethr/main-chat.ts";
 import { initTethrAdapter } from "../tethr/adapter.ts";
 import { planReset, runReset, transcriptDirFor } from "../tethr/reset.ts";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
@@ -39,6 +40,7 @@ describe("tethr setup — pure bits", () => {
     expect(brief).toContain("Think out loud");
     expect(brief).toContain("an easier and a harder option");
     expect(brief).toContain("Don't download export files");
+    expect(brief).toContain("already has agreed metrics");
     expect(operationsThreadId("c1")).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(operationsThreadId("c1")).toBe(operationsThreadId("c1"));
   });
@@ -137,16 +139,56 @@ describePg("tethr setup — routes, rhythm, operations chat, wipe", () => {
     await request(agent).put(`/api/tethr/${companyId}/setup/company`).send({ companyName: "x", adminName: "x", position: "coo" }).expect(403);
   });
 
-  it("starts the goals interview once, in its own side chat", async () => {
+  it("folds an interview that ran in a side chat into the empty main chat, with its session", async () => {
+    const [old] = await db
+      .insert(tethrRouteRuns)
+      .values({ companyId, requestText: "Setup: goals interview", invocationSource: "chat", status: "done", sourceKey: "chat-system" })
+      .returning();
+    await db.update(tethrRouteRuns).set({ threadId: old.id }).where(eq(tethrRouteRuns.id, old.id));
+    await addSideChat(companyId, old.id, "Goals interview");
+    await setSession(companyId, old.id, { sessionId: "s-old", sessionParams: null, lastTurnAt: new Date().toISOString(), contextTokens: 10 });
+    await updateSetup(companyId, (s) => ({ ...s, interviewThreadId: old.id }));
+
+    expect(await foldInterviewIntoMainChat(db, companyId)).toBe(true);
+    const [moved] = await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.id, old.id));
+    expect(moved.threadId).toBe(companyId);
+    expect(getSession(companyId, companyId)?.sessionId).toBe("s-old");
+    expect(getSession(companyId, old.id)).toBeNull();
+    expect(listSideChats(companyId).some((c) => c.threadId === old.id)).toBe(false);
+    expect(getSetup(companyId).interviewThreadId).toBe(companyId);
+    expect(await foldInterviewIntoMainChat(db, companyId)).toBe(false);
+
+    // Undo, so the next test starts the interview fresh in an empty main chat.
+    await db.delete(tethrRouteRuns).where(eq(tethrRouteRuns.id, old.id));
+    await clearSession(companyId, companyId);
+    await updateSetup(companyId, (s) => ({ ...s, interviewThreadId: null }));
+  });
+
+  it("starts the goals interview once, in the main chat", async () => {
     const app = await appFor(mark);
     const first = await request(app).post(`/api/tethr/${companyId}/setup/interview`).send({}).expect(200);
-    expect(first.body.started).toBe(true);
+    expect(first.body).toEqual({ threadId: companyId, started: true });
     const second = await request(app).post(`/api/tethr/${companyId}/setup/interview`).send({}).expect(200);
-    expect(second.body).toEqual({ threadId: first.body.threadId, started: false });
-    expect(listSideChats(companyId).some((c) => c.threadId === first.body.threadId && c.title === "Goals interview")).toBe(true);
-    const [turn] = await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.id, first.body.threadId));
-    expect(turn.requestText.startsWith("Setup: goals interview")).toBe(true);
-    expect(turn.sourceKey).toBe("chat-system");
+    expect(second.body).toEqual({ threadId: companyId, started: false });
+    expect(listSideChats(companyId).some((c) => c.title === "Goals interview")).toBe(false);
+    const turns = await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.threadId, companyId));
+    expect(turns).toHaveLength(1);
+    expect(turns[0].requestText.startsWith("Setup: goals interview")).toBe(true);
+    expect(turns[0].sourceKey).toBe("chat-system");
+  });
+
+  it("never folds a side chat into a main chat that already has turns", async () => {
+    const [side] = await db
+      .insert(tethrRouteRuns)
+      .values({ companyId, requestText: "Setup: goals interview", invocationSource: "chat", status: "done" })
+      .returning();
+    await db.update(tethrRouteRuns).set({ threadId: side.id }).where(eq(tethrRouteRuns.id, side.id));
+    await addSideChat(companyId, side.id, "Goals interview");
+    const before = getSetup(companyId).interviewThreadId;
+    await updateSetup(companyId, (s) => ({ ...s, interviewThreadId: side.id }));
+    expect(await foldInterviewIntoMainChat(db, companyId)).toBe(false);
+    expect(listSideChats(companyId).some((c) => c.threadId === side.id)).toBe(true);
+    await updateSetup(companyId, (s) => ({ ...s, interviewThreadId: before }));
   });
 
   it("turns the chosen rhythm into core routines in the right time zone, and pauses the rest", async () => {

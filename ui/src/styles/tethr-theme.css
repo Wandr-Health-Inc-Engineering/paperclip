@@ -876,6 +876,11 @@ nav[aria-label="Mobile navigation"],
    Animations target the major regions independently so the eye picks up
    layered movement instead of one block sliding. ===== */
 
+/* Entrances that animate `filter` fill `backwards`, not `both`: in Chromium an
+   element whose finished animation is still held (fill `both`/`forwards`) on
+   `filter` stays a backdrop root, so every glass surface inside <main> stopped
+   blurring what's behind it (the chat drawer read as clear glass over text).
+   `backwards` keeps the first frame during the delay and lets go at the end. */
 @keyframes tethr-rise {
   0% {
     opacity: 0;
@@ -884,12 +889,12 @@ nav[aria-label="Mobile navigation"],
   }
   60% {
     opacity: 1;
-    filter: blur(0);
+    filter: none;
   }
   100% {
     opacity: 1;
     transform: translateY(0);
-    filter: blur(0);
+    filter: none;
   }
 }
 
@@ -915,14 +920,14 @@ aside {
 
 main,
 [role="main"] {
-  animation: tethr-rise 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: tethr-rise 620ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
   animation-delay: 80ms;
 }
 
 [data-slot="card"],
 [data-slot="dialog-content"],
 [data-slot="popover-content"] {
-  animation: tethr-rise 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: tethr-rise 480ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 /* Stagger card entries when a list of them mounts together. */
@@ -1107,7 +1112,7 @@ a[role="button"]:active {
   100% {
     opacity: 1;
     transform: none;
-    filter: blur(0);
+    filter: none;
   }
 }
 
@@ -1525,7 +1530,7 @@ html.tethr-intro-hold [data-slot="card"] {
   to {
     opacity: 1;
     transform: none;
-    filter: blur(0);
+    filter: none;
   }
 }
 @keyframes tethr-intro-track {
@@ -1561,7 +1566,7 @@ html.tethr-intro-hold [data-slot="card"] {
     opacity: 1;
     scale: 1;
     rotate: 0deg;
-    filter: blur(0);
+    filter: none;
   }
 }
 /* As it settles, the core flares once. */
@@ -1667,7 +1672,7 @@ html.tethr-intro-hold [data-slot="card"] {
   to {
     opacity: 1;
     transform: none;
-    filter: blur(0);
+    filter: none;
   }
 }
 
@@ -1899,7 +1904,7 @@ html.tethr-intro-hold [data-slot="card"] {
   to {
     opacity: 1;
     transform: none;
-    filter: blur(0);
+    filter: none;
   }
 }
 @keyframes tethr-welcome-rise {
@@ -1923,7 +1928,7 @@ html.tethr-intro-hold [data-slot="card"] {
     opacity: 1;
     scale: 1;
     rotate: 0deg;
-    filter: blur(0);
+    filter: none;
   }
 }
 /* On a first launch the welcome sits under the intro: its entrance waits and
@@ -1983,6 +1988,28 @@ html.tethr-intro-hold .tethr-welcome * {
 }
 @media (prefers-reduced-motion: reduce) {
   .tethr-task-pill {
+    animation: none;
+  }
+}
+
+/* Chat: while an answer streams, each new word (StreamingMarkdown wraps them)
+   comes up out of a soft blur. Words already on screen keep their elements, so
+   only the newest ones play it. */
+.tethr-stream .tethr-w {
+  animation: tethr-word-in 420ms var(--tethr-ease) backwards;
+}
+@keyframes tethr-word-in {
+  from {
+    opacity: 0;
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tethr-stream .tethr-w {
     animation: none;
   }
 }

@@ -44,7 +44,7 @@ export interface SetupState {
   areas: string[];
   timezone: string;
   rhythm: Record<RhythmKey, RhythmChoice>;
-  /** The side chat the goals interview runs in. */
+  /** The thread the goals interview runs in (the main chat; older ones ran in a side chat). */
   interviewThreadId: string | null;
   /** How hard the goals push (the interview's uplift, and how targets adjust). */
   growthPace: GrowthPace;
@@ -129,7 +129,7 @@ export async function forgetSetup(companyIds: string[]): Promise<void> {
   });
 }
 
-/** The first message of the goals interview (a system turn in its own side chat).
+/** The first message of the goals interview (a system turn in the main chat).
  * Its first line is what the chat shows; the rest is tethr's brief. */
 export function interviewBrief(
   areas: string[],
@@ -154,7 +154,7 @@ For each area:
 
 Along the way, fill in Memory.md's sections (The company, Products & prices, Who buys, Channels & partners, Voice & constraints, How the team works) with what you learn. Facts only.
 
-The areas are already saved as goals: call goals_list first. Then greet ${person} in one line, say how this will go (one area at a time, real numbers first, nothing saved without a yes) and start with ${areas[0] ?? DEFAULT_AREAS[0]}.
+The areas are already saved as goals: call goals_list first. If an area already has agreed metrics, say what's saved and ask whether to keep it or revisit it; if they keep it, move on. Then greet ${person} in one line, say how this will go (one area at a time, real numbers first, nothing saved without a yes) and start with ${areas[0] ?? DEFAULT_AREAS[0]}.
 Aggregates only: never write down a customer's name, email or health details. Don't send, post or spend anything during setup.`;
 }
 

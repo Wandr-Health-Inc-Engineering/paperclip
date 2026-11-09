@@ -55,7 +55,7 @@ export const STEP_GUIDE: Record<StepKey, StepGuide> = {
     lede: "Real numbers in, realistic targets out.",
     why: "This is where tethr earns its keep. It pulls a starting point from your tools, shows you the trend, and proposes a target you can stand behind. Nothing is saved until you say yes.",
     does: [
-      "Opens a side chat called Goals interview and asks about one goal at a time.",
+      "Starts in your chat with tethr, the one ongoing conversation you keep using after setup, and asks about one goal at a time.",
       "Proposes one to three measures per goal, each with a start, a target, a date, and exactly how it will be measured.",
       "Fills in its memory with your products, customers and channels as you talk.",
     ],

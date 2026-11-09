@@ -15,6 +15,7 @@ import {
   PanelLeft,
   PanelLeftClose,
   Paperclip,
+  Pin,
   Plus,
   RotateCcw,
   Send,
@@ -29,6 +30,7 @@ import { CHIP_HOVER, CHIP_SURFACE } from "@/components/tethr/Chip";
 import { OutputPanel, type PanelFile } from "@/components/tethr/OutputPanel";
 import { TethrSetupNudge, useFirstRunToSetup } from "@/components/tethr/SetupNavItem";
 import { Nebula } from "@/components/tethr/Nebula";
+import { StreamingMarkdown } from "@/components/tethr/StreamingMarkdown";
 import { OutputStatusBadge, StatusDot, formatRelative } from "@/components/tethr/primitives";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
@@ -63,10 +65,10 @@ const DECIDABLE = new Set(["gated", "changes_requested"]);
 const PAGE = 40;
 
 const SUGGESTIONS = [
-  "What's on the plate today?",
-  "Any travel health news worth acting on?",
-  "Plan a spring-break malaria push",
-  "How are we tracking against budget?",
+  "What should we focus on this week?",
+  "How are we tracking against our goals?",
+  "Find one quick win for new customers",
+  "What's waiting on me?",
 ];
 
 export function TethrChat() {
@@ -230,6 +232,17 @@ export function TethrChat() {
     const el = scrollRef.current;
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
   }, [tick]);
+  // An answer also grows between polls (it types itself out), so follow its height too.
+  const [content, setContent] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!content || !el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (stickToBottom.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [content]);
 
   if (!selectedCompanyId) {
     return <EmptyState icon={Send} message="Select a company to open the chat." />;
@@ -285,7 +298,8 @@ export function TethrChat() {
       ) : null}
 
       {isMain ? (
-        <div className="absolute left-1/2 top-1 z-20 -translate-x-1/2">
+        // Phones: its own row under the chip, so the two never overlap.
+        <div className="absolute left-1/2 top-[52px] z-20 -translate-x-1/2 md:top-1">
           <TethrSetupNudge />
         </div>
       ) : null}
@@ -302,7 +316,10 @@ export function TethrChat() {
         {empty ? (
           <ChatEmpty isDraft={isDraft} onPick={(s) => send.mutate({ text: s, attachments: [] })} />
         ) : (
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-9 px-4 pb-6 pt-[72px] md:px-6">
+          <div
+            ref={setContent}
+            className={cn("mx-auto flex w-full max-w-3xl flex-col gap-9 px-4 pb-6 pt-[72px] md:px-6", isMain && "pt-[112px] md:pt-[72px]")}
+          >
             {visibleRuns.length >= limit && limit < 100 ? (
               <button
                 type="button"
@@ -375,8 +392,10 @@ const isMemoryFile = (p: string) => /(^|\/)Memory\.md$/i.test(p);
 
 // ---- side chats drawer ---------------------------------------------------------
 
-/** A sidebar icon at the chat's top-left that slides out your side chats. In a
- * side chat, a small chip shows its title with a way back to tethr. */
+/** A sidebar icon at the chat's top-left that slides out your chats: the
+ * ongoing chat with tethr pinned on top (it can't be closed), then side chats.
+ * Beside the icon, a chip names where you are: "tethr · ongoing", or a side
+ * chat's title with a way back. */
 function SideChats({
   isMain,
   isDraft,
@@ -431,9 +450,9 @@ function SideChats({
           ref={toggleRef}
           type="button"
           onClick={() => setOpen((v) => !v)}
-          aria-label={open ? "Hide side chats" : "Show side chats"}
+          aria-label={open ? "Hide chats" : "Show chats"}
           aria-expanded={open}
-          title="Side chats"
+          title="Chats"
           className="tethr-glass relative grid h-9 w-9 shrink-0 place-items-center rounded-full text-foreground/80 transition-colors hover:text-foreground"
         >
           {open ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
@@ -443,7 +462,15 @@ function SideChats({
             </span>
           ) : null}
         </button>
-        {!isMain ? (
+        {isMain ? (
+          <span
+            className="tethr-glass flex h-9 min-w-0 items-center gap-2 rounded-full px-3.5 text-[13px]"
+            title="Your one ongoing chat with tethr. It's always here and can't be closed; open a side chat for a focused task."
+          >
+            <span className="truncate">tethr</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] tethr-text-3">ongoing</span>
+          </span>
+        ) : (
           <span className="tethr-glass flex h-9 min-w-0 items-center gap-1 rounded-full pl-3.5 pr-1 text-[13px]">
             <span className="min-w-0 truncate">{isDraft ? "New side chat" : sideTitle}</span>
             <button
@@ -456,12 +483,12 @@ function SideChats({
               <CornerUpLeft className="h-3.5 w-3.5" />
             </button>
           </span>
-        ) : null}
+        )}
       </div>
 
       <div
         ref={panelRef}
-        aria-label="Side chats"
+        aria-label="Chats"
         aria-hidden={!open}
         inert={!open || undefined}
         className={cn(
@@ -469,7 +496,22 @@ function SideChats({
           open ? "translate-x-0 opacity-100" : "pointer-events-none -translate-x-3 opacity-0",
         )}
       >
-        <div className="flex items-center justify-between px-2 pb-1 pt-0.5">
+        <button
+          type="button"
+          onClick={() => pick(onOpenMain)}
+          aria-current={isMain ? "page" : undefined}
+          className={cn(
+            "flex items-center gap-2.5 rounded-[10px] px-2 py-2 text-left transition-colors",
+            isMain ? "bg-[var(--tethr-select-blur)]" : "hover:bg-[var(--tethr-select-blur)]",
+          )}
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13px]">tethr</span>
+            <span className="block text-[11px] tethr-text-3">Your ongoing chat · always here</span>
+          </span>
+          <Pin className="h-3.5 w-3.5 shrink-0 tethr-text-3" aria-hidden="true" />
+        </button>
+        <div className="mt-2 flex items-center justify-between px-2 pb-1">
           <span className="tethr-eyebrow">side chats</span>
           <button
             type="button"
@@ -480,16 +522,6 @@ function SideChats({
             New
           </button>
         </div>
-        {!isMain ? (
-          <button
-            type="button"
-            onClick={() => pick(onOpenMain)}
-            className="flex items-center gap-2 rounded-[10px] px-2 py-2 text-left text-[13px] text-muted-foreground transition-colors hover:bg-[var(--tethr-select-blur)] hover:text-foreground"
-          >
-            <CornerUpLeft className="h-3.5 w-3.5 shrink-0" />
-            Back to tethr
-          </button>
-        ) : null}
         {sideChats.map((s) => (
           <div
             key={s.threadId}
@@ -520,7 +552,7 @@ function SideChats({
         ))}
         {!sideChats.length ? (
           <p className="px-2 py-1 text-[12px] leading-snug tethr-text-3">
-            None yet. Start one for a focused task or side project; it stays separate from your chat with tethr.
+            None yet. Start one for a focused task or side project; it stays separate from your ongoing chat.
           </p>
         ) : null}
       </div>
@@ -543,7 +575,7 @@ function ChatEmpty({ isDraft, onPick }: { isDraft: boolean; onPick: (text: strin
         <p className="mx-auto max-w-[46ch] text-[13.5px] text-muted-foreground">
           {isDraft
             ? "Start with what this chat is about. It stays separate from your chat with tethr."
-            : "Ask anything. tethr keeps the conversation going and works toward your goals."}
+            : "This is your ongoing chat with tethr. It's always here and remembers what you've worked on together. Ask anything."}
         </p>
       </div>
       {!isDraft ? (
@@ -754,7 +786,7 @@ function SessionTurn({
       ) : (
         <UserBubble text={run.requestText} at={run.createdAt} attachments={run.attachments} onOpenFile={onOpenFile} />
       )}
-      {run.resultText ? <MarkdownBody className="tethr-chat-md">{run.resultText}</MarkdownBody> : null}
+      {run.resultText ? <StreamingMarkdown text={run.resultText} live={running} className="tethr-chat-md" /> : null}
       {tools.length && !running ? <StepsSummary hops={tools} /> : null}
       {run.status === "failed" ? (
         <p className="text-[13.5px] text-[var(--tethr-bad)]">{run.error || "Something went wrong."}</p>

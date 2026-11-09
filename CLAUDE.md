@@ -502,11 +502,14 @@ label "Chat". Run records still store `invocationSource: "console"` (data, uncha
   `POST /chats {request}` (opens a side chat with its first message), `DELETE /chats/:threadId`
   (main can't be removed), `GET /chats/:threadId/runs?limit=` (newest runs oldest-first, each
   with its outputs). `routing.listThreadRuns` / `threadStats` back them.
-- **UI** (`TethrChat.tsx`) — **one area, no panel-in-a-panel, no "main chat" label (Mark's
-  calls):** the conversation sits directly on the page and scrolls (fading) to the top. A
-  **sidebar icon** at the top-left (badge = side-chat count) slides out a glass drawer: side chats
-  (hover X removes one from the list), New, and "Back to tethr" when you're in one. In a side
-  chat, a small chip next to the icon shows its title with a back-to-tethr button. Messages:
+- **UI** (`TethrChat.tsx`) — **one area, no panel-in-a-panel (Mark's call):** the conversation
+  sits directly on the page and scrolls (fading) to the top. A **sidebar icon** at the top-left
+  (badge = side-chat count) slides out a glass drawer: the main chat pinned on top ("tethr ·
+  Your ongoing chat · always here", pin icon, no remove), then side chats (hover X removes one
+  from the list) and New. Beside the icon a chip names where you are: **"tethr ONGOING"** in the
+  main chat (Mark, 2026-11-08: "it should be clear it's the main ongoing chat you can't delete"),
+  or a side chat's title with a back-to-tethr button. The empty main chat says it's the ongoing
+  chat; its suggestions are company-neutral. Messages:
   yours on the right; reply = route chips expandable to the full RouteFlow, status + time, the
   answer as Markdown, filed outputs as links. Pill composer at the bottom (Enter sends). URL: `/chat` = the ongoing chat,
   `?chat=<threadId>` = side, `?chat=new` = a side chat being started. **Gated outputs render as
@@ -549,6 +552,16 @@ remembered nothing Mark said, and could only read). Spike findings: `tasks/phase
   workspace; `CLAUDE.md` protected; Bash off unless `shell:"ask"`. Deny messages start
   "Tethr approval gate:" and the persona says they're genuine (otherwise the model treats them as
   injections).
+- **Smooth streaming (2026-11-08, Mark: "the text comes out in clunks"):** the runner flushes
+  `resultText` every 250ms and the chat polls every 500ms, so text lands in bursts.
+  `components/tethr/StreamingMarkdown.tsx` reveals it word by word, trailing the stream by ~0.7s
+  (`lib/tethr-stream.ts`: `targetRate`, `smoothRate`, `revealEnd` cuts at word ends and holds back
+  bare list/heading markers, `closeOpenMarkdown` closes an open fence/inline code/bold). Each new
+  word fades up from a soft blur: a rehype plugin wraps words in `span.tethr-w`; the components are
+  module-level so react-markdown's positional keys keep old words mounted and only new ones play
+  the fade (core `MarkdownBody` builds its components per render, which remounts everything, so
+  it's used only once the reveal has caught up). A turn already finished on load shows whole. The
+  chat follows the growing answer with a ResizeObserver. Tests: `ui/src/lib/tethr-stream.test.ts`.
 - **Approvals (phase 18.3)** `assistant/grants.ts` + `hook-handler.ts`: an "ask" call becomes a
   gated Tethr output kind **`external_action`** (sensitivity `external`, or `public`/`spend`/
   `medical`; both are text columns → no migration) with `routeRunId` = the turn (inline chat
@@ -573,7 +586,7 @@ remembered nothing Mark said, and could only read). Spike findings: `tasks/phase
   turns). `GET|POST /tethr/:companyId/chat-engine` is the rollback switch.
 - **Routes:** `POST /tethr/:companyId/chats/:threadId/messages`, `POST /chats` (side chat via the
   runner), `POST /chat-turns/:runId/stop`, `POST /chats/:threadId/reset`. UI `TethrChat.tsx`
-  `SessionTurn`: streaming answer, then (while it runs) one "background task" pill at the foot
+  `SessionTurn`: streaming answer (`StreamingMarkdown`, below), then (while it runs) one "background task" pill at the foot
   of the turn (`Working`: nebula, what it's doing, elapsed, "N steps" that opens the list, Stop),
   and after it a one-line steps summary under the answer (`StepsSummary`). Steps never list
   above the answer, so the text doesn't jump (Mark, 2026-11-08). File chips; approval cards have
@@ -1015,7 +1028,10 @@ Mark's call: start tethr over from scratch, with real goals. The plan is in `tas
   - `/setup` (`TethrSetup.tsx`) has five steps: basics, connections checklist, goals interview,
     rhythm, finish.
   - State lives in instance-dir `tethr-setup.json` (`server/src/tethr/setup.ts`).
-  - The **goals interview** is a side chat ("Goals interview"). Its first turn is a system turn
+  - The **goals interview** runs in the **main chat** (since 2026-11-08; it was a "Goals
+    interview" side chat). `foldInterviewIntoMainChat` (`main-chat.ts`, run at boot and by
+    `POST /setup/interview`) moves an older side-chat interview into the main chat while the main
+    chat is empty: its runs, Claude session, notes, taint and pending grants. Its first turn is a system turn
     whose brief (`interviewBrief`) tells tethr to pull aggregate baselines, propose targets, save
     only what Mark agrees to, and fill Memory.md. The chat shows only that turn's first line
     (`SystemLine`).
@@ -1358,6 +1374,10 @@ Frosted panels floating over warm ink: the Aina glass card + Oura's calm and big
   a lit top edge; radius 14px panels, 10px fields, pill buttons (`tethr-btn` + `-primary/-glass/
   -ghost/-danger`). Wells: `tethr-inset`. Empty states: `tethr-empty`. Budgets: `BudgetRing`
   (Oura ring) / `BudgetBar`.
+- **Entrance animations that touch `filter` fill `backwards`, never `both`/`forwards`:** in
+  Chromium a held animation on `filter` keeps the element a backdrop root, so every glass surface
+  inside `<main>` stopped blurring (the chat drawer read as clear glass over text). Keyframes end
+  on `filter: none`.
 - **Gradients:** only the ambient ground light and the reeded `tethr-reeds` texture (Console hero
   + empty states). No emoji. Product name lowercase **"tethr"** (logo lockup still TBD).
 - **Phones and touch (UI pass, 2026-11-08):**

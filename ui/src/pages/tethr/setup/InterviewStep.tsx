@@ -2,21 +2,23 @@ import { useMutation } from "@tanstack/react-query";
 import { StatusDot } from "@/components/tethr/primitives";
 import { formatMetric } from "@/components/tethr/Scorecard";
 import { tethrApi, type TethrGoal } from "@/api/tethr";
-import { Link, useNavigate } from "../../../lib/router";
+import { useNavigate } from "../../../lib/router";
 import { ErrorLine, GLASS_BUTTON, PRIMARY_BUTTON, StepActions } from "./controls";
 import { activeGoals, interviewComplete, useRefreshSetup, type StepProps } from "./shared";
 
-// Step 4: tethr interviews you in a side chat and saves goals with numbers;
-// they appear here as they're saved.
+// Step 4: tethr interviews you in the main chat (the one ongoing conversation,
+// which carries on after setup) and saves goals with numbers; they appear here
+// as they're saved.
 
 export function InterviewStep({ companyId, data, onDone }: StepProps) {
   const navigate = useNavigate();
   const refresh = useRefreshSetup(companyId);
   const start = useMutation({
     mutationFn: () => tethrApi.startInterview(companyId),
+    // Starting is idempotent: it opens the interview that's already going.
     onSuccess: (r) => {
       refresh();
-      navigate(`/chat?chat=${r.threadId}`);
+      navigate(r.threadId === companyId ? "/chat" : `/chat?chat=${r.threadId}`);
     },
   });
   const markDone = useMutation({
@@ -31,7 +33,7 @@ export function InterviewStep({ companyId, data, onDone }: StepProps) {
   return (
     <div className="space-y-4">
       <p className="text-[12.5px] text-muted-foreground">
-        tethr talks it through with you in a side chat, one goal at a time. It pulls a baseline from your tools (aggregate numbers only), proposes a
+        tethr talks it through with you in your chat, the one ongoing conversation you'll keep using after setup, one goal at a time. It pulls a baseline from your tools (aggregate numbers only), proposes a
         realistic target from the trend and your growth pace, and saves each goal once you agree. It also fills in its memory with your products,
         customers and channels. Goals appear here as they're saved.
       </p>
@@ -42,9 +44,9 @@ export function InterviewStep({ companyId, data, onDone }: StepProps) {
       <ErrorLine error={start.error ?? markDone.error} />
       <StepActions>
         {data.state.interviewThreadId ? (
-          <Link to={`/chat?chat=${data.state.interviewThreadId}`} className={GLASS_BUTTON}>
-            Continue the interview
-          </Link>
+          <button type="button" onClick={() => start.mutate()} disabled={start.isPending} className={GLASS_BUTTON}>
+            Continue in your chat
+          </button>
         ) : (
           <button type="button" onClick={() => start.mutate()} disabled={!goals.length || start.isPending} className={PRIMARY_BUTTON}>
             Start the interview
