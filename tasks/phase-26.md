@@ -1,6 +1,6 @@
 # Phase 26: Jev decides, tethr learns
 
-Status: plan, waiting for Mark's go. Nothing in it is built yet.
+Status: 26.1 is built. The rest is a plan; each step waits for Mark's go.
 
 ## What Mark asked for (2026-11-09)
 
@@ -14,6 +14,11 @@ Status: plan, waiting for Mark's go. Nothing in it is built yet.
 - "Eventually tethr should be able to self market and run its own business. That will be the
   ultimate sales strategy, where I am marketing tethr to others based on what it's doing and
   recommending."
+- "How will it know what's best to build a company? Like all the different aspects. Customer
+  feedback, SEO, GEO, and all the elements?" Then: "Add a growth map and it would be really cool
+  if you could develop it as a sort of memory map almost like a galaxy solar star style system. I
+  have seen some RPG games have this kind of system even with skills and improvement. I want it
+  to improve with a visual understanding." (26.9)
 
 ## Who does what
 
@@ -245,6 +250,162 @@ revenue, its own agents for content, outreach and follow-up), a public proof pag
 outcomes with names removed (anything public always asks), hosted logins, and learning kept
 separate per customer so one company's data never feeds another's lessons.
 
+## 26.9 The growth map (a galaxy)
+
+Sketch, with sample levels: `tasks/phase-26-growth-map-sketch.png` (and `.svg`).
+
+### The problem it solves
+
+- tethr works on what it's asked, the Monday plan and goals that fall behind. An area with no goal,
+  like AI search or customer feedback, may never come up.
+- It loads a playbook only if it thinks to.
+- You can't see at a glance what tethr knows, where the business is strong, or what's untouched.
+
+### What it is
+
+One picture of everything that builds a company, and how far along each part is. It is also the
+map of what tethr knows.
+
+- **The center** is the company: tethr's nebula, with the company's overall level.
+- **Each star** is a growth area, on one of two spiral arms. A brighter, bigger star is a higher
+  level. An area nobody has looked at is a faint dashed ring.
+- **The ring** around a star has six segments: the six things an area can unlock (below).
+- **Each planet** is something tethr knows about that area: a note, a skill, a lesson. More
+  knowledge means more planets.
+- **A line** joins areas that feed each other. It lights up when both are at least Working.
+- **Focus** marks the area tethr is working this week.
+- **The one color** on the map is a small status dot: an agent is working there now.
+
+### The 12 areas
+
+The list is the same for any company. An area that doesn't apply can be hidden.
+
+| Area | Playbooks tethr loads for it | Data it uses |
+|---|---|---|
+| Positioning | obviously-awesome, storybrand-messaging | none |
+| Customer voice | customer-research, mom-test, jobs-to-be-done | a feedback source such as Gmail or Slack (themes only) |
+| Search (SEO) | seo-audit, programmatic-seo, schema-markup | Google Ads keyword volumes |
+| AI search (GEO) | ai-seo, schema-markup | your own pages |
+| Content & social | content-strategy, social-content, copywriting | none |
+| Paid ads | paid-ads, ad-creative | Google Ads |
+| Conversion | page-cro, signup-flow-cro, ab-test-setup | PostHog |
+| Pricing & offers | pricing-strategy, hundred-million-offers | Stripe |
+| Email & lifecycle | email-sequence, cold-email, lead-magnets | Gmail |
+| Retention | churn-prevention, improve-retention | Stripe |
+| Partnerships | referral-program, sales-enablement | none |
+| Measurement | analytics-tracking, scorecard-marketing | PostHog, Stripe |
+
+The playbooks are the skills already on the Mac (`~/.claude/skills`). An area lists only the ones
+that are installed.
+
+### Levels: six unlocks per area
+
+Each unlock is earned by something tethr can check, never by opinion.
+
+| Unlock | Earned when |
+|---|---|
+| Mapped | tethr has audited the area and recorded a score out of 100 |
+| Equipped | the data the area uses is connected |
+| Informed | tethr holds at least 3 notes, skills or lessons about it |
+| Aimed | the area has a number: a goal metric tied to it |
+| Staffed | an agent or a schedule owns it |
+| Proven | its number is on pace, or its audit score has risen 10 points or more |
+
+- **An area's level** is how many unlocks it has, 0 to 6: Unexplored, Discovered, Charted,
+  Working, Established, Strong, Mastered.
+- **The company's level** is the sum, 0 to 72.
+- **Levels can drop.** A number that falls behind loses Proven. A disconnected tool loses Equipped.
+
+### How it improves as tethr works
+
+- tethr audits an area: Mapped lights up, with the score and the next three steps.
+- You connect a tool: Equipped lights up for every area that uses it.
+- tethr saves a note or a skill about an area: a planet appears there.
+- A goal gets a number for the area: Aimed. An agent takes it on: Staffed.
+- The number moves: Proven.
+- An unlock earned since your last visit blooms once when you open the map. With reduced motion
+  on, it shows a "New" tag and no animation.
+
+### What you do on it
+
+- **Click a star** to open its panel:
+  - its level, and the six unlocks with what would earn the next one
+  - what tethr knows there (notes, skills), its numbers, and who's on it
+  - the playbooks for it
+  - the last audit: score, summary, next steps and the file
+  - what tethr can't see yet for that area (for example Search Console), so a low level is
+    explained
+- **"Explore with tethr"** in the panel starts an audit of that area in the main chat. It runs
+  only when you click it.
+- **Map or List:** the same areas as rows with level bars. On a phone, the list sits under a
+  smaller map.
+
+### How tethr uses it
+
+- **In its working notes every turn:** one line per area (level and next unlock), so it knows
+  what's unexplored when it plans.
+- **Playbooks first:** before working on an area it loads that area's playbooks.
+- **Tools** (on the `tethr` tools server):
+  - `growth_map` (read): the whole map as text.
+  - `map_area` (save, no approval card): record an audit of one area: a score, a two-sentence
+    summary, up to five next steps, the audit file, and which number and agent belong to it.
+  - `memory` gains an optional area, so a note lands on the right star.
+- **Sorting what it knows:** a note or skill with no area is placed by keyword rules on the Mac.
+  Jev takes that over once 26.2 exists.
+- **Choosing the focus:** the Monday plan looks at the map and picks the area with the biggest gap
+  toward a goal that's behind. Jev ranks the areas once 26.2 exists.
+
+### The look
+
+- Smoked Glass, like the rest of tethr: warm neutrals in Day and Night, Geist, no brand color.
+- Stars, rings, planets and links are all the ink color at different strengths.
+- Slow orbits, still under reduced motion.
+- Every star is reachable by keyboard, and the List view carries the same information.
+
+### Rules
+
+- **Evidence only.** Nobody, tethr included, can set a level. `map_area` records an audit; the
+  server works out the unlocks.
+- **Nothing runs on its own.** The map is worked out from what already exists. An audit runs when
+  you click, or when a schedule you switched on plans one.
+- **No patient information.** Audit summaries and next steps pass the same check as memory.
+- **The Slack idea check can't write the map** (it is read-only already).
+
+### Files
+
+- **Server:**
+  - new `server/src/tethr/growth-map/`: `areas.ts` (the 12 areas), `map.ts` (the unlocks worked
+    out from evidence), `store.ts` (audits and links, in `tethr-growth-map.json`), `sort.ts`
+    (keyword rules)
+  - `assistant/map-tools.ts` (`growth_map`, `map_area`), `assistant/memory-tools.ts` (the area
+    on a note), `assistant/workspace.ts` (the map in the working notes), `assistant/policy.ts`
+  - `routes/tethr-growth-map.ts`: read the map; start an audit (people only)
+  - `rhythm.ts` (the Monday plan looks at the map), `reset.ts` (the new store)
+- **UI:**
+  - new `ui/src/pages/tethr/TethrGrowthMap.tsx`, `ui/src/pages/tethr/map/` (galaxy, panel, list)
+  - `ui/src/lib/tethr-growth-map.ts` (layout and what's new since the last visit)
+  - `tethr-theme.css` (`.tethr-galaxy*`), a "Map" entry in the Operate nav (a core file, logged
+    in DECISIONS.md)
+- No database change.
+
+### Tests and checks
+
+- **Server:** every area has valid playbooks and links; each unlock from its evidence, including
+  levels dropping; `map_area` refuses bad input and health details; the keyword rules; the map
+  text in the working notes; only a person can start an audit.
+- **UI:** no two stars or labels overlap at desktop and phone widths; what counts as new since
+  the last visit.
+- **Throwaway copy with sample data:** stars at every level from 0 to 6; the panel; "Explore" with
+  real Claude on one area; Day, Night and phone. Screenshots sent to Mark.
+
+### Not in this step
+
+- Connecting Search Console.
+- Checking what AI search engines say about you. It would be billed per use, so it's a separate
+  decision.
+- Your own custom areas.
+- Jev ranking the areas (that comes with 26.2).
+
 ## Rules that hold throughout
 
 - **Nothing runs on its own until you switch it on.** Every piece ships Off. Builds never create,
@@ -263,7 +424,8 @@ separate per customer so one company's data never feeds another's lessons.
 
 | Step | Delivers | Needs from you |
 |---|---|---|
-| 26.1 | Slack and the terminal reach the real tethr; Slack accepts files | nothing |
+| 26.1 | Slack and the terminal reach the real tethr; Slack accepts files | built |
+| 26.9 | The growth map: every area on one galaxy, with levels | a yes on the sketch; built next |
 | 26.2 | Jev decisions with a record, modes and a cap | nothing (the key works) |
 | 26.3 | The Inbox, with suggestions | first test: drop files in the Inbox folder |
 | 26.4 | Report urgency, lesson scoring | nothing |
