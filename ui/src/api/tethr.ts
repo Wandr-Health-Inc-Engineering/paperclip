@@ -358,6 +358,14 @@ export interface TethrTeamSettings {
   newAgents: "ask" | "auto";
   maxAgents: number;
   monthlyBudgetUsd: number;
+  /** Phase 24: what tethr does on its own (all off by default). */
+  autonomy: TethrTeamAutonomy;
+}
+
+export interface TethrTeamAutonomy {
+  actOnReports: boolean;
+  dailyReview: { enabled: boolean; time: string; weekdaysOnly: boolean };
+  maxSelfTurnsPerDay: number;
 }
 
 export interface TethrIntegrations {
@@ -377,7 +385,9 @@ export interface TethrIntegrationsPatch {
   internalAddresses?: string[];
   shell?: "off" | "ask";
   assistant?: { engine?: "session" | "routing"; model?: string };
-  team?: Partial<TethrTeamSettings>;
+  team?: Partial<Omit<TethrTeamSettings, "autonomy">> & {
+    autonomy?: Partial<Omit<TethrTeamAutonomy, "dailyReview">> & { dailyReview?: Partial<TethrTeamAutonomy["dailyReview"]> };
+  };
 }
 
 /** Phase 23: an agent on tethr's team, with what it's doing right now. */
@@ -390,6 +400,13 @@ export interface TethrTeamAgent {
   paused: boolean;
   /** Its own chat (open with ?chat=<threadId>). */
   threadId: string;
+  /** Phase 24: runs a sub-team of its own. */
+  lead: boolean;
+  /** For a sub-agent: its lead. */
+  leadTag: string | null;
+  /** A lead's sub-agents. */
+  subTeam: string[];
+  goal: { id: string; title: string | null } | null;
   connectors: string[];
   schedule: { cron: string; brief: string; words: string } | null;
   ownerRole: "tech" | "exec" | "growth";

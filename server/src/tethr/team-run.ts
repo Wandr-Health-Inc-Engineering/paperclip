@@ -75,7 +75,11 @@ export async function runTaskInAgentChat(
   const { companyId, agent, issue } = input;
   const team = teamService(db);
   const report = (outcome: ReportOutcome, text: string, runId: string | null) =>
-    deliverAgentReport(db, { companyId, agent, title: issue.title, identifier: issue.identifier, outcome, text, runId }, { post: input.post });
+    deliverAgentReport(
+      db,
+      { companyId, agent, title: issue.title, identifier: issue.identifier, outcome, text, runId, partOfLeadTask: !!issue.parentId },
+      { post: input.post },
+    );
 
   // The roll-up closes work already started, so it isn't held back by the cap.
   if (!input.rollup && (await team.runsToday(agent.agentId)) >= agent.maxRunsPerDay) {
@@ -126,13 +130,18 @@ export async function executeTeamTask(
     return { ...base, exitCode: 0, summary: `${agent.tag} is paused; ${issue.identifier ?? "the task"} was cancelled.` };
   }
 
-  // Woken because its sub-team finished: roll up (once every sub-task is closed).
+  // A task that has sub-tasks is past its first turn, whatever woke it (the
+  // sub-team finishing, or core handing an open task back): never work it again
+  // from the top, which would hand the same work out twice.
+  // - sub-tasks still open → it waits (blocked) for them;
+  // - all closed → the roll-up. (A task already rolled up is done, and core
+  //   doesn't wake a done task, so the roll-up happens once.)
   let rollup: ChildResult[] | null = null;
-  if (ctx.context?.wakeReason === "issue_children_completed") {
-    const loaded = await tasks.load(issueId);
-    const children = loaded?.children ?? [];
+  const children = (await tasks.load(issueId))?.children ?? [];
+  if (children.length) {
     if (children.some((c) => !CLOSED.includes(c.status))) {
-      return { ...base, exitCode: 0, summary: `${agent.tag}: sub-tasks of ${issue.identifier ?? "the task"} still open; not rolling up yet.` };
+      await tasks.setStatus(issueId, "blocked", { agentId: ctx.agent.id });
+      return { ...base, exitCode: 0, summary: `${agent.tag}: ${issue.identifier ?? "the task"} is waiting on its sub-team.` };
     }
     rollup = children;
   }
@@ -140,18 +149,25 @@ export async function executeTeamTask(
   await ctx.onLog("stdout", `[tethr] ${agent.tag} ${rollup ? "rolling up" : "working"} ${issue.identifier ?? issueId} in its chat\n`);
   let out = await runTaskInAgentChat(db, { companyId, agent, issue, rollup });
   // Its sub-team already finished while it was still on its turn: roll up now
-  // (core only wakes a parent that's waiting, so no wake would come later).
+  // (the task would otherwise close as done with no roll-up).
   if (out.status === "delegated" && (await openChildren(db, issueId)) === 0) {
     const children = (await tasks.load(issueId))?.children ?? [];
     out = await runTaskInAgentChat(db, { companyId, agent, issue, rollup: children });
   }
-  // finish() moves the task: done, or blocked while sub-tasks are open.
+  // finish() moves the task: done, or blocked while sub-tasks are open. Cards the
+  // turn left for the person (a proposed agent, an outward action) are their
+  // own decisions, followed up in the agent's chat; they don't hold the task
+  // open (nothing would close it when they're decided).
   await tasks.finish({
     issueId,
     agentId: ctx.agent.id,
     agentTag: agent.tag,
     runId: ctx.runId,
-    run: { status: out.status === "done" || out.status === "delegated" ? "done" : "failed", resultText: out.text, outputs: out.outputs },
+    run: {
+      status: out.status === "done" || out.status === "delegated" ? "done" : "failed",
+      resultText: out.text,
+      outputs: out.outputs.map((o) => ({ ...o, gated: false })),
+    },
     delegated: [],
   });
   // A failed or capped run waits for a person (no automatic retries that burn

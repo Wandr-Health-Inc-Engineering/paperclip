@@ -355,9 +355,10 @@ function TeamSettingsCard({
   onChange,
 }: {
   settings: TethrTeamSettings;
-  onChange: (patch: Partial<TethrTeamSettings>) => void;
+  onChange: (patch: NonNullable<TethrIntegrationsPatch["team"]>) => void;
 }) {
   const choices = (preset: number[], current: number) => [...new Set([...preset, current])].sort((a, b) => a - b);
+  const autonomy = settings.autonomy;
   return (
     <section className="space-y-2">
       <div className="flex items-baseline justify-between gap-3 px-1">
@@ -394,6 +395,55 @@ function TeamSettingsCard({
             value={String(settings.monthlyBudgetUsd)}
             options={choices([50, 100, 200, 500], settings.monthlyBudgetUsd).map((n) => ({ value: String(n), label: "$" + n }))}
             onChange={(v) => onChange({ monthlyBudgetUsd: Number(v) })}
+          />
+        </SettingRow>
+      </div>
+      <div className="flex items-baseline justify-between gap-3 px-1 pt-2">
+        <MonoTag>on its own</MonoTag>
+        <span className="text-[11.5px] tethr-text-3">What tethr does without being asked, in your chat</span>
+      </div>
+      <div className="tethr-panel divide-y divide-[var(--tethr-rim)] overflow-hidden">
+        <SettingRow
+          title="Act on reports"
+          help={
+            autonomy.actOnReports
+              ? "When agents report back, tethr checks in a few minutes later and decides what's next: follow-ups, changes, new agents (as cards)."
+              : "Off: reports wait for you, and tethr picks them up the next time you talk."
+          }
+        >
+          <PillChoice
+            value={autonomy.actOnReports ? "on" : "off"}
+            options={[
+              { value: "off", label: "Off" },
+              { value: "on", label: "On" },
+            ]}
+            onChange={(v) => onChange({ autonomy: { actOnReports: v === "on" } })}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Daily review"
+          help={
+            autonomy.dailyReview.enabled
+              ? `Each weekday at ${autonomy.dailyReview.time}, tethr checks the goals and the team and decides the day's moves.`
+              : "Off: tethr reviews the goals and the team when you ask."
+          }
+        >
+          <PillChoice
+            value={autonomy.dailyReview.enabled ? autonomy.dailyReview.time : "off"}
+            options={[
+              { value: "off", label: "Off" },
+              ...["07:30", "08:30", "09:30"].map((t) => ({ value: t, label: t.replace(/^0/, "") })),
+            ]}
+            onChange={(v) =>
+              onChange({ autonomy: { dailyReview: v === "off" ? { enabled: false } : { enabled: true, time: v, weekdaysOnly: true } } })
+            }
+          />
+        </SettingRow>
+        <SettingRow title="Turns on its own a day" help="The most check-ins and reviews tethr starts by itself in a day.">
+          <PillChoice
+            value={String(autonomy.maxSelfTurnsPerDay)}
+            options={choices([4, 8, 12], autonomy.maxSelfTurnsPerDay).map((n) => ({ value: String(n), label: String(n) }))}
+            onChange={(v) => onChange({ autonomy: { maxSelfTurnsPerDay: Number(v) } })}
           />
         </SettingRow>
       </div>

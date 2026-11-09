@@ -7,7 +7,7 @@ import { logFailure } from "./best-effort.js";
 import * as chats from "./chats.js";
 import { companyProfileService } from "./company.js";
 import { teamService, type TeamAgent } from "./team.js";
-import { reportBody, splitSlackSummary } from "./team-spec.js";
+import { leadNudgeText, reportBody, splitSlackSummary } from "./team-spec.js";
 import type { SlackPoster } from "./watch.js";
 
 // Phase 23: an agent reports back. When an agent finishes work tethr started
@@ -23,7 +23,7 @@ import type { SlackPoster } from "./watch.js";
 
 export const AGENT_REPORT_SOURCE = "tethr-agent-report";
 
-export type ReportOutcome = "done" | "failed" | "skipped" | "capped" | "waiting";
+export type ReportOutcome = "done" | "failed" | "skipped" | "capped" | "waiting" | "update";
 
 export interface AgentReport {
   companyId: string;
@@ -35,6 +35,8 @@ export interface AgentReport {
   text: string;
   /** The agent's turn, for its files. */
   runId: string | null;
+  /** A sub-task its lead handed out (the lead rolls those up; no nudge). */
+  partOfLeadTask?: boolean;
 }
 
 /** "@scout finished WD-12: Check competitor prices" and friends. */
@@ -43,6 +45,8 @@ export function reportHeadline(r: Pick<AgentReport, "agent" | "title" | "identif
   switch (r.outcome) {
     case "done":
       return `${r.agent.tag} finished ${what}`;
+    case "update":
+      return `${r.agent.tag} has an update: ${what}`;
     case "waiting":
       return `${r.agent.tag} needs your approval to finish ${what}`;
     case "capped":
@@ -107,7 +111,22 @@ export async function deliverAgentReport(db: Db, r: AgentReport, deps: { post?: 
   await chats
     .addNote(r.companyId, threadId, `${headline}${summary ? `: ${summary}` : ""}. The full report is in ${r.agent.tag}'s chat and on its card in this chat.`)
     .catch(logFailure("agent report note", { tag: r.agent.tag }));
-  if (lead) return { cardRunId: card.id };
+  if (lead) {
+    // A report the lead didn't ask for in a task (a first task, a scheduled
+    // run) wakes the lead, so the work keeps moving without anyone prompting it.
+    if (!r.partOfLeadTask && !lead.paused) {
+      const { getAssistantRunner } = await import("./assistant/runner.js");
+      await getAssistantRunner(db)
+        .send({
+          companyId: r.companyId,
+          threadId: lead.threadId,
+          kind: "system",
+          text: leadNudgeText({ tag: r.agent.tag, title: r.title, identifier: r.identifier, summary }),
+        })
+        .catch(logFailure("lead nudge", { tag: lead.tag }));
+    }
+    return { cardRunId: card.id };
+  }
 
   // tethr may check in on it (if the person turned that on).
   const { noteReport } = await import("./team-brain.js");

@@ -1061,6 +1061,56 @@ decisions: `tasks/phase-23.md`, DECISIONS.md 27–30.
   agent that checks two clinics' prices every Monday" → New agent card → approve → it ran its first
   task in its own chat (web search, wrote `clinic-price-watch.md`) → report card + bell.
 
+## tethr is the brain: sub-teams, goals, acting on its own (phase 24, 2026-11-09)
+
+Mark: "tethr should be the main brain and it can decide to delegate and create agents… if it's
+saying paid ads might be good I want it to build an agent that will handle this task and report
+back… sub-agents (one just for keywords, one to look for strategies)… If it needs a permission it
+can buzz me." Then: **"We're just building the framework"**: builds never propose, create or run
+anything on Mark's instance (DECISIONS 31–34; plan `tasks/phase-24.md`).
+- **Suggestions become agents with goals.** `create_agent` takes `goal_id` or `new_goal` (title +
+  optional metric; saved on approval, or at once under Automatic, via `goalsService`); the agent's
+  `adapterConfig.goalId` is shown in its turns, the roster, `team_list`, its chip. The "Running the
+  team" playbook in CLAUDE.md says: recommend an ongoing effort → propose an agent in the same reply,
+  with its goal (a new one if none fits; "missing setup is no reason to wait"), a lead for big
+  efforts. Live check: "paid search might be worth trying" → a `@paid-search` lead card with a new
+  "Paid acquisition" goal and a first task to build its sub-team.
+- **Leads and sub-agents (depth 2).** `lead: true` → scoped team tools in its own chat (deny rules
+  keep the team tools for leads; a lead without "Tethr tools" gets only those, `NON_TEAM_TETHR_TOOLS`
+  denied one by one): `team_list` (itself + sub-team), `create_agent` (a sub-agent under it,
+  `leadTag`, core `reportsTo` the lead, tools ⊆ the lead's, ≤ 4, card titled "New agent for
+  @lead's team", buzzes the lead's owner), `assign_task` / `update_agent` (its sub-agents only).
+  Sub-agents can't lead or use team tools (`agentToolRefusal`, tools endpoint, deny rules).
+- **Sub-tasks and roll-ups** (`team-run.ts`): a lead's `assign_task` during a task turn makes a core
+  child issue of that task (`taskIssueForRun(runId)`); the turn returns `delegated` (children
+  created since the turn began, whatever their status) and the task waits. A task with sub-tasks is
+  never worked from the top again: open sub-tasks → `blocked`; all closed → the roll-up turn
+  (`agentRollupText`), whose report goes to tethr; if the sub-team finished during the lead's own
+  turn it rolls up at once. Core wakes a parent even while it's checked out `in_progress`, and
+  hands an open task back after a skipped run (`finish_successful_run_handoff`), so never decide
+  by issue status. Pending cards don't hold a task open (`gated: false` on finish).
+- **Who wakes whom:** a sub-agent's own report (first task, schedule; not a lead's sub-task) lands
+  in its lead's chat as a card + note and wakes the lead (`leadNudgeText`); approving a sub-agent
+  with no first task wakes the lead to hand it one. A lead's follow-up reaches tethr only when it
+  writes a "Report:" (`hasReportHeading`), headlined "@lead has an update: … (from @sub)".
+- **tethr acts on its own** (`team-brain.ts`, all **off** by default; Integrations → Team → "On its
+  own"): `actOnReports` → one "Check-in: N reports from …" system turn in the main chat 3 quiet
+  minutes after reports arrive; `dailyReview {time, weekdaysOnly}` → a "Daily review" turn once a
+  day within 3 hours after its time (setup time zone, `localClock`); `maxSelfTurnsPerDay` cap; the
+  usage throttle stops both. State `tethr-brain.json`; `startBrain` ticks each minute from boot.
+- **Buzzing:** `resolveOverseer` falls back to the admin's Slack ID (setup step 1) and name when the
+  role has nobody; `approvalDmText` links to the card when `PAPERCLIP_PUBLIC_URL` is set.
+- **UI:** drawer Team section indents sub-agents under their lead ("Lead · N on its team",
+  `orderTeam`); the chip panel shows Goal, "Reports to @lead" or "Its team"; Integrations "On its
+  own" rows; the empty-team button is "Ask tethr to suggest agents".
+- Tests: `tethr-brain.test.ts` (11: goals, lead rules, deny rules, review timing, DM text; card →
+  lead with a new goal; sub-team rules; lead → sub-task → sub-agent → roll-up → report to tethr
+  through core's wake loop; lead nudge; check-ins/review/cap/throttle; admin fallback). Verified
+  live on a throwaway with real Claude: lead card → approve → it proposed two sub-agents → approve →
+  each approval woke the lead, which handed out the research, then fed its findings to the strategy
+  agent → the lead reported to tethr → tethr's own check-ins summarized and flagged what needed Mark
+  (connect Google Ads).
+
 ## Onboarding from scratch: goals with numbers, setup, rhythm (phase 20, 2026-11-07)
 
 Mark's call: start tethr over from scratch, with real goals. The plan is in `tasks/phase-20.md`.

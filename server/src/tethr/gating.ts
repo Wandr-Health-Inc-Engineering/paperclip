@@ -616,6 +616,19 @@ export function gatingService(db: Db) {
         const goal = spec.goal ? ` ${goalLine(spec.goal, { pending: false })}.` : "";
         note = `Approved: ${agent.tag} (${agent.name}) is on ${lead ? `${lead.tag}'s team` : "the team"}${agent.schedule ? ` and runs ${scheduleWords(agent.schedule.cron)}` : ""}.${goal}${spec.firstTask ? ` Its first task, "${spec.firstTask.title}", has started; the report will come back to ${lead ? lead.tag : "you"}.` : " Give it work with assign_task."}`;
         if (lead) noteThread = lead.threadId;
+        // A lead whose new sub-agent has no first task is woken to hand it one,
+        // so approving it starts the work instead of waiting for the schedule.
+        if (lead && !spec.firstTask && !lead.paused) {
+          const { getAssistantRunner } = await import("./assistant/runner.js");
+          await getAssistantRunner(db)
+            .send({
+              companyId,
+              threadId: lead.threadId,
+              kind: "system",
+              text: `${agent.tag} joined your team\n[Brief] The person approved ${agent.tag} (${agent.title}). If its work is ready, hand it its first task now (assign_task). Otherwise say in a line when you will. Nothing goes to tethr unless you write a "Report:".`,
+            })
+            .catch((err) => logger.warn({ err, tag: agent.tag }, "[tethr] couldn't wake the lead after a sub-agent was approved"));
+        }
       } else {
         const tag = String(meta.tag ?? "");
         const patch = (meta.patch ?? {}) as Parameters<typeof team.update>[2];

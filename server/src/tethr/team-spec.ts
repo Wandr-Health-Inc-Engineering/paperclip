@@ -443,6 +443,22 @@ export function splitSlackSummary(text: string): { body: string; summary: string
   return { body, summary };
 }
 
+/** Did the agent write a report (a "Report:" line)? */
+export function hasReportHeading(text: string): boolean {
+  return [...text.matchAll(REPORT_HEADING_RE)].length > 0;
+}
+
+/** The system turn that wakes a lead when one of its sub-agents reports on its
+ * own (a first task or a scheduled run, not a sub-task the lead handed out). */
+export function leadNudgeText(report: { tag: string; title: string; identifier?: string | null; summary: string | null }): string {
+  return [
+    `Report from ${report.tag}: ${report.identifier ? `${report.identifier} ` : ""}${report.title}`,
+    `[Brief] ${report.tag} on your sub-team just reported${report.summary ? ` (${report.summary})` : ""}; the full report is in your notes and as a card in this chat.`,
+    "Decide what's next: hand your sub-team follow-up work (assign_task), adjust one (update_agent), or do a piece yourself.",
+    'If you now have something tethr should know, write it under a line that says "Report:" and end with a "Slack summary:" line; it goes to tethr. If not, just say in a line what happens next, and nothing goes to tethr.',
+  ].join("\n");
+}
+
 /** The report an agent wrote, without the working notes it streamed before it
  * ("I'll look at…"): everything after its last "Report:" line, else all of it. */
 export function reportBody(text: string): string {

@@ -14,7 +14,7 @@ import { companyContextText, companyProfileService } from "../company.js";
 import { mirrorDir } from "../mirror.js";
 import { orgService } from "../org.js";
 import { isAgentsPaused, PAUSED_MESSAGE } from "../throttle.js";
-import { agentDenyRules, agentIdentityText, TEAM_TOOL_NAMES } from "../team-spec.js";
+import { agentDenyRules, agentIdentityText, hasReportHeading, TEAM_TOOL_NAMES } from "../team-spec.js";
 import { teamConnectorLabels, teamContextText, teamService, type TeamAgent } from "../team.js";
 import { getRoster } from "../overseers.js";
 import { getSetup } from "../setup.js";
@@ -562,16 +562,25 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
 
     // An agent's turn that tethr started and that isn't a task (team-run.ts
     // reports those), e.g. the follow-up after an approval: report it back too.
-    if (member && row.sourceKey === "chat-system" && !state.taskTurns.has(runId) && status !== "stopped") {
+    // A lead woken by its sub-team reports only when it wrote a "Report:"; an
+    // approval follow-up always says how it went.
+    const firstLine = row.requestText.split("\n")[0]!.trim();
+    const approved = /^Approved:\s*/i.test(firstLine);
+    const worthReporting = approved || hasReportHeading(text) || status !== "done";
+    if (member && row.sourceKey === "chat-system" && !state.taskTurns.has(runId) && status !== "stopped" && worthReporting) {
       const { deliverAgentReport } = await import("../team-report.js");
-      const firstLine = row.requestText.split("\n")[0]!.trim();
-      const approved = /^Approved:\s*/i.test(firstLine);
-      const title = approved ? `${firstLine.replace(/^Approved:\s*/i, "")} (after your approval)` : firstLine;
+      // A lead woken by a sub-agent's report has an update for tethr, not a finished task.
+      const fromSub = firstLine.match(/^Report from (@[\w-]+): (.+)$/);
+      const title = approved
+        ? `${firstLine.replace(/^Approved:\s*/i, "")} (after your approval)`
+        : fromSub
+          ? `${fromSub[2]} (from ${fromSub[1]})`
+          : firstLine;
       await deliverAgentReport(db, {
         companyId,
         agent: member,
         title: title.slice(0, 200),
-        outcome: status === "done" ? "done" : "failed",
+        outcome: status !== "done" ? "failed" : approved ? "done" : "update",
         text: text || error || "",
         runId,
       }).catch(() => {});

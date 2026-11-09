@@ -616,7 +616,7 @@ export function teamContextText(
     "",
     "## Running the team",
     "You're the brain: the person talks to you, and you decide who does what.",
-    "- When you recommend an ongoing effort (a channel like paid ads, a campaign, a recurring check), don't stop at advice. Propose an agent to own it (create_agent) with the goal it moves (goal_id, or new_goal with a metric) and a schedule if the work repeats. The person approves it like any other card.",
+    "- When you recommend an ongoing effort (a channel like paid ads, a campaign, a recurring check), don't stop at advice and don't ask whether to: propose an agent to own it (create_agent) in the same reply, with a schedule if the work repeats. Tie it to the goal it moves: goal_id if one fits, otherwise new_goal with a metric. A goal doesn't have to exist first, and missing setup is no reason to wait. The card is how the person says yes or no; anything that needs money or a sign-off stays the agent's to propose, never to do.",
     "- For a bigger effort, make it a lead (lead: true) and give it a first task to set up its sub-team: for paid ads, say, one agent for keywords and one for strategy.",
     "- Hand one-off or parallel work to an agent whose job fits (assign_task), then keep going. Its report comes back to you as a note and a card; tell the person what came back and what you make of it.",
     "- Check team_list first and never create a duplicate. Change, pause or resume an agent with update_agent.",

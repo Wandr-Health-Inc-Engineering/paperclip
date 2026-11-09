@@ -158,6 +158,26 @@ Branch: `mark-sandbox` (local only). Date started: 2026-06-11.
     else #tethr). Slack carries only the headline and the agent's one-line "Slack summary",
     never the report. No core files changed.
 
+## Phase 24 decisions (tethr is the brain — 2026-11-09)
+
+31. **Framework only; nothing new runs on its own until switched on** (Mark: "The previous
+    work added agents I didn't want. I want everything to be done inside tethr. We're just
+    building the framework."). The three agent proposals a build-time "Propose a starting team"
+    run left in his chat were withdrawn (status rejected, `meta.withdrawn`, logged as a system
+    action) and tethr was told in a note. Builds never propose, create or run anything on Mark's
+    instance; verification happens on a throwaway copy.
+32. **Teams go two levels deep** (Mark: "sub-agents like one just for keywords, one to look for
+    strategies"): tethr → a lead → up to 4 sub-agents. A lead's sub-tasks are core child issues of
+    its task, so core wakes it to roll up; sub-agents report to their lead, and only the lead
+    reports to tethr. Sub-agents get a subset of their lead's tools and follow the same approval
+    setting. Rejected: unlimited depth (cost and accountability blur).
+33. **tethr's own turns (check-ins on reports, a daily review) ship switched off** and are
+    bounded by a daily cap and the usage throttle. Switching one on in Integrations → Team is
+    Mark's go for those turns (the "enabling any heartbeat needs a go" gate).
+34. **Approval DMs fall back to the company admin's Slack ID** when nobody is set for the role
+    (Mark: "If it needs a permission it can buzz me"), and link to the card when tethr has a
+    public URL. No core files changed.
+
 ## Core changes (keep merge-safe)
 
 Every core file touched, with reason. Everything else Tethr lives in new files.

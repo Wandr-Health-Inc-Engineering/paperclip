@@ -1,5 +1,7 @@
 # Phase 24: tethr is the brain (autonomous delegation, sub-teams, goals)
 
+**Status: built 2026-11-09.** Verified on a throwaway with real Claude; what landed and the invariants are in CLAUDE.md, "tethr is the brain".
+
 ## Context
 Mark (2026-11-08, after phase 23):
 > "tethr should be the main brain and it can decide to delegate and create agents. I can approve them when it comes up as a suggestion and a goal just like other artifacts. For example if it's saying paid ads might be good I want it to build an agent that will handle this task and report back. It can even create schedules, sub-agents (like one just for keywords, one to look for strategies, etc). This way it is a truly autonomous assistant and helper. I don't need another chat. If it needs a permission it can buzz me."

@@ -13,6 +13,7 @@ import { gatingService, approvalDmText } from "../tethr/gating.ts";
 import { goalsService } from "../tethr/goals.ts";
 import { updateIntegrations } from "../tethr/integrations.ts";
 import { resolveOverseer } from "../tethr/slack.ts";
+import { reportHeadline } from "../tethr/team-report.ts";
 import { setThrottle } from "../tethr/throttle.ts";
 import { brainService, checkInBrief, localClock, noteReport, reviewDue } from "../tethr/team-brain.ts";
 import {
@@ -108,6 +109,9 @@ describe("tethr brain — the spec, in words", () => {
     expect(reviewDue({ ...review, weekdaysOnly: false }, localClock(new Date("2026-11-07T14:40:00Z"), "America/Chicago"), null)).toBe(true);
     expect(reviewDue({ ...review, enabled: false }, monday, null)).toBe(false);
     expect(checkInBrief([{ tag: "@a", title: "X", outcome: "done", at: "" }, { tag: "@b", title: "Y", outcome: "done", at: "" }]).split("\n")[0]).toBe("Check-in: 2 reports from @a, @b");
+    expect(reportHeadline({ agent: { tag: "@paid-ads" } as never, title: "WD-2 Keywords (from @kw)", identifier: null, outcome: "update" })).toBe(
+      "@paid-ads has an update: WD-2 Keywords (from @kw)",
+    );
   });
 
   it("puts a link to the card in the approval DM when tethr has a public address", () => {
@@ -152,7 +156,10 @@ describePg("tethr brain — sub-teams, goals, check-ins and buzzing", () => {
   // The fake Claude: a lead's task turn hands the work to its sub-agent (like
   // the real one calling assign_task); a roll-up and a sub-agent's turn report.
   const fakeExecute = async (ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> => {
-    const prompt = String(ctx.context.tethrPrompt);
+    // Only this turn's own request (the runner puts earlier turns and notes ahead of it).
+    const full = String(ctx.context.tethrPrompt);
+    const marker = "[From Tethr, not the user] ";
+    const prompt = full.includes(marker) ? full.slice(full.lastIndexOf(marker) + marker.length) : full;
     let text = "Done.";
     if (prompt.includes("Roll-up ")) {
       text = "Working notes.\n\nReport:\nCampaign plan ready: 3 keywords to test at $20/day.\n\nSlack summary: Paid ads plan ready.";
@@ -220,6 +227,11 @@ describePg("tethr brain — sub-teams, goals, check-ins and buzzing", () => {
     expect(kw).toMatchObject({ lead: false, leadTag: "@paid-ads", goalId: lead.goalId });
     const [row] = await db.select().from(agents).where(eq(agents.id, kw.agentId));
     expect(row.reportsTo).toBe(lead.agentId);
+    // It had no first task, so its lead is woken to hand it one.
+    await waitFor(async () => {
+      const rows = await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.threadId, lead.threadId));
+      return rows.find((r) => r.requestText.startsWith("@ad-keywords joined your team") && r.status === "done");
+    });
 
     // A sub-agent can't build a team; the lead sees only its own sub-team.
     expect((await tool("create_agent", { ...sub, name: "Another" }, kw.threadId)).text).toMatch(/isn't a lead/);
@@ -265,6 +277,22 @@ describePg("tethr brain — sub-teams, goals, check-ins and buzzing", () => {
     const mainCards = await db.select().from(tethrRouteRuns).where(and(eq(tethrRouteRuns.threadId, companyId), eq(tethrRouteRuns.sourceKey, "tethr-agent-report")));
     expect(mainCards.every((c) => c.agentId === lead.agentId)).toBe(true);
   }, 60_000);
+
+  it("wakes the lead when a sub-agent reports on its own, and tells tethr only when the lead has a report", async () => {
+    const lead = (await teamService(db).get(companyId, "@paid-ads"))!;
+    const mainCardsFromLead = async () =>
+      (await db.select().from(tethrRouteRuns).where(and(eq(tethrRouteRuns.threadId, companyId), eq(tethrRouteRuns.agentId, lead.agentId), eq(tethrRouteRuns.sourceKey, "tethr-agent-report")))).length;
+    const before = await mainCardsFromLead();
+    await tool("assign_task", { agent: "@ad-keywords", title: "Check new terms", brief: "Check three new search terms for volume." });
+    const nudge = await waitFor(async () => {
+      const rows = await db.select().from(tethrRouteRuns).where(and(eq(tethrRouteRuns.threadId, lead.threadId), eq(tethrRouteRuns.sourceKey, "chat-system")));
+      const r = rows.find((x) => x.requestText.startsWith("Report from @ad-keywords"));
+      return r?.status === "done" ? r : null;
+    });
+    expect(nudge.requestText.split("\n")[0]).toMatch(/^Report from @ad-keywords: WD-\d+ Check new terms$/);
+    // The fake lead answered without a "Report:", so nothing new went to tethr.
+    expect(await mainCardsFromLead()).toBe(before);
+  }, 30_000);
 
   it("checks in on reports and runs a daily review only when switched on, within its cap", async () => {
     const sent: string[] = [];

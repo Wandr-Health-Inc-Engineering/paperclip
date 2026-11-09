@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TethrTeamAgent } from "@/api/tethr";
-import { agentForThread, agentStatusWords, agentTone, dollars } from "./tethr-team";
+import { agentForThread, agentStatusWords, agentTone, dollars, orderTeam } from "./tethr-team";
 
 const base = { paused: false, running: false, waitingOnYou: 0, schedule: null } as const;
 
@@ -17,6 +17,17 @@ describe("tethr team in the chat", () => {
     expect(agentStatusWords({ ...base, running: true })).toBe("Working now");
     expect(agentStatusWords({ ...base, schedule: { cron: "0 9 * * 1", brief: "x", words: "every Monday at 9:00 am" } })).toBe("Runs every Monday at 9:00 am");
     expect(agentStatusWords(base)).toBe("Works when tethr assigns it");
+    expect(agentStatusWords({ ...base, leadTag: "@paid-search" })).toBe("Works when @paid-search assigns it");
+  });
+
+  it("lists each lead with its sub-team under it", () => {
+    const agents = [
+      { tag: "@ads", leadTag: null },
+      { tag: "@scout", leadTag: null },
+      { tag: "@kw", leadTag: "@ads" },
+      { tag: "@orphan", leadTag: "@gone" },
+    ];
+    expect(orderTeam(agents).map((r) => `${r.depth}${r.agent.tag}`)).toEqual(["0@ads", "1@kw", "0@scout", "0@orphan"]);
   });
 
   it("formats money and finds an agent by its chat", () => {
