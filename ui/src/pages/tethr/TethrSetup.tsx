@@ -37,6 +37,9 @@ export function TethrSetup() {
     queryFn: () => tethrApi.setup(companyId),
     enabled: !!selectedCompanyId,
     refetchInterval: SETUP_REFRESH_MS,
+    // A key saved elsewhere (Environment, Integrations) shows the moment you come back.
+    staleTime: 0,
+    refetchOnMount: "always",
   });
   const [view, setView] = useState<StepKey | "welcome" | null>(null);
 

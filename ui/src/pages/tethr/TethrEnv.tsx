@@ -72,7 +72,11 @@ export function TethrEnv() {
     queryFn: () => tethrApi.env(c),
     enabled: !!selectedCompanyId,
   });
-  const refresh = () => queryClient.invalidateQueries({ queryKey: tethrKeys.env(c) });
+  // The setup's Connections step reads these keys too, so it refreshes with them.
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: tethrKeys.env(c) });
+    void queryClient.invalidateQueries({ queryKey: tethrKeys.setup(c) });
+  };
 
   const add = useMutation({
     mutationFn: async (pairs: Array<{ key: string; value: string }>) => {

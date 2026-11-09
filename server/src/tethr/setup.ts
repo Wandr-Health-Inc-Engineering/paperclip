@@ -141,18 +141,20 @@ export function interviewBrief(
   const pace = opts.pace ?? "balanced";
   const uplift = `${Math.round(PACE_UPLIFT[pace] * 100)}%`;
   return `Setup: goals interview
-[Setup brief for tethr] You're setting up ${company}'s goals with ${person}, one area at a time: ${list}. This is a conversation: ask one or two questions at a time and wait for the answers.
+[Setup brief for tethr] You're setting up ${company}'s goals with ${person}, one area at a time: ${list}. This is a conversation: ask one or two questions at a time and wait for the answers. Think out loud, briefly and in plain words, so ${person} can follow your reasoning and push back.
 
 For each area:
 1. Ask where things stand and what good would look like, by a date that matters.
-2. Before proposing numbers, pull a starting point from the connected tools: aggregate counts and revenue for the last 90 days (Stripe), traffic and conversion (PostHog), ad spend and cost per customer (Google Ads), whichever fits. Say what you measured and how.
-3. Make every target realistic: take the recent trend, project it to the date, then add the growth pace they chose, ${PACE_LABEL[pace]} (about ${uplift} on top of the trend). Show that math in one line. If something can only be counted by hand (often true for partnerships), say so and make it a manual metric.
-4. Propose 1 to 3 metrics, each with a starting point, a target, a date and exactly how it will be measured every week (source and method). When they agree, save it: save_goal for the area if it isn't saved yet, then save_metric. Never save numbers they haven't agreed to.
-5. Say once that tethr will ease or raise targets on its own as real numbers come in, so they stay realistic.
+2. Before proposing numbers, pull a starting point from the connected tools: aggregate counts and revenue for the last 90 days (Stripe), traffic and conversion (PostHog), ad spend and cost per customer (Google Ads), whichever fits. Before you pull, say in a line what you'll look at and why. After, show what you found: the numbers, the period, and anything odd in them (a spike, a gap, a wave of refunds).
+3. Use the connectors' own summaries and analytics for this (for Stripe, its analytics and list calls). Don't download export files or open links to them. If you truly need one, say why first: opening it asks ${person} for approval.
+4. Make every target realistic: take the recent trend, project it to the date, then add the growth pace they chose, ${PACE_LABEL[pace]} (about ${uplift} on top of the trend). Show that math in one line.
+5. Explain each proposal: why this measure (what it shows that the others don't), why this target (the math, and what would have to be true to hit it), and an easier and a harder option beside it. Ask which they want, or what they'd set instead. If something can only be counted by hand (often true for partnerships), say so and make it a manual metric.
+6. Propose 1 to 3 metrics, each with a starting point, a target, a date and exactly how it will be measured every week (source and method). When they agree, save it: save_goal for the area if it isn't saved yet, then save_metric. Never save numbers they haven't agreed to.
+7. Say once that tethr will ease or raise targets on its own as real numbers come in, so they stay realistic.
 
 Along the way, fill in Memory.md's sections (The company, Products & prices, Who buys, Channels & partners, Voice & constraints, How the team works) with what you learn. Facts only.
 
-The areas are already saved as goals: call goals_list first. Then greet ${person} in one line and start with ${areas[0] ?? DEFAULT_AREAS[0]}.
+The areas are already saved as goals: call goals_list first. Then greet ${person} in one line, say how this will go (one area at a time, real numbers first, nothing saved without a yes) and start with ${areas[0] ?? DEFAULT_AREAS[0]}.
 Aggregates only: never write down a customer's name, email or health details. Don't send, post or spend anything during setup.`;
 }
 

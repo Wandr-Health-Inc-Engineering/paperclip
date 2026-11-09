@@ -573,8 +573,13 @@ remembered nothing Mark said, and could only read). Spike findings: `tasks/phase
   turns). `GET|POST /tethr/:companyId/chat-engine` is the rollback switch.
 - **Routes:** `POST /tethr/:companyId/chats/:threadId/messages`, `POST /chats` (side chat via the
   runner), `POST /chat-turns/:runId/stop`, `POST /chats/:threadId/reset`. UI `TethrChat.tsx`
-  `SessionTurn`: live step rows (6px status dots), streaming answer, Stop, file chips; older
-  routing-engine turns keep `Turn`.
+  `SessionTurn`: streaming answer, then (while it runs) one "background task" pill at the foot
+  of the turn (`Working`: nebula, what it's doing, elapsed, "N steps" that opens the list, Stop),
+  and after it a one-line steps summary under the answer (`StepsSummary`). Steps never list
+  above the answer, so the text doesn't jump (Mark, 2026-11-08). File chips; approval cards have
+  Approve / Reject / **Reply** (`CardReply`: sends `About your request "<title>": …` to the
+  thread and leaves the card open; the per-turn CLAUDE.md "Talking with the team" tells tethr to
+  answer it and not repeat the call). Older routing-engine turns keep `Turn`.
 - **Side panel + Memory page (phase 18.5)** — files open in the chat like Claude artifacts:
   `ui/src/components/tethr/OutputPanel.tsx` is an opaque (`tethr-window`) right slide-out (~600px /
   52%; full-width sheet on phones; Esc/X closes; Drive link) that reuses the Drive's `PreviewBody` +
@@ -838,6 +843,15 @@ Slack, it suggests an idea). Plan: `tasks/phase-21.md`.
     chat of a window (no `?chat=`) to `/setup` while setup is incomplete, once per window
     (sessionStorage `tethr.setup.landed`, also set when the setup page opens), so "Look around
     first" and the chat stay reachable after.
+  - **Connections fixes open in place** (`setup/fixes.ts` + `ConnectStep.tsx`): Fix on a row shows
+    what to paste and where to find it, with a field per key saved through `PUT /env` (instance
+    admins), a connector Off/Read/Ask/Auto switch saved to Integrations, or "Go to step 1". Setup
+    re-reads its checks on open (`staleTime: 0`, `refetchOnMount: "always"`) and when the step
+    opens, and the Environment and Integrations pages invalidate the setup query on save (a Jev
+    key saved there showed as missing until the 30s cache expired).
+  - **The interview reasons out loud:** the brief asks for what it will look at and why, what it
+    found (numbers, period, oddities), the math, why this measure and target, and an easier and
+    a harder option; connector summaries only, no export downloads (those need approval).
   - **Where it lives:** the goals, setup and ideas routes are in `server/src/routes/tethr-setup.ts`
     (mounted by `routes/tethr.ts`; `requirePerson` is in `routes/tethr-people.ts`). The page is
     `TethrSetup.tsx` plus one file per step in `ui/src/pages/tethr/setup/` (`shared.ts` = steps,
@@ -957,9 +971,9 @@ nebula, an endless loop until it's done". Plan: `tasks/phase-22.md`.
     the file and never opens or runs it.
 - **Nebula** (`components/tethr/Nebula.tsx`, `.tethr-nebula*` in tethr-theme.css): two blurred
   conic "arms", a pulsing core and three motes on tilted orbits, all `currentColor` (monochrome),
-  still under reduced motion. The chat shows **one status row for as long as a turn runs**:
-  nebula · what's happening (waiting / thinking / the running step / waiting for your approval /
-  writing) · elapsed time · Stop.
+  still under reduced motion. The chat shows **one status pill for as long as a turn runs**
+  (`.tethr-task-pill`, at the foot of the turn): nebula · what's happening (waiting / thinking /
+  the running step / waiting for your approval / writing) · elapsed time · N steps · Stop.
 - Shared helpers: `tethr/csv.ts` (`parseCsv`, `toCsv`), `assistant/files.ts` (`resolveInFiles`,
   `readTextInFiles`, `safeFileName`).
 - **The mark is the nebula** (2026-11-08): `scripts/tethr-icon/make-icon.swift` draws it (tile for

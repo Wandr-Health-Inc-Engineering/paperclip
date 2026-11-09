@@ -35,6 +35,10 @@ describe("tethr setup — pure bits", () => {
     expect(brief).toContain("Ambitious (about 30% on top of the trend)");
     expect(interviewBrief(["Revenue"])).toContain("with the person you're working with");
     expect(brief).toContain("Aggregates only");
+    // It reasons out loud and uses the connectors' own summaries, not export downloads.
+    expect(brief).toContain("Think out loud");
+    expect(brief).toContain("an easier and a harder option");
+    expect(brief).toContain("Don't download export files");
     expect(operationsThreadId("c1")).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(operationsThreadId("c1")).toBe(operationsThreadId("c1"));
   });

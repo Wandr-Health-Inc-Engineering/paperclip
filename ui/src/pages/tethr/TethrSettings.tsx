@@ -69,7 +69,10 @@ export function TethrSettings() {
   });
   const update = useMutation({
     mutationFn: (patch: TethrIntegrationsPatch) => tethrApi.updateIntegrations(selectedCompanyId!, patch),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: tethrKeys.integrations(selectedCompanyId!) }),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: tethrKeys.integrations(selectedCompanyId!) });
+      void queryClient.invalidateQueries({ queryKey: tethrKeys.setup(selectedCompanyId!) });
+    },
   });
 
   if (!selectedCompanyId) {

@@ -645,27 +645,57 @@ function FileChip({
   );
 }
 
-/** The live status row while a turn runs: the nebula (looping until the turn
- * ends), what's happening, how long it's been going, and Stop. */
-function Working({ label, since, onStop, stopping }: { label: string; since?: string; onStop?: () => void; stopping?: boolean }) {
+/** The live status while a turn runs, as one "background task" pill (like
+ * Claude): the nebula (looping until the turn ends), what's happening, how long
+ * it's been going, the steps so far (opens the list), and Stop. It sits at the
+ * foot of the turn, so the answer above never moves while tethr works. */
+function Working({
+  label,
+  since,
+  onStop,
+  stopping,
+  steps,
+}: {
+  label: string;
+  since?: string;
+  onStop?: () => void;
+  stopping?: boolean;
+  steps?: TethrRouteHop[];
+}) {
   const elapsed = useElapsed(since);
+  const [open, setOpen] = useState(false);
+  const count = steps?.length ?? 0;
   return (
-    <div className="flex min-w-0 items-center gap-2.5 text-[13px]">
-      <Nebula className="text-[24px] text-foreground" />
-      <span role="status" className="shimmer-text min-w-0 truncate font-medium">
-        {label}
-      </span>
-      {elapsed ? (
-        <span aria-hidden="true" className="shrink-0 font-mono text-[11px] tabular-nums tethr-text-3">
-          {elapsed}
+    <div className="flex min-w-0 flex-col items-start gap-2">
+      <div className="tethr-task-pill">
+        <Nebula className="text-[22px] text-foreground" />
+        <span role="status" className="shimmer-text min-w-0 truncate font-medium">
+          {label}
         </span>
-      ) : null}
-      {onStop ? (
-        <button type="button" onClick={onStop} disabled={stopping} className="tethr-btn tethr-btn-ghost ml-1 h-7 shrink-0 px-3 text-[12px]">
-          <Square className="h-3 w-3" />
-          Stop
-        </button>
-      ) : null}
+        {elapsed ? (
+          <span aria-hidden="true" className="shrink-0 font-mono text-[11px] tabular-nums tethr-text-3">
+            {elapsed}
+          </span>
+        ) : null}
+        {count ? (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            className="inline-flex shrink-0 items-center gap-0.5 text-[11.5px] tethr-text-3 transition-colors hover:text-foreground"
+          >
+            {count} {count === 1 ? "step" : "steps"}
+            {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          </button>
+        ) : null}
+        {onStop ? (
+          <button type="button" onClick={onStop} disabled={stopping} className="tethr-btn tethr-btn-ghost -mr-1.5 h-7 shrink-0 px-3 text-[12px]">
+            <Square className="h-3 w-3" />
+            Stop
+          </button>
+        ) : null}
+      </div>
+      {open && steps ? <StepList hops={steps} /> : null}
     </div>
   );
 }
@@ -724,8 +754,8 @@ function SessionTurn({
       ) : (
         <UserBubble text={run.requestText} at={run.createdAt} attachments={run.attachments} onOpenFile={onOpenFile} />
       )}
-      {tools.length ? <ActivityRows hops={tools} live={running} /> : null}
       {run.resultText ? <MarkdownBody className="tethr-chat-md">{run.resultText}</MarkdownBody> : null}
+      {tools.length && !running ? <StepsSummary hops={tools} /> : null}
       {run.status === "failed" ? (
         <p className="text-[13.5px] text-[var(--tethr-bad)]">{run.error || "Something went wrong."}</p>
       ) : null}
@@ -751,43 +781,42 @@ function SessionTurn({
           since={run.createdAt}
           onStop={() => stop.mutate()}
           stopping={stop.isPending}
+          steps={tools}
         />
       ) : null}
     </div>
   );
 }
 
-/** Tool steps: live while the turn runs, then folded into a one-line summary. */
-function ActivityRows({ hops, live }: { hops: TethrRouteHop[]; live: boolean }) {
+/** After a turn: its tool work folded into one line under the answer; opens to the steps. */
+function StepsSummary({ hops }: { hops: TethrRouteHop[] }) {
   const [open, setOpen] = useState(false);
   const connectors = [...new Set(hops.map((h) => h.actorTag).filter((t) => t && t !== "tethr"))];
   const blocked = hops.filter((h) => h.status === "blocked").length;
-  if (!live && !open) {
-    return (
+  return (
+    <div className="flex flex-col items-start gap-2">
       <button
         type="button"
-        onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 self-start text-[12px] tethr-text-3 transition-colors hover:text-foreground"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex max-w-full items-center gap-1.5 text-[12px] tethr-text-3 transition-colors hover:text-foreground"
       >
-        <ChevronRight className="h-3.5 w-3.5" />
-        {hops.length} {hops.length === 1 ? "step" : "steps"}
-        {connectors.length ? ` · ${connectors.join(", ")}` : ""}
-        {blocked ? ` · ${blocked} blocked` : ""}
+        {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+        <span className="truncate">
+          {hops.length} {hops.length === 1 ? "step" : "steps"}
+          {connectors.length ? ` · ${connectors.join(", ")}` : ""}
+          {blocked ? ` · ${blocked} blocked` : ""}
+        </span>
       </button>
-    );
-  }
+      {open ? <StepList hops={hops} /> : null}
+    </div>
+  );
+}
+
+/** Every tool step of a turn, in order, in a scrolling well. */
+function StepList({ hops }: { hops: TethrRouteHop[] }) {
   return (
-    <div className="flex flex-col gap-1">
-      {!live ? (
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          className="flex items-center gap-1.5 self-start text-[12px] tethr-text-3 transition-colors hover:text-foreground"
-        >
-          <ChevronDown className="h-3.5 w-3.5" />
-          Hide steps
-        </button>
-      ) : null}
+    <div className="tethr-inset flex max-h-60 w-full max-w-2xl flex-col gap-1 overflow-y-auto px-3 py-2.5">
       {hops.map((h, i) => (
         <div key={`${h.toolUseId ?? i}`} className="flex min-w-0 items-center gap-2 text-[12.5px]">
           <StatusDot
@@ -796,9 +825,7 @@ function ActivityRows({ hops, live }: { hops: TethrRouteHop[]; live: boolean }) 
           />
           <span className="shrink-0 font-mono text-[11.5px] tethr-text-3">{h.actorTag}</span>
           <span className="min-w-0 truncate text-muted-foreground">{h.decision}</span>
-          {h.status === "blocked" && h.reason ? (
-            <span className="min-w-0 truncate text-[11.5px] tethr-text-3">· {h.reason}</span>
-          ) : null}
+          {h.status === "blocked" && h.reason ? <span className="min-w-0 truncate text-[11.5px] tethr-text-3">· {h.reason}</span> : null}
         </div>
       ))}
     </div>
@@ -1019,9 +1046,11 @@ function HopChips({ hops }: { hops: TethrRouteHop[] }) {
   );
 }
 
-/** A gated output, decided right here. Same endpoint and gate as the Queue. */
+/** A gated output, decided right here (same endpoint and gate as the Queue), or
+ * talked over first: Reply sends tethr a message about it and leaves it open. */
 function ApprovalCard({ output, companyId, threadId }: { output: TethrChatOutput; companyId: string; threadId: string }) {
   const queryClient = useQueryClient();
+  const [replying, setReplying] = useState(false);
   const decide = useMutation({
     mutationFn: (decision: "approve" | "reject") => tethrApi.decide(companyId, output.id, decision),
     onSettled: () => {
@@ -1070,6 +1099,17 @@ function ApprovalCard({ output, companyId, threadId }: { output: TethrChatOutput
         >
           Reject
         </button>
+        {threadId ? (
+          <button
+            type="button"
+            onClick={() => setReplying((v) => !v)}
+            aria-expanded={replying}
+            className="tethr-btn tethr-btn-ghost h-8 px-3.5 text-[12.5px]"
+          >
+            <CornerUpLeft className="h-3.5 w-3.5" />
+            Reply
+          </button>
+        ) : null}
         <Link
           to={`/queue/${output.id}`}
           className="-my-2 ml-auto inline-flex items-center gap-1 py-2 text-[12px] text-muted-foreground hover:text-foreground"
@@ -1083,7 +1123,90 @@ function ApprovalCard({ output, companyId, threadId }: { output: TethrChatOutput
           {decide.error instanceof Error ? decide.error.message : "That didn't go through."}
         </p>
       ) : null}
+      {replying ? (
+        <CardReply
+          title={output.title}
+          companyId={companyId}
+          threadId={threadId}
+          onSent={() => setReplying(false)}
+          onCancel={() => setReplying(false)}
+        />
+      ) : null}
     </div>
+  );
+}
+
+const REPLY_TITLE_MAX = 120;
+
+/** Talk to tethr about a pending card: a question, or what to do instead. The
+ * card stays open for you to approve or reject after its answer. */
+function CardReply({
+  title,
+  companyId,
+  threadId,
+  onSent,
+  onCancel,
+}: {
+  title: string;
+  companyId: string;
+  threadId: string;
+  onSent: () => void;
+  onCancel: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [text, setText] = useState("");
+  const about = title.length > REPLY_TITLE_MAX ? `${title.slice(0, REPLY_TITLE_MAX)}…` : title;
+  const send = useMutation({
+    mutationFn: (message: string) => tethrApi.sendChatMessage(companyId, threadId, `About your request "${about}": ${message}`),
+    onSuccess: () => {
+      setText("");
+      queryClient.invalidateQueries({ queryKey: tethrKeys.chatRuns(companyId, threadId) });
+      queryClient.invalidateQueries({ queryKey: tethrKeys.chats(companyId) });
+      onSent();
+    },
+  });
+  const submit = () => {
+    const message = text.trim();
+    if (message && !send.isPending) send.mutate(message);
+  };
+  return (
+    <form
+      className="tethr-fix-panel flex flex-col gap-2 border-t border-[var(--tethr-rim)] pt-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit();
+      }}
+    >
+      <textarea
+        autoFocus
+        rows={2}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            submit();
+          }
+          if (e.key === "Escape") onCancel();
+        }}
+        placeholder="Ask why, or say what to do instead…"
+        aria-label="Reply to tethr about this request"
+        className="tethr-inset min-h-[60px] w-full resize-none px-3 py-2 text-[13px] leading-relaxed outline-none placeholder:text-muted-foreground"
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="mr-auto text-[11.5px] tethr-text-3">This stays open until you approve or reject it.</span>
+        <button type="button" onClick={onCancel} className="tethr-btn tethr-btn-ghost h-8 px-3 text-[12px]">
+          Cancel
+        </button>
+        <button type="submit" disabled={!text.trim() || send.isPending} className="tethr-btn tethr-btn-primary h-8 px-3.5 text-[12px]">
+          <Send className="h-3.5 w-3.5" />
+          {send.isPending ? "Sending…" : "Send"}
+        </button>
+      </div>
+      {send.isError ? (
+        <p className="text-[12px] text-[var(--tethr-bad)]">{send.error instanceof Error ? send.error.message : "That didn't send."}</p>
+      ) : null}
+    </form>
   );
 }
 

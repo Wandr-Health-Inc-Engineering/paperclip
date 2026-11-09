@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { StatusDot } from "@/components/tethr/primitives";
@@ -29,6 +29,11 @@ const MODE_HELP: Record<TethrConnectorMode, string> = {
 export function ConnectStep({ companyId, data, onDone, goTo }: StepProps & { goTo: (step: StepKey) => void }) {
   const refresh = useRefreshSetup(companyId);
   const [open, setOpen] = useState<string | null>(null);
+  // Re-read the checks on arrival: a key may have been added since the page loaded.
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per visit to the step
+  }, []);
   const markDone = useMutation({
     mutationFn: () => tethrApi.setupStep(companyId, "connect"),
     onSuccess: () => {

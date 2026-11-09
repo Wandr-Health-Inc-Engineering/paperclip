@@ -1962,3 +1962,27 @@ html.tethr-intro-hold .tethr-welcome * {
     animation: none;
   }
 }
+
+/* Chat: a running turn's status as one "background task" pill at the foot of
+   the turn (nebula, what it's doing, time, steps, Stop). Fixed height, so the
+   answer above it never moves while tethr works. */
+@layer components {
+  .tethr-task-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 100%;
+    min-height: 40px;
+    padding: 4px 8px 4px 10px;
+    border-radius: 999px;
+    font-size: 13px;
+    background: var(--tethr-frost);
+    box-shadow: inset 0 0 0 1px var(--tethr-rim);
+    animation: tethr-fix-open 320ms var(--tethr-ease) both;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tethr-task-pill {
+    animation: none;
+  }
+}
