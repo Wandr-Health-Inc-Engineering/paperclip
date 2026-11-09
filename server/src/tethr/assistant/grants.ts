@@ -1,3 +1,4 @@
+import type { SlackReplyTarget } from "./gate.js";
 import crypto from "node:crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
@@ -121,6 +122,8 @@ export interface PendingActionInput {
   hash: string;
   /** The team agent asking (phase 23), so the card names it and its owner hears. Default @tethr. */
   actor?: { agentId: string; tag: string };
+  /** Phase 26.1: the turn came from Slack; the card is asked in that Slack conversation. */
+  slack?: SlackReplyTarget;
 }
 
 /** Hold an outward action for Mark: a gated external_action output. */
@@ -145,6 +148,7 @@ export async function createPendingAction(db: Db, input: PendingActionInput) {
       cls: input.classified.cls,
       summary: input.classified.summary,
       grant: { status: "pending" },
+      ...(input.slack ? { slack: input.slack } : {}),
     },
   });
 }

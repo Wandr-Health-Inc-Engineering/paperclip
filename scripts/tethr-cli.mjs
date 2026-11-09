@@ -52,7 +52,8 @@ const ENV_COMPANY_ID = process.env.TETHR_COMPANY_ID?.trim() || null;
 const FETCH_TIMEOUT_MS = 20_000; // per request
 const POLL_INTERVAL_MS = 600; // matches the Console's live poll
 const POLL_MAX_MS = 3 * 60_000; // hard wall-clock cap on a single run
-const TERMINAL_STATUSES = new Set(["done", "gated", "failed"]);
+// "stopped": a chat turn someone stopped (the chat brain, phase 26.1).
+const TERMINAL_STATUSES = new Set(["done", "gated", "failed", "stopped"]);
 
 // ---------------------------------------------------------------------------
 // ANSI (degrades to plain text when not a TTY or NO_COLOR is set)

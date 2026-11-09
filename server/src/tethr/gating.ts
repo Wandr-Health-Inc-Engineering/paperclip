@@ -180,7 +180,9 @@ export function gatingService(db: Db) {
     // that still need a human). Best-effort; dynamic import dodges a cycle.
     try {
       const { dmOverseer } = await import("./slack.js");
-      if (gated && !autoApproved) {
+      // A card asked from a Slack conversation (phase 26.1) is asked there instead.
+      const askedInSlack = Boolean((input.meta as Record<string, unknown> | undefined)?.slack);
+      if (gated && !autoApproved && !askedInSlack) {
         await dmOverseer(
           db,
           input.companyId,
@@ -567,12 +569,15 @@ export function gatingService(db: Db) {
           `Approved in tethr: run this exact call now, changing nothing — tool ${String(meta.toolName)} with input ${JSON.stringify(meta.toolInput ?? {})}. Then confirm in one line.`,
         );
         const { getAssistantRunner } = await import("./assistant/runner.js");
+        const { slackReplyTargetOf } = await import("./slack-chat.js");
         await getAssistantRunner(db).send({
           companyId,
           threadId,
           kind: "system",
           text: `Approved: ${String(meta.summary ?? output.title)}`,
           requestedByUserId: reviewer.startsWith("auto:") ? null : reviewer,
+          // Asked from Slack (phase 26.1): the result is posted back there too.
+          slack: slackReplyTargetOf(meta.slack),
         });
       } catch (err) {
         logger.warn({ err, outputId: output.id }, "[tethr] couldn't wake the chat after an approval (grant is still armed)");

@@ -96,6 +96,9 @@ async function getPaperclipSha(): Promise<string> {
   return cachedSha;
 }
 
+/** A chat (thread) id: always a uuid. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function tethrRoutes(db: Db) {
   const router = Router();
   const org = orgService(db);
@@ -412,6 +415,19 @@ export function tethrRoutes(db: Db) {
       return;
     }
     const threadId = req.body?.threadId ? String(req.body.threadId) : null;
+    if (threadId && !UUID_RE.test(threadId)) {
+      res.status(400).json({ error: "threadId isn't a chat id" });
+      return;
+    }
+    // Phase 26.1: a person (the terminal client, the bell's "ask tethr") reaches
+    // the chat brain, the same tethr as the app. A new conversation is a side
+    // chat, so it shows in the app too. Agents' API keys keep the classic engine.
+    if (actor.actorType === "user" && getIntegrations(companyId).assistant.engine === "session") {
+      const ids = await getAssistantRunner(db).send({ companyId, threadId, text: requestText, requestedByUserId: actor.actorId });
+      if (!threadId) await chats.addSideChat(companyId, ids.threadId, requestText);
+      res.json(ids);
+      return;
+    }
     const ids = await new Promise<{ routeRunId: string; threadId: string }>(
       (resolve, reject) => {
         routing
@@ -578,7 +594,7 @@ export function tethrRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const threadId = req.params.threadId as string;
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId)) {
+    if (!UUID_RE.test(threadId)) {
       res.status(400).json({ error: "threadId must be a uuid" });
       return;
     }

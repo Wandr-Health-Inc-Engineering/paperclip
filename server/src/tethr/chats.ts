@@ -41,6 +41,9 @@ interface CompanyChats {
   /** Threads whose session has read connector data (Gmail, Slack, …): from then
    * on, opening web pages needs Mark's approval (it could carry that data out). */
   tainted?: Record<string, string>;
+  /** Phase 26.1: which chat a Slack conversation drives, by its Slack source key
+   * ("slack:im:D…" for a DM, "slack:C…:<thread ts>" for a channel thread). */
+  slackLinks?: Record<string, string>;
 }
 
 interface ChatsFile {
@@ -152,6 +155,21 @@ export function takeNotes(companyId: string, threadId: string): Promise<string[]
     const { [threadId]: _taken, ...rest } = c.notes ?? {};
     data[companyId] = { ...c, notes: rest };
     return { value: list, changed: true };
+  });
+}
+
+/** The chat a Slack conversation drives, if it has one (phase 26.1). */
+export function slackLinkedThread(companyId: string, sourceKey: string): string | null {
+  return readFile()[companyId]?.slackLinks?.[sourceKey] ?? null;
+}
+
+/** Remember which chat a Slack conversation drives. */
+export function linkSlackThread(companyId: string, sourceKey: string, threadId: string): Promise<void> {
+  return mutate((data) => {
+    const c = data[companyId] ?? { sideChats: [] };
+    if (c.slackLinks?.[sourceKey] === threadId) return { value: undefined, changed: false };
+    data[companyId] = { ...c, slackLinks: { ...(c.slackLinks ?? {}), [sourceKey]: threadId } };
+    return { value: undefined, changed: true };
   });
 }
 

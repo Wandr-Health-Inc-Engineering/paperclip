@@ -1175,17 +1175,49 @@ instance, read-only: every chat turn billed to the subscription at $0; memory in
   (including "out of credits"), and takes the cost Vercel reports (`costUsd`) instead of pricing
   it from tokens. `TYPESAFE_API_URL` / `TETHR_JEV_MODEL` override. Mark's key is a Vercel key: TypeSafe's own
   server had rejected it; through Vercel it works (2026-11-09, real requests, about $0.00002 each).
-- **Known gap: Slack and the terminal client still talk to the classic engine.**
-  `slack.ts routeInboundKickoff` and `POST /tethr/:companyId/route` call `routing.routeRequest`,
-  not the chat runner. So tethr in Slack has no memory, recall, connectors, goals or team, and
-  those turns aren't indexed. Not a quick switch: the chat session carries the admin's own
-  claude.ai connectors (reads need no approval), so who in Slack may drive it has to be decided
-  first. Planned in phase 26.
-- **Known gap: Slack only takes images.** `extractImageFiles` ignores every other file type, so a
-  PDF or document sent to tethr in Slack is dropped. Planned in phase 26 (the Inbox).
+- **Fixed in phase 26.1: Slack and the terminal reach the chat brain** (section below).
 - **Source files must stay plain text.** `slack.ts` and `checks/site-audit.ts` held literal NUL
   bytes (placeholders), so grep treated them as binary and code searches skipped them. They use
   the `\u0000` escape now. Don't paste control characters into source.
+
+## One brain behind every door (phase 26.1, 2026-11-09)
+
+Slack, the terminal client and the bell's "ask tethr" reach the same tethr as the app (memory,
+recall, connectors, goals, team), not the classic engine. Plan: `tasks/phase-26.md` 26.1;
+DECISIONS 42-43.
+- **Who:** a Slack sender whose member ID is a company admin's (`tethr_members`, setup step 1),
+  and only while the chat engine is "Claude session" (`slack-chat.ts chatBrainAsker`). Everyone
+  else gets the classic engine as before. The chat brain carries the admin's own connectors
+  (reads need no approval), so nobody else may drive it.
+- **Where:**
+  - A DM is the main chat.
+  - A channel-thread mention opens a side chat "Slack: …"; the link lives in `chats.ts`
+    `slackLinks` (Slack source key → thread). Later mentions continue it. Replies without a
+    mention are ignored, as before.
+- **The answer goes back to Slack.** A turn carries `slack: SlackReplyTarget` (runner `send`).
+  `answerInSlack` runs in `pump`'s `finally` (and for a turn stopped in the queue), so a failed,
+  stopped or paused turn answers too.
+- **Approvals:** the turn token carries the target, so an approval card made in that turn has
+  `meta.slack`.
+  - `gating.createOutput` skips the separate approver DM for it; the thread line asks instead.
+  - "approve"/"reject" in that conversation decides the newest card of its chat
+    (`pendingCardInThread`).
+  - `approveExternalAction` wakes the chat with the same target, so the approved action's result
+    is posted back to Slack, whichever way it was approved.
+- **Never post connector data into a channel.** If the chat is tainted (read a connector, or
+  used recall), a channel answer goes to the asker by DM and the thread gets a one-line note.
+  Its approvals are decided in tethr (`deliverSlackTurn`). A DM answers in place.
+- **Files:** `extractSlackFiles` (all types) → `saveSlackFiles`:
+  - downloaded from Slack's own host only (`isSlackFileUrl`), with the bot token, 20 MB
+  - images re-encoded to JPEG (`normalizeToClaudeImage`)
+  - saved with the chat's `saveAttachment`; an unreadable type is named back in Slack
+  - The classic engine still gets images only.
+- **`POST /route`** from a person uses the chat runner. No `threadId` means a new side chat,
+  listed in the app. A malformed `threadId` is a 400. Agents' keys keep the classic engine. The
+  CLI treats `stopped` as finished.
+- Tests: `tethr-slack-chat.test.ts` (9, embedded PG, real runner with a fake Claude and a fake
+  Slack poster). The classic-engine test clears `ANTHROPIC_API_KEY`: a key in the shell made a
+  real (refused) API call before.
 
 ## Hermes is tethr's memory, on the subscription (phase 25, 2026-11-09)
 

@@ -19,7 +19,8 @@ import { teamConnectorLabels, teamContextText, teamService, type TeamAgent } fro
 import { getRoster } from "../overseers.js";
 import { getSetup } from "../setup.js";
 import { applyStreamLine, newTurnState } from "./events.js";
-import { buildSettings, ensureHookScript, issueHookToken, revokeHookToken, writeSettingsFile } from "./gate.js";
+import { buildSettings, ensureHookScript, issueHookToken, revokeHookToken, writeSettingsFile, type SlackReplyTarget } from "./gate.js";
+import { logFailure } from "../best-effort.js";
 import { ensurePersona } from "./persona.js";
 import { TETHR_TOOL_DEFS, TETHR_TOOLS_LABEL } from "./tethr-tools.js";
 
@@ -67,6 +68,9 @@ export interface SendInput {
   requestedByUserId?: string | null;
   /** An agent's task turn: team-run.ts waits for it and reports it itself. */
   task?: boolean;
+  /** Phase 26.1: the turn came from Slack (or follows an approval asked there):
+   * its answer is posted back to that Slack conversation. */
+  slack?: SlackReplyTarget;
 }
 
 /** Phase 21: a one-off private turn (the watcher's idea check). The model gets
@@ -82,6 +86,8 @@ export interface PrivateTurnInput {
 
 /** Prompts of private turns waiting to run (memory only, by run id). */
 const privatePrompts = new Map<string, string>();
+/** Where turns that came from Slack answer (memory only, by run id). */
+const slackTargets = new Map<string, SlackReplyTarget>();
 
 /** How a turn uses its thread's Claude session. */
 interface TurnStyle {
@@ -165,6 +171,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     const threadId = input.threadId ?? row.id;
     if (input.task) state.taskTurns.add(row.id);
     if (privatePrompt !== null) privatePrompts.set(row.id, privatePrompt);
+    if (input.slack && privatePrompt === null) slackTargets.set(row.id, input.slack);
     if (!input.threadId) {
       await db.update(tethrRouteRuns).set({ threadId }).where(eq(tethrRouteRuns.id, row.id));
     }
@@ -173,6 +180,15 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     state.threads.set(key, [...(state.threads.get(key) ?? []), row.id]);
     void pump(key);
     return { routeRunId: row.id, threadId };
+  }
+
+  /** Post a finished Slack turn's answer back to Slack (best effort). */
+  async function answerInSlack(runId: string, companyId: string, threadId: string): Promise<void> {
+    const target = slackTargets.get(runId);
+    if (!target) return;
+    slackTargets.delete(runId);
+    const { deliverSlackTurn } = await import("../slack-chat.js");
+    await deliverSlackTurn(db, { companyId, threadId, runId, target }).catch(logFailure("posting a chat answer to Slack", { runId }));
   }
 
   async function pump(key: string): Promise<void> {
@@ -196,6 +212,9 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
         .where(and(eq(tethrRouteRuns.id, runId), inArray(tethrRouteRuns.status, ["queued", "running"])))
         .catch(() => {});
     } finally {
+      // However the turn ended (answered, failed, stopped, paused), a Slack asker hears.
+      const [companyId, threadId] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)];
+      void answerInSlack(runId, companyId, threadId);
       state.active.delete(key);
       state.running -= 1;
       if (isAgent) state.agentRunning -= 1;
@@ -393,7 +412,14 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       .filter(Boolean)
       .join("\n\n");
 
-    const token = issueHookToken({ companyId, threadId, runId, ...(style === PRIVATE_TURN ? { privateTurn: true } : {}) });
+    const slackTarget = slackTargets.get(runId);
+    const token = issueHookToken({
+      companyId,
+      threadId,
+      runId,
+      ...(style === PRIVATE_TURN ? { privateTurn: true } : {}),
+      ...(slackTarget ? { slack: slackTarget } : {}),
+    });
     // Tethr's own tools (score_list, keyword_ideas) as the MCP server "tethr".
     // Best-effort: without it the turn still runs, just without those tools.
     let mcpConfigPath: string | null = null;
@@ -624,6 +650,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
         state.threads.set(key, queue);
         privatePrompts.delete(runId);
         await finish(runId, { status: "stopped", resultText: "Stopped before it started." });
+        void answerInSlack(runId, key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1));
         return true;
       }
     }

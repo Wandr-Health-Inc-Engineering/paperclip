@@ -220,6 +220,14 @@ Branch: `mark-sandbox` (local only). Date started: 2026-06-11.
     he/she, contact details) to a health detail. It runs on the Mac before text is saved, indexed
     or, from phase 26, sent to Jev.
 
+42. **Only a company admin drives the chat brain from Slack** (phase 26.1). The chat brain runs
+    with the admin's own claude.ai connectors, and reading with them needs no approval, so a
+    teammate's Slack message would read the admin's mail and files. Teammates keep the classic
+    engine until each person can have their own access.
+43. **A channel never gets connector data** (phase 26.1). A Slack channel thread can be read by
+    everyone in it, Slack Connect guests included. Once a chat has read a connector (or used
+    recall), its answers in a channel go to the asker by DM, with a one-line note in the thread.
+
 ## Core changes (keep merge-safe)
 
 Every core file touched, with reason. Everything else Tethr lives in new files.

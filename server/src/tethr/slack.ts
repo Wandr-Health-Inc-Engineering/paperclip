@@ -168,6 +168,8 @@ export type SlackInterpretation =
       threadTs?: string;
       isDM?: boolean;
       images?: SlackImageRef[];
+      /** Phase 26.1: every file sent (the chat brain saves any type it can read). */
+      files?: SlackFileRef[];
       /** Slack member id of the sender (U…) — who is asking / deciding. */
       userId?: string;
     }
@@ -216,6 +218,7 @@ export function interpretSlackEvent(
   const rawText = String(ev.text ?? "");
   const links = extractLinks(rawText);
   const images = extractImageFiles(ev.files);
+  const files = extractSlackFiles(ev.files);
   const hasFiles = Array.isArray(ev.files) && ev.files.length > 0;
 
   // In a DM (`channel_type: "im"`) the bot is 1:1 with the user, so ANY message
@@ -251,6 +254,7 @@ export function interpretSlackEvent(
           : undefined,
     isDM,
     images: images.length ? images : undefined,
+    files: files.length ? files : undefined,
     userId: typeof ev.user === "string" ? ev.user : undefined,
   };
 }
@@ -267,6 +271,8 @@ const MAX_DOWNLOAD_BYTES = 15 * 1024 * 1024; // 15 MB (48MP iPhone HEIC fits; sh
 // Claude's vision sweet spot is ~1568px on the long edge (well under the 8000px
 // hard cap); resizing here keeps the base64 payload small too.
 const MAX_IMAGE_EDGE = 1568;
+/** Files per message the chat brain takes (the chat's own attachment limit). */
+const MAX_SLACK_FILES = 6;
 
 /** Pull image files (screenshots, photos) out of a Slack event's files array. */
 export function extractImageFiles(files: unknown): SlackImageRef[] {
@@ -287,6 +293,32 @@ export function extractImageFiles(files: unknown): SlackImageRef[] {
   return out;
 }
 
+/** A file someone sent tethr in Slack (any type; what can't be read is skipped later). */
+export interface SlackFileRef {
+  url: string;
+  name: string;
+  mimeType: string;
+  size?: number;
+}
+
+/** Every file in a Slack event's files array that Slack lets us download. */
+export function extractSlackFiles(files: unknown): SlackFileRef[] {
+  if (!Array.isArray(files)) return [];
+  const out: SlackFileRef[] = [];
+  for (const f of files) {
+    const file = (f ?? {}) as Record<string, unknown>;
+    const url = String(file.url_private_download ?? file.url_private ?? "");
+    if (!url) continue;
+    out.push({
+      url,
+      name: typeof file.name === "string" && file.name ? file.name : "file",
+      mimeType: String(file.mimetype ?? "").toLowerCase(),
+      size: typeof file.size === "number" ? file.size : undefined,
+    });
+  }
+  return out.slice(0, MAX_SLACK_FILES);
+}
+
 /** An https URL on Slack's own domains (files.slack.com, or GovSlack's). */
 export function isSlackFileUrl(raw: string): boolean {
   try {
@@ -302,7 +334,7 @@ export function isSlackFileUrl(raw: string): boolean {
  * that isn't a real image (e.g. a Slack login page returned when the bot lacks
  * the files:read scope), so the caller drops it instead of shipping garbage to
  * Claude. */
-async function normalizeToClaudeImage(buf: Buffer): Promise<Buffer> {
+export async function normalizeToClaudeImage(buf: Buffer): Promise<Buffer> {
   const { default: sharp } = await import("sharp");
   return sharp(buf)
     .rotate() // apply EXIF orientation (iPhone photos are frequently rotated)
@@ -844,6 +876,7 @@ export async function routeInboundKickoff(
     threadTs?: string;
     isDM?: boolean;
     images?: SlackImageRef[];
+    files?: SlackFileRef[];
     userId?: string;
   },
 ): Promise<{ routeRunId: string; threadId: string } | null> {
@@ -898,6 +931,19 @@ export async function routeInboundKickoff(
       text: `I don't know the command \`/${attempted}\`. Try \`/help\` to see what I can do.`,
     });
     return null;
+  }
+
+  // Phase 26.1: an admin reaches the chat brain (memory, connectors, goals, its
+  // team), the same tethr as the app. Everyone else gets the classic engine below.
+  const { chatBrainAsker, startSlackChatTurn } = await import("./slack-chat.js");
+  const asker = await chatBrainAsker(db, companyId, interp.userId);
+  if (asker && interp.channel && interp.userId) {
+    return startSlackChatTurn(
+      db,
+      companyId,
+      { requestText: interp.requestText, channel: interp.channel, threadTs: interp.threadTs, isDM: interp.isDM, userId: interp.userId, files: interp.files },
+      asker,
+    );
   }
 
   // Wipes are confirmed, not immediate. A reset command asks first and parks

@@ -55,27 +55,39 @@ Jev never writes text and Claude is never spent on a decision Jev can make. A Je
 5. **The learner:** working name `@sage`. It studies three areas at first: distribution, sales and
    customer experience, from public sources only.
 
-## 26.1 One brain behind every door
+## 26.1 One brain behind every door (built 2026-11-09)
 
-Slack and the terminal client reach the same tethr as the app.
+Slack, the terminal client and the bell's "ask tethr" reach the same tethr as the app.
 
-- **Slack, from an admin:** a DM goes into the main chat, the same ongoing conversation as the
-  app. A mention in a channel thread gets its own side chat named after the channel. The answer is
-  posted back into the Slack thread. An action that needs approval says so in Slack with a link,
-  and the existing "approve" reply still works.
+- **Slack, from an admin** (their Slack member ID on tethr's member list, setup step 1):
+  - A DM is the main chat, the same ongoing conversation as the app.
+  - A mention in a channel thread opens a side chat, "Slack: <first words>". Every later mention
+    in that thread continues it. A reply without a mention is ignored, as before.
+  - The answer is posted back where it was asked. A slow one gets "On it" first.
+- **An approval from Slack is asked in Slack:** "Waiting for your approval: … Reply approve or
+  reject here, or decide it in tethr." It's decided from Slack or from tethr, and the result of
+  the approved action is posted back to the same Slack conversation. No separate approval DM for
+  it.
+- **Private answers:** a channel thread can be read by others there. If that chat has read data
+  from a connected tool (Gmail, Drive, Stripe…, or a recall), the answer goes to the asker by DM
+  and the thread gets "I sent it to you directly". Approvals for it are decided in tethr.
 - **Slack, from anyone else:** the classic engine, as today. The chat brain carries the admin's
-  own connectors (Gmail, Drive, Stripe), and reading with them needs no approval, so nobody else
-  may drive it.
-- **Terminal client:** `POST /route` uses the chat runner when the chat engine is "Claude
-  session".
-- **Files in Slack:** every file type is accepted, downloaded from Slack's own hosts only, and
-  saved like a chat attachment. A file with a message goes to the chat. A file with no message
-  goes to the Inbox (26.3).
+  own connectors, and reading with them needs no approval, so nobody else may drive it.
+- **Files in Slack** (chat brain only): every type is downloaded from Slack's own file host with
+  the bot token (20 MB, 6 per message). Images become JPEGs (iPhone HEIC included). Files are
+  saved like chat uploads, and a file tethr can't read is named back in Slack with why. A file
+  with no message also goes to the chat; the Inbox (26.3) will take those.
+- **Terminal client and bell:** `POST /route` from a person uses the chat runner. A new
+  conversation is a side chat, so it shows in the app. Agents' keys keep the classic engine. The
+  terminal client treats a stopped turn as finished.
 - These turns are indexed into Hermes like any chat turn, so recall covers Slack too.
 
-Files: `slack.ts` (`routeInboundKickoff`, `extractImageFiles` becomes all files), `routes/tethr.ts`
-(`POST /route`), `assistant/runner.ts`, `assistant/attachments.ts`, `assistant/turns.ts`
-(`waitForTurn`).
+Files: `server/src/tethr/slack-chat.ts` (new), `slack.ts` (`routeInboundKickoff`,
+`extractSlackFiles`), `chats.ts` (`slackLinks`), `assistant/runner.ts` (`slack` on a turn,
+`answerInSlack`), `assistant/gate.ts` (`SlackReplyTarget` on the turn token),
+`assistant/grants.ts` (`meta.slack` on a card), `gating.ts` (no separate DM; the approval
+wake-up answers in Slack), `routes/tethr.ts` (`POST /route`), `scripts/tethr-cli.mjs`. Tests:
+`tethr-slack-chat.test.ts` (9).
 
 ## 26.2 The decision service
 
