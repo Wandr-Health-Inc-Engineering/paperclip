@@ -54,7 +54,7 @@ describe("Hermes bridge: no model calls by construction", () => {
     expect(ops).toEqual([...HELPER_OPS]);
     // Only these Hermes modules are imported.
     const imports = [...HELPER_SOURCE.matchAll(/^\s*from ([\w.]+) import/gm)].map((m) => m[1]).sort();
-    expect([...new Set(imports)]).toEqual(["hermes_cli.gateway_session_store", "hermes_constants", "hermes_state", "hermes_state_ids", "tools.memory_tool", "tools.skill_manager_tool", "tools.skills_tool"]);
+    expect([...new Set(imports)]).toEqual(["gateway.control_socket", "hermes_cli.gateway_session_store", "hermes_constants", "hermes_state", "hermes_state_ids", "tools.memory_tool", "tools.skill_manager_tool", "tools.skills_tool"]);
   });
 
   it("tethr's profile is locked down: no provider, no borrowed logins, no background model work", () => {
@@ -156,6 +156,8 @@ describe.skipIf(!TEST_ROOT)("Hermes memory layer, against a real Hermes (throwaw
     resetHermesCache();
     expect(await findHermes()).not.toBeNull();
     await ensureProfile(profile);
+    // As the Memory switch does: a running gateway is asked to serve the new profile (no gateway: {}).
+    expect(typeof (await runHelper(profile, "gateway.rescan"))).toBe("object");
     await updateMemoryState(companyId, (s) => ({ ...s, hermesProfile: profile }));
   }, 60_000);
 

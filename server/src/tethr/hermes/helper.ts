@@ -10,6 +10,7 @@
 
 export const HELPER_OPS = [
   "status",
+  "gateway.rescan",
   "memory.apply",
   "sessions.import",
   "sessions.search",
@@ -61,6 +62,15 @@ def status(a):
     return {"home": str(get_hermes_home()), "limits": {"memory": store.memory_char_limit, "user": store.user_char_limit}}
 
 
+def gateway_rescan(a):
+    # What "hermes profile create" does: ask the running gateway (Hermes's only
+    # session writer) to pick up tethr's profile. A gateway that was alone because
+    # only one profile existed starts serving the new one in place.
+    from gateway.control_socket import rescan_gateway_profiles
+    from hermes_constants import get_default_hermes_root
+    return rescan_gateway_profiles(get_default_hermes_root()) or {}
+
+
 def memory_apply(a):
     from tools.memory_tool import load_on_disk_store, memory_tool
     target = "user" if a.get("target") == "user" else "memory"
@@ -72,6 +82,7 @@ def sessions_import(a):
     from hermes_state_ids import new_session_id
     store = session_store()
     results = []
+    rescanned = False
     by_key = {}  # a turn's parent can be an earlier turn of the same batch (parent_key)
     for t in a.get("turns") or []:
         try:
@@ -83,8 +94,17 @@ def sessions_import(a):
             parent = by_key.get(t.get("parent_key")) or t.get("parent")
             if parent:
                 row["parent_session_id"] = str(parent)
-            receipt = store.call("session.mutate", session_id=sid, request_id=uuid.uuid4().hex, expected_revision=0,
-                                 operation="import", payload={"sessions": [row]})
+            try:
+                receipt = store.call("session.mutate", session_id=sid, request_id=uuid.uuid4().hex, expected_revision=0,
+                                     operation="import", payload={"sessions": [row]})
+            except Exception as e:
+                if rescanned or "profile_parked" not in str(e):
+                    raise
+                rescanned = True  # the gateway hasn't picked up tethr's profile yet: ask it to, once
+                gateway_rescan({})
+                store = session_store()
+                receipt = store.call("session.mutate", session_id=sid, request_id=uuid.uuid4().hex, expected_revision=0,
+                                     operation="import", payload={"sessions": [row]})
             try:
                 store.call("session.mutate", session_id=sid, request_id=uuid.uuid4().hex,
                            expected_revision=receipt["revision"], operation="rename", payload={"title": str(t["title"])})
@@ -190,6 +210,7 @@ def skills_delete(a):
 
 OPS = {
     "status": status,
+    "gateway.rescan": gateway_rescan,
     "memory.apply": memory_apply,
     "sessions.import": sessions_import,
     "sessions.search": sessions_search,

@@ -1181,6 +1181,10 @@ utilize it but stick with the subscription style not API for now." Plan: `tasks/
   - The profile is per company, `~/.hermes/profiles/tethr-<prefix>`. tethr writes the folder and
     config itself, never with `hermes profile create`, which can seed a model.
   - Session writes go through Hermes's gateway (its only DB writer); one auto-starts and idles out.
+  - A gateway already running when the profile is made "parks" it until it rescans. Switching
+    memory on sends Hermes's `rescan-profiles` (helper op `gateway.rescan`, what `hermes profile
+    create` does), and an import that hits `profile_parked` rescans once and retries. Found on
+    Mark's Mac, whose gateway ran alone with one profile.
   - Tests use Hermes only with `TETHR_HERMES_TEST_ROOT`, a throwaway data root.
 - **Entries** (`hermes/entries.ts`): Hermes's `§` format in two stores, "company" (MEMORY.md, 6,000
   chars) and "people" (USER.md, 2,000).

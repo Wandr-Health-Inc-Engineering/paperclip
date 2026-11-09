@@ -4,7 +4,8 @@ import type { Db } from "@paperclipai/db";
 import { companies } from "@paperclipai/db";
 import { logActivity } from "../services/activity-log.js";
 import { memoryPath, workspaceDir } from "../tethr/assistant/workspace.js";
-import { ensureProfile, findHermes, HermesError, lockdownGaps, profileNameFor, profileExists, readProfileConfig } from "../tethr/hermes/bridge.js";
+import { ensureProfile, findHermes, HermesError, lockdownGaps, profileNameFor, profileExists, readProfileConfig, runHelper } from "../tethr/hermes/bridge.js";
+import { logFailure } from "../tethr/best-effort.js";
 import { MEMORY_TARGETS, MemoryOpError, validateOps, type MemoryTarget } from "../tethr/hermes/entries.js";
 import { backfillIndex, drainIndex } from "../tethr/hermes/indexer.js";
 import {
@@ -160,7 +161,9 @@ export function tethrMemoryRoutes(db: Db): Router {
     if (on) {
       const [company] = await db.select({ prefix: companies.issuePrefix }).from(companies).where(eq(companies.id, companyId));
       const profile = getMemoryState(companyId).hermesProfile ?? profileNameFor(company?.prefix);
-      await ensureProfile(profile);
+      const { created } = await ensureProfile(profile);
+      // As "hermes profile create" does: ask a running gateway to serve the new profile.
+      if (created) await runHelper(profile, "gateway.rescan").catch(logFailure("asking Hermes to pick up tethr's profile"));
       await updateMemoryState(companyId, (s) => ({ ...s, hermesProfile: profile, hermesOff: false }));
       moved = (await moveBuiltinIntoHermes(companyId)).moved + (await migrateFreeformMemory(companyId)).moved;
       // Past conversations go in in the background.
