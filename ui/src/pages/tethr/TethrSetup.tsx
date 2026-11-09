@@ -151,7 +151,7 @@ function SetupWizard({
 
         <div className="tethr-onboard-body">
           <section className="tethr-panel tethr-onboard-form" aria-label={meta.title}>
-            {renderStep(step, { companyId, data, done, onDone: () => go(next ?? "finish") })}
+            {renderStep(step, { companyId, data, done, onDone: () => go(next ?? "finish"), goTo: go })}
           </section>
           <aside className="tethr-onboard-guide">
             <GuideBlock label="why it matters">
@@ -212,7 +212,13 @@ function GuideBlock({ label, children }: { label: string; children: ReactNode })
 /** Each step's form; saving it moves on. */
 function renderStep(
   key: StepKey,
-  { companyId, data, done, onDone }: { companyId: string; data: SetupData; done: Record<StepKey, boolean>; onDone: () => void },
+  {
+    companyId,
+    data,
+    done,
+    onDone,
+    goTo,
+  }: { companyId: string; data: SetupData; done: Record<StepKey, boolean>; onDone: () => void; goTo: (step: StepKey) => void },
 ): ReactNode {
   switch (key) {
     case "company":
@@ -220,7 +226,7 @@ function renderStep(
     case "focus":
       return <FocusStep companyId={companyId} data={data} onDone={onDone} />;
     case "connect":
-      return <ConnectStep companyId={companyId} data={data} onDone={onDone} />;
+      return <ConnectStep companyId={companyId} data={data} onDone={onDone} goTo={goTo} />;
     case "interview":
       return <InterviewStep companyId={companyId} data={data} onDone={onDone} />;
     case "rhythm":

@@ -46,9 +46,9 @@ export const STEP_GUIDE: Record<StepKey, StepGuide> = {
     ],
     need: [
       "Stripe, PostHog and Gmail connected in your Claude account: claude.ai, Settings, Connectors",
-      "The Slack bot token and Google Ads keys on the Environment page (already set on this Mac)",
+      "Any keys you want to add (Slack bot, Google Ads, Jev). Fix on a row opens it right here, with what to paste and where to find it.",
     ],
-    tip: "A green row means tethr may use it. The goals interview is the real test: it tells you if a connection doesn't answer.",
+    tip: "A green row means tethr may use it. Grey rows are optional. The goals interview is the real test: it tells you if a connection doesn't answer.",
     minutes: 3,
   },
   interview: {
