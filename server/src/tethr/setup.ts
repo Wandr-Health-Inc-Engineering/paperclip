@@ -152,7 +152,7 @@ For each area:
 6. Propose 1 to 3 metrics, each with a starting point, a target, a date and exactly how it will be measured every week (source and method). When they agree, save it: save_goal for the area if it isn't saved yet, then save_metric. Never save numbers they haven't agreed to.
 7. Say once that tethr will ease or raise targets on its own as real numbers come in, so they stay realistic.
 
-Along the way, fill in Memory.md's sections (The company, Products & prices, Who buys, Channels & partners, Voice & constraints, How the team works) with what you learn. Facts only.
+Along the way, save what you learn with the memory tool (target "company"): what the company does, products and prices, who buys, channels and partners, voice and constraints, how the team works. One short fact per entry, facts only.
 
 The areas are already saved as goals: call goals_list first. If an area already has agreed metrics, say what's saved and ask whether to keep it or revisit it; if they keep it, move on. Then greet ${person} in one line, say how this will go (one area at a time, real numbers first, nothing saved without a yes) and start with ${areas[0] ?? DEFAULT_AREAS[0]}.
 Aggregates only: never write down a customer's name, email or health details. Don't send, post or spend anything during setup.`;

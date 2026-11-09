@@ -1161,6 +1161,57 @@ anything on Mark's instance (DECISIONS 31–34; plan `tasks/phase-24.md`).
   agent → the lead reported to tethr → tethr's own check-ins summarized and flagged what needed Mark
   (connect Google Ads).
 
+## Hermes is tethr's memory, on the subscription (phase 25, 2026-11-09)
+
+Mark: "I want to use tethr as our main thing but you can use hermes as the memory layer. We need to
+utilize it but stick with the subscription style not API for now." Plan: `tasks/phase-25.md`; spike:
+`tasks/phase-25-0-spike.md`; DECISIONS 35-38.
+- **Who does what.** Hermes stores tethr's notes, keeps every chat turn searchable and holds the
+  skills tethr learns. Claude Code on the subscription does all the thinking. **tethr never runs a
+  Hermes turn, so Hermes never calls a model.**
+- **Never break these** (`tethr-hermes.test.ts` checks them):
+  - The helper (`hermes/helper.ts`) calls only Hermes's data functions (`HELPER_OPS`): never an
+    agent, chat, cron, ACP or the curator's consolidation.
+  - It runs with no keys in its environment (`hermesEnv`).
+  - tethr's profile stays locked down (`PROFILE_CONFIG`; `lockdownGaps` shows on the card).
+  - Never point tethr at Mark's default Hermes profile.
+- **The bridge** (`server/src/tethr/hermes/bridge.ts`) is the only code that talks to Hermes. It
+  finds it through `hermes --print-runtime-command`, then runs the helper as `<hermes python> -I`
+  with `HERMES_HOME` = the profile.
+  - The profile is per company, `~/.hermes/profiles/tethr-<prefix>`. tethr writes the folder and
+    config itself, never with `hermes profile create`, which can seed a model.
+  - Session writes go through Hermes's gateway (its only DB writer); one auto-starts and idles out.
+  - Tests use Hermes only with `TETHR_HERMES_TEST_ROOT`, a throwaway data root.
+- **Entries** (`hermes/entries.ts`): Hermes's `§` format in two stores, "company" (MEMORY.md, 6,000
+  chars) and "people" (USER.md, 2,000).
+  - CLAUDE.md v4 renders them every turn as "## Memory" (data, not instructions), replacing the
+    `@Memory.md` import.
+  - **Memory.md is now a read-only copy for the team** (`workspaceWriteRefusal` refuses it).
+  - Without Hermes, a built-in store keeps the same entries (`hermes/memory-layer.ts`).
+  - Provenance (who saved what, from which chat) is in `tethr-memory.json` (`hermes/state.ts`).
+  - The old free-form Memory.md migrates once, with a backup outside Drive.
+- **Index** (`hermes/indexer.ts`): every finished chat turn is imported, one at a time.
+  - Only the person's message and tethr's answer. **Never tool results, never private turns (the
+    Ideas chat), never throttled ones.**
+  - A ledger means once only. Backfill runs at boot and every 10 minutes (`startMemoryIndexer`).
+  - One lineage per chat; an agent's chats use source `tethr-agent-<tag>`.
+- **Tools** (`assistant/memory-tools.ts`):
+  - `memory` (draft): add, patch or remove; health details are refused.
+  - `recall` (read): search past chats or open a turn. An agent searches only its own chats (a
+    lead also its sub-agents'). **A recall taints the thread.**
+  - `skill_view`, `skill_save`. Only tethr's own chats save skills; descriptions are at most 60
+    characters.
+  - **None of them in a private turn** (the hook token carries `privateTurn`).
+  - Every 10th message from a person, a note reminds tethr to save what's durable.
+- **UI:**
+  - The Memory page (`TethrMemory.tsx`) has entries with who saved them, edit, remove, add, usage
+    bars, a past-conversation search and skills.
+  - The Integrations "Memory" card has Hermes on/off (instance admins), the lockdown checks, the
+    indexed count and the last import error.
+  - Routes are in `server/src/routes/tethr-memory.ts`.
+- **Tests:** `tethr-hermes.test.ts` (10: no-model guards; real-Hermes memory, import, search,
+  skills, the chat end to end, 0 tokens) and `tethr-assistant-memory.test.ts` (7).
+
 ## Onboarding from scratch: goals with numbers, setup, rhythm (phase 20, 2026-11-07)
 
 Mark's call: start tethr over from scratch, with real goals. The plan is in `tasks/phase-20.md`.

@@ -1,3 +1,4 @@
+import { renderMemoryBlock } from "../tethr/hermes/entries.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -153,7 +154,8 @@ describePg("tethr goals — service, tools, routes", () => {
 
   it("writes the goals into the chat's CLAUDE.md", async () => {
     const view = await goalsService(db).list(companyId);
-    const ws = await ensureWorkspace({ goals: goalsContextText(view) });
+    const memory = renderMemoryBlock({ backend: "builtin", stores: { company: { entries: [], used: 0, limit: 6000 }, people: { entries: [], used: 0, limit: 2000 } }, skills: [] }, { recall: false });
+    const ws = await ensureWorkspace({ goals: goalsContextText(view), memory });
     const md = fs.readFileSync(ws.claudePath, "utf8");
     expect(md).toContain("## Goals");
     expect(md).toContain("Say which goal a suggestion moves");

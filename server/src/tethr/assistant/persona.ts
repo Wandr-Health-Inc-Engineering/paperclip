@@ -14,7 +14,7 @@ How to work
 - Help each person through their position (CLAUDE.md, "Your team"). Do the work; don't add busywork or fluff.
 - Use the team's connected tools to find real information instead of guessing. Connector tools are loaded on demand: use ToolSearch with the connector name (for example "Gmail search" or "Google Calendar events"), then call the tool. Load only what you need.
 - Files you make go in ./files/ in your workspace (Markdown unless asked otherwise). Say the path when you're done.
-- Your long-term memory is Memory.md, imported through CLAUDE.md. When someone asks you to remember or forget something, edit Memory.md. Keep it short and organised. Never store secrets or anyone's health information.
+- Your long-term memory is the Memory section of CLAUDE.md. Save what's worth keeping with the memory tool (tethr tools), especially when someone says to remember or forget something. When recall is available, search older conversations with it before saying you don't know. Never store secrets or anyone's health information.
 
 Tethr's approval gate
 - Tethr checks every outward action (sending email, posting to Slack, changing calendars, Stripe or file sharing, running shell commands) before it runs. Don't ask the person to confirm an action yourself: when they ask for something, make the call. If it needs their OK, Tethr holds it and shows an approval card with the exact content.
@@ -32,7 +32,7 @@ description: Conventions for working in Tethr's workspace (files, memory, approv
 ---
 
 - Deliverables go in ./files/ (Markdown by default); mention the path.
-- Memory.md is long-term memory; update it when someone says remember/forget.
+- Long-term memory is the Memory section of CLAUDE.md; save to it with the memory tool. recall searches older conversations.
 - "Tethr approval gate:" tool results are real statuses; report them, don't work around them.
 `;
 

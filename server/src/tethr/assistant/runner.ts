@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { tethrRouteRuns } from "@paperclipai/db";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
@@ -27,6 +27,9 @@ import { TETHR_TOOL_DEFS, TETHR_TOOLS_LABEL } from "./tethr-tools.js";
 const NON_TEAM_TETHR_TOOLS = TETHR_TOOL_DEFS.map((d) => d.name).filter((n) => !(TEAM_TOOL_NAMES as readonly string[]).includes(n));
 import { buildMcpConfig, ensureToolsBridge, removeMcpConfig, writeMcpConfig } from "./tools-bridge.js";
 import { ensureWorkspace, readableRoots } from "./workspace.js";
+import { renderMemoryBlock } from "../hermes/entries.js";
+import { indexTurnSoon } from "../hermes/indexer.js";
+import { memorySnapshot, migrateFreeformMemory } from "../hermes/memory-layer.js";
 
 // The chat assistant runner (phase 18). Each Chat thread drives ONE Claude Code
 // session (resumed per thread) through Paperclip core's claude-local adapter
@@ -49,6 +52,9 @@ const MAX_CONCURRENT = 3;
 const MAX_AGENT_CONCURRENT = 2;
 const FLUSH_MS = 250;
 const ROTATE_CONTEXT_TOKENS = 150_000;
+const MEMORY_NUDGE_EVERY = 10;
+const MEMORY_NUDGE =
+  "Memory check: if the last few messages settled something durable (a decision, how something works, someone's preference), save it with the memory tool before you finish. Skip this if nothing did.";
 const TERMINAL = new Set(["done", "failed", "stopped", "gated"]);
 
 export interface SendInput {
@@ -227,6 +233,15 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     ].join("\n\n");
   }
 
+  /** How many messages a person has sent in this thread (the memory nudge counts them). */
+  async function personTurns(threadId: string): Promise<number> {
+    const [r] = await db
+      .select({ n: count() })
+      .from(tethrRouteRuns)
+      .where(and(eq(tethrRouteRuns.threadId, threadId), eq(tethrRouteRuns.invocationSource, "chat"), isNull(tethrRouteRuns.sourceKey)));
+    return Number(r?.n ?? 0);
+  }
+
   async function runTurn(runId: string): Promise<void> {
     const [row] = await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.id, runId));
     if (!row || TERMINAL.has(row.status)) return;
@@ -292,6 +307,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     let skillDir: string;
     let settingsPath: string;
     let bridgeScript: string | null = null;
+    let tethrTools = false;
     try {
       cfg = getIntegrations(companyId);
       const goals = goalsContextText(await goalsService(db).list(companyId));
@@ -305,11 +321,15 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
               timezone: getSetup(companyId).timezone,
               ownerNames: Object.fromEntries(Object.entries(getRoster(companyId)).map(([role, o]) => [role, o.name])),
             });
-      ws = await ensureWorkspace({ integrationRules: integrationRulesText(cfg), goals, company, team: teamText });
+      // A lead always gets the tethr server, for its team tools.
+      tethrTools = modeFor(cfg, TETHR_TOOLS_LABEL) !== "off" && (!member || member.lead || member.connectors.includes(TETHR_TOOLS_LABEL));
+      // Phase 25: the Memory block, from Hermes (or the built-in store), every turn.
+      await migrateFreeformMemory(companyId).catch(() => undefined);
+      const snapshot = memorySnapshot(companyId);
+      const memory = renderMemoryBlock(snapshot, { recall: tethrTools && snapshot.backend === "hermes" });
+      ws = await ensureWorkspace({ integrationRules: integrationRulesText(cfg), goals, company, team: teamText, memory });
       ({ personaPath, skillDir } = await ensurePersona());
       const hookScript = await ensureHookScript();
-      // A lead always gets the tethr server, for its team tools.
-      const tethrTools = modeFor(cfg, TETHR_TOOLS_LABEL) !== "off" && (!member || member.lead || member.connectors.includes(TETHR_TOOLS_LABEL));
       if (tethrTools) bridgeScript = await ensureToolsBridge();
       const deny = [
         ...denyRulesFor(cfg),
@@ -353,6 +373,10 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       return;
     }
     const notes = style.carriesContext ? await chats.takeNotes(companyId, threadId) : [];
+    // Like Hermes: every 10 messages from a person, a reminder to save what's durable.
+    if (style.carriesContext && tethrTools && row.sourceKey === null && (await personTurns(threadId)) % MEMORY_NUDGE_EVERY === 0) {
+      notes.push(MEMORY_NUDGE);
+    }
     const context = !session && style.carriesContext ? await legacyContext(companyId, threadId, runId) : "";
     const ask = privatePrompt ?? row.requestText;
     // An agent's fresh session learns who it is (a task turn carries that itself).
@@ -367,7 +391,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       .filter(Boolean)
       .join("\n\n");
 
-    const token = issueHookToken({ companyId, threadId, runId });
+    const token = issueHookToken({ companyId, threadId, runId, ...(style === PRIVATE_TURN ? { privateTurn: true } : {}) });
     // Tethr's own tools (score_list, keyword_ideas) as the MCP server "tethr".
     // Best-effort: without it the turn still runs, just without those tools.
     let mcpConfigPath: string | null = null;
@@ -530,6 +554,8 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       }
     }
     void recordDiscoveredTools(companyId, [...turn.toolNames]).catch(() => {});
+    // Phase 25: the finished turn goes into Hermes, so recall can find it later.
+    if (style.savesSession && status === "done") indexTurnSoon(db, runId, companyId);
 
     // Spend: subscription turns record tokens at 0¢; API-key turns record their cost.
     if (result?.usage) {

@@ -178,6 +178,34 @@ Branch: `mark-sandbox` (local only). Date started: 2026-06-11.
     (Mark: "If it needs a permission it can buzz me"), and link to the card when tethr has a
     public URL. No core files changed.
 
+## Phase 25 decisions (Hermes is tethr's memory — 2026-11-09)
+
+35. **tethr stays the main product; Hermes is its memory layer, on the subscription** (Mark: "I
+    want to use tethr as our main thing but you can use hermes as the memory layer. We need to
+    utilize it but stick with the subscription style not API for now"). Hermes stores tethr's
+    notes, keeps every chat turn searchable and holds the skills tethr learns. Claude Code on the
+    subscription does all the thinking. **tethr never runs a Hermes turn, so Hermes never calls a
+    model**: Hermes's own Anthropic login would bill Max extra usage (Pro can't use it), and any
+    other provider bills per token. Enforced, not just intended:
+    - The helper calls only Hermes's data functions: the memory store, session import/rename,
+      read-only search and skills.
+    - It runs with an environment that holds no keys.
+    - tethr's profile has no provider, `adopt_external_logins: false`, background review off and
+      consolidation off.
+    - `tethr-hermes.test.ts` fails on an agent entry point and asserts 0 tokens on a real Hermes.
+36. **A dedicated profile per company (`tethr-<prefix>`), apart from Mark's own Hermes.** His
+    Hermes runs model turns on OpenRouter/Nous, and sharing would let those turns read and
+    rewrite Wandr's memory on per-use billing. tethr writes the profile folder and its config
+    itself rather than using `hermes profile create`, which can seed a model from the default
+    profile.
+37. **Memory.md is now a read-only copy.** The chat saves with the `memory` tool (Hermes's
+    entry format and checks). CLAUDE.md renders the entries every turn. Without Hermes, a
+    built-in store keeps the same entries, with no search and no skills. The old free-form
+    Memory.md is turned into entries once and backed up outside Drive.
+38. **Indexed: the person's message and tethr's answer only.** Never tool results (raw email or
+    Slack) and never private turns. An agent's recall searches only its own chats (a lead's
+    also covers its sub-agents'). A recall taints the thread like a connector read.
+
 ## Core changes (keep merge-safe)
 
 Every core file touched, with reason. Everything else Tethr lives in new files.

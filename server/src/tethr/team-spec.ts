@@ -514,7 +514,7 @@ export function agentToolRefusal(agent: { tag: string; connectors: string[]; lea
 export function teamProposalBrief(person?: string | null): string {
   const who = person?.trim() || "the person you're working with";
   return `Propose a starting team
-[Brief for tethr] ${who} wants you to propose a starting team of agents. Call team_list and goals_list, and look at Memory.md and the recent work in this chat and files/.
+[Brief for tethr] ${who} wants you to propose a starting team of agents. Call team_list and goals_list, and look at the Memory section of CLAUDE.md and the recent work in this chat and files/.
 Then propose two or three agents that would move the goals most, one create_agent call each, each with the goal it moves. Make them distinct: no overlap with each other, and nothing you already do well in this chat. For each, give clear instructions (what to look at, what to deliver, where in files/ to put it), only the connectors it needs, a schedule if the work repeats, and a first task if there's an obvious one. Keep budgets modest.
 After the calls, explain each in plain words: what it would do, how often, what it delivers, which goal it moves, and why it's worth having. If agents need approval, say they're waiting as cards. Don't assign other tasks yet.`;
 }

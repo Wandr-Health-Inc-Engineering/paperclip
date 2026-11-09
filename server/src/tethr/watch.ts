@@ -443,7 +443,7 @@ tethr's watcher heard ${speakers.join(", ")} talking in ${where}. The conversati
 """
 ${lines.join("\n")}
 """
-Using what you know about the company, the team and the goals (CLAUDE.md, Memory.md), is there one idea that would genuinely help what they're discussing?
+Using what you know about the company, the team and the goals (CLAUDE.md, including its Memory section), is there one idea that would genuinely help what they're discussing?
 ${IDEA_RULES}`,
   };
 }

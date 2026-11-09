@@ -34,8 +34,11 @@ describe("tethr assistant policy — classify", () => {
     expect(classify("Write", { file_path: "/Users/mark/Desktop/x.md" }, ctx).cls).toBe("blocked");
     const gen = classify("Edit", { file_path: "/drive/00 Tethr/tethr/CLAUDE.md" }, ctx);
     expect(gen.cls).toBe("blocked");
-    expect(gen.blockedReason).toMatch(/Memory\.md/);
-    expect(classify("Edit", { file_path: "/drive/00 Tethr/tethr/Memory.md" }, ctx).cls).toBe("workspace");
+    expect(gen.blockedReason).toMatch(/memory tool/);
+    // Phase 25: Memory.md is a copy tethr writes; memories go through the memory tool.
+    const copy = classify("Edit", { file_path: "/drive/00 Tethr/tethr/Memory.md" }, ctx);
+    expect(copy.cls).toBe("blocked");
+    expect(copy.blockedReason).toMatch(/memory tool/);
   });
 
   it("never lets the chat write Claude Code settings, hooks or instructions", () => {

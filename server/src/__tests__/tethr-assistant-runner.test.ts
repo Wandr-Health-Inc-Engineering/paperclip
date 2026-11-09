@@ -119,9 +119,10 @@ describePg("tethr assistant runner", () => {
     expect(env.MCP_CONNECTION_NONBLOCKING).toBe("false");
     expect(env.TETHR_HOOK_TOKEN).toBeTruthy();
 
-    // The generated workspace + memory + per-turn settings with the gate hooks.
-    expect(fs.existsSync(path.join(dir, "workspace", "Memory.md"))).toBe(true);
-    expect(fs.readFileSync(path.join(dir, "workspace", "CLAUDE.md"), "utf8")).toContain("@Memory.md");
+    // The generated workspace (memory rendered in, phase 25) + per-turn settings with the gate hooks.
+    const claudeMd = fs.readFileSync(path.join(dir, "workspace", "CLAUDE.md"), "utf8");
+    expect(claudeMd).toContain("## Memory");
+    expect(claudeMd).not.toContain("@Memory.md");
     const settings = JSON.parse(fs.readFileSync(args[args.indexOf("--settings") + 1], "utf8"));
     expect(settings.autoMemoryEnabled).toBe(false);
     expect(settings.permissions.deny).toEqual(expect.arrayContaining(["mcp__claude_ai_Mercury", "mcp__posthog"]));

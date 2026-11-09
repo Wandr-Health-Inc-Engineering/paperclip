@@ -10,6 +10,7 @@ import { readTextInFiles, safeFileName } from "./files.js";
 import { FORMAT_LABEL, MAKE_DOCUMENT_DEF, makeDocument } from "./make-document.js";
 import { FILES_DIR } from "./workspace.js";
 import { runTeamTool, TEAM_TOOL_DEFS, TEAM_TOOL_SET } from "./team-tools.js";
+import { MEMORY_TOOL_DEFS, MEMORY_TOOL_SET, runMemoryTool } from "./memory-tools.js";
 
 export { parseCsv, toCsv };
 
@@ -71,6 +72,8 @@ export interface TethrToolContext {
   /** The chat turn calling (phase 23: team tools put their cards on it). */
   threadId?: string;
   runId?: string;
+  /** Phase 25: a one-off private turn (the watcher's idea check) gets no memory tools. */
+  privateTurn?: boolean;
   now?: () => Date;
   jev?: JevCallOptions;
   concurrency?: number;
@@ -185,6 +188,7 @@ export const TETHR_TOOL_DEFS: McpToolDef[] = [
   },
   MAKE_DOCUMENT_DEF,
   ...TEAM_TOOL_DEFS,
+  ...MEMORY_TOOL_DEFS,
 ];
 
 // ---- criteria --------------------------------------------------------------
@@ -636,6 +640,7 @@ export async function runTethrTool(name: string, args: unknown, ctx: TethrToolCo
       return await runGoalTool(name, a, ctx);
     }
     if (TEAM_TOOL_SET.has(name)) return await runTeamTool(name, a, ctx);
+    if (MEMORY_TOOL_SET.has(name)) return await runMemoryTool(name, a, ctx);
     return { text: `There's no Tethr tool called ${name}.`, isError: true };
   } catch (err) {
     if (err instanceof GoalInputError) return { text: `${name}: ${err.message}`, isError: true };

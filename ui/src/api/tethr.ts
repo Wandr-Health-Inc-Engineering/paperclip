@@ -683,6 +683,48 @@ export interface TethrOrgChange {
   appliedAt: string;
 }
 
+// ---- Phase 25: memory --------------------------------------------------------
+export type TethrMemoryTarget = "company" | "people";
+export interface TethrMemoryOp {
+  action: "add" | "patch" | "remove";
+  content?: string;
+  old_text?: string;
+}
+export interface TethrMemoryEntry {
+  text: string;
+  savedBy?: string;
+  savedAt?: string;
+  threadId?: string;
+}
+export interface TethrMemorySnapshot {
+  backend: "hermes" | "builtin";
+  stores: Record<TethrMemoryTarget, { entries: TethrMemoryEntry[]; used: number; limit: number }>;
+  skills: Array<{ name: string; description: string }>;
+}
+export interface TethrMemoryState extends TethrMemorySnapshot {
+  copyPath: string;
+  inDrive: boolean;
+  hermes: {
+    installed: boolean;
+    profile: string | null;
+    on: boolean;
+    ready: boolean;
+    lockdownGaps: string[];
+    indexed: number;
+    lastImportAt: string | null;
+    lastImportError: string | null;
+  };
+}
+export interface TethrRecallHit {
+  sessionId: string;
+  title: string | null;
+  source: string | null;
+  startedAt: number | null;
+  snippet: string | null;
+  user: string;
+  assistant: string;
+}
+
 export const tethrKeys = {
   overview: (c: string) => ["tethr", c, "overview"] as const,
   agent: (c: string, a: string) => ["tethr", c, "agent", a] as const,
@@ -693,7 +735,9 @@ export const tethrKeys = {
   env: (c: string) => ["tethr", c, "env"] as const,
   goals: (c: string) => ["tethr", c, "goals"] as const,
   setup: (c: string) => ["tethr", c, "setup"] as const,
-  assistantMemory: (c: string) => ["tethr", c, "assistant-memory"] as const,
+  memory: (c: string) => ["tethr", c, "memory"] as const,
+  memorySearch: (c: string, q: string) => ["tethr", c, "memory", "search", q] as const,
+  memorySkill: (c: string, name: string) => ["tethr", c, "memory", "skill", name] as const,
   chatRuns: (c: string, threadId: string) => ["tethr", c, "chats", threadId, "runs"] as const,
   routeRun: (c: string, id: string) => ["tethr", c, "route-runs", id] as const,
   outputs: (c: string, status?: string) => ["tethr", c, "outputs", status ?? "all"] as const,
@@ -873,10 +917,17 @@ export const tethrApi = {
   setEnv: (c: string, key: string, value: string) => api.put<{ ok: true }>(`/tethr/${c}/env`, { key, value }),
   deleteEnv: (c: string, key: string) => api.delete<{ ok: true }>(`/tethr/${c}/env/${encodeURIComponent(key)}`),
   /** Phase 18.5: the chat's long-term memory file (Memory.md in the workspace). */
-  assistantMemory: (c: string) =>
-    api.get<{ content: string; mtime: number; path: string; inDrive: boolean }>(`/tethr/${c}/assistant/memory`),
-  saveAssistantMemory: (c: string, content: string, ifMtime: number) =>
-    api.put<{ mtime: number }>(`/tethr/${c}/assistant/memory`, { content, ifMtime }),
+  /** Phase 25: tethr's memory (Hermes, or the built-in store). */
+  memory: (c: string) => api.get<TethrMemoryState>(`/tethr/${c}/memory`),
+  changeMemory: (c: string, target: TethrMemoryTarget, operations: TethrMemoryOp[]) =>
+    api.post<TethrMemorySnapshot & { usage: string }>(`/tethr/${c}/memory/entries`, { target, operations }),
+  searchMemory: (c: string, q: string) =>
+    api.get<{ hits: TethrRecallHit[] }>(`/tethr/${c}/memory/search?q=${encodeURIComponent(q)}`),
+  memorySkill: (c: string, name: string) =>
+    api.get<{ name: string; description: string; content: string }>(`/tethr/${c}/memory/skills/${encodeURIComponent(name)}`),
+  deleteMemorySkill: (c: string, name: string) => api.delete<TethrMemorySnapshot>(`/tethr/${c}/memory/skills/${encodeURIComponent(name)}`),
+  setHermesMemory: (c: string, on: boolean) =>
+    api.post<TethrMemorySnapshot & { on: boolean; moved: number }>(`/tethr/${c}/memory/hermes`, { on }),
   /** Phase 23: tethr's team of agents. */
   team: (c: string) => api.get<TethrTeam>(`/tethr/${c}/team`),
   setTeamAgentPaused: (c: string, tag: string, paused: boolean) =>

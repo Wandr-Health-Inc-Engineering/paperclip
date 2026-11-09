@@ -41,7 +41,9 @@ import { routingService } from "../tethr/routing.js";
 import * as chats from "../tethr/chats.js";
 import { getAssistantRunner } from "../tethr/assistant/runner.js";
 import { resolveHookToken } from "../tethr/assistant/gate.js";
-import { MEMORY_MAX_CHARS, ensureWorkspace, readableRoots, readMemoryFile, workspaceDir, writeMemoryFile } from "../tethr/assistant/workspace.js";
+import { readableRoots, workspaceDir } from "../tethr/assistant/workspace.js";
+import { memoryToolRefusal } from "../tethr/assistant/memory-tools.js";
+import { memoryBackend } from "../tethr/hermes/memory-layer.js";
 import { handlePostToolUse, handlePreToolUse } from "../tethr/assistant/hook-handler.js";
 import { runTethrTool, TETHR_TOOL_DEFS, TETHR_TOOLS_LABEL, TETHR_TOOLS_SERVER } from "../tethr/assistant/tethr-tools.js";
 import { classify, decide } from "../tethr/assistant/policy.js";
@@ -63,7 +65,7 @@ import { seedTethrCore } from "../tethr/seed/tethr-core.js";
 import { logFailure } from "../tethr/best-effort.js";
 import { mirrorDir } from "../tethr/mirror.js";
 import multer from "multer";
-import { getIntegrations, integrationRulesText, KNOWN_CONNECTORS, modeFor, sanitizeIntegrationsPatch, updateIntegrations } from "../tethr/integrations.js";
+import { getIntegrations, KNOWN_CONNECTORS, modeFor, sanitizeIntegrationsPatch, updateIntegrations } from "../tethr/integrations.js";
 import {
   interpretSlackEvent,
   routeInboundKickoff,
@@ -75,6 +77,7 @@ import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { isInstanceAdmin, requirePerson } from "./tethr-people.js";
 import { tethrSetupRoutes } from "./tethr-setup.js";
 import { tethrTeamRoutes } from "./tethr-team.js";
+import { tethrMemoryRoutes } from "./tethr-memory.js";
 
 const execFileAsync = promisify(execFile);
 let cachedSha: string | null = null;
@@ -143,9 +146,13 @@ export function tethrRoutes(db: Db) {
     if (req.params.op === "list") {
       const isTeamTool = (name: string) => (TEAM_TOOL_NAMES as readonly string[]).includes(name);
       // tethr: everything. A lead: its team tools, plus the rest if it has "Tethr tools". Any other agent: no team tools.
-      const tools = !member
-        ? TETHR_TOOL_DEFS
-        : TETHR_TOOL_DEFS.filter((d) => (isTeamTool(d.name) ? member.lead : member.connectors.includes(TETHR_TOOLS_LABEL)));
+      // Memory tools only where they work (phase 25: Hermes-only ones, never in a private turn).
+      const backend = memoryBackend(ctx.companyId);
+      const tools = (
+        !member
+          ? TETHR_TOOL_DEFS
+          : TETHR_TOOL_DEFS.filter((d) => (isTeamTool(d.name) ? member.lead : member.connectors.includes(TETHR_TOOLS_LABEL)))
+      ).filter((d) => !memoryToolRefusal(d.name, { private: ctx.privateTurn === true, member }, backend));
       res.json({ tools });
       return;
     }
@@ -178,6 +185,7 @@ export function tethrRoutes(db: Db) {
       companyId: ctx.companyId,
       threadId: ctx.threadId,
       runId: ctx.runId,
+      privateTurn: ctx.privateTurn === true,
     });
     await logActivity(db, {
       companyId: ctx.companyId,
@@ -657,51 +665,7 @@ export function tethrRoutes(db: Db) {
     res.json({ reset: true });
   });
 
-  // ---- Memory.md (phase 18.5): the chat's long-term memory file --------------
-  // Claude reads it every turn (CLAUDE.md imports it) and edits it on "remember…".
-  // Mark can read and edit it here; a save is refused if the file changed since
-  // he opened it (e.g. Claude edited it meanwhile), so neither overwrites the other.
-  router.get("/tethr/:companyId/assistant/memory", async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    const ws = await ensureWorkspace({ integrationRules: integrationRulesText(getIntegrations(companyId)) });
-    const { content, mtime } = await readMemoryFile(ws.memoryPath);
-    res.json({ content, mtime, path: ws.memoryPath, inDrive: ws.inDrive });
-  });
-
-  router.put("/tethr/:companyId/assistant/memory", async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    const actor = getActorInfo(req);
-    if (actor.actorType !== "user") {
-      res.status(403).json({ error: "Only a person can edit memory here" });
-      return;
-    }
-    const content = typeof req.body?.content === "string" ? req.body.content : null;
-    if (content === null || content.length > MEMORY_MAX_CHARS) {
-      res.status(400).json({ error: "content is required (max 200k characters)" });
-      return;
-    }
-    const ws = await ensureWorkspace({ integrationRules: integrationRulesText(getIntegrations(companyId)) });
-    const result = await writeMemoryFile(ws.memoryPath, content, Number(req.body?.ifMtime));
-    if (!result.ok) {
-      res.status(409).json({
-        error: "Memory.md changed since you opened it (Tethr may have just updated it). Your edit wasn't saved.",
-        ...result.conflict,
-      });
-      return;
-    }
-    await logActivity(db, {
-      companyId,
-      actorType: "user",
-      actorId: actor.actorId,
-      action: "tethr_memory_edited",
-      entityType: "company",
-      entityId: companyId,
-      details: { chars: content.length },
-    }).catch(() => {});
-    res.json({ mtime: result.mtime });
-  });
+  // Memory (phase 25): routes/tethr-memory.ts.
 
   // ---- Integrations (phase 18.4): connector modes, rules, chat model/engine ----
   router.get("/tethr/:companyId/integrations", async (req, res) => {
@@ -852,6 +816,7 @@ export function tethrRoutes(db: Db) {
   router.use(tethrSetupRoutes(db));
   // ---- tethr's team of agents (phase 23): routes/tethr-team.ts ----
   router.use(tethrTeamRoutes(db));
+  router.use(tethrMemoryRoutes(db));
 
   router.put("/tethr/:companyId/integrations", async (req, res) => {
     const companyId = req.params.companyId as string;

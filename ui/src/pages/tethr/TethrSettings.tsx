@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
 import { PageSkeleton } from "@/components/PageSkeleton";
-import { MonoTag, StatusDot } from "@/components/tethr/primitives";
+import { MonoTag, StatusDot, formatRelative } from "@/components/tethr/primitives";
+import { Link } from "../../lib/router";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
 import { cn } from "@/lib/utils";
@@ -180,6 +181,8 @@ export function TethrSettings() {
       </section>
 
       <TeamSettingsCard settings={integrations.team} onChange={(team) => update.mutate({ team })} />
+
+      <MemoryCard companyId={selectedCompanyId} />
 
       <OverseerRosterCard companyId={selectedCompanyId} />
 
@@ -490,6 +493,65 @@ function AddressesField({ value, onSave }: { value: string[]; onSave: (list: str
 // requests both stop doing LLM work until resumed. The kill switch for
 // subscription usage. Paused gets the active-panel treatment + a warn dot so
 // it can't be missed (calm, not alarming).
+// Phase 25: where tethr's memory lives. With Hermes on, tethr's notes, every
+// past conversation (searchable with recall) and the skills it learns are kept
+// in Hermes, in tethr's own profile. Hermes only stores and searches there; the
+// thinking stays on Claude (your subscription), so Hermes never calls a model.
+function MemoryCard({ companyId }: { companyId: string }) {
+  const queryClient = useQueryClient();
+  const { data } = useQuery({ queryKey: tethrKeys.memory(companyId), queryFn: () => tethrApi.memory(companyId) });
+  const toggle = useMutation({
+    mutationFn: (on: boolean) => tethrApi.setHermesMemory(companyId, on),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: tethrKeys.memory(companyId) }),
+  });
+  if (!data) return null;
+  const h = data.hermes;
+  const locked = h.lockdownGaps.length === 0;
+  return (
+    <section className="tethr-panel p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
+            <StatusDot tone={h.on ? (locked ? "ok" : "warn") : "idle"} />
+            Memory · {h.on ? "Hermes" : "built-in"}
+          </p>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            {h.on
+              ? "tethr's notes, every past conversation (it searches them with recall) and the skills it learns live in Hermes. Hermes only stores and searches; the thinking stays on Claude, so Hermes never calls a model."
+              : h.installed
+                ? "Hermes is installed. Switch it on to keep tethr's memory there: past conversations become searchable and tethr can keep skills. What's saved now moves over."
+                : "tethr keeps its notes itself. Install Hermes to also search past conversations and keep skills."}
+          </p>
+        </div>
+        {h.installed || h.on ? (
+          <div className="flex shrink-0 flex-col items-center gap-1.5">
+            <Switch on={h.on} disabled={toggle.isPending} onToggle={() => toggle.mutate(!h.on)} label={h.on ? "Hermes on" : "Hermes off"} />
+            <span className="tethr-eyebrow text-[10px]">{h.on ? "hermes" : "built-in"}</span>
+          </div>
+        ) : null}
+      </div>
+      {h.on ? (
+        <div className="mt-3 space-y-1 font-mono text-[11px] tethr-text-3">
+          <p>
+            profile {h.profile} · {h.indexed.toLocaleString()} conversation{h.indexed === 1 ? "" : "s"} searchable
+            {h.lastImportAt ? ` · last added ${formatRelative(h.lastImportAt)}` : ""}
+          </p>
+          <p className={cn(!locked && "text-[var(--tethr-warn)]")}>
+            {locked ? "locked down: no model provider, no borrowed logins, no background review" : `check the profile's config: ${h.lockdownGaps.join(", ")} missing`}
+          </p>
+          {h.lastImportError ? <p className="text-[var(--tethr-warn)]">last import: {h.lastImportError}</p> : null}
+        </div>
+      ) : null}
+      {toggle.error ? <p className="mt-2 text-[12.5px] text-[var(--tethr-bad)]">{toggle.error.message}</p> : null}
+      <p className="tethr-eyebrow mt-3 text-[10px]">
+        <Link to="/company/settings/memory" className="hover:text-foreground">
+          see what tethr remembers →
+        </Link>
+      </p>
+    </section>
+  );
+}
+
 function ThrottleCard({ companyId }: { companyId: string }) {
   const queryClient = useQueryClient();
   const { data } = useQuery({

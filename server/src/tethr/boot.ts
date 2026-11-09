@@ -33,6 +33,9 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
   // Phase 24: tethr acts on its own (check-ins, daily review) once switched on.
   const { startBrain } = await import("./team-brain.js");
   startBrain(db);
+  // Phase 25: past chat turns into Hermes (only for companies that use it).
+  const { startMemoryIndexer } = await import("./hermes/indexer.js");
+  startMemoryIndexer(db);
 }
 
 /**

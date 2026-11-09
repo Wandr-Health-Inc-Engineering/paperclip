@@ -65,6 +65,9 @@ function storeFiles(): string[] {
     pick("TETHR_MOUNTS_FILE", "tethr-drive-mounts.json"),
     pick("TETHR_SETUP_FILE", "tethr-setup.json"),
     pick("TETHR_PACE_FILE", "tethr-pace.json"),
+    // Phase 25: dropping a company's record unlinks its Hermes profile; the
+    // profile itself (memory, conversations, skills) stays in ~/.hermes.
+    pick("TETHR_MEMORY_FILE", "tethr-memory.json"),
   ];
 }
 
