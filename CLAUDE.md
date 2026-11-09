@@ -1209,8 +1209,19 @@ utilize it but stick with the subscription style not API for now." Plan: `tasks/
   - The Integrations "Memory" card has Hermes on/off (instance admins), the lockdown checks, the
     indexed count and the last import error.
   - Routes are in `server/src/routes/tethr-memory.ts`.
-- **Tests:** `tethr-hermes.test.ts` (10: no-model guards; real-Hermes memory, import, search,
-  skills, the chat end to end, 0 tokens) and `tethr-assistant-memory.test.ts` (7).
+- **Tests:** `tethr-hermes.test.ts` (11: no-model guards, the queue after an empty drain;
+  real-Hermes memory, import, search, skills, the chat end to end, 0 tokens) and
+  `tethr-assistant-memory.test.ts` (7).
+- **Verified live** on a throwaway tethr with a throwaway Hermes root and real Claude:
+  - "remember …" was saved into Hermes with provenance, and a NEW side chat answered it from the
+    Memory block with no tool call.
+  - A fact said but not saved was found by recall from a fresh chat, which tainted that thread.
+  - A skill was saved, then loaded from a new chat.
+  - The Memory page (edit, search, skills) and the Integrations card render in light, dark and
+    phone.
+  - `hermes insights` showed 0 tokens over 6 sessions.
+  - The live run caught a bug: an empty drain left the import queue stuck. Fixed, with a
+    regression test.
 
 ## Onboarding from scratch: goals with numbers, setup, rhythm (phase 20, 2026-11-07)
 

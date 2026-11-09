@@ -72,6 +72,20 @@ tethr never runs a Hermes turn, so Hermes never calls a model.**
 ## Spike
 See `tasks/phase-25-0-spike.md`.
 
+## Verified live (throwaway instance + throwaway Hermes root, real Claude on the subscription)
+- **Remember:** "remember …" became a `memory` call; the entry landed in the profile's
+  MEMORY.md with provenance (@tethr, main chat). A NEW side chat answered from the Memory block
+  with no tool call.
+- **Recall:** a fact said with "don't save it" was found by `recall` from a fresh side chat, and
+  that thread was tainted.
+- **Skills:** a procedure was saved with `skill_save`; a new chat loaded it with `skill_view`.
+- **UI:** the Memory page (edit an entry, search past conversations, skills) and the
+  Integrations card checked in light, dark and phone.
+- **No model:** `hermes insights` on the profile: 6 sessions, 0 tokens.
+- **Bug found and fixed:** the boot catch-up drained an empty queue, and that left the queue's
+  flag set for good, so no later turn was imported. It's fixed, with a regression test that
+  fails on the old code.
+
 ## Rollout on Mark's Mac (approved with the plan)
 1. Merge the worktree branch, one restart.
 2. Switch Hermes on for Wandr: this creates `~/.hermes/profiles/tethr-wd`, moves memory in and
