@@ -223,8 +223,15 @@ The chat's `score_list` tool ranks long lists (keyword ideas, leads, Reddit post
 **Jev** from TypeSafe AI. It's built and tested, but it does nothing until there's a key:
 
 1. Sign up at https://console.typesafe.ai (Jev is in early access) and create an API key.
-2. Add `TYPESAFE_API_KEY=<key>` to `~/.paperclip/instances/default/.env`, then restart Tethr.
-3. Check it: Integrations → "Tethr tools" should say "Jev is connected."
+2. Paste it in tethr: **Environment** page (or Set up tethr → Connections → Jev → Fix). No
+   restart needed.
+3. Check it: Set up tethr → Connections shows Jev as **Connected** only when TypeSafe accepts the
+   key (tethr asks TypeSafe; a saved key that TypeSafe rejects shows "TypeSafe rejected the key").
+
+**2026-11-09: the key saved on Mark's Mac is rejected by TypeSafe** (401 "Cannot authenticate"
+on both the model list and a real request; the request format matches TypeSafe's docs). Copy the
+key again from console.typesafe.ai and paste it as in step 2. Nothing that uses Jev works until
+then.
 4. Try it in Chat: "Pull keyword ideas for malaria pills and travel vaccines, save them, then
    score them for catalog fit and buying intent and show me the top 10."
 

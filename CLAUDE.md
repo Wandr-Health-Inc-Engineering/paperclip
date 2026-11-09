@@ -1161,6 +1161,27 @@ anything on Mark's instance (DECISIONS 31–34; plan `tasks/phase-24.md`).
   agent → the lead reported to tethr → tethr's own check-ins summarized and flagged what needed Mark
   (connect Google Ads).
 
+## Wiring review (2026-11-09): what's true, and two known gaps
+
+Mark asked for a check that the systems are wired the way the design says. Verified on his live
+instance, read-only: every chat turn billed to the subscription at $0; memory in Hermes
+(`tethr-wd`, locked down, 0 tokens); no schedules running; @tethr the only agent.
+- **Jev: "a key is saved" is not "connected".** `jev.ts` `jevHealth()` asks TypeSafe's model list
+  whether the key works (cached 10 minutes; a new key is checked at once; real calls update it).
+  Setup → Connections and Integrations show that, never mere presence. The key on Mark's Mac was
+  rejected by TypeSafe on 2026-11-09 (MANUAL-STEPS C6c), so Jev has never run for real here.
+- **Known gap: Slack and the terminal client still talk to the classic engine.**
+  `slack.ts routeInboundKickoff` and `POST /tethr/:companyId/route` call `routing.routeRequest`,
+  not the chat runner. So tethr in Slack has no memory, recall, connectors, goals or team, and
+  those turns aren't indexed. Not a quick switch: the chat session carries the admin's own
+  claude.ai connectors (reads need no approval), so who in Slack may drive it has to be decided
+  first. Planned in phase 26.
+- **Known gap: Slack only takes images.** `extractImageFiles` ignores every other file type, so a
+  PDF or document sent to tethr in Slack is dropped. Planned in phase 26 (the Inbox).
+- **Source files must stay plain text.** `slack.ts` and `checks/site-audit.ts` held literal NUL
+  bytes (placeholders), so grep treated them as binary and code searches skipped them. They use
+  the `\u0000` escape now. Don't paste control characters into source.
+
 ## Hermes is tethr's memory, on the subscription (phase 25, 2026-11-09)
 
 Mark: "I want to use tethr as our main thing but you can use hermes as the memory layer. We need to
@@ -1180,6 +1201,9 @@ utilize it but stick with the subscription style not API for now." Plan: `tasks/
   with `HERMES_HOME` = the profile.
   - The profile is per company, `~/.hermes/profiles/tethr-<prefix>`. tethr writes the folder and
     config itself, never with `hermes profile create`, which can seed a model.
+  - Every tethr instance on a Mac shares one Hermes. An instance other than `default` carries its
+    id in the name (`profileNameFor`), and a company never adopts a profile folder it didn't make
+    (`freeProfileName`: a wiped company's profile stays on disk, the new one gets `-2`).
   - Session writes go through Hermes's gateway (its only DB writer); one auto-starts and idles out.
   - A gateway already running when the profile is made "parks" it until it rescans. Switching
     memory on sends Hermes's `rescan-profiles` (helper op `gateway.rescan`, what `hermes profile
@@ -1189,7 +1213,8 @@ utilize it but stick with the subscription style not API for now." Plan: `tasks/
 - **Entries** (`hermes/entries.ts`): Hermes's `§` format in two stores, "company" (MEMORY.md, 6,000
   chars) and "people" (USER.md, 2,000).
   - CLAUDE.md v4 renders them every turn as "## Memory" (data, not instructions), replacing the
-    `@Memory.md` import.
+    `@Memory.md` import. CLAUDE.md is one file for every chat of the company and turns run side by
+    side, so `renderMemoryBlock` takes company-level facts only, never what one thread may use.
   - **Memory.md is now a read-only copy for the team** (`workspaceWriteRefusal` refuses it).
   - Without Hermes, a built-in store keeps the same entries (`hermes/memory-layer.ts`).
   - Provenance (who saved what, from which chat) is in `tethr-memory.json` (`hermes/state.ts`).
