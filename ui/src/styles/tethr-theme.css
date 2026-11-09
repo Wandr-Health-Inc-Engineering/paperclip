@@ -1585,13 +1585,90 @@ html.tethr-intro-hold [data-slot="card"] {
   }
 }
 
-.tethr-intro-status {
-  display: inline-flex;
+/* The terminal: a black square in both themes that types itself
+   (lib/tethr-intro.ts terminalFrame; StartupIntro writes each frame). */
+.tethr-intro-term {
+  width: min(400px, calc(100vw - 32px));
+  margin-top: calc(var(--w) * 0.08);
+  border-radius: 14px;
+  overflow: hidden;
+  text-align: left;
+  color: #e9e4dc;
+  background: #0b0a09;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 244, 230, 0.08),
+    inset 0 1px 0 rgba(255, 244, 230, 0.06),
+    0 26px 60px -30px rgba(11, 10, 9, 0.7);
+  animation: tethr-intro-term-in 760ms var(--tethr-ease) 280ms both;
+}
+.dark .tethr-intro-term {
+  background: #050403;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 244, 230, 0.1),
+    inset 0 1px 0 rgba(255, 244, 230, 0.07),
+    0 30px 70px -30px rgba(0, 0, 0, 0.9);
+}
+.tethr-intro-term-bar {
+  display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: calc(var(--w) * 0.05);
+  height: 32px;
+  padding: 0 14px;
+  border-bottom: 1px solid rgba(255, 244, 230, 0.07);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(233, 228, 220, 0.55);
   white-space: nowrap;
-  animation: tethr-fade 420ms ease 1400ms both;
+}
+.tethr-intro-term-body {
+  padding: 12px 14px 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre;
+  overflow: hidden;
+}
+.tethr-intro-term-line {
+  min-height: 1.7em;
+  color: rgba(233, 228, 220, 0.62);
+}
+.tethr-intro-term-line:first-child,
+.tethr-intro-term-line.is-active {
+  color: #f3efe9;
+}
+.tethr-intro-term-line[data-text="ready."] {
+  color: #8fb59a;
+}
+/* The block cursor on the line being written. */
+.tethr-intro-term-line.is-active::after {
+  content: "";
+  display: inline-block;
+  width: 0.6em;
+  height: 1.15em;
+  margin-left: 3px;
+  vertical-align: -0.2em;
+  background: currentColor;
+  animation: tethr-intro-caret 1s steps(1) infinite;
+}
+@keyframes tethr-intro-caret {
+  50% {
+    opacity: 0;
+  }
+}
+@keyframes tethr-intro-term-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
 }
 
 /* Leaving: the stage lifts and blurs away, then the ground clears. */
@@ -1615,7 +1692,8 @@ html.tethr-intro-hold [data-slot="card"] {
 /* Reduced motion: a still card that fades in and out. */
 .tethr-intro.is-reduced .tethr-intro-word,
 .tethr-intro.is-reduced .tethr-intro-word > span,
-.tethr-intro.is-reduced .tethr-intro-status,
+.tethr-intro.is-reduced .tethr-intro-term,
+.tethr-intro.is-reduced .tethr-intro-term-line::after,
 .tethr-intro.is-reduced .tethr-intro-reeds,
 .tethr-intro.is-reduced .tethr-intro-nebula {
   animation: none;
@@ -1633,4 +1711,232 @@ html.tethr-intro-hold [data-slot="card"] {
 .tethr-intro.is-reduced .tethr-intro-reeds {
   -webkit-mask-position: 50% 0;
   mask-position: 50% 0;
+}
+
+/* ===== Onboarding (2026-11-08): the welcome and the guided setup ------------
+   pages/tethr/TethrSetup.tsx + setup/Welcome.tsx. Display type at monument
+   scale against intimate body copy, an off-center hero, and a choreographed
+   entrance (the nebula settles, the headline rises word by word, the rest
+   follows). The guided steps: a rail on desktop, a segmented bar on phones,
+   the form beside its guidance. */
+@layer components {
+  .tethr-welcome {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: clamp(16px, 5vh, 64px) 0 64px;
+  }
+  .tethr-welcome-hero {
+    max-width: 880px;
+    padding-left: clamp(0px, 4vw, 56px);
+  }
+  .tethr-welcome-mark {
+    color: var(--foreground);
+    margin-bottom: clamp(18px, 3vh, 32px);
+    animation: tethr-welcome-form 1200ms var(--tethr-ease) both;
+  }
+  .tethr-welcome-mark .tethr-nebula {
+    font-size: clamp(76px, 9vw, 116px);
+  }
+  .tethr-welcome-title {
+    margin-top: 14px;
+    font-weight: 200;
+    font-size: clamp(44px, 7.6vw, 108px);
+    line-height: 0.94;
+    letter-spacing: -0.048em;
+    text-wrap: balance;
+  }
+  .tethr-welcome-word {
+    display: inline-block;
+    white-space: pre;
+    animation: tethr-welcome-word 950ms var(--tethr-ease) both;
+    animation-delay: calc(220ms + var(--i, 0) * 80ms);
+  }
+  .tethr-welcome-word:first-child {
+    color: var(--muted-foreground);
+  }
+  .tethr-welcome-lede {
+    margin-top: clamp(18px, 3vh, 28px);
+    max-width: 44ch;
+    font-size: clamp(15px, 1.3vw, 17.5px);
+    line-height: 1.6;
+    color: var(--muted-foreground);
+    text-wrap: pretty;
+  }
+  .tethr-welcome-actions {
+    margin-top: clamp(24px, 4vh, 36px);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .tethr-welcome-rise {
+    animation: tethr-welcome-rise 900ms var(--tethr-ease) both;
+    animation-delay: var(--d, 0ms);
+  }
+  .tethr-welcome-grid {
+    margin-top: clamp(48px, 9vh, 104px);
+    padding: 32px 0 0 clamp(0px, 4vw, 56px);
+    border-top: 1px solid var(--tethr-rim);
+    display: grid;
+    gap: 40px 64px;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  }
+
+  .tethr-onboard {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 48px;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 8px 0 48px;
+  }
+  .tethr-onboard-rail {
+    position: sticky;
+    top: 8px;
+    align-self: start;
+    padding-top: 6px;
+  }
+  .tethr-onboard-meter {
+    height: 2px;
+    border-radius: 2px;
+    background: var(--tethr-rim);
+    overflow: hidden;
+  }
+  .tethr-onboard-meter > i {
+    display: block;
+    height: 100%;
+    background: var(--foreground);
+    transition: width 700ms var(--tethr-ease);
+  }
+  .tethr-onboard-main {
+    min-width: 0;
+    animation: tethr-welcome-rise 700ms var(--tethr-ease) both;
+  }
+  .tethr-onboard-progress {
+    display: none;
+    gap: 4px;
+    margin-bottom: 20px;
+  }
+  .tethr-onboard-progress > i {
+    flex: 1;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--tethr-rim-strong);
+    transition: background 500ms var(--tethr-ease);
+  }
+  .tethr-onboard-progress > i.is-done {
+    background: var(--foreground);
+  }
+  .tethr-onboard-progress > i.is-current {
+    background: color-mix(in oklab, var(--foreground) 45%, transparent);
+  }
+  .tethr-onboard-head {
+    max-width: 760px;
+  }
+  .tethr-onboard-title {
+    margin-top: 12px;
+    font-weight: 200;
+    font-size: clamp(36px, 4.6vw, 60px);
+    line-height: 0.98;
+    letter-spacing: -0.042em;
+  }
+  .tethr-onboard-lede {
+    margin-top: 12px;
+    font-size: clamp(15px, 1.2vw, 17px);
+    color: var(--muted-foreground);
+  }
+  .tethr-onboard-body {
+    margin-top: clamp(24px, 4vh, 36px);
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(240px, 1fr);
+    gap: 36px;
+    align-items: start;
+  }
+  .tethr-onboard-form {
+    padding: 22px;
+  }
+  .tethr-onboard-guide {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    padding-top: 4px;
+  }
+  .tethr-onboard-foot {
+    margin-top: 28px;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+}
+@media (max-width: 1100px) {
+  .tethr-onboard-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 900px) {
+  .tethr-welcome-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tethr-onboard {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .tethr-onboard-rail {
+    display: none;
+  }
+  .tethr-onboard-progress {
+    display: flex;
+  }
+  .tethr-onboard-form {
+    padding: 16px;
+  }
+}
+@keyframes tethr-welcome-word {
+  from {
+    opacity: 0;
+    transform: translateY(0.32em);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+@keyframes tethr-welcome-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes tethr-welcome-form {
+  from {
+    opacity: 0;
+    scale: 0.5;
+    rotate: -120deg;
+    filter: blur(12px);
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+    rotate: 0deg;
+    filter: blur(0);
+  }
+}
+/* On a first launch the welcome sits under the intro: its entrance waits and
+   plays as the intro lifts. */
+html.tethr-intro-hold .tethr-welcome,
+html.tethr-intro-hold .tethr-welcome * {
+  animation-play-state: paused !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tethr-welcome-word,
+  .tethr-welcome-rise,
+  .tethr-welcome-mark,
+  .tethr-onboard-main {
+    animation: none !important;
+  }
 }

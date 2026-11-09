@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { INTRO, INTRO_PENDING_KEY, INTRO_SEEN_KEY, exitAt, introReady, introReason, isDesktopClient } from "./tethr-intro";
+import {
+  INTRO,
+  INTRO_PENDING_KEY,
+  INTRO_SEEN_KEY,
+  TERMINAL,
+  exitAt,
+  introReady,
+  introReason,
+  isDesktopClient,
+  leaderLine,
+  terminalFrame,
+} from "./tethr-intro";
 
 const DESKTOP_UA = "Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 (KHTML, like Gecko) TethrDesktop/1.0";
 const BROWSER_UA = "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36";
@@ -49,6 +60,51 @@ describe("when the intro plays", () => {
     };
     expect(introReason({ ...base, userAgent: DESKTOP_UA, session: broken })).toBe("desktop");
     expect(introReason({ ...base, session: null })).toBeNull();
+  });
+});
+
+describe("the terminal", () => {
+  const opts = { host: "127.0.0.1:3100", workspace: "Wandr", readyAt: null };
+  const commandDone = TERMINAL.typeFrom + TERMINAL.command.length * TERMINAL.charMs;
+  const finalAt = commandDone + TERMINAL.lineGap * 4;
+
+  it("types the command a character at a time", () => {
+    expect(terminalFrame(0, opts).lines).toEqual(["$ "]);
+    expect(terminalFrame(TERMINAL.typeFrom + TERMINAL.charMs * 5, opts).lines).toEqual(["$ tethr"]);
+    expect(terminalFrame(commandDone, opts)).toEqual({ lines: ["$ tethr connect"], active: 0 });
+  });
+
+  it("prints each status line, then its status, with the leaders lined up", () => {
+    const first = commandDone + TERMINAL.lineGap;
+    expect(terminalFrame(first, opts).lines[1]).toBe("handshake  127.0.0.1:3100");
+    const settled = terminalFrame(finalAt - 1, opts);
+    expect(settled.lines.slice(1)).toEqual([
+      leaderLine("handshake", "127.0.0.1:3100", "ok"),
+      leaderLine("workspace", "Wandr", "ok"),
+      leaderLine("agents", "@tethr", "online"),
+    ]);
+    expect(settled.lines.slice(1).every((l) => l.length === TERMINAL.width)).toBe(true);
+    expect(settled.active).toBe(3);
+  });
+
+  it("says a new workspace comes next, rather than ok", () => {
+    const line = terminalFrame(finalAt - 1, { ...opts, workspace: "new", workspaceStatus: "set up next" }).lines[2];
+    expect(line).toBe(leaderLine("workspace", "new", "set up next"));
+    expect(line.length).toBe(TERMINAL.width);
+  });
+
+  it("says connecting until the app is up, then ready", () => {
+    expect(terminalFrame(finalAt, opts).lines[4]).toBe("connecting.");
+    expect(terminalFrame(finalAt + TERMINAL.dotsMs * 2, opts).lines[4]).toBe("connecting...");
+    expect(terminalFrame(finalAt + 5000, opts).lines[4]).toMatch(/^connecting/);
+    // Ready early: the word waits for its turn. Ready late: it waits for the app.
+    expect(terminalFrame(finalAt, { ...opts, readyAt: 100 }).lines[4]).toBe("ready.");
+    expect(terminalFrame(finalAt + 100, { ...opts, readyAt: finalAt + 500 }).lines[4]).toMatch(/^connecting/);
+    expect(terminalFrame(finalAt + 600, { ...opts, readyAt: finalAt + 500 }).lines[4]).toBe("ready.");
+  });
+
+  it("finishes before the intro may leave", () => {
+    expect(finalAt).toBeLessThan(INTRO.holdMin - 300);
   });
 });
 

@@ -27,7 +27,7 @@ import { MarkdownBody } from "@/components/MarkdownBody";
 import { RouteFlow } from "@/components/tethr/RouteFlow";
 import { CHIP_HOVER, CHIP_SURFACE } from "@/components/tethr/Chip";
 import { OutputPanel, type PanelFile } from "@/components/tethr/OutputPanel";
-import { TethrSetupNudge } from "@/components/tethr/SetupNavItem";
+import { TethrSetupNudge, useFirstRunToSetup } from "@/components/tethr/SetupNavItem";
 import { Nebula } from "@/components/tethr/Nebula";
 import { OutputStatusBadge, StatusDot, formatRelative } from "@/components/tethr/primitives";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
@@ -74,6 +74,8 @@ export function TethrChat() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  // A first launch lands on the setup welcome, unless a specific chat was asked for.
+  useFirstRunToSetup(!searchParams.get("chat"));
   const [limit, setLimit] = useState(PAGE);
   const [pending, setPending] = useState<{
     text: string;

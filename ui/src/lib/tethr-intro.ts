@@ -92,8 +92,8 @@ export function markIntroPlayed(): void {
 // ---- timing (ms from the start) -------------------------------------------
 
 export const INTRO = {
-  /** earliest the app may come up; the nebula and the wordmark have settled by then */
-  holdMin: 1950,
+  /** earliest the app may come up; the nebula, the wordmark and the terminal have settled by then */
+  holdMin: 2450,
   /** latest: if the app still isn't ready, get out of the way anyway */
   holdMax: 9000,
   exit: 620,
@@ -101,6 +101,67 @@ export const INTRO = {
   reducedHold: 900,
   reducedExit: 300,
 } as const;
+
+// ---- the terminal ------------------------------------------------------------
+// A black square under the wordmark types itself: the command, three status
+// lines with dot leaders, then "connecting" until the app under the intro is
+// really up, and "ready" once it is.
+
+export const TERMINAL = {
+  command: "tethr connect",
+  /** when the command starts typing, and the time per character */
+  typeFrom: 420,
+  charMs: 34,
+  /** after the command, a line every lineGap; its status follows statusDelay later */
+  lineGap: 200,
+  statusDelay: 150,
+  /** characters per line, so the dot leaders line up */
+  width: 38,
+  /** the "connecting" dots step this often */
+  dotsMs: 280,
+} as const;
+
+export interface TerminalFrame {
+  lines: string[];
+  /** the line the cursor sits on */
+  active: number;
+}
+
+/** "workspace  Wandr ..... ok": a label, a value, dots to the width, a status. */
+export function leaderLine(label: string, value: string, status: string, width: number = TERMINAL.width): string {
+  const head = `${label.padEnd(11)}${value}`;
+  const dots = Math.max(2, width - head.length - status.length - 2);
+  return `${head} ${".".repeat(dots)} ${status}`;
+}
+
+/** What the terminal shows t ms in. `host` is where the app is served from,
+ * `workspace` names the company (or says it's new), `readyAt` is when the app
+ * came up (null while it hasn't). */
+export function terminalFrame(
+  t: number,
+  opts: { host: string; workspace: string; workspaceStatus?: string; readyAt: number | null },
+): TerminalFrame {
+  const T = TERMINAL;
+  const typed = Math.max(0, Math.min(T.command.length, Math.floor((t - T.typeFrom) / T.charMs)));
+  const commandDone = T.typeFrom + T.command.length * T.charMs;
+  const lines = [t >= T.typeFrom ? `$ ${T.command.slice(0, typed)}` : "$ "];
+  const steps: Array<[string, string, string]> = [
+    ["handshake", opts.host, "ok"],
+    ["workspace", opts.workspace, opts.workspaceStatus ?? "ok"],
+    ["agents", "@tethr", "online"],
+  ];
+  steps.forEach(([label, value, status], i) => {
+    const at = commandDone + T.lineGap * (i + 1);
+    if (t < at) return;
+    lines.push(t >= at + T.statusDelay ? leaderLine(label, value, status) : `${label.padEnd(11)}${value}`);
+  });
+  const finalAt = commandDone + T.lineGap * (steps.length + 1);
+  if (t >= finalAt) {
+    const ready = opts.readyAt !== null && t >= Math.max(finalAt, opts.readyAt);
+    lines.push(ready ? "ready." : `connecting${".".repeat(1 + (Math.floor((t - finalAt) / T.dotsMs) % 3))}`);
+  }
+  return { lines, active: lines.length - 1 };
+}
 
 /** A screen without the app's main column (onboarding, an error) counts as ready after this. */
 export const READY_FALLBACK_MS = 3500;
