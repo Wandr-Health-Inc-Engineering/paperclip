@@ -91,6 +91,15 @@ export function mainThreadId(companyId: string): string {
   return companyId;
 }
 
+/** A link into the app's chat that opens on one card (a notification's target). */
+export function chatHref(companyId: string, threadId: string, focusRunId?: string | null): string {
+  const params = new URLSearchParams();
+  if (threadId !== mainThreadId(companyId)) params.set("chat", threadId);
+  if (focusRunId) params.set("focus", focusRunId);
+  const query = params.toString();
+  return query ? `/chat?${query}` : "/chat";
+}
+
 /** A short side-chat title from its first message: first line, single-spaced, ≤60 chars. */
 export function chatTitle(request: string): string {
   const firstLine = request.split(/\r?\n/).find((l) => l.trim()) ?? "";

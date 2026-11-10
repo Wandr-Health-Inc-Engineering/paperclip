@@ -19,7 +19,7 @@ import { executeTeamTask } from "../tethr/team-run.ts";
 import { healTeamIcons, teamConnectorLabels, teamService } from "../tethr/team.ts";
 import { connectionsContextText, findConnection, needResolver } from "../tethr/connections.ts";
 import { updateIntegrations } from "../tethr/integrations.ts";
-import { takeNotes } from "../tethr/chats.ts";
+import { chatHref, takeNotes } from "../tethr/chats.ts";
 import { taskService } from "../tethr/tasks.ts";
 import { gatingService } from "../tethr/gating.ts";
 import { tethrRoutes } from "../routes/tethr.ts";
@@ -251,7 +251,11 @@ describePg("questions as cards: asked, answered, and held on", () => {
     expect(asked.isError).toBeFalsy();
     expect(openQuestions(companyId, { agentTag: "@paid-ads" })).toHaveLength(1);
     const bells = await db.select().from(tethrNotifications).where(eq(tethrNotifications.companyId, companyId));
+    // No turn asked it here (the tool was called directly), so the link opens that chat without a card to scroll to.
     expect(bells.find((n) => n.title === "@paid-ads asks: Approve a $1,200 a month test budget?")).toMatchObject({ kind: "approval", href: `/chat?chat=${agent.threadId}` });
+    expect(chatHref(companyId, agent.threadId, "r1")).toBe(`/chat?chat=${agent.threadId}&focus=r1`);
+    expect(chatHref(companyId, companyId, "r1")).toBe("/chat?focus=r1");
+    expect(chatHref(companyId, companyId)).toBe("/chat");
     const roster = await request(appFor(PERSON)).get(`/api/tethr/${companyId}/team`).expect(200);
     expect(roster.body.agents.find((a: { tag: string }) => a.tag === "@paid-ads").waitingOnYou).toBe(1);
 

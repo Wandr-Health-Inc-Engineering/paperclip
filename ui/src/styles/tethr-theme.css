@@ -2309,3 +2309,34 @@ html.tethr-intro-hold .tethr-welcome * {
 .tethr-chat:has(.tethr-chats-drawer[data-state="open"]) .tethr-avatar.is-working::after {
   animation-play-state: paused !important;
 }
+
+/* A card a notification opened the chat on (?focus=): clear of the floating
+   header when scrolled to, and marked for a moment. */
+[data-run-id] {
+  scroll-margin-top: 16px;
+}
+@media (min-width: 768px) {
+  [data-run-id] {
+    scroll-margin-top: 84px;
+  }
+}
+@keyframes tethr-focus-flash {
+  0%,
+  40% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--foreground) 7%, transparent);
+    background-color: color-mix(in srgb, var(--foreground) 7%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 8px transparent;
+    background-color: transparent;
+  }
+}
+.tethr-focus {
+  border-radius: 10px;
+  animation: tethr-focus-flash 2.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tethr-focus {
+    animation: none;
+  }
+}

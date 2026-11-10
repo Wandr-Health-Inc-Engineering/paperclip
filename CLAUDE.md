@@ -514,8 +514,8 @@ label "Chat". Run records still store `invocationSource: "console"` (data, uncha
   answer as Markdown, filed outputs as links. Pill composer at the bottom (Enter sends). URL: `/chat` = the ongoing chat,
   `?chat=<threadId>` = side, `?chat=new` = a side chat being started. **Gated outputs render as
   inline approval cards (Mark's pick) calling the same `outputs/:id/decide` endpoint as the
-  Queue** — same gate, the Queue still lists everything. The bell's "ask tethr" now routes into
-  the main chat. Locked by `tethr-chats.test.ts`.
+  Queue** — same gate, the Queue still lists everything. (The bell's "ask tethr" was removed
+  2026-11-10; a notification opens its card instead.) Locked by `tethr-chats.test.ts`.
 
 ## Chat on a real Claude session (phase 18, 2026-11-07) — the v1 core
 
@@ -1261,6 +1261,14 @@ its folder with approval, it's just gonna end up getting clogged."
   turn, follow it, say which) above "Deciding", which gains a budget-fit rule. A team agent's
   `playbooks` (TeamAgent, from its title/mission/instructions) go into its identity text. Verified on the
   live chat (read-only): the small-budget campaign turn made no Skill call.
+- **A notification opens what it's about** (Mark: the bell's "Ask tethr to handle this" "just said a
+  stupid chat"; it pasted the alert into the main chat as a vague question). The button is gone.
+  Tapping a notification goes straight to its link (`TethrBell.tsx` `tapAction`); only a staged item
+  that still waits opens the Approve/Reject popup, and one with no link opens a read-only popup.
+  Report, idea and question notifications link to their card, `chats.chatHref(company, thread,
+  runId)` → `/chat?focus=<runId>` (plus `chat=` for a side or agent chat). The chat scrolls to
+  `[data-run-id]`, opens a focused report in full, marks it briefly (`.tethr-focus`) and drops the
+  param. Kinds read as words ("report", not "run").
 
 ## Wiring review (2026-11-09): what's true, and two known gaps
 
@@ -1283,7 +1291,7 @@ instance, read-only: every chat turn billed to the subscription at $0; memory in
 
 ## One brain behind every door (phase 26.1, 2026-11-09)
 
-Slack, the terminal client and the bell's "ask tethr" reach the same tethr as the app (memory,
+Slack and the terminal client reach the same tethr as the app (memory,
 recall, connectors, goals, team), not the classic engine. Plan: `tasks/phase-26.md` 26.1;
 DECISIONS 42-43.
 - **Who:** a Slack sender whose member ID is a company admin's (`tethr_members`, setup step 1),

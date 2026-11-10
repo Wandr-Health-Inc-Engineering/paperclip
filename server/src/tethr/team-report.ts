@@ -139,7 +139,8 @@ export async function deliverAgentReport(db: Db, r: AgentReport, deps: { post?: 
 
   const { notificationService } = await import("./notify.js");
   await notificationService(db)
-    .send({ companyId: r.companyId, kind: "run", title: headline, body: summary ?? undefined, href: `/chat?chat=${r.agent.threadId}`, agentTag: r.agent.tag })
+    // Tapping it opens the report's card in the chat, read in full.
+    .send({ companyId: r.companyId, kind: "run", title: headline, body: summary ?? undefined, href: chats.chatHref(r.companyId, threadId, card.id), agentTag: r.agent.tag })
     .catch(logFailure("agent report bell", { tag: r.agent.tag }));
 
   // Phase 26.4: Jev may judge whether it needs the owner now (report.urgency).

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { tethrRouteRuns } from "@paperclipai/db";
 import { logFailure } from "../best-effort.js";
-import { isTainted, mainThreadId } from "../chats.js";
+import { chatHref, isTainted } from "../chats.js";
 import { connections, findConnection } from "../connections.js";
 import { orgService } from "../org.js";
 import { checkCleanup, cleanupCardBody, cleanupDestination, CLEANUP_LIMITS } from "./cleanup.js";
@@ -129,7 +129,7 @@ export async function tellPersonAboutQuestion(db: Db, companyId: string, questio
       kind: "approval",
       title: question.connection ? question.question : `${who} asks: ${question.question}`,
       body: question.detail ?? undefined,
-      href: question.threadId === mainThreadId(companyId) ? "/chat" : `/chat?chat=${question.threadId}`,
+      href: chatHref(companyId, question.threadId, question.runId),
       agentTag: question.agentTag ?? "@tethr",
     })
     .catch(logFailure("question bell", { questionId: question.id }));

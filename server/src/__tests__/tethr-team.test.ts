@@ -243,7 +243,8 @@ describePg("tethr team — agents that work in their own chats and report back",
     const notes = await takeNotes(companyId, companyId);
     expect(notes.some((n) => n.includes("Two competitors raised prices 5%"))).toBe(true);
     const bells = await db.select().from(tethrNotifications).where(eq(tethrNotifications.companyId, companyId));
-    expect(bells.some((b) => b.title.startsWith("@price-scout finished"))).toBe(true);
+    // Tapping it opens that report card in the main chat (no "ask tethr" detour).
+    expect(bells.find((b) => b.title.startsWith("@price-scout finished"))).toMatchObject({ kind: "run", href: `/chat?focus=${report.id}` });
   }, 60_000);
 
   it("hands an agent work, within its limits", async () => {

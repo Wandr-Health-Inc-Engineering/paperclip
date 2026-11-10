@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, Check, ExternalLink, Sparkles, X } from "lucide-react";
+import { Bell, Check, ChevronRight, ExternalLink, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useCompany } from "../../context/CompanyContext";
@@ -10,9 +10,12 @@ import { cn } from "@/lib/utils";
 import { refreshAfterDecision, tethrApi, tethrKeys, type TethrNotification } from "@/api/tethr";
 import { MonoTag, StatusDot, formatRelative } from "./primitives";
 
-// The notification bell: the in-app channel of the Notifier interface. Clicking
-// a notification opens a detail popup with the actions that fit it — approve or
-// reject a staged item inline, jump to the right page, or dismiss.
+// The notification bell: the in-app channel of the Notifier interface. A
+// notification is a pointer: tapping it opens what it's about (an agent's
+// report card in the chat, opened; an idea or question card; the Needs you
+// page). Only a staged item that still waits on a decision opens a popup, to
+// approve or reject it right there. (Mark, 2026-11-10: the old "Ask tethr to
+// handle this" pasted the alert into the chat and got a vague answer back.)
 
 /** Queue statuses that still wait on a person. */
 const PENDING_STATUSES = new Set(["gated", "changes_requested"]);
@@ -30,6 +33,21 @@ export function actionsFor(n: TethrNotification): { pendingOutputId?: string; vi
   if (n.href === "/company-view") return { viewLabel: "View on the Company page", viewTo: "/company-view" };
   if (n.href) return { viewLabel: "Open", viewTo: n.href };
   return {};
+}
+
+/** What tapping a notification does: decide it in a popup, go to what it's about, or (no link) read it. */
+export function tapAction(n: TethrNotification): { kind: "decide" } | { kind: "go"; to: string } | { kind: "read" } {
+  const { pendingOutputId, viewTo } = actionsFor(n);
+  if (pendingOutputId) return { kind: "decide" };
+  if (viewTo) return { kind: "go", to: viewTo };
+  return { kind: "read" };
+}
+
+const KIND_WORDS: Record<string, string> = { run: "report", approval: "approval", idea: "idea", goal: "goal", inbox: "inbox", budget: "budget", system: "tethr" };
+
+/** A notification's kind, in a word a person would use. */
+export function kindWord(kind: string): string {
+  return KIND_WORDS[kind] ?? kind;
 }
 
 export function TethrBell() {
@@ -68,10 +86,12 @@ export function TethrBell() {
   if (!selectedCompanyId) return null;
   const unread = notifications?.filter((n) => !n.readAt) ?? [];
 
-  const openDetail = (n: TethrNotification) => {
+  const openNotification = (n: TethrNotification) => {
     if (!n.readAt) markRead.mutate(n.id);
-    setActive(n);
     setOpen(false);
+    const action = tapAction(n);
+    if (action.kind === "go") navigate(action.to);
+    else setActive(n);
   };
 
   return (
@@ -123,10 +143,11 @@ export function TethrBell() {
             {notifications?.length ? (
               notifications.slice(0, 25).map((n) => {
                 const { pendingOutputId } = actionsFor(n);
+                const goes = tapAction(n).kind === "go";
                 return (
                   <button
                     key={n.id}
-                    onClick={() => openDetail(n)}
+                    onClick={() => openNotification(n)}
                     className={cn(
                       "tethr-rule block w-full border-b px-4 py-3 text-left transition-colors hover:bg-accent",
                       !n.readAt && "bg-[var(--tethr-frost-strong)]",
@@ -154,16 +175,17 @@ export function TethrBell() {
                         ) : null}
                         <span className="tethr-eyebrow mt-1.5 block text-[10px] tracking-[0.14em]">
                           {n.agentTag ? `${n.agentTag} · ` : ""}
-                          {n.kind} · {formatRelative(n.createdAt)}
+                          {kindWord(n.kind)} · {formatRelative(n.createdAt)}
                         </span>
                       </span>
+                      {goes ? <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/60" aria-hidden="true" /> : null}
                     </p>
                   </button>
                 );
               })
             ) : (
               <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-                Nothing yet. The crew will let you know when something needs you.
+                Nothing yet. tethr lets you know here when something needs you or an agent reports back.
               </p>
             )}
           </div>
@@ -210,25 +232,6 @@ export function NotificationDetail({
     onError: (e) => setResult(e instanceof Error ? e.message : "This may have already been handled."),
   });
 
-  // "Ask Tethr to handle this" — hand the alert to the coordinator as a task and
-  // open the Console on the live run. The generic way to act on any notification.
-  const dispatch = useMutation({
-    mutationFn: () => {
-      const context = `${n.title}${n.body ? ` — ${n.body}` : ""}`;
-      const ask = note.trim()
-        ? note.trim()
-        : "Can you look into this and tell me how you'd handle it?";
-      // Into the ongoing main chat (its thread id is the company id).
-      return tethrApi.route(companyId, `I got this alert: "${context}". ${ask}`, companyId);
-    },
-    onSuccess: (ids) => {
-      onActed();
-      onClose();
-      navigate("/chat");
-    },
-    onError: (e) => setResult(e instanceof Error ? e.message : "Couldn't reach Tethr — try the Chat."),
-  });
-
   const go = (to: string) => {
     onClose();
     navigate(to);
@@ -252,7 +255,7 @@ export function NotificationDetail({
             <h3 className="text-[15px] font-medium leading-snug tracking-[-0.01em]">{n.title}</h3>
             <p className="tethr-eyebrow mt-1 text-[10px] tracking-[0.14em]">
               {n.agentTag ? `${n.agentTag} · ` : ""}
-              {n.kind} · {formatRelative(n.createdAt)}
+              {kindWord(n.kind)} · {formatRelative(n.createdAt)}
             </p>
           </div>
           <button onClick={onClose} aria-label="Close" className="tethr-btn tethr-btn-ghost h-7 w-7 shrink-0">
@@ -301,27 +304,7 @@ export function NotificationDetail({
                 Open Needs you <ExternalLink className="h-3 w-3" />
               </button>
             </div>
-          ) : (
-            // Informational: hand it to Tethr as a task, or just dismiss.
-            <div className="mt-4 space-y-2">
-              <textarea
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="Tell Tethr what to do about this (optional) — e.g. 'check if it's really a duplicate and advise'…"
-                rows={2}
-                className="tethr-field w-full resize-none px-3 py-2 text-sm"
-              />
-              <button
-                type="button"
-                className="tethr-btn tethr-btn-primary h-9 w-full px-4 text-[13px]"
-                disabled={dispatch.isPending}
-                onClick={() => dispatch.mutate()}
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                {dispatch.isPending ? "Handing to Tethr…" : "Ask Tethr to handle this"}
-              </button>
-            </div>
-          )}
+          ) : null}
         </div>
 
         {/* Footer: secondary navigation + dismiss (hidden when it would be empty). */}

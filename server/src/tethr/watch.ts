@@ -545,7 +545,7 @@ export async function deliverIdea(db: Db, input: IdeaToDeliver, now: Date = new 
   const idea = await saveIdea(db, input, now);
   await postIdeaToSlack(db, input, deps.post);
   const cardRunId = await addIdeaCardToMainChat(db, input, idea.id, now);
-  await ringIdeaBell(db, input.companyId, idea);
+  await ringIdeaBell(db, input.companyId, idea, cardRunId);
   return { ...idea, cardRunId };
 }
 
@@ -610,10 +610,10 @@ async function addIdeaCardToMainChat(db: Db, input: IdeaToDeliver, ideaId: strin
   return card.id;
 }
 
-async function ringIdeaBell(db: Db, companyId: string, idea: IdeaRow): Promise<void> {
+async function ringIdeaBell(db: Db, companyId: string, idea: IdeaRow, cardRunId: string): Promise<void> {
   const { notificationService } = await import("./notify.js");
   await notificationService(db)
-    .send({ companyId, kind: "idea", title: `Idea: ${idea.title}`, body: idea.body, href: "/chat", agentTag: "@tethr" })
+    .send({ companyId, kind: "idea", title: `Idea: ${idea.title}`, body: idea.body, href: chats.chatHref(companyId, companyId, cardRunId), agentTag: "@tethr" })
     .catch(logFailure("idea bell", { ideaId: idea.id }));
 }
 

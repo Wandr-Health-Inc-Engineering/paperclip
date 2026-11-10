@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowRight, ChevronDown, Users } from "lucide-react";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import { AgentGlyph, formatRelative } from "@/components/tethr/primitives";
@@ -21,6 +21,8 @@ interface ReportProps {
   agentFor: (run: TethrChatRun) => TethrTeamAgent | undefined;
   onOpenFile: (path: string) => void;
   onOpenChat: (threadId: string) => void;
+  /** The card a notification opened the chat on: it opens in full. */
+  focusId?: string | null;
 }
 
 /** "@writer finished WD-8: Drafts" under the writer's own name reads "Finished WD-8: Drafts". */
@@ -33,14 +35,18 @@ export function withoutTag(headline: string, tag: string | undefined): string {
 const filesOf = (run: TethrChatRun) => [...new Set(run.hops.filter((h) => h.layer === "tool" && h.file && h.status === "ok").map((h) => h.file as string))];
 
 /** One report: who, the headline, its first line, what needs you; the rest on tap. */
-function ReportItem({ run, companyId, agent, onOpenFile, onOpenChat }: Omit<ReportProps, "agentFor"> & { run: TethrChatRun; agent?: TethrTeamAgent }) {
+function ReportItem({ run, companyId, agent, onOpenFile, onOpenChat, focusId }: Omit<ReportProps, "agentFor"> & { run: TethrChatRun; agent?: TethrTeamAgent }) {
   const [open, setOpen] = useState(false);
+  const focused = focusId === run.id;
+  useEffect(() => {
+    if (focused) setOpen(true);
+  }, [focused]);
   const files = filesOf(run);
   const lead = reportLead(run.resultText);
   const more = reportHasMore(run.resultText) || files.length > 0;
   const needs = run.needsYou;
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" data-run-id={run.id}>
       <div className="flex items-center gap-2 text-[11.5px] tethr-text-3">
         {agent ? <AgentGlyph icon={agent.icon} className="h-3.5 w-3.5 shrink-0" /> : <Users className="h-3.5 w-3.5 shrink-0" />}
         <span className="min-w-0 truncate">{agent?.name ?? "An agent"}</span>
@@ -94,7 +100,7 @@ export function TeamUpdates({ runs, ...props }: ReportProps & { runs: TethrChatR
     const run = runs[0]!;
     return (
       <div className="tethr-glass rounded-[16px] px-4 py-3.5">
-        <ReportItem run={run} agent={props.agentFor(run)} companyId={props.companyId} onOpenFile={props.onOpenFile} onOpenChat={props.onOpenChat} />
+        <ReportItem run={run} agent={props.agentFor(run)} companyId={props.companyId} onOpenFile={props.onOpenFile} onOpenChat={props.onOpenChat} focusId={props.focusId} />
       </div>
     );
   }
@@ -104,7 +110,7 @@ export function TeamUpdates({ runs, ...props }: ReportProps & { runs: TethrChatR
       <div className="divide-y divide-[var(--tethr-rim)]">
         {runs.map((run) => (
           <div key={run.id} className="py-3 first:pt-2 last:pb-0.5">
-            <ReportItem run={run} agent={props.agentFor(run)} companyId={props.companyId} onOpenFile={props.onOpenFile} onOpenChat={props.onOpenChat} />
+            <ReportItem run={run} agent={props.agentFor(run)} companyId={props.companyId} onOpenFile={props.onOpenFile} onOpenChat={props.onOpenChat} focusId={props.focusId} />
           </div>
         ))}
       </div>

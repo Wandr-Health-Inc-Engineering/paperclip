@@ -47,5 +47,7 @@ describe("the notification detail", () => {
     expect(card!.parentElement).toBe(document.body);
     expect(bar.contains(card)).toBe(false);
     expect(card!.textContent).toContain("Someone wrote to tethr in Slack");
+    // No "Ask tethr to handle this": it pasted the alert into the chat and got a vague answer.
+    expect(card!.textContent).not.toMatch(/ask tethr/i);
   });
 });

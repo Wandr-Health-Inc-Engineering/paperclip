@@ -291,6 +291,41 @@ export function TethrChat() {
     return () => observer.disconnect();
   }, [content]);
 
+  // A notification opens the chat on one card (?focus=<runId>): an agent's report
+  // opens in full, the chat scrolls to it, and it's marked for a moment.
+  const focusParam = searchParams.get("focus");
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const focusedOnce = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusParam) return;
+    setFocusId(focusParam);
+    focusedOnce.current = null;
+    stickToBottom.current = false;
+    const next = new URLSearchParams(searchParams);
+    next.delete("focus");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusParam]);
+  useEffect(() => {
+    if (!focusId || focusedOnce.current === focusId || !runs || !content) return;
+    focusedOnce.current = focusId;
+    const target = content.querySelector<HTMLElement>(`[data-run-id="${CSS.escape(focusId)}"]`);
+    if (!target) {
+      // Not in what's loaded (an old notification): stay with the conversation.
+      stickToBottom.current = true;
+      return;
+    }
+    // After the report has opened, so it's read from its top. Not undone when the
+    // chat refreshes (that re-runs this effect): the mark fades out on its own.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        target.scrollIntoView({ block: "start" });
+        target.classList.add("tethr-focus");
+        window.setTimeout(() => target.classList.remove("tethr-focus"), 2_600);
+      }),
+    );
+  }, [focusId, runs, content]);
+
   if (!selectedCompanyId) {
     return <EmptyState icon={Send} message="Select a company to open the chat." />;
   }
@@ -315,7 +350,12 @@ export function TethrChat() {
   const empty = !isLoading && !allRuns.length && !pendingHere && !looseCards.length && !looseChecklists.length;
 
   // One turn of the chat (agents' reports are grouped separately, in TeamUpdates).
-  const renderRun = (run: TethrChatRun) =>
+  const renderRun = (run: TethrChatRun) => (
+    <div key={run.id} data-run-id={run.id}>
+      {renderTurn(run)}
+    </div>
+  );
+  const renderTurn = (run: TethrChatRun) =>
     run.sourceKey === "tethr-idea" ? (
       <IdeaCard key={run.id} run={run} companyId={c} />
     ) : run.sourceKey === "tethr-inbox" ? (
@@ -451,6 +491,7 @@ export function TethrChat() {
                   agentFor={(r) => team?.agents.find((a) => a.agentId === r.agentId)}
                   onOpenFile={setPanelPath}
                   onOpenChat={openChat}
+                  focusId={focusId}
                 />
               ) : (
                 renderRun(segment.run)
