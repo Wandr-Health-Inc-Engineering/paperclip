@@ -1,6 +1,6 @@
 # Phase 26: Jev decides, tethr learns
 
-Status: 26.1 and 26.9 are built. The rest is a plan; each step waits for Mark's go.
+Status: 26.1 to 26.6 and 26.9 are built. 26.7 and 26.8 are a plan; each waits for Mark's go.
 
 ## What Mark asked for (2026-11-09)
 
@@ -94,7 +94,7 @@ Files: `server/src/tethr/slack-chat.ts` (new), `slack.ts` (`routeInboundKickoff`
 wake-up answers in Slack), `routes/tethr.ts` (`POST /route`), `scripts/tethr-cli.mjs`. Tests:
 `tethr-slack-chat.test.ts` (9).
 
-## 26.2 The decision service
+## 26.2 The decision service (built 2026-11-09)
 
 One place where tethr asks Jev, with a record of every answer and what happened next.
 
@@ -122,7 +122,7 @@ One place where tethr asks Jev, with a record of every answer and what happened 
 Reuse: `jev.ts` (`jevAsk`, `jevHealth`), `compositeOf` and `uncertainOf` in
 `assistant/tethr-tools.ts`.
 
-## 26.3 The Inbox: send anything to tethr and it files or routes it
+## 26.3 The Inbox: send anything to tethr and it files or routes it (built 2026-11-09)
 
 1. **It arrives.** `00 Tethr/00 Inbox/` in Drive (tethr makes the folder and looks once a minute;
    a file must be unchanged for 30 seconds), "File this" on a chat upload, or a Slack file (26.1).
@@ -157,7 +157,7 @@ Table `tethr_inbox_items` (migration 0098). Files: new `server/src/tethr/inbox/`
 pipeline), `fsdrive.ts` (reuse `listFsChildren`, `fsMove`), `routes/tethr-inbox.ts`,
 `ui/src/pages/tethr/drive/Finder.tsx` (Inbox location and badge), a chat card.
 
-## 26.4 Jev at tethr's other decision points
+## 26.4 Jev at tethr's other decision points (built 2026-11-09)
 
 - **Agent reports** (`team-report.ts deliverAgentReport`): does this need you now, or can it wait
   for the daily review? Now means a Slack DM; wait means it is held for the review.
@@ -168,7 +168,7 @@ pipeline), `fsdrive.ts` (reuse `listFsChildren`, `fsMove`), `routes/tethr-inbox.
 - **Lists:** `score_list` as today, plus scoring templates for leads and partners saved as skills.
 - Anything that needs words (a reply, a brief, a plan) stays with Claude.
 
-## 26.5 Learning: three loops, one record
+## 26.5 Learning: three loops, one record (built 2026-11-09)
 
 tethr learns from you, from results and from the world. Everything it learns is one record you
 can read, with where it's applied and what happened.
@@ -194,7 +194,7 @@ Files: new `server/src/tethr/learn/` (lessons service, apply, review), `rhythm.t
 playbook), `hermes/memory-layer.ts` (`changeMemory`, `saveSkill`), `ui/src/pages/tethr/
 TethrLearning.tsx`.
 
-## 26.6 The learner: an agent that studies and brings back lessons
+## 26.6 The learner: an agent that studies and brings back lessons (built 2026-11-09)
 
 - **What it is:** a ready-made agent on tethr's team (the phase 23 framework), working name
   `@sage`. It exists only once you switch it on in Integrations, "Learning". It has a budget cap

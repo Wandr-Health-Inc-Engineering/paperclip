@@ -253,6 +253,27 @@ Branch: `mark-sandbox` (local only). Date started: 2026-06-11.
     was on track at each of its last two measurements; an audit rise counts only across a week or
     more. Otherwise one on-track metric, one agent, or two audits in a row could lift the whole map.
 
+## Phase 26.2-26.6 decisions (Jev decides, tethr files and learns — 2026-11-09)
+
+49. **One migration for three tables** (0097), not one each as planned: they shipped together, and
+    the lessons' review verdict came as 0098.
+50. **The backtest is the record, not a replay.** The record never stores the content Jev judged, so
+    "would have got 46 of 50 right" is how often its pick was what a person went with, overall and
+    above its confidence bar. Automatic needs 20 answers and 90% right.
+51. **Jev never sees what a person must see first.** A person's health details, a card number or a
+    key stops a file (or a report, a Slack conversation, a lesson) on the Mac; nothing is sent.
+52. **The Inbox copies chat uploads and never deletes.** "File this" sends a copy (the chat keeps
+    its own); moves are `fsMove` inside 00 Tethr, never into the Inbox, the archive, the workspace or
+    a hidden folder. People are told a file's name and folder, never its content.
+53. **Only a person applies a lesson.** Jev scores; tethr and agents propose; the ideas pace limits
+    the learner's cards; applying writes memory or a skill through the same checks as everything
+    else, and retiring takes it back out.
+54. **The learner works in a sealed room.** Own folder outside the Drive, no memory, no connectors,
+    no team tools, no skills, no user settings (`--setting-sources project`), web search and public
+    pages only; the runner's deny rules, the hook gate and the tools endpoint each enforce it.
+55. **Agent reports are held only when earned.** report.urgency starts Off; on Automatic a "can wait"
+    above the bar holds only the Slack DM (the card, the bell and the daily review still have it).
+
 ## Core changes (keep merge-safe)
 
 Every core file touched, with reason. Everything else Tethr lives in new files.
@@ -286,6 +307,7 @@ Every core file touched, with reason. Everything else Tethr lives in new files.
 | `ui/src/App.tsx`, `ui/src/components/Sidebar.tsx`, `ui/src/components/CommandPalette.tsx`, `ui/src/lib/company-routes.ts` | Phase 20 (2026-11-07): + `setup` route (→ `TethrSetup`), a "Set up tethr" sidebar item at the top that shows only until setup is complete (`TethrSetupNavItem`), palette entry, + `setup` in `BOARD_ROUTE_ROOTS` (one line each) | Mark asked for a proper from-scratch onboarding with real goals; same registration points as the other Tethr pages |
 | `server/src/index.ts` | 2026-11-08: the startup import of `maybeAutoSeed` now comes from `./tethr/boot.js` instead of `./tethr/index.js` (same one line) | `tethr/index.ts` re-exports the whole engine, so importing it at startup loaded every Tethr table and broke core's `server-startup-feedback-export` test (it mocks `@paperclipai/db` with a partial list). `boot.ts` has no static imports beyond types |
 | `ui/src/App.tsx`, `ui/src/pages/Auth.tsx` | 2026-11-08: + `<TethrStartupIntro />` beside `<OnboardingWizard />` (one line + import); the sign-in page calls `requestIntro()` when sign-in succeeds (one line + import) | Mark asked for a startup animation when signing in or opening the desktop app; App is the only root mount point, and the sign-in success handler is the only place that knows a sign-in just happened |
+| `ui/src/App.tsx`, `ui/src/components/Sidebar.tsx`, `ui/src/components/CommandPalette.tsx`, `ui/src/lib/company-routes.ts` | Phase 26.5 (2026-11-09): + `learning` route (→ `TethrLearning`), a "Learning" nav item under Growth map, palette entry, + `learning` in `BOARD_ROUTE_ROOTS` (one line each) | the Learning page; same registration points as the other Tethr pages |
 | `ui/src/App.tsx`, `ui/src/components/Sidebar.tsx`, `ui/src/components/CommandPalette.tsx`, `ui/src/lib/company-routes.ts` | Phase 26.9 (2026-11-09): + `growth-map` route (→ `TethrGrowthMap`), a "Growth map" nav item under Growth, palette entry, + `growth-map` in `BOARD_ROUTE_ROOTS` (one line each) | Mark asked for the growth map as its own screen; same registration points as the other Tethr pages |
 | `ui/src/components/SidebarAgents.tsx` | Phase 18.1 follow-up (2026-11-07): the sidebar agent list also hides agents whose `pauseReason` starts with "archived" (the fresh-start archive), not just terminated ones (one line) | Mark still saw the 9 archived specialists in the sidebar; the Company page's Archived group is where they live now and where Restore is |
 | `ui/src/components/SidebarAccountMenu.tsx` | 2026-11-09: + `<DesktopTerminalButton />` beside the account button (the row becomes a flex row; the account button keeps the remaining width). The icon renders only inside the Tethr desktop app and only asks the app to show or hide its terminal panel | Mark asked for "a small icon at the bottom" to open a terminal inside the desktop app; the account row is the sidebar's bottom edge |

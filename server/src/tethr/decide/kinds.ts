@@ -60,7 +60,7 @@ export const DECISION_KINDS: DecisionKind[] = [
   {
     key: "idea.rank",
     label: "Which conversations get the idea slots",
-    about: "Jev ranks the Slack conversations tethr heard, so the few ideas a week go to the best ones. It sends their words to TypeSafe.",
+    about: "Jev ranks the Slack conversations tethr heard, so the few ideas a week go to the best ones.",
     defaultMode: "off",
     sendsConversation: true,
     startBar: 0,

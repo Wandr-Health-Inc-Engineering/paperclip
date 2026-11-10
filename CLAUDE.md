@@ -1219,6 +1219,69 @@ DECISIONS 42-43.
   Slack poster). The classic-engine test clears `ANTHROPIC_API_KEY`: a key in the shell made a
   real (refused) API call before.
 
+## Jev decides, tethr files and learns (phase 26.2-26.6, 2026-11-09)
+
+Mark: "build all the way to 26.6". Plan: `tasks/phase-26.md`; DECISIONS 49-55. Migrations **0097**
+(`tethr_decisions`, `tethr_inbox_items`, `tethr_lessons`) and **0098** (`tethr_lessons.verdict`).
+New instance-dir stores (all through `company-store.ts` `companyStore`, in the reset list):
+`tethr-decisions.json`, `tethr-inbox.json`, `tethr-learning.json`.
+- **26.2 Decisions** (`server/src/tethr/decide/`): `kinds.ts` (inbox.destination / notify / type /
+  urgency, report.urgency, idea.rank, lesson.score; each with a default mode, `neverAuto`, a start
+  bar), `decide.ts` (`decideWithJev`: several choice questions in ONE Jev request, a row per answer;
+  `scoreWithJev`; `resolveDecision`; `calibrate`; `kindStats`; `setDecisionMode`). The record never
+  stores the judged content. A kind is Off / Suggest / Automatic; **Automatic is earned** (20 answered,
+  90% right) and acts only above the calibrated bar (lowest confidence where ≥95% of picks were
+  right; the kind's start bar before 20 answers); **two undone automatic decisions in 7 days put it back
+  to Suggest** (+ a bell); a monthly cap (default $5, summed from the record). Off / over the cap / Jev
+  down / no key → items come to a person with no suggestion. Routes `routes/tethr-decisions.ts`;
+  Integrations card `ui/src/pages/tethr/settings/JevDecisionsCard.tsx`.
+- **26.3 Inbox** (`server/src/tethr/inbox/`): intake from `00 Tethr/00 Inbox` (made if missing;
+  watched once a minute by `startInboxWatcher`, a file is taken once unchanged 30s), "File this" on a
+  chat upload (a COPY goes to the Inbox), and a file sent alone in Slack (slack-chat.ts). `read.ts`:
+  text, Office (`office-text.ts`), PDF via `pdftotext` (first 5 pages; `TETHR_PDFTOTEXT`), else
+  name only. **The check on the Mac** (`screen.ts needsPersonReason` = a person's health detail, a card
+  number (Luhn), a key) → `needs_person`, nothing sent to Jev. One Jev request: type, destination
+  (the real folders, 2 deep, never `00 Inbox`/`99 Archive`/the workspace/hidden), who should know
+  (Nobody, members, unpaused agents), urgency; Jev also gets active filing rules and recent filings.
+  Suggest → a main-chat card (`tethr-inbox`) + the Drive's Inbox view; Automatic (earned) →
+  `fsMove`, Put it back within 7 days. Never deletes; telling a person = bell + Slack DM with the
+  file's NAME and folder only; handing to an agent = `team.assign`. Every tap resolves the decision;
+  two corrections of the same type to the same folder propose a rule ("Invoices go to …"), mirrored to
+  a Hermes skill `filing-rules` when Hermes is on. Routes `routes/tethr-inbox.ts` (people only);
+  UI `drive/InboxView.tsx`, Drive page Files / Inbox switch (`?view=inbox`), chat `InboxCard`,
+  File this on attachments (`chat/cards.tsx`).
+- **26.4** (`decide/points.ts`): `reportUrgency` in `deliverAgentReport` (Suggest shows "needs you now
+  / can wait" on the card with a way to correct it; Automatic + sure holds the Slack DM for the daily
+  review; a report with health details is never sent or held), `rankConversations` in the watcher
+  (idea.rank, off: it sends Slack words to TypeSafe; a conversation with health details is never
+  sent), `score_list` `template: leads | partners` (`SCORE_TEMPLATES`). `POST /decisions/:id/answer`.
+- **26.5 Lessons** (`learn/lessons.ts`, `assistant/learn-tools.ts`): `propose_lesson` (tethr's chats,
+  any agent, the learner), `study` (queue a topic), `lessons_due`, `review_lesson` (tethr's own chats
+  only). A proposal is checked (instructions, a person's health, keys, **medical claims**
+  `screen.ts medicalClaimReason`), de-duplicated (word overlap ≥ 0.6), scored by Jev on fit /
+  evidence / usable / novel (composite 0-100), and offered: from tethr or a person at once; from an
+  agent only when ≥ 60 and the ideas pace has a slot (`pace.ts`), else it waits on the Learning page.
+  **Only a person applies**: principle → a memory note on its growth-map area, procedure → a skill
+  (Hermes) or a "How we do it" note, rule → a "Rule:" note, experiment → a "Trying until …" note; review
+  date +28 days. "Not for us" with a reason → a "Not for us: …" note. The Friday scorecard's step 4 "What
+  we tried" calls lessons_due + review_lesson; a person keeps or retires (retiring removes the note or
+  skill). Sources earn a track record by domain. Learning page `/learning` (`TethrLearning.tsx`), routes
+  `routes/tethr-learning.ts`, chat `LessonCard`.
+- **26.6 The learner** (`learn/learner.ts`, `assistant/sandbox.ts`): `@sage`, made only when a person
+  switches it on (Integrations → Learning; off pauses it): weekly Wednesday 10:00, 2 runs/day, $10/mo,
+  owner growth, connectors ["Tethr tools"], `adapterConfig.sandbox = true` (`TeamAgent.sandbox`).
+  **The sealed room:** its own folder `<assistantHome>/sandbox/sage/` (never the Drive) with a CLAUDE.md
+  of the company line + goal titles + its rules only (no memory, team, goals detail, growth map);
+  `--tools` Read/Glob/Grep/Write/Edit/MultiEdit/ToolSearch/WebSearch/WebFetch, `--setting-sources
+  project` (no user CLAUDE.md, skills or settings), no `--add-dir`; deny rules for every other tethr
+  tool + Skill + TodoWrite + Bash + every connector; the hook gate (`sandboxRefusal`, readable roots =
+  its folder) and the tools endpoint (lists and runs only propose_lesson) agree. Each run's brief is
+  built fresh in team-run.ts (`planStudy` + `studyBrief`): the study area (goals behind pace weigh
+  more, turned-down areas less, least recently studied breaks ties), a queued topic first, what's
+  already known, trusted and distrusted sources.
+- Tests: `tethr-inbox.test.ts` (12), `tethr-learning.test.ts` (7, incl. the sealed room through a faked
+  turn, the gate and the tools endpoint).
+
 ## The growth map: a galaxy of growth areas (phase 26.9, 2026-11-09)
 
 Mark: "a growth map… like a galaxy solar star style system… RPG games… skills and improvement. I

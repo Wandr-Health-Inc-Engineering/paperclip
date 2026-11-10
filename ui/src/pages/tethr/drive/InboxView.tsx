@@ -12,6 +12,13 @@ import { cn } from "@/lib/utils";
 // corrections, and what was filed recently (with Put it back for 7 days).
 
 const UNDO_DAYS = 7;
+const URGENCY_WORDS: Record<string, string> = { today: "needs someone today", "this week": "needs someone this week", whenever: "no rush" };
+/** "Looks like an invoice", "Looks like research", "Not sure what it is". */
+function typeWords(type: string): string {
+  if (type === "other") return "Not one of the usual kinds";
+  if (type === "research" || type === "partner material") return `Looks like ${type}`;
+  return `Looks like ${/^[aeiou]/i.test(type) ? "an" : "a"} ${type}`;
+}
 const folderOf = (rel: string | null) => (rel ? rel.split("/").slice(0, -1).join(" / ") : "");
 
 /** The actions on one Inbox item: shared by the Inbox view and the chat card. */
@@ -60,7 +67,7 @@ export function InboxItemActions({ item, companyId, folders, compact = false }: 
       {item.note ? <p className={cn("text-[12.5px]", item.status === "needs_person" ? "text-[var(--tethr-warn)]" : "text-muted-foreground")}>{item.note}</p> : null}
       {s ? (
         <p className="text-[12.5px] text-muted-foreground">
-          Looks like {/^[aeiou]/i.test(s.type) ? "an" : "a"} {s.type} · needs someone {s.urgency === "whenever" ? "whenever" : s.urgency}
+          {typeWords(s.type)} · {URGENCY_WORDS[s.urgency] ?? s.urgency}
           {s.notify !== "Nobody" ? ` · ${s.notify.startsWith("@") ? "for" : "tell"} ${s.notify}` : ""} · Jev is {Math.round(s.confidence * 100)}% sure
         </p>
       ) : null}
