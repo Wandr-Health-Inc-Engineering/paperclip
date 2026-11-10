@@ -96,6 +96,10 @@ describe("questions as cards: the pure parts", () => {
     expect(questionDmText("@paid-ads", question({ question: "Approve a $1,200 test budget?" }))).toContain("*Approve a $1,200 test budget?*");
     const withHealth = questionDmText("@paid-ads", question({ question: "Reply to Jane Doe about her malaria prescription?" }));
     expect(withHealth).toBe("@paid-ads has a question for you. Answer it in tethr (Needs you, or the chat).");
+    // A chat that has read connector data: the question's words stay in tethr.
+    expect(questionDmText("tethr", question({ question: "Refund the Acme order?" }), { tainted: true })).toBe("tethr has a question for you. Answer it in tethr (Needs you, or the chat).");
+    // A missing connection is tethr's own wording, so it always goes.
+    expect(questionDmText("@paid-ads", question({ question: "@paid-ads needs Google Ads", connection: { key: "Google Ads" } }), { tainted: true })).toContain("*@paid-ads needs Google Ads*");
   });
 });
 

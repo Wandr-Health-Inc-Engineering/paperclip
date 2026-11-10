@@ -85,7 +85,7 @@ export function NeedsYouPill({ companyId }: { companyId: string }) {
         type="button"
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
-        className="tethr-glass tethr-touch-sized inline-flex h-9 shrink-0 items-center gap-2 rounded-full px-3.5 text-[12.5px] font-medium transition-colors hover:text-foreground"
+        className="tethr-glass tethr-touch-sized inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-3 text-[12px] font-medium transition-colors hover:text-foreground md:px-3.5 md:text-[12.5px]"
       >
         <span className="relative flex h-1.5 w-1.5">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--tethr-warn)] opacity-60 motion-reduce:hidden" />

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { StatusDot } from "@/components/tethr/primitives";
@@ -155,8 +155,10 @@ function ConnectorFix({ connector, companyId, onFixed }: { connector: string; co
 }
 
 /**
- * Link your Slack member ID: one tap when tethr has already heard from you in
- * Slack ("That's me"), a lookup by your email, or paste it.
+ * Link your Slack member ID. One tap for the account Slack says has your email
+ * ("That's me"). An account that merely wrote to tethr is shown with its ID to
+ * check first: a name in Slack can be copied, and whoever is linked here drives
+ * tethr as you. Or paste the ID.
  */
 function SlackIdFix({ companyId, onFixed }: { companyId: string; onFixed?: () => void }) {
   const refresh = useRefreshSetup(companyId);
@@ -173,10 +175,15 @@ function SlackIdFix({ companyId, onFixed }: { companyId: string; onFixed?: () =>
   const lookup = useMutation({ mutationFn: () => tethrApi.slackLookup(companyId) });
   const claim = setup.data?.state.slackClaim ?? null;
   const linked = setup.data?.profile?.admin?.slackUserId ?? null;
+  // Someone wrote to tethr from Slack: ask Slack whose account matches your email, to tell if it was you.
+  const askSlack = lookup.mutate;
+  const shouldAsk = !!claim && !linked && !lookup.data && !lookup.isPending && !lookup.isError;
+  useEffect(() => {
+    if (shouldAsk) askSlack();
+  }, [shouldAsk, askSlack]);
   const found = lookup.data?.found ?? null;
-  const offers = [claim ? { ...claim, why: "wrote to tethr in Slack" } : null, found ? { ...found, why: "matches your email" } : null].filter(
-    (o): o is { slackUserId: string; name: string | null; why: string } => !!o && o.slackUserId !== linked,
-  );
+  const verified = found && found.slackUserId !== linked ? found : null;
+  const unverifiedClaim = claim && claim.slackUserId !== linked && claim.slackUserId !== found?.slackUserId ? claim : null;
 
   return (
     <div className="space-y-2.5">
@@ -185,16 +192,29 @@ function SlackIdFix({ companyId, onFixed }: { companyId: string; onFixed?: () =>
           <StatusDot tone="ok" /> Linked: <span className="font-mono">{linked}</span>. Slack messages from you reach tethr.
         </p>
       ) : null}
-      {offers.map((offer) => (
-        <div key={offer.slackUserId} className="flex flex-wrap items-center gap-2.5">
-          <button type="button" onClick={() => link.mutate(offer.slackUserId)} disabled={link.isPending} className={PRIMARY_BUTTON}>
-            That's me: {offer.name ?? offer.slackUserId}
+      {verified ? (
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button type="button" onClick={() => link.mutate(verified.slackUserId)} disabled={link.isPending} className={PRIMARY_BUTTON}>
+            That's me: {verified.name ?? verified.slackUserId}
           </button>
           <span className="text-[11.5px] tethr-text-3">
-            <span className="font-mono">{offer.slackUserId}</span> {offer.why}
+            <span className="font-mono">{verified.slackUserId}</span> has your email in Slack
           </span>
         </div>
-      ))}
+      ) : null}
+      {unverifiedClaim ? (
+        <div className="space-y-2 rounded-[10px] px-3 py-2.5 shadow-[inset_0_0_0_1px_var(--tethr-rim)]">
+          <p className="text-[12px] leading-relaxed">
+            <StatusDot tone="warn" className="mr-1.5 inline-block align-middle" />
+            Slack account <span className="font-mono">{unverifiedClaim.slackUserId}</span>
+            {unverifiedClaim.name ? ` (shown as "${unverifiedClaim.name}")` : ""} wrote to tethr. A name in Slack can be copied, and whoever is linked here
+            drives tethr as you: link it only if this ID is yours (Slack, your profile, then ⋯, then Copy member ID).
+          </p>
+          <button type="button" onClick={() => link.mutate(unverifiedClaim.slackUserId)} disabled={link.isPending} className={GLASS_BUTTON}>
+            It's mine, link {unverifiedClaim.slackUserId}
+          </button>
+        </div>
+      ) : null}
       <form
         className="flex flex-wrap items-center gap-2"
         onSubmit={(e) => {
@@ -214,7 +234,7 @@ function SlackIdFix({ companyId, onFixed }: { companyId: string; onFixed?: () =>
         <button type="submit" disabled={!typed.trim() || link.isPending} className={GLASS_BUTTON}>
           {link.isPending ? "Saving…" : "Save"}
         </button>
-        {!found ? (
+        {!lookup.data ? (
           <button type="button" onClick={() => lookup.mutate()} disabled={lookup.isPending} className="tethr-btn tethr-btn-ghost h-9 px-3.5 text-[12.5px]">
             {lookup.isPending ? "Looking…" : "Find me in Slack"}
           </button>

@@ -50,7 +50,7 @@ import { classify, decide } from "../tethr/assistant/policy.js";
 import { AGENT_ALWAYS_TOOLS, agentToolRefusal, TEAM_TOOL_NAMES, TeamInputError } from "../tethr/team-spec.js";
 import { answerQuestion, answerText, closeQuestionsAnsweredInChat, getQuestion, QuestionInputError, questionsByRun } from "../tethr/assistant/questions.js";
 import { settleConnectionCard, stillMissing } from "../tethr/team-needs.js";
-import { needsYouOnReportCards } from "../tethr/needs-you.js";
+import { connectionCardsOnCreationTurns, needsYouOnReportCards } from "../tethr/needs-you.js";
 import { teamService } from "../tethr/team.js";
 import {
   ATTACH_LIMITS,
@@ -677,6 +677,7 @@ export function tethrRoutes(db: Db) {
     // Phase 27: an agent's newest report card in this chat carries what it's waiting
     // on a person for (approval cards, questions, missing connections), its sub-team's too.
     const needsYouByCard = await needsYouOnReportCards(db, companyId, runs);
+    const waitingOnCreation = await connectionCardsOnCreationTurns(db, companyId, runs, outputs);
     res.json(
       runs.map((run) => {
         // Attached files come back as their own list; the bubble shows only the words.
@@ -691,7 +692,7 @@ export function tethrRoutes(db: Db) {
           lesson: lessonRows.find((l) => l.cardRunId === run.id) ?? null,
           outputs: outputs.filter((o) => o.routeRunId === run.id),
           // Phase 27: questions this turn put to the person, as cards with buttons.
-          questions: questionsOfRuns.get(run.id) ?? [],
+          questions: [...(questionsOfRuns.get(run.id) ?? []), ...(waitingOnCreation.get(run.id) ?? [])],
           needsYou: needsYouByCard.get(run.id) ?? null,
         };
       }),

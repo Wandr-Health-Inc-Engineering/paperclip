@@ -54,7 +54,7 @@ import { agentForThread } from "@/lib/tethr-team";
 import { TeamSection } from "./chat/team";
 import { ChatAvatar } from "./chat/avatar";
 import { QueuedTray, waitingBehind } from "./chat/queue";
-import { NeedsYouPill } from "./chat/needs-you";
+import { NeedsYouPill, useNeedsYou } from "./chat/needs-you";
 import { FileThisButton, InboxCard, LessonCard, UrgencyRow } from "./chat/cards";
 import { ApprovalCard, DecidedLine, QuestionCard } from "./chat/decision-cards";
 import { kindLabel } from "@/lib/tethr-cards";
@@ -127,6 +127,9 @@ export function TethrChat() {
     enabled: !!selectedCompanyId,
     refetchInterval: (q) => (q.state.data?.agents.some((a) => a.running) ? 4_000 : 20_000),
   });
+
+  // Everything waiting on a person (the pill reads the same list).
+  const { data: waiting } = useNeedsYou(c);
 
   const mainThreadId = chats?.mainThreadId ?? c;
   const chatParam = searchParams.get("chat");
@@ -292,7 +295,10 @@ export function TethrChat() {
   const showPending = threadBusy ? null : pendingHere;
   const sendingToQueue = pendingHere && threadBusy ? pendingHere.text : null;
   const working = threadBusy || !!pendingHere || !!teamAgent?.running;
-  const empty = !isLoading && !allRuns.length && !pendingHere;
+  // Cards asked in this chat that no turn here shows (an agent held before it ever ran, say): they sit at the end.
+  const shownCards = new Set(allRuns.flatMap((r) => [...(r.questions ?? []), ...(r.needsYou?.questions ?? [])].map((q) => q.id)));
+  const looseCards = waiting ? [...waiting.connections, ...waiting.questions].filter((q) => q.threadId === threadId && !shownCards.has(q.id)) : [];
+  const empty = !isLoading && !allRuns.length && !pendingHere && !looseCards.length;
 
   const chat = (
     <div
@@ -307,7 +313,9 @@ export function TethrChat() {
     >
       {/* Phones: the chat's controls are a row above the messages, never over them.
           Wider screens: \`contents\`, so they float over the conversation as before. */}
-      <div className={cn("relative flex shrink-0 flex-wrap items-start gap-2 px-3 pb-1 pt-1 md:contents", isMain ? "min-h-[48px]" : "min-h-[64px]")}>
+      {/* Three columns on phones (chats · who you're talking to · what waits on you), so the avatar stays
+          in the middle. Not a positioned box: the chats drawer inside it is laid out against the whole chat. */}
+      <div className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-start gap-2 px-3 pb-1 pt-1 md:contents">
       <SideChats
         isMain={isMain}
         sideChats={chats?.sideChats ?? []}
@@ -322,13 +330,13 @@ export function TethrChat() {
         onRemoveSide={(id) => removeChat.mutate(id)}
       />
 
-      {/* Who you're talking to: centred over the conversation, on phones and wider screens alike. */}
-      <div className="pointer-events-none absolute inset-x-0 top-1 z-20 flex justify-center">
+      {/* Who you're talking to: the middle column on phones, centred over the conversation on wider screens. */}
+      <div className="flex justify-center md:pointer-events-none md:absolute md:inset-x-0 md:top-1 md:z-20">
         <ChatAvatar working={working} agent={teamAgent} caption={isMain || teamAgent ? null : isDraft ? "New side chat" : (sideChat?.title ?? "Side chat")} companyId={c} />
       </div>
 
       {/* Right: what waits on you, then start over. The setup pill joins them on wider screens. */}
-      <div className="ml-auto flex shrink-0 items-center gap-2 md:absolute md:right-0 md:top-1 md:z-20">
+      <div className="flex shrink-0 items-center gap-1.5 justify-self-end md:absolute md:right-0 md:top-1 md:z-20 md:gap-2">
         {isMain ? (
           <span className="hidden md:contents">
             <TethrSetupNudge />
@@ -365,7 +373,7 @@ export function TethrChat() {
 
       {isMain ? (
         // Shown only while setup isn't done. Phones: its own line under the controls.
-        <div className="order-last flex w-full justify-center empty:hidden md:hidden">
+        <div className="col-span-3 flex justify-center empty:hidden md:hidden">
           <TethrSetupNudge />
         </div>
       ) : null}
@@ -421,6 +429,9 @@ export function TethrChat() {
               ) : (
                 <Turn key={run.id} run={run} companyId={c} />
               )
+            ))}
+            {looseCards.map((q) => (
+              <QuestionCard key={q.id} question={q} companyId={c} />
             ))}
             {showPending ? (
               <div className="flex flex-col gap-4">
@@ -545,7 +556,7 @@ function SideChats({
 
   return (
     <>
-      <div className="flex shrink-0 items-center gap-2 md:absolute md:left-0 md:top-1 md:z-20">
+      <div className="flex shrink-0 items-center gap-2 justify-self-start md:absolute md:left-0 md:top-1 md:z-20">
         <button
           ref={toggleRef}
           type="button"

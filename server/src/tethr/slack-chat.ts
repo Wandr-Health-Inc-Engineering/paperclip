@@ -86,8 +86,8 @@ export function unknownSenderText(input: { slackUserId?: string; adminNames: str
   }
   if (!input.slackUserId) return "I couldn't tell who sent that, so I haven't acted on it.";
   return (
-    "I don't know who you are in Slack yet, so I haven't acted on that. If you run tethr for your company, open tethr → Setup → Connections and tap " +
-    `"That's me" (your Slack member ID is ${input.slackUserId}). Then ask me again.`
+    "I don't know who you are in Slack yet, so I haven't acted on that. If you run tethr for your company, open tethr → Setup → Connections and link " +
+    `your Slack member ID there (yours is ${input.slackUserId}). Then ask me again.`
   );
 }
 

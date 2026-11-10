@@ -85,3 +85,30 @@ export async function needsYouOnReportCards(
   }
   return byCard;
 }
+
+/**
+ * For a chat's turns: an agent that was just approved from one of them and is
+ * waiting on a connection shows that card under the turn that proposed it, so
+ * approving it leads straight to the fix. Once the agent has a report card in
+ * this chat, the card rides there instead (needsYouOnReportCards).
+ */
+export async function connectionCardsOnCreationTurns(
+  db: Db,
+  companyId: string,
+  runs: Array<{ id: string; sourceKey: string | null; agentId: string | null }>,
+  outputs: Array<{ routeRunId: string | null; kind: string; status: string; meta: unknown }>,
+): Promise<Map<string, Question[]>> {
+  const byRun = new Map<string, Question[]>();
+  const created = outputs.filter((o) => o.kind === "team_agent" && o.status === "published" && o.routeRunId);
+  if (!created.length) return byRun;
+  const agents = await teamService(db).list(companyId);
+  const reported = new Set(runs.filter((r) => r.sourceKey === AGENT_REPORT_SOURCE && r.agentId).map((r) => r.agentId));
+  for (const output of created) {
+    const spec = ((output.meta ?? {}) as { spec?: { tag?: unknown } }).spec;
+    const agent = agents.find((a) => a.tag === spec?.tag);
+    if (!agent || reported.has(agent.agentId)) continue;
+    const cards = openQuestions(companyId, { agentTag: agent.tag }).filter((q) => q.connection);
+    if (cards.length) byRun.set(output.routeRunId!, [...(byRun.get(output.routeRunId!) ?? []), ...cards]);
+  }
+  return byRun;
+}

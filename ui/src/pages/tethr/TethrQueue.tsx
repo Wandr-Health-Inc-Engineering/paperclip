@@ -104,7 +104,8 @@ export function TethrQueue() {
       {tab === "pending" && waiting && asked ? <NeedsYouList companyId={selectedCompanyId} data={waiting} approvals={false} /> : null}
       {tab === "pending" && pendingCount && asked ? <p className="tethr-eyebrow pt-1">Approvals · {pendingCount}</p> : null}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+      {/* With only questions or connections waiting, there's no approvals list to show under them. */}
+      <div className={cn("grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]", tab === "pending" && asked > 0 && !pendingCount && !selectedId && "hidden")}>
         {/* List — hidden on mobile when a detail is open */}
         <div className={cn("space-y-2", selectedId && "hidden lg:block")} data-tethr-stagger>
           {filtered.length === 0 ? (

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { tethrRouteRuns } from "@paperclipai/db";
 import { logFailure } from "../best-effort.js";
-import { mainThreadId } from "../chats.js";
+import { isTainted, mainThreadId } from "../chats.js";
 import { connections, findConnection } from "../connections.js";
 import { personalHealthReason } from "../screen.js";
 import { teamService } from "../team.js";
@@ -60,12 +60,16 @@ export const PERSON_TOOL_DEFS: McpToolDef[] = [
   },
 ];
 
-/** The Slack line that tells an owner a question is waiting. The question itself goes
- * along only when it carries no one's health details; otherwise just that there is one. */
-export function questionDmText(who: string, question: Question): string {
+/**
+ * The Slack line that tells an owner a question is waiting. The question's own
+ * words go along only when they can't carry anything that shouldn't leave tethr:
+ * the chat that asked hasn't read connector data (`tainted`), and there are no
+ * health details in it. Otherwise Slack just says one is waiting.
+ */
+export function questionDmText(who: string, question: Question, opts: { tainted?: boolean } = {}): string {
   const base = (process.env.PAPERCLIP_PUBLIC_URL ?? "").trim().replace(/\/+$/, "");
   const where = base ? `<${base}/queue|Answer it in tethr>` : "Answer it in tethr (Needs you, or the chat).";
-  const safe = personalHealthReason(`${question.question} ${question.detail ?? ""}`) === null;
+  const safe = !opts.tainted && personalHealthReason(`${question.question} ${question.detail ?? ""}`) === null;
   if (question.connection) return `*${question.question}*, and isn't running until it's connected or you say to carry on without it. ${where}`;
   return safe ? `${who} has a question for you: *${question.question}* ${where}` : `${who} has a question for you. ${where}`;
 }
@@ -87,7 +91,7 @@ export async function tellPersonAboutQuestion(db: Db, companyId: string, questio
     })
     .catch(logFailure("question bell", { questionId: question.id }));
   const { dmOverseer } = await import("../slack.js");
-  await dmOverseer(db, companyId, question.agentTag ?? "@tethr", questionDmText(who, question));
+  await dmOverseer(db, companyId, question.agentTag ?? "@tethr", questionDmText(who, question, { tainted: isTainted(companyId, question.threadId) }));
 }
 
 async function ask(args: Record<string, unknown>, ctx: TethrToolContext & { db: Db; companyId: string; threadId: string }): Promise<TethrToolResult> {

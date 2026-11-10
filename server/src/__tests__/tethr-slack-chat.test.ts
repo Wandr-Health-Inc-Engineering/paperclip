@@ -179,7 +179,7 @@ describePg("Slack and the terminal reach the chat brain", () => {
       const before = await runCount();
       expect(await routeInboundKickoff(db, dm("can you see this message", OTHER, { channel: "D2" }))).toBeNull();
       expect(await runCount()).toBe(before);
-      expect(posts[0]!.text).toContain(`your Slack member ID is ${OTHER}`);
+      expect(posts[0]!.text).toContain(`link your Slack member ID there (yours is ${OTHER})`);
       expect(posts[0]!.text).toContain("Setup → Connections");
       expect(getSetup(companyId).slackClaim).toMatchObject({ slackUserId: OTHER });
       const bells = await db.select().from(tethrNotifications).where(eq(tethrNotifications.companyId, companyId));
@@ -190,7 +190,7 @@ describePg("Slack and the terminal reach the chat brain", () => {
       const again = await db.select().from(tethrNotifications).where(eq(tethrNotifications.companyId, companyId));
       expect(again.filter((b) => b.title === "Someone wrote to tethr in Slack")).toHaveLength(1);
 
-      // "That's me" in Setup → Connections.
+      // Linked in Setup → Connections (one tap only when Slack confirms the email; here, by its ID).
       await request(appFor(PERSON)).put(`/api/tethr/${companyId}/setup/admin-slack`).send({ slackUserId: OTHER }).expect(200);
       expect(getSetup(companyId).slackClaim).toBeNull();
       posts.length = 0;

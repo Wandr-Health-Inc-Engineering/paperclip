@@ -1,3 +1,4 @@
+import { updateIntegrations } from "../tethr/integrations.ts";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -58,6 +59,10 @@ describeEmbeddedPostgres("tethr clean-slate org (@tethr coordinator)", () => {
 
     const result = await seedTethrCore(db);
     companyId = result.companyId;
+    // This suite covers the classic engine's Slack path (wipe confirmations, commands,
+    // routing). Since phase 27 Slack only reaches it when it's the company's engine.
+    process.env.TETHR_INTEGRATIONS_FILE = path.join(storageDir, "integrations.json");
+    await updateIntegrations(companyId, { assistant: { engine: "routing" } as never });
     expect(result.created).toBe(true);
     expect(result.archivedOldCompany).toBe(true);
   }, 60_000);
