@@ -4,6 +4,7 @@ import { answerQuestion, askQuestion, openQuestions, QuestionInputError, type Qu
 import { logFailure } from "./best-effort.js";
 import * as chats from "./chats.js";
 import { findConnection } from "./connections.js";
+import { DEFAULT_CONNECTOR_AUTONOMY } from "./integrations.js";
 import { deliverAgentReport } from "./team-report.js";
 import { teamService, type TeamAgent, type UnmetNeed } from "./team.js";
 import type { TaskService } from "./tasks.js";
@@ -78,6 +79,47 @@ export async function holdTaskForNeeds(
 }
 
 /** Whether a "connected" answer can stand: tethr has to be able to use it now. Null when it can. */
+/**
+ * The connection works for the company, but this agent (or, for a sub-agent, its
+ * lead) isn't given it: what it needs is access, not a key or a login.
+ */
+export function needsAccess(companyId: string, agent: { connectors: string[] } | null, lead: { connectors: string[] } | null, key: string): boolean {
+  if (!agent || findConnection(companyId, key)?.ok !== true) return false;
+  return !agent.connectors.includes(key) || (!!lead && !lead.connectors.includes(key));
+}
+
+/** Connection cards, each marked when what it needs is access (the UI shows "Give it access" then). */
+export async function withAccess<T extends Question>(db: Db, companyId: string, questions: T[]): Promise<Array<T & { access: boolean }>> {
+  const cards = questions.filter((q) => q.connection && q.agentTag && q.status === "open");
+  if (!cards.length) return questions.map((q) => ({ ...q, access: false }));
+  const agents = await teamService(db).list(companyId);
+  return questions.map((q) => {
+    if (!q.connection || !q.agentTag || q.status !== "open") return { ...q, access: false };
+    const agent = agents.find((a) => a.tag === q.agentTag) ?? null;
+    const lead = agent?.leadTag ? (agents.find((a) => a.tag === agent.leadTag) ?? null) : null;
+    return { ...q, access: needsAccess(companyId, agent, lead, q.connection.key) };
+  });
+}
+
+/** Give an agent a connection it lacks (a sub-agent's lead too, whose settings it works under). A person's call. */
+async function grantAccess(db: Db, companyId: string, agent: TeamAgent, key: string, auto: boolean, actor: { userId: string | null }): Promise<void> {
+  const team = teamService(db);
+  const lead = agent.leadTag ? await team.get(companyId, agent.leadTag) : null;
+  // Its own settings, or its lead's: Automatic or Approval needed for this tool, the sensitive kinds asking.
+  const owner = lead ?? agent;
+  const setting = { [key]: { mode: auto ? ("auto" as const) : ("ask" as const), autonomy: owner.settings[key]?.autonomy ?? { ...DEFAULT_CONNECTOR_AUTONOMY, spend: { ...DEFAULT_CONNECTOR_AUTONOMY.spend } } } };
+  if (lead && !lead.connectors.includes(key)) {
+    await team.update(companyId, lead.tag, { connectors: [...lead.connectors, key], settings: setting }, actor);
+  } else if (lead) {
+    await team.update(companyId, lead.tag, { settings: setting }, actor);
+  }
+  if (!agent.connectors.includes(key)) {
+    await team.update(companyId, agent.tag, { connectors: [...agent.connectors, key], ...(lead ? {} : { settings: setting }) }, actor);
+  } else if (!lead) {
+    await team.update(companyId, agent.tag, { settings: setting }, actor);
+  }
+}
+
 export function stillMissing(companyId: string, key: string): string | null {
   const connection = findConnection(companyId, key);
   if (connection?.ok) return null;
@@ -94,7 +136,7 @@ export async function settleConnectionCard(
   db: Db,
   companyId: string,
   question: Question,
-  choice: "connected" | "without",
+  answer: "connected" | "without" | "grant" | "grant_auto",
   actor: { userId: string | null },
 ): Promise<{ startedTasks: number }> {
   const key = question.connection!.key;
@@ -102,6 +144,9 @@ export async function settleConnectionCard(
   const team = teamService(db);
   const before = await team.get(companyId, question.agentTag);
   if (!before) return { startedTasks: 0 };
+  // Giving it access: the connection works, the agent just wasn't given it.
+  if (answer === "grant" || answer === "grant_auto") await grantAccess(db, companyId, before, key, answer === "grant_auto", actor);
+  const choice = answer === "without" ? "without" : "connected";
   const waiting = before.heldIssues.length + (await team.subTeam(companyId, before.tag)).reduce((n, a) => n + a.heldIssues.length, 0);
   await team.settleNeed(companyId, before.tag, key, choice, actor);
   const after = await team.get(companyId, before.tag);

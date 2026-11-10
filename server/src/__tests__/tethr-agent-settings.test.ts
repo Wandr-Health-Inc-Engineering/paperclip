@@ -222,6 +222,48 @@ describePg("an agent's own settings: in its pane and at the gate", () => {
     await updateIntegrations(companyId, { connectors: { Gmail: { mode: "ask" } } });
   });
 
+  it("an agent asking for a connection that works, but isn't one of its tools, gets an access card: one tap gives it (and its lead) access", async () => {
+    const team = teamService(db);
+    const labels = teamConnectorLabels(companyId);
+    const lead = await team.create(
+      companyId,
+      validateTeamSpec(
+        { name: "Events Lead", title: "Events lead", mission: "Runs partner events.", instructions: "Plan partner events and keep the calendar straight.", connectors: ["Gmail"], lead: true },
+        { takenTags: await team.takenTags(companyId), connectors: labels },
+      ),
+      { userId: "mark", via: "approval" },
+    );
+    const sub = await team.create(
+      companyId,
+      validateTeamSpec(
+        { name: "Event Scheduler", title: "Scheduler", mission: "Books the events.", instructions: "Book the events on the team calendar each week.", connectors: ["Gmail"] },
+        { takenTags: await team.takenTags(companyId), connectors: labels, lead: { tag: lead.tag, connectors: lead.connectors } },
+      ),
+      { userId: "mark", via: "approval" },
+      { lead },
+    );
+    // Google Calendar works for the company (it's on in Integrations); neither agent has it.
+    const asked = await runTethrTool(
+      "need_connection",
+      { connector: "Google Calendar", why: "Booking events needs the calendar." },
+      { workspaceDir: path.join(dir, "workspace"), db, companyId, threadId: sub.threadId },
+    );
+    expect(asked.text).toMatch(/isn't one of your tools\. The person has a card to give you access/);
+    const waiting = (await request(app).get(`/api/tethr/${companyId}/needs-you`).expect(200)).body as { connections: Array<{ id: string; agentTag: string; access: boolean }> };
+    const card = waiting.connections.find((c) => c.agentTag === sub.tag)!;
+    expect(card.access).toBe(true);
+
+    await request(app).post(`/api/tethr/${companyId}/questions/${card.id}/answer`).send({ choice: "grant_auto" }).expect(200);
+    const [afterLead, afterSub] = [await team.get(companyId, lead.tag), await team.get(companyId, sub.tag)];
+    expect(afterSub!.connectors).toContain("Google Calendar");
+    expect(afterLead!.connectors).toContain("Google Calendar");
+    // The sub-team works under the lead's settings: the lead's entry carries the mode.
+    expect(afterLead!.settings["Google Calendar"]!.mode).toBe("auto");
+    expect(afterLead!.settings.Gmail!.mode).toBe("ask");
+    expect(await team.unmetNeeds(companyId, afterSub!)).toEqual([]);
+    expect((await request(app).get(`/api/tethr/${companyId}/needs-you`).expect(200)).body.connections.some((c: { agentTag: string }) => c.agentTag === sub.tag)).toBe(false);
+  });
+
   it("an agent proposed with anything on Automatic is a card, even when new agents are automatic; widening an agent is too", async () => {
     await updateIntegrations(companyId, { team: { newAgents: "auto" } as never });
     const made = await tool("create_agent", {

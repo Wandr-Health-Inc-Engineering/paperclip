@@ -247,6 +247,8 @@ export function answeredWords(q: TethrQuestion): string {
   if (!a) return "";
   if (q.connection) {
     if (a.choice === "without") return "You said to carry on without it";
+    if (a.choice === "grant_auto") return "You gave it access, on its own";
+    if (a.choice === "grant") return "You gave it access, asking each time";
     // tethr closes the card itself when it can see the connection is there.
     return a.by === "tethr" ? "Connected" : "You connected it";
   }
@@ -364,8 +366,11 @@ function ConnectionCard({ question, connection, companyId, from }: { question: T
     refreshAfterDecision(queryClient, companyId);
   };
   const answer = useMutation({
-    mutationFn: (choice: "connected" | "without") => tethrApi.answerQuestion(companyId, question.id, { choice }),
-    onSettled: refresh,
+    mutationFn: (choice: "connected" | "without" | "grant" | "grant_auto") => tethrApi.answerQuestion(companyId, question.id, { choice }),
+    onSettled: () => {
+      refresh();
+      queryClient.invalidateQueries({ queryKey: tethrKeys.team(companyId) });
+    },
   });
   // A key or a mode saved from the fix: tethr re-checks, and closes this itself if that was all it needed.
   const recheck = useMutation({ mutationFn: () => tethrApi.recheckConnections(companyId), onSettled: refresh });
@@ -375,6 +380,39 @@ function ConnectionCard({ question, connection, companyId, from }: { question: T
   });
   const busy = answer.isPending || pause.isPending;
   const error = answer.error ?? pause.error;
+  // The connection works for the company; this agent just isn't given it.
+  if (question.access && question.agentTag) {
+    return (
+      <div className={CARD}>
+        <span className="tethr-eyebrow inline-flex items-center gap-1.5">
+          <Plug className="h-3 w-3" />
+          {question.agentTag} needs access{from ? ` · ${from}` : ""}
+        </span>
+        <p className="text-[14.5px] font-medium leading-snug">
+          Give {question.agentTag} {connection}?
+        </p>
+        <p className="text-[13px] leading-relaxed text-muted-foreground">
+          {connection} is connected and working; {question.agentTag} just isn't allowed to use it yet. Nothing else needs setting up.
+        </p>
+        {question.detail ? <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed tethr-text-3 [overflow-wrap:anywhere]">{question.detail}</p> : null}
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <button type="button" disabled={busy} onClick={() => answer.mutate("grant_auto")} className={PRIMARY}>
+            Give access, on its own
+          </button>
+          <button type="button" disabled={busy} onClick={() => answer.mutate("grant")} className={GLASS}>
+            Give access, ask each time
+          </button>
+          <button type="button" disabled={busy} onClick={() => answer.mutate("without")} className={GHOST}>
+            Carry on without it
+          </button>
+        </div>
+        <p className="text-[11.5px] leading-snug tethr-text-3">
+          "On its own": changes run without asking; spending, outside people and deletes still ask until you change them in {question.agentTag}'s settings.
+        </p>
+        {error ? <p className="text-[12px] text-[var(--tethr-bad)]">{errorText(error, "That didn't go through.")}</p> : null}
+      </div>
+    );
+  }
   return (
     <div className={CARD}>
       <span className="tethr-eyebrow inline-flex items-center gap-1.5">

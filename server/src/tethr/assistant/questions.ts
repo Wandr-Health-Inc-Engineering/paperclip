@@ -57,8 +57,12 @@ export interface Question {
   askedAt: string;
 }
 
-/** A connection card's two answers: it's connected now, or carry on without it. */
-export const CONNECTION_ANSWERS = ["connected", "without"] as const;
+/**
+ * A connection card's answers: it's connected now, or carry on without it; and
+ * when the connection works but the agent isn't given it, give it access
+ * (each change asks, or changes run on its own).
+ */
+export const CONNECTION_ANSWERS = ["connected", "without", "grant", "grant_auto"] as const;
 
 interface QuestionsState {
   questions?: Question[];
@@ -218,6 +222,9 @@ export function answerText(q: Question): string {
   const comment = a.comment ? `\n${a.comment}` : "";
   if (q.connection && a.choice === "connected") return `Connected: ${q.connection.key}. Check that it answers, then carry on.${comment}`;
   if (q.connection && a.choice === "without") return `Carry on without ${q.connection.key}. Don't ask for it again; do what you can and say what you couldn't.${comment}`;
+  if (q.connection && (a.choice === "grant" || a.choice === "grant_auto")) {
+    return `You now have ${q.connection.key} as one of your tools (${a.choice === "grant_auto" ? "changes run on their own; spending, outside people and deletes follow your settings" : "each change asks the person first"}). Its tools are listed for you from this turn: use them for what you were asking for.${comment}`;
+  }
   if (a.choice === "approve" && !q.options) return `Approved: ${about}${comment}`;
   if (a.choice === "reject" && !q.options) return `Rejected: ${about}${comment}`;
   if (a.choice) return `About ${about}: ${a.choice}${comment}`;

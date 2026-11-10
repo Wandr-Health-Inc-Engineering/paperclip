@@ -92,6 +92,17 @@ export function parseAgentSettings(raw: unknown, tools: string[], opts: { byPers
   return out;
 }
 
+/** What an agent that has been following tethr's settings has in effect now, per tool: where its own settings start. */
+export function inheritedSettings(cfg: IntegrationsConfig, tools: string[]): AgentSettings {
+  const out: AgentSettings = {};
+  for (const tool of tools) {
+    if (SETTINGLESS_TOOLS.has(tool)) continue;
+    const mode = modeFor(cfg, tool);
+    out[tool] = { mode: mode === "off" ? "read" : mode, autonomy: cloneAutonomy(autonomyFor(cfg, tool)) };
+  }
+  return out;
+}
+
 /** An entry for each settable tool: what's given, else Approval needed. Tools it no longer has are dropped. */
 export function settingsForTools(tools: string[], given: AgentSettings = {}, before: AgentSettings = {}): AgentSettings {
   const out: AgentSettings = {};

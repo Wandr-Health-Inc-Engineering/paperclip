@@ -50,7 +50,7 @@ import { classify, decide, kindsForConnector } from "../tethr/assistant/policy.j
 import { AGENT_ALWAYS_TOOLS, agentToolRefusal, TEAM_TOOL_NAMES, TeamInputError } from "../tethr/team-spec.js";
 import { answerQuestion, answerText, closeQuestionsAnsweredInChat, getQuestion, QuestionInputError, questionsByRun } from "../tethr/assistant/questions.js";
 import { checklistDismissedNote, checklistDoneText, ChecklistInputError, checklistsByRun, dismissChecklist, getChecklist, setChecklistStep } from "../tethr/assistant/checklists.js";
-import { settleConnectionCard, stillMissing } from "../tethr/team-needs.js";
+import { settleConnectionCard, stillMissing, withAccess } from "../tethr/team-needs.js";
 import { connectionCardsOnCreationTurns, needsYouOnReportCards } from "../tethr/needs-you.js";
 import { teamService } from "../tethr/team.js";
 import {
@@ -728,6 +728,10 @@ export function tethrRoutes(db: Db) {
     // on a person for (approval cards, questions, missing connections), its sub-team's too.
     const needsYouByCard = await needsYouOnReportCards(db, companyId, runs);
     const waitingOnCreation = await connectionCardsOnCreationTurns(db, companyId, runs, outputs);
+    // A connection card whose connection works but the agent isn't given it asks for access instead.
+    const allCards = [...[...questionsOfRuns.values()].flat(), ...[...waitingOnCreation.values()].flat(), ...[...needsYouByCard.values()].flatMap((n) => n.questions)];
+    const accessIds = new Set((await withAccess(db, companyId, allCards)).filter((q) => q.access).map((q) => q.id));
+    const markAccess = <Q extends { id: string }>(q: Q) => ({ ...q, access: accessIds.has(q.id) });
     res.json(
       runs.map((run) => {
         // Attached files come back as their own list; the bubble shows only the words.
@@ -742,10 +746,10 @@ export function tethrRoutes(db: Db) {
           lesson: lessonRows.find((l) => l.cardRunId === run.id) ?? null,
           outputs: outputs.filter((o) => o.routeRunId === run.id),
           // Phase 27: questions this turn put to the person, as cards with buttons.
-          questions: [...(questionsOfRuns.get(run.id) ?? []), ...(waitingOnCreation.get(run.id) ?? [])],
+          questions: [...(questionsOfRuns.get(run.id) ?? []), ...(waitingOnCreation.get(run.id) ?? [])].map(markAccess),
           // Step-by-step jobs this turn handed the person, ticked off on the card.
           checklists: checklistsOfRuns.get(run.id) ?? [],
-          needsYou: needsYouByCard.get(run.id) ?? null,
+          needsYou: needsYouByCard.has(run.id) ? { ...needsYouByCard.get(run.id)!, questions: needsYouByCard.get(run.id)!.questions.map(markAccess) } : null,
         };
       }),
     );
@@ -802,8 +806,10 @@ export function tethrRoutes(db: Db) {
       // isn't true yet leaves the card open and says what's still missing.
       const asked = getQuestion(companyId, req.params.id as string);
       const choice = typeof req.body?.choice === "string" ? req.body.choice : "";
-      if (asked?.status === "open" && asked.connection && (choice === "connected" || choice === "without")) {
-        const missing = choice === "connected" ? stillMissing(companyId, asked.connection.key) : null;
+      if (asked?.status === "open" && asked.connection && (choice === "connected" || choice === "without" || choice === "grant" || choice === "grant_auto")) {
+        // "Give it access" is for an agent's card about a connection that works.
+        if ((choice === "grant" || choice === "grant_auto") && !asked.agentTag) throw new QuestionInputError("Only an agent's card can give access.");
+        const missing = choice !== "without" ? stillMissing(companyId, asked.connection.key) : null;
         if (missing) throw new QuestionInputError(missing);
         ({ startedTasks } = await settleConnectionCard(db, companyId, asked, choice, { userId }));
       }

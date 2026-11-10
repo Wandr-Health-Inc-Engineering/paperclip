@@ -177,11 +177,16 @@ async function needConnection(args: Record<string, unknown>, ctx: TethrToolConte
   }
   const raised = await team.raiseNeed(ctx.companyId, member.tag, connection.key, why);
   if (raised === "waived") return { text: `The team already said to work without ${connection.key}. Don't ask for it again: do what you can and say what you couldn't.` };
-  const { openNeedCards } = await import("../team-needs.js");
+  const { needsAccess, openNeedCards } = await import("../team-needs.js");
   const fresh = await team.get(ctx.companyId, member.tag);
   await openNeedCards(ctx.db, ctx.companyId, fresh ? await team.unmetNeeds(ctx.companyId, fresh) : [], ctx.runId ?? null);
+  // It works for the company; this agent just isn't given it: the card asks for access.
+  const lead = member.leadTag ? await team.get(ctx.companyId, member.leadTag) : null;
+  const access = needsAccess(ctx.companyId, member, lead, connection.key);
   return {
-    text: `Recorded: the person has a card to connect ${connection.key} or to tell you to carry on without it. Finish this turn with what you have and say plainly what you couldn't do. You won't be run again until they answer, so nothing is spent waiting.`,
+    text: access
+      ? `Recorded: ${connection.key} works for the company, but it isn't one of your tools. The person has a card to give you access (or to tell you to carry on without it). Finish this turn with what you have and say plainly what you couldn't do. You won't be run again until they answer, so nothing is spent waiting.`
+      : `Recorded: the person has a card to connect ${connection.key} or to tell you to carry on without it. Finish this turn with what you have and say plainly what you couldn't do. You won't be run again until they answer, so nothing is spent waiting.`,
     meta: { connection: connection.key, raised },
   };
 }

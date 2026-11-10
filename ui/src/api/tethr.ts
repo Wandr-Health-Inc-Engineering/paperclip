@@ -222,6 +222,8 @@ export interface TethrQuestion {
   options: Array<{ label: string; description: string | null }> | null;
   /** A connection card: what's missing. Its answers are "connected" and "without". */
   connection?: { key: string };
+  /** A connection card whose connection works, but the agent isn't given it: what it needs is access. */
+  access?: boolean;
   status: "open" | "answered";
   answer: { choice: string | null; comment: string | null; by: string; at: string; via: "card" | "chat" } | null;
   askedAt: string;

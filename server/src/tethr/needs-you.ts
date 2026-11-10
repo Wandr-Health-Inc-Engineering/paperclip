@@ -21,7 +21,7 @@ type OutputRow = typeof tethrOutputs.$inferSelect;
 export interface NeedsYou {
   approvals: Array<OutputRow & { from: string | null; threadId: string | null }>;
   questions: Array<Question & { from: string }>;
-  connections: Array<Question & { from: string }>;
+  connections: Array<Question & { from: string; access: boolean }>;
   /** Step-by-step jobs only a person can do outside tethr (set up a campaign, connect a tool). */
   checklists: Array<Checklist & { from: string }>;
   count: number;
@@ -62,7 +62,9 @@ export async function needsYou(db: Db, companyId: string): Promise<NeedsYou> {
     return { ...o, threadId, from: threadId ? chatName(companyId, threadId, agents) : (agents.find((a) => a.agentId === o.agentId)?.tag ?? null) };
   });
   const questions = open.filter((q) => !q.connection);
-  const connections = open.filter((q) => !!q.connection);
+  // A connection that works but isn't given to the agent asks for access, not a key.
+  const { withAccess } = await import("./team-needs.js");
+  const connections = await withAccess(db, companyId, open.filter((q) => !!q.connection));
   const checklists = [...openChecklists(companyId)].reverse().map((c) => ({ ...c, from: chatName(companyId, c.threadId, agents) }));
   return { approvals, questions, connections, checklists, count: approvals.length + questions.length + connections.length + checklists.length };
 }

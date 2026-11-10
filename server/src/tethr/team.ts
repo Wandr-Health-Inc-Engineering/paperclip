@@ -30,7 +30,7 @@ import {
 } from "./team-spec.js";
 import { DAY } from "./time.js";
 import { installedPlaybooks, playbooksForJob } from "./growth-map/playbooks.js";
-import { settingsForTools, settingsLines, widensSettings, widensSpending, type AgentSettings } from "./agent-settings.js";
+import { inheritedSettings, settingsForTools, settingsLines, widensSettings, widensSpending, type AgentSettings } from "./agent-settings.js";
 
 // Phase 23: tethr's team. An agent on the team is a real Paperclip agent (a
 // core agents row, a Tethr profile, a hard-stop budget policy, and a core
@@ -551,8 +551,12 @@ export function teamService(db: Db) {
     // A sub-agent keeps none of its own; it uses its lead's.
     if (!agent.leadTag && (patch.connectors !== undefined || patch.settings !== undefined)) {
       const tools = patch.connectors ?? agent.connectors;
-      const known = Object.keys(agent.settings).length > 0 || patch.settings !== undefined;
-      if (known) config.settings = settingsForTools(tools, patch.settings ?? {}, agent.settings);
+      const own = Object.keys(agent.settings).length > 0;
+      // An agent that has been following tethr's settings starts from them, so setting one
+      // tool doesn't quietly change the others.
+      if (own || patch.settings !== undefined) {
+        config.settings = settingsForTools(tools, patch.settings ?? {}, own ? agent.settings : inheritedSettings(getIntegrations(companyId), tools));
+      }
     }
     if (patch.maxRunsPerDay !== undefined) config.maxRunsPerDay = patch.maxRunsPerDay;
     // A need that stays keeps what's known about it; one that's dropped no longer holds the agent.
