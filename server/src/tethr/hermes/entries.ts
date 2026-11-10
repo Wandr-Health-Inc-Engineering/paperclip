@@ -104,9 +104,10 @@ export function applyOps(
   entries: string[],
   ops: MemoryOp[],
   limit: number,
-): { ok: true; entries: string[]; changed: string[] } | { ok: false; error: string } {
+): { ok: true; entries: string[]; changed: string[]; patched: Array<{ before: string; after: string }> } | { ok: false; error: string } {
   const next = [...entries];
   const changed: string[] = [];
+  const patched: Array<{ before: string; after: string }> = [];
   for (const [i, op] of ops.entries()) {
     if (op.action === "add") {
       if (!next.includes(op.content!)) next.push(op.content!);
@@ -120,16 +121,17 @@ export function applyOps(
       continue;
     }
     const entry = next[at]!;
-    const patched = entry === op.old_text!.trim() ? op.content! : entry.replace(op.old_text!, op.content!);
-    if (patched === entry) return { ok: false, error: `Change ${i + 1}: that patch changes nothing.` };
-    next[at] = patched;
-    changed.push(patched);
+    const after = entry === op.old_text!.trim() ? op.content! : entry.replace(op.old_text!, op.content!);
+    if (after === entry) return { ok: false, error: `Change ${i + 1}: that patch changes nothing.` };
+    next[at] = after;
+    changed.push(after);
+    patched.push({ before: entry, after });
   }
   const used = usedChars(next);
   if (used > limit) {
     return { ok: false, error: `That would use ${used.toLocaleString("en-US")} of ${limit.toLocaleString("en-US")} characters. Merge or remove entries first.` };
   }
-  return { ok: true, entries: next, changed };
+  return { ok: true, entries: next, changed, patched };
 }
 
 export interface MemoryEntryView {

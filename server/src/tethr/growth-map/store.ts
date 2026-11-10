@@ -86,6 +86,30 @@ export function updateMapState(companyId: string, fn: (s: CompanyMapState) => Co
   });
 }
 
+/**
+ * Link goal metrics or agents to one area. A metric or agent belongs to ONE
+ * area, so linking it here unlinks it everywhere else: one number or one agent
+ * can never lift every area at once. `undefined` leaves that kind of link alone.
+ */
+export function linkToArea(companyId: string, area: AreaId, links: { metricIds?: string[]; agentTags?: string[] }): Promise<CompanyMapState> {
+  return updateMapState(companyId, (s) => {
+    const areas: Partial<Record<AreaId, AreaRecord>> = {};
+    for (const [id, record] of Object.entries(s.areas ?? {}) as Array<[AreaId, AreaRecord]>) {
+      areas[id] = {
+        ...record,
+        ...(links.metricIds && record.metricIds ? { metricIds: record.metricIds.filter((m) => !links.metricIds!.includes(m)) } : {}),
+        ...(links.agentTags && record.agentTags ? { agentTags: record.agentTags.filter((t) => !links.agentTags!.includes(t)) } : {}),
+      };
+    }
+    areas[area] = {
+      ...(areas[area] ?? {}),
+      ...(links.metricIds ? { metricIds: links.metricIds } : {}),
+      ...(links.agentTags ? { agentTags: links.agentTags } : {}),
+    };
+    return { ...s, areas };
+  });
+}
+
 export function updateAreaRecord(companyId: string, area: AreaId, fn: (r: AreaRecord) => AreaRecord): Promise<CompanyMapState> {
   return updateMapState(companyId, (s) => ({ ...s, areas: { ...(s.areas ?? {}), [area]: fn({ ...(s.areas?.[area] ?? {}) }) } }));
 }

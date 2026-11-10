@@ -1234,13 +1234,16 @@ want it to improve with a visual understanding." Plan: `tasks/phase-26.md` 26.9;
   "website" = a non-freemail domain in Integrations' inside addresses; "profile" = setup's "what the
   company sells"), Informed (3+ notes or skills placed there), Aimed (a linked goal metric), Staffed
   (an unpaused agent placed there, or the Friday scorecard switched on for Measurement), Proven (a
-  linked metric on track or hit, by the scorecard's rule, over 2+ measurements; or the latest audit
-  10+ points above the first). Level = unlocks (Unexplored … Mastered); company level = sum over
+  placed metric that has moved off its baseline and was on track or at target, by the scorecard's
+  rule, at EACH of its last 2 measurements; or the latest audit 10+ points above the first, with the
+  two at least 7 days apart). Level = unlocks (Unexplored … Mastered); company level = sum over
   visible areas (max 72, less when areas are hidden). Nobody can set a level; it drops with the
   evidence.
 - **Placement:** a note's area is in memory provenance (`Provenance.area`; a patch with no area keeps
-  the old note's), a skill's in the map store (`skillAreas`), metrics/agents linked by `map_area` stay
-  in those areas only; anything else goes through `sort.ts` keyword rules, where a tie places nothing.
+  the old note's, note by note: Hermes reports each patch's before and after), a skill's in the map
+  store (`skillAreas`). A metric or agent linked by `map_area` belongs to ONE area (`linkToArea`
+  unlinks it everywhere else, so one number or agent can't lift every area); anything else goes
+  through `sort.ts` keyword rules, where a tie places nothing.
   Metrics are sorted by name + goal, never their method.
 - **Store** `growth-map/store.ts` → instance-dir `tethr-growth-map.json` (`TETHR_GROWTH_MAP_FILE`):
   audits per area (20 kept), linked metric ids and agent tags, the week's focus (shown 8 days),
@@ -1248,8 +1251,9 @@ want it to improve with a visual understanding." Plan: `tasks/phase-26.md` 26.9;
 - **Tools** (`assistant/map-tools.ts`, on the tethr server): `growth_map` (read; one area in full with
   `area`) and `map_area` (draft, no card): score 0-100 + summary (both or neither), up to 5 next
   steps, `file` that must exist in files/, `metric_ids`/`agent_tags` (each list replaces; validated),
-  `focus` (tethr's own chats only). Summary, steps and focus reason pass the health screen and the
-  injection check. A private turn can read but not write (endpoint: reads only). `memory` and
+  `focus` (not on a hidden area). **An agent may only record audits, and only for the area it's
+  placed in**; links and focus are tethr's own chats only. The score must be a JSON integer.
+  Summary, steps and focus reason pass the health screen and the injection check. A private turn can read but not write (endpoint: reads only). `memory` and
   `skill_save` take an optional `area`.
 - **Every turn:** CLAUDE.md v5 has "## Growth map" (`text.ts growthMapContextText`): one computed line
   per area (level, next unlock, playbooks, FOCUS), never saved text. The Monday plan playbook
@@ -1267,8 +1271,13 @@ want it to improve with a visual understanding." Plan: `tasks/phase-26.md` 26.9;
   map, the list under it, the panel as a sheet. New unlocks since the last visit (localStorage
   `tethr.growthMap.seen.<company>`, nothing on a first visit) bloom once and carry a "new" tag. Styles:
   `.tethr-galaxy*` at the end of tethr-theme.css; reduced motion stops orbits, swirl, halo and bloom.
-- Tests: `tethr-growth-map.test.ts` (server, 26), `ui/src/lib/tethr-growth-map.test.ts` (layout at
-  320-1200px with every level, full orbits and each focus; what's new).
+- Tests: `tethr-growth-map.test.ts` (server, 29), `ui/src/lib/tethr-growth-map.test.ts` (layout at
+  320-1200px with every level, full orbits and each focus; what's new). The page is keyed by company,
+  so switching company starts "what's new" over.
+- **Independent review (2026-11-09)** found 5 defects in the first version, all fixed above: a flat
+  number earned Proven, one metric or agent linked in every area lifted them all, two back-to-back
+  audits proved an area, what's new carried over between companies, and a mixed patch dropped a
+  note's area.
 
 ## Hermes is tethr's memory, on the subscription (phase 25, 2026-11-09)
 

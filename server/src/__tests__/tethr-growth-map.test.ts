@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb } from "@paperclipai/db";
 import { seedTethrCore } from "../tethr/seed/tethr-core.ts";
 import { AREA_IDS, AREA_LINKS, GROWTH_AREAS, type AreaId } from "../tethr/growth-map/areas.ts";
-import { computeGrowthMap, FOCUS_DAYS, metricState, type MapEvidence, type MetricEvidence } from "../tethr/growth-map/map.ts";
+import { computeGrowthMap, FOCUS_DAYS, metricState, numberProves, type MapEvidence, type MetricEvidence } from "../tethr/growth-map/map.ts";
 import { sortIntoArea } from "../tethr/growth-map/sort.ts";
 import { exploreBrief, growthMapContextText, growthMapToolText } from "../tethr/growth-map/text.ts";
 import { companyDomain, growthMap } from "../tethr/growth-map/evidence.ts";
@@ -60,10 +60,21 @@ function metric(patch: Partial<MetricEvidence> = {}): MetricEvidence {
     target: 2000,
     targetDate: new Date(NOW.getTime() + 60 * DAY_MS),
     current: 1600,
-    measurements: 3,
+    // On the line at each measurement (expected 27%, 38%, 50% of the way).
+    history: [
+      { at: daysAgo(28).toISOString(), value: 1250 },
+      { at: daysAgo(14).toISOString(), value: 1400 },
+      { at: NOW.toISOString(), value: 1600 },
+    ],
     ...patch,
   };
 }
+
+/** A metric whose latest values are these, two weeks apart, ending now. */
+const measured = (...values: number[]): Partial<MetricEvidence> => ({
+  current: values.at(-1)!,
+  history: values.map((value, i) => ({ at: daysAgo(14 * (values.length - 1 - i)).toISOString(), value })),
+});
 
 const seoNotes = ["Our best keywords are about malaria pills", "SEO: the pricing page has no meta description", "Backlinks come mostly from travel blogs"].map((text) => ({
   text,
@@ -158,7 +169,7 @@ describe("tethr growth map — unlocks from evidence", () => {
   });
 
   it("drops levels when the evidence goes: a number behind, a paused agent, a disconnected tool", () => {
-    const behind = masteredSeo({ metrics: [metric({ current: 1050 })], state: { areas: { seo: { ...masteredSeo().state.areas!.seo!, audits: [masteredSeo().state.areas!.seo!.audits![1]] } } } });
+    const behind = masteredSeo({ metrics: [metric(measured(1100, 1050))], state: { areas: { seo: { ...masteredSeo().state.areas!.seo!, audits: [masteredSeo().state.areas!.seo!.audits![1]] } } } });
     expect(earned(behind)).not.toContain("proven");
     const paused = masteredSeo({ agents: [{ tag: "@seo-scout", name: "SEO Scout", title: "Search", mission: "Finds keywords", paused: true, running: false }] });
     expect(earned(paused)).not.toContain("staffed");
@@ -168,19 +179,28 @@ describe("tethr growth map — unlocks from evidence", () => {
     expect(seoOf(unplugged).level).toBe(5);
   });
 
-  it("proves an area by a number on track over two measurements, or an audit up 10 points", () => {
+  it("proves an area by a number that moved and was on track at its last two measurements", () => {
     const one = (patch: Partial<MetricEvidence>) => earned(evidence({ metrics: [metric(patch)], state: { areas: { seo: { metricIds: ["m1"] } } } }));
     expect(one({})).toEqual(["aimed", "proven"]);
-    expect(one({ measurements: 1 })).toEqual(["aimed"]);
-    expect(one({ current: 2100 })).toContain("proven"); // target hit
-    const audits = (a: number, b: number) =>
+    expect(one(measured(1600))).toEqual(["aimed"]); // one measurement
+    expect(one(measured(1400, 2100))).toContain("proven"); // target hit
+    // Flat at the baseline early on: "on track" by the line, but it hasn't moved.
+    const early = { baselineAt: daysAgo(20), targetDate: new Date(NOW.getTime() + 345 * DAY_MS) };
+    expect(one({ ...early, ...measured(1000, 1000) })).toEqual(["aimed"]);
+    expect(numberProves(metric({ ...early, ...measured(1000, 1040) }))).toBe(true);
+    // Behind at the earlier measurement, on track now: not yet.
+    expect(one(measured(1100, 1600))).toEqual(["aimed"]);
+  });
+
+  it("proves an area by an audit up 10 points only over a week or more", () => {
+    const audits = (a: number, b: number, daysApart: number) =>
       earned(
         evidence({
           state: {
             areas: {
               seo: {
                 audits: [
-                  { score: a, summary: "x", nextSteps: [], at: daysAgo(9).toISOString(), by: "@tethr" },
+                  { score: a, summary: "x", nextSteps: [], at: daysAgo(1 + daysApart).toISOString(), by: "@tethr" },
                   { score: b, summary: "y", nextSteps: [], at: daysAgo(1).toISOString(), by: "@tethr" },
                 ],
               },
@@ -188,8 +208,10 @@ describe("tethr growth map — unlocks from evidence", () => {
           },
         }),
       );
-    expect(audits(40, 50)).toEqual(["mapped", "proven"]);
-    expect(audits(40, 49)).toEqual(["mapped"]);
+    expect(audits(40, 50, 8)).toEqual(["mapped", "proven"]);
+    expect(audits(40, 49, 8)).toEqual(["mapped"]);
+    // Two audits in one sitting prove nothing.
+    expect(audits(40, 55, 0)).toEqual(["mapped"]);
   });
 
   it("counts what tethr knows: notes with an area, keyword-sorted notes and skills", () => {
@@ -382,6 +404,7 @@ describePg("tethr growth map — tools, memory and routes", () => {
     };
     expect(await bad({ area: "vibes", score: 50, summary: "x" })).toContain("area must be one of");
     expect(await bad({ area: "seo", score: 101, summary: "x" })).toContain("0 to 100");
+    for (const score of [true, null, "", "55"]) expect(await bad({ area: "seo", score, summary: "x" })).toContain("0 to 100");
     expect(await bad({ area: "seo", score: 50 })).toContain("needs a summary");
     expect(await bad({ area: "seo", summary: "x" })).toContain("come with a score");
     expect(await bad({ area: "seo", score: 50, summary: "Sarah Jones was diagnosed with malaria after her trip." })).toContain("health information");
@@ -418,7 +441,14 @@ describePg("tethr growth map — tools, memory and routes", () => {
     await tool("map_area", { area: "seo", score: 61, summary: "Better after the meta fixes." });
     const again = (await growthMap(db, companyId)).areas.find((a) => a.id === "seo")!;
     expect(again.audits.map((a) => a.score)).toEqual([48, 61]);
-    expect(again.unlocks.find((u) => u.key === "proven")!.earned).toBe(true);
+    // Two audits minutes apart: the rise doesn't count yet.
+    expect(again.unlocks.find((u) => u.key === "proven")).toMatchObject({ earned: false, detail: expect.stringContaining("within a week") });
+    // A metric belongs to one area: linking it to Measurement unlinks it from SEO.
+    await tool("map_area", { area: "measurement", metric_ids: [m.id] });
+    const moved = await growthMap(db, companyId);
+    expect(moved.areas.find((a) => a.id === "measurement")!.metrics.map((x) => x.id)).toEqual([m.id]);
+    expect(moved.areas.find((a) => a.id === "seo")!.metrics).toHaveLength(0);
+    await tool("map_area", { area: "seo", metric_ids: [m.id] });
     const text = await tool("growth_map", { area: "seo" });
     expect(text.text).toContain("Last audit");
   });
@@ -430,10 +460,20 @@ describePg("tethr growth map — tools, memory and routes", () => {
     }
     const bad = await tool("memory", { target: "company", area: "nope", operations: [{ action: "add", content: "x y z" }] });
     expect(bad.isError).toBe(true);
-    const patched = await tool("memory", { target: "company", operations: [{ action: "patch", old_text: "the Peru page", content: "the Peru and Kenya pages" }] });
+    // One call patches an SEO note and an unplaced one: each keeps its own area.
+    await tool("memory", { target: "company", operations: [{ action: "add", content: "The team meets on Tuesdays" }] });
+    const patched = await tool("memory", {
+      target: "company",
+      operations: [
+        { action: "patch", old_text: "the Peru page", content: "the Peru and Kenya pages" },
+        { action: "patch", old_text: "on Tuesdays", content: "on Wednesdays" },
+      ],
+    });
     expect(patched.isError).toBeFalsy();
     const seo = (await growthMap(db, companyId)).areas.find((a) => a.id === "seo")!;
     expect(seo.knowledge.notes.filter((n) => n.placedBy === "tethr").map((n) => n.text)).toContain("Most search traffic lands on the Peru and Kenya pages");
+    const all = (await growthMap(db, companyId)).areas.flatMap((a) => a.knowledge.notes.map((n) => n.text));
+    expect(all).not.toContain("The team meets on Wednesdays");
     expect(seo.unlocks.find((u) => u.key === "informed")!.earned).toBe(true);
   });
 
@@ -450,9 +490,19 @@ describePg("tethr growth map — tools, memory and routes", () => {
     expect(seo.agents.map((a) => a.tag)).toEqual([agent.tag]);
     expect(seo.unlocks.find((u) => u.key === "staffed")!.earned).toBe(true);
 
-    const fromAgent = await tool("map_area", { area: "conversion", focus: true }, agent.threadId);
-    expect(fromAgent.isError).toBe(true);
-    expect(fromAgent.text).toContain("Only tethr's own chats set the week's focus");
+    // An agent audits its own area only, and never links or sets the focus.
+    for (const args of [{ area: "seo", focus: true }, { area: "seo", metric_ids: [] }, { area: "seo", agent_tags: [agent.tag] }]) {
+      const r = await tool("map_area", args, agent.threadId);
+      expect(r.isError).toBe(true);
+      expect(r.text).toContain("Only tethr's own chats link numbers and agents or set the week's focus");
+    }
+    const elsewhere = await tool("map_area", { area: "pricing", score: 90, summary: "Looks great." }, agent.threadId);
+    expect(elsewhere.isError).toBe(true);
+    expect(elsewhere.text).toContain(`${agent.tag} records audits only for the area you work (seo)`);
+    // An agent belongs to one area too.
+    await tool("map_area", { area: "content", agent_tags: [agent.tag] });
+    expect((await growthMap(db, companyId)).areas.find((a) => a.id === "seo")!.agents).toHaveLength(0);
+    await tool("map_area", { area: "seo", agent_tags: [agent.tag] });
     const fromTethr = await tool("map_area", { area: "conversion", focus: true, focus_reason: "Sign-ups are behind" });
     expect(fromTethr.isError).toBeFalsy();
     expect((await growthMap(db, companyId)).focus).toMatchObject({ area: "conversion", why: "Sign-ups are behind" });
@@ -498,6 +548,8 @@ describePg("tethr growth map — tools, memory and routes", () => {
     await request(agentActor).post(`/api/tethr/${companyId}/growth-map/geo/hidden`).send({ hidden: true }).expect(403);
     const hidden = await request(mark).post(`/api/tethr/${companyId}/growth-map/geo/hidden`).send({ hidden: true }).expect(200);
     expect(hidden.body.company.max).toBe(66);
+    const focusHidden = await tool("map_area", { area: "geo", focus: true });
+    expect(focusHidden.text).toContain("hidden on the growth map");
     const shown = await request(mark).post(`/api/tethr/${companyId}/growth-map/geo/hidden`).send({ hidden: false }).expect(200);
     expect(shown.body.company.max).toBe(72);
   });

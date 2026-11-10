@@ -141,6 +141,8 @@ interface HermesMemoryReply {
   success: boolean;
   error?: string;
   usage?: string;
+  /** Operation number (1-based) → the note a patch changed, and what it became. */
+  patched_entries?: Record<string, string>;
   patched_entries_after?: Record<string, string>;
 }
 
@@ -163,20 +165,6 @@ function saveRefusal(content: string, backend: MemoryBackend): string | null {
   return injected ? `That reads like an instruction to tethr, not a fact to remember (${injected}).` : null;
 }
 
-/** The one growth-map area shared by the notes a patch-only change rewrites, if any. */
-function areaKeptByPatch(companyId: string, ops: MemoryOp[], before: string[]): { area?: string } {
-  if (!ops.length || ops.some((o) => o.action !== "patch")) return {};
-  const provenance = getMemoryState(companyId).provenance ?? {};
-  const areas = new Set(
-    ops.map((o) => {
-      const entry = o.old_text ? before.find((e) => e.includes(o.old_text!)) : undefined;
-      return entry ? provenance[entryHash(entry)]?.area : undefined;
-    }),
-  );
-  const [area] = [...areas];
-  return areas.size === 1 && area ? { area } : {};
-}
-
 /**
  * Apply changes to one store and record who made them. Returns a line for the
  * tool result. Throws MemoryChangeError when the change was refused (a person's
@@ -186,17 +174,18 @@ function areaKeptByPatch(companyId: string, ops: MemoryOp[], before: string[]): 
 export async function changeMemory(companyId: string, target: MemoryTarget, ops: MemoryOp[], by: Omit<Provenance, "at"> & { at?: string }): Promise<string> {
   const profile = activeHermesProfile(companyId);
   const limit = limitsFor(companyId)[target];
-  const priorEntries = readEntries(companyId, target);
   for (const op of ops) {
     const refusal = op.content ? saveRefusal(op.content, profile ? "hermes" : "builtin") : null;
     if (refusal) throw new MemoryChangeError(refusal);
   }
-  let saved: string[];
+  let added: string[];
+  let patched: Array<{ before: string; after: string }>;
   let usage: string;
   if (profile) {
     const reply = await runHelper<HermesMemoryReply>(profile, "memory.apply", { target: HERMES_TARGET[target], operations: ops });
     if (!reply.success) throw new MemoryChangeError(plainHermesRefusal(reply.error));
-    saved = [...ops.filter((o) => o.action === "add").map((o) => o.content!), ...Object.values(reply.patched_entries_after ?? {})];
+    added = ops.filter((o) => o.action === "add").map((o) => o.content!);
+    patched = Object.entries(reply.patched_entries_after ?? {}).map(([op, after]) => ({ before: reply.patched_entries?.[op] ?? "", after }));
     usage = reply.usage ?? "";
   } else {
     const file = storeFile(companyId, target);
@@ -209,18 +198,24 @@ export async function changeMemory(companyId: string, target: MemoryTarget, ops:
       return applied;
     });
     if (!result.ok) throw new MemoryChangeError(result.error);
-    saved = result.changed;
+    added = ops.filter((o) => o.action === "add").map((o) => o.content!);
+    patched = result.patched;
     const used = usedChars(readEntries(companyId, target));
     usage = `${Math.round((used / limit) * 100)}% — ${used.toLocaleString("en-US")}/${limit.toLocaleString("en-US")} chars`;
   }
   // Who saved what, for the entries that exist now (removed ones drop out). A
-  // patch with no area keeps the growth-map area of the note it changed.
-  const { at: keptAt, ...given } = by;
-  const who = given.area === undefined ? { ...given, ...areaKeptByPatch(companyId, ops, priorEntries) } : given;
+  // patched note with no area given keeps the growth-map area it had, note by note.
+  const { at: keptAt, ...who } = by;
   const at = keptAt ?? new Date().toISOString();
   const live = new Set(MEMORY_TARGETS.flatMap((t) => readEntries(companyId, t)).map(entryHash));
   await updateMemoryState(companyId, (s) => {
-    const merged = { ...(s.provenance ?? {}), ...Object.fromEntries(saved.map((t) => [entryHash(t), { ...who, at }])) };
+    const before = s.provenance ?? {};
+    const keptArea = (text: string) => (who.area === undefined && before[entryHash(text)]?.area ? { area: before[entryHash(text)]!.area } : {});
+    const merged = {
+      ...before,
+      ...Object.fromEntries(added.map((t) => [entryHash(t), { ...who, at }])),
+      ...Object.fromEntries(patched.map((p) => [entryHash(p.after), { ...who, ...keptArea(p.before), at }])),
+    };
     return { ...s, provenance: Object.fromEntries(Object.entries(merged).filter(([hash]) => live.has(hash))) };
   });
   await writeMemoryCopy(companyId);

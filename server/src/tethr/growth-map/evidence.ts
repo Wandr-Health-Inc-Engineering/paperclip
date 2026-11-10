@@ -113,7 +113,7 @@ export async function gatherEvidence(db: Db, companyId: string): Promise<MapEvid
         target: m.target,
         targetDate: m.targetDate,
         current: m.current,
-        measurements: (m.history ?? []).length,
+        history: (m.history ?? []).map((h) => ({ at: h.at, value: h.value })),
       })),
     ),
     agents: team.map((a) => ({ tag: a.tag, name: a.name, title: a.title, mission: a.mission, paused: a.paused, running: running.has(a.agentId) })),

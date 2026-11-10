@@ -246,6 +246,12 @@ Branch: `mark-sandbox` (local only). Date started: 2026-06-11.
 47. **The map in CLAUDE.md holds only computed text** (area names, levels, unlocks, playbooks),
     never a saved note or audit summary, so nothing saved can pose as an instruction there. The
     growth_map tool returns saved text marked as data.
+48. **One number or agent counts in one area, and agents only audit their own** (after the
+    independent review). Links are exclusive (linking a metric or agent to an area unlinks it
+    everywhere else), only tethr's own chats link or set the focus, and an agent records audits only
+    for the area it's placed in. A number proves an area only once it has moved off its baseline and
+    was on track at each of its last two measurements; an audit rise counts only across a week or
+    more. Otherwise one on-track metric, one agent, or two audits in a row could lift the whole map.
 
 ## Core changes (keep merge-safe)
 

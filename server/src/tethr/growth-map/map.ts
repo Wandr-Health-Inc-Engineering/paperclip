@@ -25,7 +25,9 @@ import type { AreaAudit, CompanyMapState } from "./store.js";
 
 export const INFORMED_AT = 3;
 export const PROVEN_AUDIT_RISE = 10;
-/** Two measurements at least before a number can prove anything. */
+/** A rise only counts between audits at least this many days apart (two in one sitting prove nothing). */
+export const PROVEN_AUDIT_DAYS = 7;
+/** A number proves an area when its last this-many measurements were each on track, and it has moved. */
 export const PROVEN_MEASUREMENTS = 2;
 /** The focus is the week's; it fades a day after the week is out. */
 export const FOCUS_DAYS = 8;
@@ -49,7 +51,8 @@ export interface MetricEvidence {
   target: number | null;
   targetDate: Date | null;
   current: number | null;
-  measurements: number;
+  /** Its measurements, oldest first (tethr_goal_metrics.history). */
+  history: Array<{ at: string; value: number }>;
 }
 
 export interface AgentEvidence {
@@ -148,20 +151,49 @@ export function shortDate(iso: string, timeZone?: string): string {
   }
 }
 
+type LineMetric = Pick<MetricEvidence, "baseline" | "baselineAt" | "target" | "targetDate">;
+
+/** How far from baseline to target a value is (0..1); the scorecard's progressOf. */
+function progressOf(m: LineMetric & { target: number }, value: number): number {
+  const base = m.baseline ?? 0;
+  const span = m.target - base;
+  return span === 0 ? (value === m.target ? 1 : 0) : clamp01((value - base) / span);
+}
+
 /** The scorecard's rule (ui Scorecard.tsx metricState): where the number stands against its line. */
 export function metricState(m: MetricEvidence, now: number): MetricState {
   if (m.target === null) return "no_target";
   if (m.current === null) return "not_measured";
-  const base = m.baseline ?? 0;
-  const span = m.target - base;
-  const progress = span === 0 ? (m.current === m.target ? 1 : 0) : clamp01((m.current - base) / span);
+  return stateAt({ ...m, target: m.target }, m.current, now);
+}
+
+/** Where a value measured at `ms` stood against the start-to-target line. */
+function stateAt(m: LineMetric & { target: number }, value: number, ms: number): Exclude<MetricState, "no_target" | "not_measured"> {
+  const progress = progressOf(m, value);
   if (progress >= 1) return "target_hit";
   if (!m.baselineAt || !m.targetDate) return "in_progress";
   const start = m.baselineAt.getTime();
   const end = m.targetDate.getTime();
   if (!(end > start)) return "in_progress";
-  const expected = clamp01((now - start) / (end - start));
+  const expected = clamp01((ms - start) / (end - start));
   return progress >= expected - 0.1 ? "on_track" : "behind";
+}
+
+/**
+ * Does this number prove its area? Its last PROVEN_MEASUREMENTS measurements
+ * were each on track (or at the target) when they were taken, and the latest has
+ * moved off the baseline: a flat number early in its period is "on track" by
+ * the line but proves nothing.
+ */
+export function numberProves(m: MetricEvidence): boolean {
+  if (m.target === null) return false;
+  const line = { ...m, target: m.target };
+  const last = [...m.history].sort((a, b) => a.at.localeCompare(b.at)).slice(-PROVEN_MEASUREMENTS);
+  if (last.length < PROVEN_MEASUREMENTS || progressOf(line, last.at(-1)!.value) <= 0) return false;
+  return last.every((p) => {
+    const state = stateAt(line, p.value, Date.parse(p.at));
+    return state === "on_track" || state === "target_hit";
+  });
 }
 
 /** Each thing's area: the one tethr gave it, else the keyword rules' pick. */
@@ -197,10 +229,15 @@ function placeLinked<T>(items: T[], idOf: (item: T) => string, linksOf: (area: A
   return out;
 }
 
-function audited(record: { audits?: AreaAudit[] } | undefined): { last: AreaAudit | null; change: number | null } {
+function audited(record: { audits?: AreaAudit[] } | undefined): { last: AreaAudit | null; change: number | null; apartDays: number } {
   const audits = record?.audits ?? [];
   const last = audits.at(-1) ?? null;
-  return { last, change: audits.length >= 2 && last ? last.score - audits[0].score : null };
+  const first = audits[0];
+  return {
+    last,
+    change: audits.length >= 2 && last ? last.score - first.score : null,
+    apartDays: audits.length >= 2 && last ? (Date.parse(last.at) - Date.parse(first.at)) / DAY : 0,
+  };
 }
 
 interface AreaFacts {
@@ -209,6 +246,8 @@ interface AreaFacts {
   knows: number;
   last: AreaAudit | null;
   change: number | null;
+  /** Days between the first and latest audits. */
+  apartDays: number;
   data: AreaView["data"];
   dataFix: string;
   metrics: AreaView["metrics"];
@@ -245,12 +284,17 @@ function unlockOf(key: UnlockKey, f: AreaFacts): UnlockView {
     }
     case "proven":
       if (f.provenMetric) return make(true, `“${f.provenMetric.name}” is ${METRIC_STATE_LABEL[f.provenMetric.state]}.`);
-      if (f.change !== null && f.change >= PROVEN_AUDIT_RISE) return make(true, `Its audit score rose ${f.change} points.`);
+      if (f.change !== null && f.change >= PROVEN_AUDIT_RISE && f.apartDays >= PROVEN_AUDIT_DAYS) {
+        return make(true, `Its audit score rose ${f.change} points.`);
+      }
+      if (f.change !== null && f.change >= PROVEN_AUDIT_RISE) {
+        return make(false, `Its audit score rose ${f.change} points within a week; it counts once the audits are a week or more apart.`);
+      }
       return make(
         false,
         f.metrics.length
-          ? `Its number on track over ${PROVEN_MEASUREMENTS} measurements or more, or its audit score up ${PROVEN_AUDIT_RISE} points.`
-          : `Its audit score up ${PROVEN_AUDIT_RISE} points, or a goal number on track.`,
+          ? `Its number moving and on track at its last ${PROVEN_MEASUREMENTS} measurements, or its audit score up ${PROVEN_AUDIT_RISE} points over a week or more.`
+          : `Its audit score up ${PROVEN_AUDIT_RISE} points over a week or more, or a goal number on track.`,
       );
   }
 }
@@ -274,7 +318,7 @@ export function computeGrowthMap(ev: MapEvidence, now: Date = new Date()): Growt
   const agents = placeLinked(ev.agents, (a) => a.tag, (a) => state.areas?.[a]?.agentTags ?? [], (a) => `${a.title} ${a.mission}`);
 
   const areas: AreaView[] = GROWTH_AREAS.map((area) => {
-    const { last, change } = audited(state.areas?.[area.id]);
+    const { last, change, apartDays } = audited(state.areas?.[area.id]);
     const areaNotes = (notes.get(area.id) ?? []).map(({ item, placedBy }) => ({ text: item.text, savedBy: item.savedBy, savedAt: item.savedAt, placedBy }));
     const areaSkills = (skills.get(area.id) ?? []).map(({ item, placedBy }) => ({ ...item, placedBy }));
     const areaMetrics = (metrics.get(area.id) ?? []).map(({ item, placedBy }) => ({
@@ -286,7 +330,7 @@ export function computeGrowthMap(ev: MapEvidence, now: Date = new Date()): Growt
       target: item.target,
       state: metricState(item, ms),
       placedBy,
-      measurements: item.measurements,
+      proves: numberProves(item),
     }));
     const areaAgents = (agents.get(area.id) ?? []).map(({ item, placedBy }) => ({ tag: item.tag, name: item.name, paused: item.paused, running: item.running, placedBy }));
     const data = area.data.map((source) => ({ source, label: DATA_LABEL[source], connected: ev.data[source].connected, detail: ev.data[source].detail }));
@@ -296,13 +340,13 @@ export function computeGrowthMap(ev: MapEvidence, now: Date = new Date()): Growt
       knows: areaNotes.length + areaSkills.length,
       last,
       change,
+      apartDays,
       data,
       dataFix: area.data.map((s) => ev.data[s].fix).join(" Or: "),
-      metrics: areaMetrics.map(({ measurements: _m, ...m }) => m),
+      metrics: areaMetrics.map(({ proves: _p, ...m }) => m),
       agents: areaAgents,
       schedules: (area.schedules ?? []).filter((s) => ev.schedulesOn.includes(s)).map((s) => SCHEDULE_LABEL[s]),
-      provenMetric:
-        areaMetrics.find((m) => (m.state === "on_track" || m.state === "target_hit") && m.measurements >= PROVEN_MEASUREMENTS) ?? null,
+      provenMetric: areaMetrics.find((m) => m.proves) ?? null,
     };
     const unlocks = UNLOCKS.map((key) => unlockOf(key, facts));
     const level = unlocks.filter((u) => u.earned).length;

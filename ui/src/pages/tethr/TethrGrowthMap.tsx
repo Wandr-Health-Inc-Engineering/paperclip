@@ -68,8 +68,13 @@ function useFreshUnlocks(companyId: string | null, map: GrowthMapData | undefine
   return fresh;
 }
 
+/** One page per company: switching company starts fresh (what's new, the open area, the view). */
 export function TethrGrowthMap() {
   const { selectedCompanyId } = useCompany();
+  return <GrowthMapPage key={selectedCompanyId ?? "none"} selectedCompanyId={selectedCompanyId ?? null} />;
+}
+
+function GrowthMapPage({ selectedCompanyId }: { selectedCompanyId: string | null }) {
   const { setBreadcrumbs } = useBreadcrumbs();
   const [searchParams, setSearchParams] = useSearchParams();
   const [mode, setMode] = useState<ViewMode>(readViewMode);
@@ -86,7 +91,7 @@ export function TethrGrowthMap() {
     enabled: !!selectedCompanyId,
     refetchInterval: 30_000,
   });
-  const fresh = useFreshUnlocks(selectedCompanyId ?? null, data);
+  const fresh = useFreshUnlocks(selectedCompanyId, data);
 
   const selectedId = (searchParams.get("area") as TethrAreaId | null) ?? null;
   const selected = data?.areas.find((a) => a.id === selectedId) ?? null;

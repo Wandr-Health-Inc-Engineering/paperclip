@@ -2,7 +2,7 @@ import fsp from "node:fs/promises";
 import { goalsService, oneLine } from "../goals.js";
 import { areaById, AREA_IDS, isAreaId, type AreaId } from "../growth-map/areas.js";
 import { growthMap } from "../growth-map/evidence.js";
-import { AUDITS_KEPT, updateAreaRecord, updateMapState, type AreaAudit } from "../growth-map/store.js";
+import { AUDITS_KEPT, getMapState, linkToArea, updateAreaRecord, updateMapState, type AreaAudit } from "../growth-map/store.js";
 import { growthMapToolText } from "../growth-map/text.js";
 import { HEALTH_REFUSAL, injectionReason, personalHealthReason } from "../screen.js";
 import { teamService } from "../team.js";
@@ -34,7 +34,7 @@ export const MAP_TOOL_DEFS: McpToolDef[] = [
   {
     name: "map_area",
     description:
-      "Record what you found in one growth area. After auditing it: `score` (0-100, against its playbooks' checklists), `summary` (two sentences: where it stands and why), `next_steps` (up to five, most important first) and `file` (the write-up in ./files/). Also link what belongs to it: `metric_ids` (goal metrics that measure it, from goals_list) and `agent_tags` (team agents that work it); each list replaces the area's earlier links. tethr's own chats can set this week's `focus` (with `focus_reason`). Levels aren't set here: Tethr works them out. Aggregates only, never a customer's details or anyone's health information.",
+      "Record what you found in one growth area. After auditing it: `score` (0-100, against its playbooks' checklists), `summary` (two sentences: where it stands and why), `next_steps` (up to five, most important first) and `file` (the write-up in ./files/). tethr's own chats also link what belongs to it: `metric_ids` (goal metrics that measure it, from goals_list) and `agent_tags` (team agents that work it); each list replaces the area's earlier links, and a metric or agent belongs to one area only, so linking it here unlinks it elsewhere. They also set this week's `focus` (with `focus_reason`). An agent records audits only for the area it works. Levels aren't set here: Tethr works them out. Aggregates only, never a customer's details or anyone's health information.",
     inputSchema: {
       type: "object",
       properties: {
@@ -77,13 +77,26 @@ export interface MapAreaInput {
   focus?: { why?: string };
 }
 
+/** Who's calling map_area: tethr's own chats, or an agent (with the areas it works). */
+export type MapCaller = { agent: null } | { agent: string; worksIn: AreaId[] };
+
 /** Check map_area's input; throws MapInputError with a plain message. */
-export async function parseMapArea(a: Record<string, unknown>, ctx: TethrToolContext, caller: { agent: boolean }): Promise<MapAreaInput> {
+export async function parseMapArea(a: Record<string, unknown>, ctx: TethrToolContext, caller: MapCaller): Promise<MapAreaInput> {
   if (!isAreaId(a.area)) throw new MapInputError(`area must be one of: ${AREA_IDS.join(", ")}.`);
   const out: MapAreaInput = { area: a.area };
+  // Agents run unattended and read the open web: they audit their own area and nothing else.
+  if (caller.agent) {
+    if (a.metric_ids !== undefined || a.agent_tags !== undefined || a.focus !== undefined) {
+      throw new MapInputError("Only tethr's own chats link numbers and agents or set the week's focus; suggest it in your report.");
+    }
+    if (!caller.worksIn.includes(a.area)) {
+      const where = caller.worksIn.length ? `the area you work (${caller.worksIn.join(", ")})` : "the area you work, and you aren't placed in one yet";
+      throw new MapInputError(`${caller.agent} records audits only for ${where}. Say what you found about ${a.area} in your report.`);
+    }
+  }
   if (a.score !== undefined) {
-    const score = Number(a.score);
-    if (!Number.isInteger(score) || score < 0 || score > 100) throw new MapInputError("score must be a whole number from 0 to 100.");
+    const score = a.score;
+    if (typeof score !== "number" || !Number.isInteger(score) || score < 0 || score > 100) throw new MapInputError("score must be a whole number from 0 to 100.");
     const summary = screened(oneLine(a.summary, MAP_LIMITS.summary), "summary");
     if (!summary) throw new MapInputError("An audit needs a summary: two sentences on where the area stands and why.");
     const steps = (stringList(a.next_steps, "next_steps", MAP_LIMITS.steps) ?? []).map((s) => screened(oneLine(s, MAP_LIMITS.step), "next step"));
@@ -114,7 +127,7 @@ export async function parseMapArea(a: Record<string, unknown>, ctx: TethrToolCon
   }
   if (agentTags) out.agentTags = agentTags;
   if (a.focus === true) {
-    if (caller.agent) throw new MapInputError("Only tethr's own chats set the week's focus; suggest it in your report.");
+    if ((getMapState(ctx.companyId ?? "").hidden ?? []).includes(a.area)) throw new MapInputError("That area is hidden on the growth map; it can't be the focus.");
     const why = screened(oneLine(a.focus_reason, MAP_LIMITS.why), "focus reason");
     out.focus = why ? { why } : {};
   }
@@ -126,13 +139,11 @@ export async function parseMapArea(a: Record<string, unknown>, ctx: TethrToolCon
 
 export async function recordMapArea(companyId: string, input: MapAreaInput, who: { by: string; threadId?: string; runId?: string }, now = new Date()): Promise<void> {
   const at = now.toISOString();
-  if (input.audit || input.metricIds || input.agentTags) {
-    await updateAreaRecord(companyId, input.area, (r) => ({
-      ...r,
-      ...(input.audit ? { audits: [...(r.audits ?? []), { ...input.audit!, at, ...who }].slice(-AUDITS_KEPT) } : {}),
-      ...(input.metricIds ? { metricIds: input.metricIds } : {}),
-      ...(input.agentTags ? { agentTags: input.agentTags } : {}),
-    }));
+  if (input.audit) {
+    await updateAreaRecord(companyId, input.area, (r) => ({ ...r, audits: [...(r.audits ?? []), { ...input.audit!, at, ...who }].slice(-AUDITS_KEPT) }));
+  }
+  if (input.metricIds || input.agentTags) {
+    await linkToArea(companyId, input.area, { metricIds: input.metricIds, agentTags: input.agentTags });
   }
   if (input.focus) {
     await updateMapState(companyId, (s) => ({ ...s, focus: { area: input.area, at, by: who.by, ...(input.focus!.why ? { why: input.focus!.why } : {}) } }));
@@ -150,7 +161,10 @@ export async function runMapTool(name: string, a: Record<string, unknown>, ctx: 
   // Whose chat this is decides what's allowed; if that can't be looked up the call fails.
   const member = ctx.threadId ? await teamService(db).byThread(companyId, ctx.threadId) : null;
   try {
-    const input = await parseMapArea(a, ctx, { agent: !!member });
+    const caller: MapCaller = member
+      ? { agent: member.tag, worksIn: (await growthMap(db, companyId, ctx.now?.())).areas.filter((x) => x.agents.some((g) => g.tag === member.tag)).map((x) => x.id) }
+      : { agent: null };
+    const input = await parseMapArea(a, ctx, caller);
     await recordMapArea(
       companyId,
       input,
