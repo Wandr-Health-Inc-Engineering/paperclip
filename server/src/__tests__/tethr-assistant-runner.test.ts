@@ -7,7 +7,8 @@ import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclip
 import { costEvents, createDb, tethrRouteRuns } from "@paperclipai/db";
 import { seedTethrCore } from "../tethr/seed/tethr-core.ts";
 import { assistantRunner, resetAssistantRunnerForTests } from "../tethr/assistant/runner.ts";
-import { getSession, isTainted, setSession } from "../tethr/chats.ts";
+import { getSession, isTainted, setSession, startOver } from "../tethr/chats.ts";
+import { stableThreadId } from "../tethr/ids.ts";
 import { instructionsFingerprint } from "../tethr/assistant/persona.ts";
 import { setThrottle } from "../tethr/throttle.ts";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
@@ -170,6 +171,39 @@ describePg("tethr assistant runner", () => {
     expect(calls[0].runtime.sessionId).toBeTruthy();
     expect(prompt).toContain("Earlier in this conversation (for context):");
     expect(prompt).not.toContain("continues from an earlier session");
+  });
+
+  it("after Start over, a new session never gets the turns from before it", async () => {
+    // Older turns can quote connector data, and starting over clears the taint.
+    await startOver(companyId, companyId);
+    expect(getSession(companyId, companyId)).toBeNull();
+    const runner = assistantRunner(db, { execute: fakeExecute });
+    const first = await runner.send({ companyId, threadId: companyId, text: "Fresh question" });
+    await waitDone(first.routeRunId);
+    let prompt = calls[0].context.tethrPrompt as string;
+    expect(prompt).not.toContain("Earlier in this conversation");
+    expect(prompt).not.toContain("Your memory is empty");
+    expect(prompt.endsWith("Fresh question")).toBe(true);
+
+    // A later fresh session recaps only what came after the restart.
+    await setSession(companyId, companyId, { ...getSession(companyId, companyId)!, instructions: "older-persona" });
+    const second = await runner.send({ companyId, threadId: companyId, text: "And now?" });
+    await waitDone(second.routeRunId);
+    prompt = calls[1].context.tethrPrompt as string;
+    expect(prompt).toContain("Them: Fresh question");
+    expect(prompt).not.toContain("And Monday?");
+  });
+
+  it("never replays the Ideas chat's private turns into a person's session there", async () => {
+    const ideas = stableThreadId("ideas", companyId);
+    const runner = assistantRunner(db, { execute: fakeExecute });
+    const idea = await runner.sendPrivate({ companyId, threadId: ideas, summary: "Idea check from Slack", prompt: "Slack excerpt: …" });
+    await waitDone(idea.routeRunId);
+    const mine = await runner.send({ companyId, threadId: ideas, text: "Tell me more" });
+    await waitDone(mine.routeRunId);
+    const prompt = calls[1].context.tethrPrompt as string;
+    expect(prompt).not.toContain("Idea check from Slack");
+    expect(prompt).not.toContain("Earlier in this conversation");
   });
 
   it("gives a new thread the first run's id", async () => {

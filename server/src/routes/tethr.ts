@@ -731,14 +731,14 @@ export function tethrRoutes(db: Db) {
     res.json({ stopped: await getAssistantRunner(db).stop(runId) });
   });
 
-  // Start the thread's Claude session over (the chat history stays). The new
-  // session hasn't seen connector data, so web pages are free again.
+  // Start the thread's Claude session over (the chat history stays on screen).
+  // The new session gets no recap of the old turns, so it hasn't seen connector
+  // data and web pages are free again.
   router.post("/tethr/:companyId/chats/:threadId/reset", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     if (!requirePerson(req, res)) return;
-    await chats.clearSession(companyId, req.params.threadId as string);
-    await chats.clearTaint(companyId, req.params.threadId as string);
+    await chats.startOver(companyId, req.params.threadId as string);
     res.json({ reset: true });
   });
 

@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNull, ne } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { tethrRouteRuns } from "@paperclipai/db";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
@@ -21,6 +21,7 @@ import { getSetup } from "../setup.js";
 import { applyStreamLine, newTurnState } from "./events.js";
 import { buildSettings, ensureHookScript, issueHookToken, revokeHookToken, writeSettingsFile, type SlackReplyTarget } from "./gate.js";
 import { selfApiUrl } from "../self-url.js";
+import { stableThreadId } from "../ids.js";
 import { logFailure } from "../best-effort.js";
 import { ensurePersona, instructionsFingerprint } from "./persona.js";
 import { TETHR_TOOL_DEFS, TETHR_TOOLS_LABEL } from "./tethr-tools.js";
@@ -252,6 +253,12 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
   }
 
   async function legacyContext(companyId: string, threadId: string, excludeRunId: string): Promise<string> {
+    // After "Start over", only what came since: older turns can quote connector
+    // data, and starting over cleared the taint.
+    const since = chats.restartedAt(companyId, threadId);
+    // In the Ideas chat, tethr's own turns are the watcher's private turns, made
+    // from other people's Slack words: never replayed (like the indexer skips them).
+    const ideas = threadId === stableThreadId("ideas", companyId);
     const previous = await db
       .select()
       .from(tethrRouteRuns)
@@ -260,6 +267,8 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
           eq(tethrRouteRuns.companyId, companyId),
           eq(tethrRouteRuns.threadId, threadId),
           ne(tethrRouteRuns.id, excludeRunId),
+          ...(since ? [gt(tethrRouteRuns.createdAt, since)] : []),
+          ...(ideas ? [isNull(tethrRouteRuns.sourceKey)] : []),
         ),
       )
       .orderBy(desc(tethrRouteRuns.createdAt))

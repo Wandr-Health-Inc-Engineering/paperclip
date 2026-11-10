@@ -43,6 +43,10 @@ interface CompanyChats {
   /** Threads whose session has read connector data (Gmail, Slack, …): from then
    * on, opening web pages needs Mark's approval (it could carry that data out). */
   tainted?: Record<string, string>;
+  /** When a person last chose "Start over" on a thread. A new session there gets no
+   * recap of the turns before it: they can quote connector data, and starting
+   * over clears the taint. */
+  restartedAt?: Record<string, string>;
   /** Phase 26.1: which chat a Slack conversation drives, by its Slack source key
    * ("slack:im:D…" for a DM, "slack:C…:<thread ts>" for a channel thread). */
   slackLinks?: Record<string, string>;
@@ -191,6 +195,24 @@ export function markTainted(companyId: string, threadId: string): Promise<void> 
 }
 
 /** "Start over" for a thread: a fresh session that hasn't seen connector data. */
+/** "Start over" on a thread: drop its Claude session and its taint, and note when,
+ * so the next session starts without the old turns (the history stays on screen). */
+export function startOver(companyId: string, threadId: string, now = new Date()): Promise<void> {
+  return mutate((data) => {
+    const c = data[companyId] ?? { sideChats: [] };
+    const { [threadId]: _session, ...sessions } = c.sessions ?? {};
+    const { [threadId]: _taint, ...tainted } = c.tainted ?? {};
+    data[companyId] = { ...c, sessions, tainted, restartedAt: { ...(c.restartedAt ?? {}), [threadId]: now.toISOString() } };
+    return { value: undefined, changed: true };
+  });
+}
+
+/** When the thread was last started over, or null. */
+export function restartedAt(companyId: string, threadId: string): Date | null {
+  const at = readFile()[companyId]?.restartedAt?.[threadId];
+  return at ? new Date(at) : null;
+}
+
 export function clearTaint(companyId: string, threadId: string): Promise<void> {
   return mutate((data) => {
     const c = data[companyId];
@@ -223,13 +245,16 @@ export function moveThreadState(companyId: string, from: string, to: string): Pr
     const sessions = { ...(c.sessions ?? {}) };
     const notes = { ...(c.notes ?? {}) };
     const tainted = { ...(c.tainted ?? {}) };
+    const restarted = { ...(c.restartedAt ?? {}) };
     if (sessions[from] && !sessions[to]) sessions[to] = sessions[from];
     if (notes[from]?.length) notes[to] = [...(notes[to] ?? []), ...notes[from]];
     if (tainted[from] && !tainted[to]) tainted[to] = tainted[from];
+    if (restarted[from] && !restarted[to]) restarted[to] = restarted[from];
     delete sessions[from];
     delete notes[from];
     delete tainted[from];
-    data[companyId] = { ...c, sideChats: c.sideChats.filter((s) => s.threadId !== from), sessions, notes, tainted };
+    delete restarted[from];
+    data[companyId] = { ...c, sideChats: c.sideChats.filter((s) => s.threadId !== from), sessions, notes, tainted, restartedAt: restarted };
     return { value: undefined, changed: true };
   });
 }

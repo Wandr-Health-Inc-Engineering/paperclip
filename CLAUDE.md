@@ -1456,6 +1456,11 @@ utilize it but stick with the subscription style not API for now." Plan: `tasks/
     8 turns (600/1,500 chars). A fresh session in a chat with 3+ messages from a person while memory
     is empty also gets `MEMORY_CATCHUP`: recall the earlier conversation and save the durable facts
     before answering (Mark's Nov 9 interview and follow-ups had saved nothing).
+  - **What a recap never carries (security review, 2026-11-10):** turns from before a "Start over"
+    (`chats.startOver` records `restartedAt`; the reset clears the taint, so replaying older turns,
+    which can quote Gmail or Stripe, would have let web pages and Slack channel answers carry them
+    out), and the Ideas chat's private turns (made from other people's Slack words; the indexer
+    skips them too). Cards (`CARD_SOURCES`) were already excluded.
   - **How tethr decides** is a CLAUDE.md section (`DECIDING` in workspace.ts, not the persona, so
     editing it never resets sessions): start from the goals' biggest gap and its drivers, pull the
     numbers, rank by impact for the team's time and money with the expected size, use what the team
