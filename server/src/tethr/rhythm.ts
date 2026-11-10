@@ -30,8 +30,9 @@ export const RHYTHMS: Record<RhythmKey, { title: string; label: string; playbook
     playbook: `Plan the team's week around the goals.
 1. Call goals_list for the goals and their latest numbers.
 2. Look at last week: the newest scorecard in files/scorecards/ (if any), what's waiting in the Queue, and what moved in the connected tools (Stripe, PostHog, Google Ads).
-3. Propose 3 to 5 moves for this week. For each: the goal and metric it moves, exactly what to do, who does it (tethr, or which person on the team, by position), and how we'll know it worked.
-4. Save the plan as files/plans/<YYYY-MM-DD> plan.md, then reply with a short summary that leads with the single most important move.
+3. Call growth_map and pick this week's focus: the area with the biggest gap toward a goal that's behind (or, if none is behind, the low-level area that would move a goal most). Record it with map_area (focus: true, focus_reason), and load that area's playbooks before planning its moves.
+4. Propose 3 to 5 moves for this week, the focus area first. For each: the goal and metric it moves, exactly what to do, who does it (tethr, or which person on the team, by position), and how we'll know it worked.
+5. Save the plan as files/plans/<YYYY-MM-DD> plan.md, then reply with a short summary that leads with the single most important move.
 ${SAFETY}`,
   },
   scorecard: {

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { isPrivateHost } from "../net.js";
+import { areaById, isAreaId } from "../growth-map/areas.js";
 
 export { isPrivateHost, resolvesToPrivateHost } from "../net.js";
 
@@ -140,7 +141,7 @@ const CONNECTOR_RULES: Record<string, Rule[]> = {
   // run in the Tethr server; they change nothing outside its files/ folder.
   "Tethr tools": [
     // make_document only writes a new file into Tethr's own files/ folder.
-    [/^(score_list|keyword_ideas|goals_list|make_document|team_list)$/, "read"],
+    [/^(score_list|keyword_ideas|goals_list|make_document|team_list|growth_map)$/, "read"],
     // Goals live in Tethr itself: saving one changes nothing outside Tethr.
     [/^(save_goal|save_metric|record_metric)$/, "draft"],
     // Phase 23: running tethr's team happens inside Tethr. New agents and
@@ -150,6 +151,8 @@ const CONNECTOR_RULES: Record<string, Rule[]> = {
     // internal like goals; searching and reading skills are reads.
     [/^(recall|skill_view)$/, "read"],
     [/^(memory|skill_save)$/, "draft"],
+    // Phase 26.9: the growth map lives in Tethr; an audit or link changes nothing outside it.
+    [/^map_area$/, "draft"],
     [/.*/, "blocked"],
   ],
 };
@@ -250,6 +253,11 @@ function words(name: string): string {
   return name.replace(/^slack_/, "").replace(/[-_]+/g, " ").trim();
 }
 
+/** A growth-map area's name for a step label ("an area" when the input names none). */
+function areaLabel(area: unknown): string {
+  return isAreaId(area) ? areaById(area).name : "an area";
+}
+
 function summarize(connector: string, name: string, input: Record<string, unknown>): string {
   const to = recipients(input);
   const subject = typeof input.subject === "string" ? input.subject : null;
@@ -267,6 +275,11 @@ function summarize(connector: string, name: string, input: Record<string, unknow
     return `Scoring ${n ? `${n} items` : from ? from : "a list"} with Jev`;
   }
   if (connector === "Tethr tools" && name === "goals_list") return "Reading the goals";
+  if (connector === "Tethr tools" && name === "growth_map") return input.area ? `Reading the growth map (${areaLabel(input.area)})` : "Reading the growth map";
+  if (connector === "Tethr tools" && name === "map_area") {
+    if (typeof input.score === "number") return `Recording an audit of ${areaLabel(input.area)}`;
+    return input.focus === true ? `Setting the focus: ${areaLabel(input.area)}` : `Updating ${areaLabel(input.area)} on the growth map`;
+  }
   if (connector === "Tethr tools" && name === "make_document") {
     const format = typeof input.format === "string" ? input.format.toUpperCase() : "document";
     return `Making a ${format}${typeof input.title === "string" ? ` “${input.title.slice(0, 60)}”` : ""}`;

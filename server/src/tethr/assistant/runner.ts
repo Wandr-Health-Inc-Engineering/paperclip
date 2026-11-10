@@ -31,6 +31,8 @@ import { ensureWorkspace, readableRoots } from "./workspace.js";
 import { renderMemoryBlock } from "../hermes/entries.js";
 import { indexTurnSoon } from "../hermes/indexer.js";
 import { memorySnapshot, migrateFreeformMemory } from "../hermes/memory-layer.js";
+import { growthMap } from "../growth-map/evidence.js";
+import { growthMapContextText } from "../growth-map/text.js";
 
 // The chat assistant runner (phase 18). Each Chat thread drives ONE Claude Code
 // session (resumed per thread) through Paperclip core's claude-local adapter
@@ -347,7 +349,9 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       const snapshot = memorySnapshot(companyId);
       // Company-level only: CLAUDE.md is one file for every thread (see renderMemoryBlock).
       const memory = renderMemoryBlock(snapshot, { tools: modeFor(cfg, TETHR_TOOLS_LABEL) !== "off" });
-      ws = await ensureWorkspace({ integrationRules: integrationRulesText(cfg), goals, company, team: teamText, memory });
+      // Phase 26.9: the growth map, one line per area (company-level, like the rest).
+      const growthMapText = growthMapContextText(await growthMap(db, companyId), { tools: modeFor(cfg, TETHR_TOOLS_LABEL) !== "off" });
+      ws = await ensureWorkspace({ integrationRules: integrationRulesText(cfg), goals, company, team: teamText, memory, growthMap: growthMapText });
       ({ personaPath, skillDir } = await ensurePersona());
       const hookScript = await ensureHookScript();
       if (tethrTools) bridgeScript = await ensureToolsBridge();

@@ -79,6 +79,7 @@ import { isInstanceAdmin, requirePerson } from "./tethr-people.js";
 import { tethrSetupRoutes } from "./tethr-setup.js";
 import { tethrTeamRoutes } from "./tethr-team.js";
 import { tethrMemoryRoutes } from "./tethr-memory.js";
+import { tethrGrowthMapRoutes } from "./tethr-growth-map.js";
 
 const execFileAsync = promisify(execFile);
 let cachedSha: string | null = null;
@@ -852,6 +853,7 @@ export function tethrRoutes(db: Db) {
   // ---- tethr's team of agents (phase 23): routes/tethr-team.ts ----
   router.use(tethrTeamRoutes(db));
   router.use(tethrMemoryRoutes(db));
+  router.use(tethrGrowthMapRoutes(db));
 
   router.put("/tethr/:companyId/integrations", async (req, res) => {
     const companyId = req.params.companyId as string;

@@ -68,6 +68,8 @@ function storeFiles(): string[] {
     // Phase 25: dropping a company's record unlinks its Hermes profile; the
     // profile itself (memory, conversations, skills) stays in ~/.hermes.
     pick("TETHR_MEMORY_FILE", "tethr-memory.json"),
+    // Phase 26.9: the growth map's audits, links and focus.
+    pick("TETHR_GROWTH_MAP_FILE", "tethr-growth-map.json"),
   ];
 }
 

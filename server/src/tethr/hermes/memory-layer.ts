@@ -118,7 +118,10 @@ export function memorySnapshot(companyId: string): MemorySnapshot {
     return {
       entries: entries.map((text) => {
         const p = provenance[entryHash(text)];
-        return { text, ...(p ? { savedBy: p.by, savedAt: p.at, ...(p.threadId ? { threadId: p.threadId } : {}) } : {}) };
+        return {
+          text,
+          ...(p ? { savedBy: p.by, savedAt: p.at, ...(p.threadId ? { threadId: p.threadId } : {}), ...(p.area ? { area: p.area } : {}) } : {}),
+        };
       }),
       used: usedChars(entries),
       limit: limits[target],
@@ -160,6 +163,20 @@ function saveRefusal(content: string, backend: MemoryBackend): string | null {
   return injected ? `That reads like an instruction to tethr, not a fact to remember (${injected}).` : null;
 }
 
+/** The one growth-map area shared by the notes a patch-only change rewrites, if any. */
+function areaKeptByPatch(companyId: string, ops: MemoryOp[], before: string[]): { area?: string } {
+  if (!ops.length || ops.some((o) => o.action !== "patch")) return {};
+  const provenance = getMemoryState(companyId).provenance ?? {};
+  const areas = new Set(
+    ops.map((o) => {
+      const entry = o.old_text ? before.find((e) => e.includes(o.old_text!)) : undefined;
+      return entry ? provenance[entryHash(entry)]?.area : undefined;
+    }),
+  );
+  const [area] = [...areas];
+  return areas.size === 1 && area ? { area } : {};
+}
+
 /**
  * Apply changes to one store and record who made them. Returns a line for the
  * tool result. Throws MemoryChangeError when the change was refused (a person's
@@ -169,6 +186,7 @@ function saveRefusal(content: string, backend: MemoryBackend): string | null {
 export async function changeMemory(companyId: string, target: MemoryTarget, ops: MemoryOp[], by: Omit<Provenance, "at"> & { at?: string }): Promise<string> {
   const profile = activeHermesProfile(companyId);
   const limit = limitsFor(companyId)[target];
+  const priorEntries = readEntries(companyId, target);
   for (const op of ops) {
     const refusal = op.content ? saveRefusal(op.content, profile ? "hermes" : "builtin") : null;
     if (refusal) throw new MemoryChangeError(refusal);
@@ -195,8 +213,10 @@ export async function changeMemory(companyId: string, target: MemoryTarget, ops:
     const used = usedChars(readEntries(companyId, target));
     usage = `${Math.round((used / limit) * 100)}% — ${used.toLocaleString("en-US")}/${limit.toLocaleString("en-US")} chars`;
   }
-  // Who saved what, for the entries that exist now (removed ones drop out).
-  const { at: keptAt, ...who } = by;
+  // Who saved what, for the entries that exist now (removed ones drop out). A
+  // patch with no area keeps the growth-map area of the note it changed.
+  const { at: keptAt, ...given } = by;
+  const who = given.area === undefined ? { ...given, ...areaKeptByPatch(companyId, ops, priorEntries) } : given;
   const at = keptAt ?? new Date().toISOString();
   const live = new Set(MEMORY_TARGETS.flatMap((t) => readEntries(companyId, t)).map(entryHash));
   await updateMemoryState(companyId, (s) => {

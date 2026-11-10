@@ -16,6 +16,8 @@ import {
   viewSkill,
   type RecallHit,
 } from "../hermes/memory-layer.js";
+import { AREA_IDS, isAreaId } from "../growth-map/areas.js";
+import { setSkillArea } from "../growth-map/store.js";
 import type { McpToolDef, TethrToolContext, TethrToolResult } from "./tethr-tools.js";
 
 // Phase 25: tethr's memory tools on the "tethr" MCP server.
@@ -36,11 +38,12 @@ export const MEMORY_TOOL_DEFS: McpToolDef[] = [
   {
     name: "memory",
     description:
-      "Save, change or remove what tethr remembers between conversations. target \"company\" = facts about the business (decisions, how things work, who handles what, products, partners); \"people\" = each person's preferences and style (name them). One or more changes, applied together: add {content}, patch {old_text, content} (replaces that text in the one entry containing it), remove {old_text}. Keep entries short and durable; patch rather than add a near-duplicate. Never passwords, keys, card numbers or anyone's health information.",
+      "Save, change or remove what tethr remembers between conversations. target \"company\" = facts about the business (decisions, how things work, who handles what, products, partners); \"people\" = each person's preferences and style (name them). One or more changes, applied together: add {content}, patch {old_text, content} (replaces that text in the one entry containing it), remove {old_text}. Give `area` when the note is about one growth-map area, so it lands there. Keep entries short and durable; patch rather than add a near-duplicate. Never passwords, keys, card numbers or anyone's health information.",
     inputSchema: {
       type: "object",
       properties: {
         target: { type: "string", enum: [...MEMORY_TARGETS] },
+        area: { type: "string", enum: [...AREA_IDS], description: "The growth-map area the added or changed notes are about." },
         operations: {
           type: "array",
           items: {
@@ -80,7 +83,12 @@ export const MEMORY_TOOL_DEFS: McpToolDef[] = [
     description: `Save a procedure that worked and will come up again (e.g. "how we build the Friday scorecard") as a skill: name (lowercase-with-dashes), description (one line, at most ${SKILL_DESCRIPTION_MAX} characters) and body (the steps, as Markdown). Saving under an existing name replaces it. Offer it after a multi-step job the team will want repeated; don't save one-offs.`,
     inputSchema: {
       type: "object",
-      properties: { name: { type: "string" }, description: { type: "string" }, body: { type: "string" } },
+      properties: {
+        name: { type: "string" },
+        description: { type: "string" },
+        body: { type: "string" },
+        area: { type: "string", enum: [...AREA_IDS], description: "The growth-map area it's for, if one." },
+      },
       required: ["name", "description", "body"],
     },
   },
@@ -161,6 +169,7 @@ export async function runMemoryTool(name: string, a: Record<string, unknown>, ct
       const target = a.target;
       if (!MEMORY_TARGETS.includes(target as MemoryTarget)) return { text: 'memory: target must be "company" or "people".', isError: true };
       const ops = validateOps(a.operations);
+      if (a.area !== undefined && !isAreaId(a.area)) return { text: `memory: area must be one of ${AREA_IDS.join(", ")}.`, isError: true };
       if (member) {
         const refused = agentMemoryRefusal(member.tag, ops, memorySnapshot(companyId).stores[target as MemoryTarget].entries);
         if (refused) return { text: refused, isError: true };
@@ -169,6 +178,7 @@ export async function runMemoryTool(name: string, a: Record<string, unknown>, ct
         by: member?.tag ?? "@tethr",
         ...(ctx.threadId ? { threadId: ctx.threadId } : {}),
         ...(ctx.runId ? { runId: ctx.runId } : {}),
+        ...(isAreaId(a.area) ? { area: a.area } : {}),
       });
       return {
         text: `Saved (${ops.length} change${ops.length === 1 ? "" : "s"}). ${target === "company" ? "Company notes" : "People"}: ${usage}. It shows in the Memory section from the next turn.`,
@@ -205,7 +215,9 @@ export async function runMemoryTool(name: string, a: Record<string, unknown>, ct
         return { text: `skill_save: the description must be one line of at most ${SKILL_DESCRIPTION_MAX} characters.`, isError: true };
       }
       if (body.length < 20 || body.length > 50_000) return { text: "skill_save: the body should be the steps (20 to 50,000 characters).", isError: true };
+      if (a.area !== undefined && !isAreaId(a.area)) return { text: `skill_save: area must be one of ${AREA_IDS.join(", ")}.`, isError: true };
       await saveSkill(companyId, { name: skillName, description, body });
+      if (isAreaId(a.area)) await setSkillArea(companyId, skillName, a.area);
       return { text: `Saved the skill "${skillName}". It's listed in CLAUDE.md from the next turn; load it with skill_view.`, meta: { skill: skillName } };
     }
     return { text: `There's no Tethr tool called ${name}.`, isError: true };

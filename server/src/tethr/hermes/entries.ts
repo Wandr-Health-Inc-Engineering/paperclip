@@ -138,6 +138,8 @@ export interface MemoryEntryView {
   savedBy?: string;
   savedAt?: string;
   threadId?: string;
+  /** The growth-map area tethr put it in (phase 26.9). */
+  area?: string;
 }
 
 export interface MemorySnapshot {

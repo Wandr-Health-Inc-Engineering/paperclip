@@ -15,6 +15,8 @@ export interface Provenance {
   at: string;
   threadId?: string;
   runId?: string;
+  /** The growth-map area the note is about (phase 26.9), when tethr said. */
+  area?: string;
 }
 
 export interface CompanyMemoryState {
