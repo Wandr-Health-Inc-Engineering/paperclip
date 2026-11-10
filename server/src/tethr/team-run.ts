@@ -3,6 +3,7 @@ import type { Db } from "@paperclipai/db";
 import { issues } from "@paperclipai/db";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
 import { chatTaskResult, turnOutputs, waitForTurn, type ChatTaskResult } from "./assistant/turns.js";
+import { openQuestions } from "./assistant/questions.js";
 import { getIntegrations } from "./integrations.js";
 import { deliverAgentReport, type ReportOutcome } from "./team-report.js";
 import { agentRollupText, agentTaskText, type AgentIdentity, type ChildResult } from "./team-spec.js";
@@ -133,6 +134,18 @@ export async function executeTeamTask(
   if (agent.paused) {
     await tasks.setStatus(issueId, "cancelled", { agentId: ctx.agent.id });
     return { ...base, exitCode: 0, summary: `${agent.tag} is paused; ${issue.identifier ?? "the task"} was cancelled.` };
+  }
+
+  // Phase 27: a scheduled run waits while the agent has a question nobody has
+  // answered. It asked because it couldn't go on; running the schedule anyway
+  // spends a turn to say so again. Work a person or tethr hands it still runs.
+  const waitingOn = issue.originKind === "routine_execution" ? openQuestions(companyId, { agentTag: agent.tag })[0] : undefined;
+  if (waitingOn) {
+    const why = `${agent.tag} didn't run its scheduled job: it's waiting for an answer to "${waitingOn.question}". Answer it in tethr (Needs you) and the next scheduled run goes ahead.`;
+    await ctx.onLog("stdout", `[tethr] ${why}\n`);
+    await tasks.comment(issueId, why, { agentId: ctx.agent.id }).catch(() => {});
+    await tasks.setStatus(issueId, "cancelled", { agentId: ctx.agent.id });
+    return { ...base, exitCode: 0, summary: why };
   }
 
   // A task that has sub-tasks is past its first turn, whatever woke it (the

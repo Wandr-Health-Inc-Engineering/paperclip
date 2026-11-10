@@ -409,7 +409,8 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
         inboxFiling: decisionMode(companyId, "inbox.destination"),
       });
       // A lead always gets the tethr server, for its team tools.
-      tethrTools = modeFor(cfg, TETHR_TOOLS_LABEL) !== "off" && (!member || member.lead || member.connectors.includes(TETHR_TOOLS_LABEL));
+      // Every agent gets the tethr server: at the least for the tools that reach a person (ask).
+      tethrTools = modeFor(cfg, TETHR_TOOLS_LABEL) !== "off";
       // Phase 25: the Memory block, from Hermes (or the built-in store), every turn.
       await migrateFreeformMemory(companyId).catch(() => undefined);
       const snapshot = memorySnapshot(companyId);

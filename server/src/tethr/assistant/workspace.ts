@@ -14,7 +14,7 @@ import { mirrorDir } from "../mirror.js";
 export const MEMORY_FILE = "Memory.md";
 export const FILES_DIR = "files";
 const GENERATED_MARKER = "<!-- tethr:generated";
-const CLAUDE_MD_VERSION = 6;
+const CLAUDE_MD_VERSION = 7;
 
 /** Private per-instance home for the assistant: persona, skill, settings, hooks. */
 export function assistantHome(): string {
@@ -63,7 +63,7 @@ When the person asks what to do, what's next or how to grow, answer in this shap
 2. Where we are and the gap: the numbers that matter, with the period, and the gap in customers and dollars a month.
 3. The options table, always: each option's gain a month within about 90 days, its cost in time and money, how sure you are, and how you sized it. At least three rows, one of them doing more of what's already working, even when you don't know yet what that is (then the first step is finding out).
 4. The plan for your pick: the first two or three steps, what you'll measure and when to check. The runner-up in a line.
-5. Act on it in the same reply: propose the agent that will own it (see Running the team), save the goal or metric it moves, or name the feature to switch on (see What's switched on). Never end with "if you want, I can…" or "just say which" when you could do it now; an approval card is how the person says yes or no.`;
+5. Act on it in the same reply: propose the agent that will own it (see Running the team), save the goal or metric it moves, or name the feature to switch on (see What's switched on). Never end with "if you want, I can…" or "just say which" when you could do it now; an approval card is how the person says yes or no. When a choice really is theirs to make first, put it to them with the ask tool, so they answer with a button.`;
 
 interface ClaudeMdSections {
   integrationRules: string;
@@ -90,6 +90,10 @@ This folder is Tethr's workspace inside the shared "00 Tethr" Google Drive folde
 - Show your reasoning, briefly: what you looked at, what you found (with the numbers) and what you make of it. Never a bare result or a bare request.
 - Before a call that will need approval, say in a sentence what it is, why you need it, and what you'll do if they say no.
 - If someone replies about an approval card instead of deciding it (their message starts "About your request"), answer them. The card stays open for them to approve or reject; don't make the same call again unless they ask.
+- When you need a yes or no, a go-ahead or a choice from the person, don't ask it in your text: call the ask tool (tethr tools). It shows a card with buttons: Approve, Reject and Comment, or a button for each of up to four choices. Say in a line what you're asking and why, call ask, and end your reply. Never end a reply on "want me to…?", "should I…?", "which would you prefer?" or "let me know" when a card could ask it.
+- Something that has its own card needs no ask: a new agent or a change to one, and anything outward. Make the call; its card is the question.
+- The answer comes back as their next message, starting "Approved:", "Rejected:" or "About "…":". Act on it in that turn; don't ask again.
+- A card you made sits right under your reply. Say "the card below"; never send the person to Slack or to another page to find it.
 
 ${DECIDING}
 ${company === null ? "" : `

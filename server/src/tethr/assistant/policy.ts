@@ -155,6 +155,9 @@ const CONNECTOR_RULES: Record<string, Rule[]> = {
     [/^map_area$/, "draft"],
     // Phase 26.5-26.6: lessons are proposed, queued and reviewed inside Tethr; only a person applies one.
     [/^(propose_lesson|study|review_lesson)$/, "draft"],
+    // Phase 27: a question to the person is a card inside Tethr. It grants nothing:
+    // the answer comes back as their own message.
+    [/^ask$/, "draft"],
     [/.*/, "blocked"],
   ],
 };
@@ -277,6 +280,7 @@ function summarize(connector: string, name: string, input: Record<string, unknow
     return `Scoring ${n ? `${n} items` : from ? from : "a list"} with Jev`;
   }
   if (connector === "Tethr tools" && name === "goals_list") return "Reading the goals";
+  if (connector === "Tethr tools" && name === "ask") return `Asking you${typeof input.question === "string" ? `: “${input.question.slice(0, 80)}”` : ""}`;
   if (connector === "Tethr tools" && name === "propose_lesson") return `Proposing a lesson${typeof input.lesson === "string" ? `: “${input.lesson.slice(0, 60)}”` : ""}`;
   if (connector === "Tethr tools" && name === "study") return `Queueing a topic to study${typeof input.topic === "string" ? `: “${input.topic.slice(0, 60)}”` : ""}`;
   if (connector === "Tethr tools" && name === "lessons_due") return "Reading the lessons due for review";

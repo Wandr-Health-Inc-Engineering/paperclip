@@ -5,6 +5,7 @@ import { tethrOutputs, tethrRouteRuns } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { ATTACH_LIMITS, saveAttachment, withAttachments } from "./assistant/attachments.js";
 import type { SlackReplyTarget } from "./assistant/gate.js";
+import { closeQuestionsAnsweredInChat } from "./assistant/questions.js";
 import { resolveInFiles } from "./assistant/files.js";
 import { workspaceDir } from "./assistant/workspace.js";
 import { mirrorDir } from "./mirror.js";
@@ -266,6 +267,8 @@ export async function startSlackChatTurn(
 
   const { getAssistantRunner } = await import("./assistant/runner.js");
   const target: SlackReplyTarget = { channel: req.channel, ...(req.threadTs ? { threadTs: req.threadTs } : {}), dm: req.isDM === true, askedBy: req.userId };
+  // A message in Slack is an answer to what was open in that chat, like one typed in the app.
+  if (threadId) await closeQuestionsAnsweredInChat(companyId, threadId, `${asker.name} (Slack)`);
   const ids = await getAssistantRunner(db).send({ companyId, threadId, text, kind: "user", slack: target });
   if (!threadId && sourceKey) {
     await chats.linkSlackThread(companyId, sourceKey, ids.threadId);

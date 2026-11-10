@@ -13,6 +13,7 @@ import { runTeamTool, TEAM_TOOL_DEFS, TEAM_TOOL_SET } from "./team-tools.js";
 import { MEMORY_TOOL_DEFS, MEMORY_TOOL_SET, runMemoryTool } from "./memory-tools.js";
 import { MAP_TOOL_DEFS, MAP_TOOL_SET, runMapTool } from "./map-tools.js";
 import { LEARN_TOOL_DEFS, LEARN_TOOL_SET, runLearnTool } from "./learn-tools.js";
+import { PERSON_TOOL_DEFS, PERSON_TOOL_SET, runPersonTool } from "./person-tools.js";
 
 export { parseCsv, toCsv };
 
@@ -193,6 +194,7 @@ export const TETHR_TOOL_DEFS: McpToolDef[] = [
   ...MEMORY_TOOL_DEFS,
   ...MAP_TOOL_DEFS,
   ...LEARN_TOOL_DEFS,
+  ...PERSON_TOOL_DEFS,
 ];
 
 // ---- criteria --------------------------------------------------------------
@@ -674,6 +676,7 @@ export async function runTethrTool(name: string, args: unknown, ctx: TethrToolCo
     if (MEMORY_TOOL_SET.has(name)) return await runMemoryTool(name, a, ctx);
     if (MAP_TOOL_SET.has(name)) return await runMapTool(name, a, ctx);
     if (LEARN_TOOL_SET.has(name)) return await runLearnTool(name, a, ctx);
+    if (PERSON_TOOL_SET.has(name)) return await runPersonTool(name, a, ctx);
     return { text: `There's no Tethr tool called ${name}.`, isError: true };
   } catch (err) {
     if (err instanceof GoalInputError) return { text: `${name}: ${err.message}`, isError: true };

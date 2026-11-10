@@ -2,6 +2,7 @@ import { Router } from "express";
 import { and, count, eq, inArray, max } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { tethrOutputs, tethrRouteRuns } from "@paperclipai/db";
+import { openQuestions } from "../tethr/assistant/questions.js";
 import { getAssistantRunner } from "../tethr/assistant/runner.js";
 import * as chats from "../tethr/chats.js";
 import { adminFirstName, companyProfileService } from "../tethr/company.js";
@@ -74,7 +75,8 @@ export function tethrTeamRoutes(db: Db): Router {
           runsToday: await team.runsToday(a.agentId),
           openTasks: await team.openTasks(a.agentId),
           running: Number(by(running, a.agentId)?.n ?? 0) > 0,
-          waitingOnYou: Number(by(waiting, a.agentId)?.n ?? 0),
+          // Approval cards it's waiting on, plus questions it asked that nobody has answered.
+          waitingOnYou: Number(by(waiting, a.agentId)?.n ?? 0) + openQuestions(companyId, { agentTag: a.tag }).length,
           lastReportAt: by(reports, a.agentId)?.at ?? null,
           budgetMonthlyCents: a.budgetMonthlyCents,
           spentMonthlyCents: a.spentMonthlyCents,

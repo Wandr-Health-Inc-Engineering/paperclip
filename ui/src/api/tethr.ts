@@ -176,6 +176,24 @@ export interface TethrChatRun extends TethrRouteRun {
   urgency?: { id: string; pick: string; mode: string; outcome: string; correctedTo: string | null; options: string[] } | null;
   /** Phase 26.5: a lesson card's lesson. */
   lesson?: TethrLesson | null;
+  /** Phase 27: questions this turn asked as cards with buttons. */
+  questions?: TethrQuestion[];
+}
+
+/** Phase 27: a question tethr or an agent put to a person as a card. */
+export interface TethrQuestion {
+  id: string;
+  threadId: string;
+  runId: string | null;
+  /** The agent that asked, or null for tethr. */
+  agentTag: string | null;
+  question: string;
+  detail: string | null;
+  /** null = Approve / Reject. */
+  options: Array<{ label: string; description: string | null }> | null;
+  status: "open" | "answered";
+  answer: { choice: string | null; comment: string | null; by: string; at: string; via: "card" | "chat" } | null;
+  askedAt: string;
 }
 
 /** Phase 26.2: one kind of Jev decision, with its record. */
@@ -1169,6 +1187,9 @@ export const tethrApi = {
     api.put<{ ok: boolean }>(`/tethr/${c}/integrations`, patch),
   stopChatTurn: (c: string, runId: string) =>
     api.post<{ stopped: boolean }>(`/tethr/${c}/chat-turns/${runId}/stop`, {}),
+  /** Answer a question card. The answer goes into its chat as your message. */
+  answerQuestion: (c: string, id: string, body: { choice?: string; comment?: string }) =>
+    api.post<{ question: TethrQuestion; routeRunId: string; threadId: string }>(`/tethr/${c}/questions/${id}/answer`, body),
   /** A message still waiting behind another turn: change its words, or take it back. 409 once it has started. */
   editQueuedTurn: (c: string, runId: string, text: string) => api.patch<{ ok: true }>(`/tethr/${c}/chat-turns/${runId}`, { text }),
   removeQueuedTurn: (c: string, runId: string) => api.delete<{ ok: true }>(`/tethr/${c}/chat-turns/${runId}`),

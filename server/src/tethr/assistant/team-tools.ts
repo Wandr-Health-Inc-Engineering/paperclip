@@ -71,7 +71,7 @@ export const TEAM_TOOL_DEFS: McpToolDef[] = [
   {
     name: "create_agent",
     description:
-      "Add an agent to the team: one clear job that repeats or needs its own focus. When you recommend an ongoing effort, use this instead of leaving it as advice: e.g. if paid ads look worth trying, propose a lead (lead: true) that owns a new paid-acquisition goal, runs on a schedule, and whose first task is to set up its sub-team (one agent for keywords, one for strategy). It gets its own chat, works the tasks it's given and its schedule, and reports back. Depending on the team setting it's created right away or shown to the person as an approval card (they get a Slack DM). Never create a duplicate of an agent in team_list. From a lead's chat, this makes a sub-agent on its own team.",
+      "Add an agent to the team: one clear job that repeats or needs its own focus. When you recommend an ongoing effort, use this instead of leaving it as advice: e.g. if paid ads look worth trying, propose a lead (lead: true) that owns a new paid-acquisition goal, runs on a schedule, and whose first task is to set up its sub-team (one agent for keywords, one for strategy). It gets its own chat, works the tasks it's given and its schedule, and reports back. Depending on the team setting it's created right away or shown to the person as an approval card under your reply. Never create a duplicate of an agent in team_list. From a lead's chat, this makes a sub-agent on its own team.",
     inputSchema: {
       type: "object",
       properties: {
@@ -322,7 +322,7 @@ async function createAgent(ctx: Scoped, caller: Caller, args: Record<string, unk
     meta: { spec, why, leadTag: lead?.tag ?? null },
   });
   return {
-    text: `Sent ${spec.tag} for approval${overLimit ? ` (automatic creation is on, but ${overLimit})` : ""}: a card with its full spec${spec.goal ? " and its goal" : ""} is in the chat and the Queue, and the person gets a Slack DM. It's created when they approve; don't call create_agent for it again.${lead ? "" : " Tell them in a line what it's for."}`,
+    text: `Sent ${spec.tag} for approval${overLimit ? ` (automatic creation is on, but ${overLimit})` : ""}: a card with its full spec${spec.goal ? " and its goal" : ""} is right under your reply, where they approve or reject it (say "the card below", not Slack or another page). It's created when they approve; don't call create_agent for it again.${lead ? "" : " Tell them in a line what it's for."}`,
     meta: { tag: spec.tag, outputId: output.id, via: "card" },
   };
 }
@@ -393,7 +393,7 @@ async function updateAgent(ctx: Scoped, caller: Caller, args: Record<string, unk
     sensitivity: raises ? "spend" : "org",
     meta: { tag: agent.tag, patch, resume, why },
   });
-  done.push(`Sent the change to ${agent.tag} for approval (a card in the chat and the Queue); it applies when approved.`);
+  done.push(`Sent the change to ${agent.tag} for approval (the card is right under your reply); it applies when approved.`);
   return { text: done.join(" "), meta: { tag: agent.tag, outputId: output.id } };
 }
 

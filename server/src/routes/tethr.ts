@@ -47,7 +47,8 @@ import { memoryBackend } from "../tethr/hermes/memory-layer.js";
 import { handlePostToolUse, handlePreToolUse } from "../tethr/assistant/hook-handler.js";
 import { runTethrTool, TETHR_TOOL_DEFS, TETHR_TOOLS_LABEL, TETHR_TOOLS_SERVER } from "../tethr/assistant/tethr-tools.js";
 import { classify, decide } from "../tethr/assistant/policy.js";
-import { agentToolRefusal, TEAM_TOOL_NAMES } from "../tethr/team-spec.js";
+import { AGENT_ALWAYS_TOOLS, agentToolRefusal, TEAM_TOOL_NAMES } from "../tethr/team-spec.js";
+import { answerQuestion, answerText, closeQuestionsAnsweredInChat, QuestionInputError, questionsByRun } from "../tethr/assistant/questions.js";
 import { teamService } from "../tethr/team.js";
 import {
   ATTACH_LIMITS,
@@ -180,7 +181,9 @@ export function tethrRoutes(db: Db) {
           ? TETHR_TOOL_DEFS
           : member.sandbox
             ? TETHR_TOOL_DEFS.filter((d) => SANDBOX_TOOLS.has(d.name))
-            : TETHR_TOOL_DEFS.filter((d) => (isTeamTool(d.name) ? member.lead : member.connectors.includes(TETHR_TOOLS_LABEL)))
+            : TETHR_TOOL_DEFS.filter((d) =>
+                isTeamTool(d.name) ? member.lead : (AGENT_ALWAYS_TOOLS as readonly string[]).includes(d.name) || member.connectors.includes(TETHR_TOOLS_LABEL),
+              )
       )
         .filter((d) => !memoryToolRefusal(d.name, { private: ctx.privateTurn === true, member }, backend))
         .filter((d) => ctx.privateTurn !== true || readOnly(d.name));
@@ -438,6 +441,7 @@ export function tethrRoutes(db: Db) {
     // the chat brain, the same tethr as the app. A new conversation is a side
     // chat, so it shows in the app too. Agents' API keys keep the classic engine.
     if (actor.actorType === "user" && getIntegrations(companyId).assistant.engine === "session") {
+      if (threadId) await closeQuestionsAnsweredInChat(companyId, threadId, actor.actorId);
       const ids = await getAssistantRunner(db).send({ companyId, threadId, text: requestText, requestedByUserId: actor.actorId });
       if (!threadId) await chats.addSideChat(companyId, ids.threadId, requestText);
       res.json(ids);
@@ -667,6 +671,7 @@ export function tethrRoutes(db: Db) {
           .from(tethrInboxItems)
           .where(and(eq(tethrInboxItems.companyId, companyId), inArray(tethrInboxItems.cardRunId, inboxCardIds)))
       : [];
+    const questionsOfRuns = questionsByRun(companyId, new Set(runs.map((r) => r.id)));
     res.json(
       runs.map((run) => {
         // Attached files come back as their own list; the bubble shows only the words.
@@ -680,6 +685,8 @@ export function tethrRoutes(db: Db) {
           urgency: urgencies.find((u) => u.subjectId === run.id) ?? null,
           lesson: lessonRows.find((l) => l.cardRunId === run.id) ?? null,
           outputs: outputs.filter((o) => o.routeRunId === run.id),
+          // Phase 27: questions this turn put to the person, as cards with buttons.
+          questions: questionsOfRuns.get(run.id) ?? [],
         };
       }),
     );
@@ -715,7 +722,36 @@ export function tethrRoutes(db: Db) {
       res.json(ids);
       return;
     }
+    // Writing in the chat instead of tapping a card is an answer too.
+    await closeQuestionsAnsweredInChat(companyId, threadId, actor.actorId);
     res.json(await getAssistantRunner(db).send({ companyId, threadId, text, requestedByUserId }));
+  });
+
+  // Phase 27: answer a question tethr or an agent asked as a card. The answer goes
+  // into the chat it was asked in, as the person's own message; it grants nothing
+  // by itself (anything outward still gets its own approval card).
+  router.post("/tethr/:companyId/questions/:id/answer", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
+    const actor = getActorInfo(req);
+    let question;
+    try {
+      question = await answerQuestion(companyId, req.params.id as string, { choice: req.body?.choice, comment: req.body?.comment, by: actor.actorId });
+    } catch (err) {
+      if (err instanceof QuestionInputError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+    const ids = await getAssistantRunner(db).send({
+      companyId,
+      threadId: question.threadId,
+      text: answerText(question),
+      requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
+    });
+    res.json({ question, ...ids });
   });
 
   // Phase 27: a message sent while tethr is still working waits its turn. Until it

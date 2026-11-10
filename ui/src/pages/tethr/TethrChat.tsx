@@ -10,7 +10,6 @@ import {
   FileImage,
   FileText,
   Lightbulb,
-  Lock,
   MessageSquarePlus,
   MessagesSquare,
   PanelLeft,
@@ -42,7 +41,6 @@ import { cn } from "@/lib/utils";
 import { formatBytes } from "./drive/filePreview";
 import { usePhoneFrame } from "./chat/phone-frame";
 import {
-  refreshAfterDecision,
   tethrApi,
   tethrKeys,
   type TethrChatAttachment,
@@ -57,6 +55,8 @@ import { TeamSection } from "./chat/team";
 import { ChatAvatar } from "./chat/avatar";
 import { QueuedTray, waitingBehind } from "./chat/queue";
 import { FileThisButton, InboxCard, LessonCard, UrgencyRow } from "./chat/cards";
+import { ApprovalCard, DecidedLine, QuestionCard } from "./chat/decision-cards";
+import { kindLabel } from "@/lib/tethr-cards";
 
 // Chat (phase 17, formerly the Console; Mark's model): one ONGOING chat with
 // @tethr that everything goes into by default, plus SIDE chats he opens on
@@ -913,6 +913,14 @@ function SessionTurn({
       {gated.map((o) => (
         <ApprovalCard key={o.id} output={o} companyId={companyId} threadId={run.threadId ?? ""} />
       ))}
+      {(run.questions ?? []).map((q) => (
+        <QuestionCard key={q.id} question={q} companyId={companyId} />
+      ))}
+      {run.outputs
+        .filter((o) => (o.kind === "team_agent" || o.kind === "team_change") && !DECIDABLE.has(o.status))
+        .map((o) => (
+          <DecidedLine key={o.id} output={o} />
+        ))}
       {run.outputs
         .filter((o) => o.kind === "external_action" && !DECIDABLE.has(o.status))
         .map((o) => (
@@ -1246,170 +1254,6 @@ function HopChips({ hops }: { hops: TethrRouteHop[] }) {
   );
 }
 
-/** A gated output, decided right here (same endpoint and gate as the Queue), or
- * talked over first: Reply sends tethr a message about it and leaves it open. */
-function ApprovalCard({ output, companyId, threadId }: { output: TethrChatOutput; companyId: string; threadId: string }) {
-  const queryClient = useQueryClient();
-  const [replying, setReplying] = useState(false);
-  const decide = useMutation({
-    mutationFn: (decision: "approve" | "reject") => tethrApi.decide(companyId, output.id, decision),
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: tethrKeys.chatRuns(companyId, threadId) });
-      queryClient.invalidateQueries({ queryKey: tethrKeys.chats(companyId) });
-      refreshAfterDecision(queryClient, companyId);
-    },
-  });
-  const snippet = useMemo(() => previewText(output.body), [output.body]);
-  const isAction = output.kind === "external_action";
-  const actionBody = isAction ? output.body.split("\n").slice(2).join("\n").trim() : "";
-  return (
-    <div className="tethr-glass flex max-w-2xl flex-col gap-2.5 p-4">
-      <span className="tethr-eyebrow inline-flex items-center gap-1.5">
-        <Lock className="h-3 w-3" />
-        {isAction
-          ? `needs your ok · ${String((output.meta as Record<string, unknown>)?.connector ?? "action")}${output.sensitivity !== "external" ? ` · ${output.sensitivity === "spend" ? "money" : output.sensitivity}` : ""}`
-          : `${output.status === "changes_requested" ? "changes requested" : "awaiting review"} · ${kindLabel(output.kind)} · ${output.sensitivity}`}
-      </span>
-      <p className="text-[14.5px] font-medium leading-snug">{output.title}</p>
-      {isAction ? (
-        actionBody ? (
-          // Plain text on purpose: exactly what will be sent, with no Markdown
-          // to hide text or dress a link up as something else.
-          <pre className="tethr-inset max-h-64 overflow-y-auto whitespace-pre-wrap break-words px-3.5 py-2.5 font-sans text-[13px] leading-relaxed">
-            {actionBody}
-          </pre>
-        ) : null
-      ) : snippet ? (
-        <p className="line-clamp-3 text-[13px] leading-relaxed text-muted-foreground">{snippet}</p>
-      ) : null}
-      <div className="mt-1 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          disabled={decide.isPending}
-          onClick={() => decide.mutate("approve")}
-          className="tethr-btn tethr-btn-primary h-8 px-4 text-[12.5px]"
-        >
-          {isAction ? "Approve & run" : "Approve"}
-        </button>
-        <button
-          type="button"
-          disabled={decide.isPending}
-          onClick={() => decide.mutate("reject")}
-          className="tethr-btn tethr-btn-ghost h-8 px-3.5 text-[12.5px]"
-        >
-          Reject
-        </button>
-        {threadId ? (
-          <button
-            type="button"
-            onClick={() => setReplying((v) => !v)}
-            aria-expanded={replying}
-            className="tethr-btn tethr-btn-ghost h-8 px-3.5 text-[12.5px]"
-          >
-            <CornerUpLeft className="h-3.5 w-3.5" />
-            Reply
-          </button>
-        ) : null}
-        <Link
-          to={`/queue/${output.id}`}
-          className="-my-2 ml-auto inline-flex items-center gap-1 py-2 text-[12px] text-muted-foreground hover:text-foreground"
-        >
-          Open in Queue
-          <ArrowRight className="h-3 w-3" />
-        </Link>
-      </div>
-      {decide.isError ? (
-        <p className="text-[12px] text-[var(--tethr-bad)]">
-          {decide.error instanceof Error ? decide.error.message : "That didn't go through."}
-        </p>
-      ) : null}
-      {replying ? (
-        <CardReply
-          title={output.title}
-          companyId={companyId}
-          threadId={threadId}
-          onSent={() => setReplying(false)}
-          onCancel={() => setReplying(false)}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-const REPLY_TITLE_MAX = 120;
-
-/** Talk to tethr about a pending card: a question, or what to do instead. The
- * card stays open for you to approve or reject after its answer. */
-function CardReply({
-  title,
-  companyId,
-  threadId,
-  onSent,
-  onCancel,
-}: {
-  title: string;
-  companyId: string;
-  threadId: string;
-  onSent: () => void;
-  onCancel: () => void;
-}) {
-  const queryClient = useQueryClient();
-  const [text, setText] = useState("");
-  const about = title.length > REPLY_TITLE_MAX ? `${title.slice(0, REPLY_TITLE_MAX)}…` : title;
-  const send = useMutation({
-    mutationFn: (message: string) => tethrApi.sendChatMessage(companyId, threadId, `About your request "${about}": ${message}`),
-    onSuccess: () => {
-      setText("");
-      queryClient.invalidateQueries({ queryKey: tethrKeys.chatRuns(companyId, threadId) });
-      queryClient.invalidateQueries({ queryKey: tethrKeys.chats(companyId) });
-      onSent();
-    },
-  });
-  const submit = () => {
-    const message = text.trim();
-    if (message && !send.isPending) send.mutate(message);
-  };
-  return (
-    <form
-      className="tethr-fix-panel flex flex-col gap-2 border-t border-[var(--tethr-rim)] pt-3"
-      onSubmit={(e) => {
-        e.preventDefault();
-        submit();
-      }}
-    >
-      <textarea
-        autoFocus
-        rows={2}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            submit();
-          }
-          if (e.key === "Escape") onCancel();
-        }}
-        placeholder="Ask why, or say what to do instead…"
-        aria-label="Reply to tethr about this request"
-        className="tethr-inset min-h-[60px] w-full resize-none px-3 py-2 text-[13px] leading-relaxed outline-none placeholder:text-muted-foreground"
-      />
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="mr-auto text-[11.5px] tethr-text-3">This stays open until you approve or reject it.</span>
-        <button type="button" onClick={onCancel} className="tethr-btn tethr-btn-ghost h-8 px-3 text-[12px]">
-          Cancel
-        </button>
-        <button type="submit" disabled={!text.trim() || send.isPending} className="tethr-btn tethr-btn-primary h-8 px-3.5 text-[12px]">
-          <Send className="h-3.5 w-3.5" />
-          {send.isPending ? "Sending…" : "Send"}
-        </button>
-      </div>
-      {send.isError ? (
-        <p className="text-[12px] text-[var(--tethr-bad)]">{send.error instanceof Error ? send.error.message : "That didn't send."}</p>
-      ) : null}
-    </form>
-  );
-}
-
 // ---- composer --------------------------------------------------------------------
 
 const MAX_ATTACHMENTS = 6;
@@ -1600,23 +1444,4 @@ function Composer({
       </div>
     </div>
   );
-}
-
-// ---- helpers -----------------------------------------------------------------------
-
-function kindLabel(kind: string): string {
-  if (kind === "team_agent") return "New agent";
-  if (kind === "team_change") return "Agent change";
-  const k = kind.replace(/_/g, " ");
-  return k.charAt(0).toUpperCase() + k.slice(1);
-}
-
-/** A plain-text taste of a body: front matter and Markdown marks stripped. */
-function previewText(body: string): string {
-  return body
-    .replace(/^---\r?\n[\s\S]*?\r?\n---\s*/, "")
-    .replace(/[#>*_`|[\]]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 320);
 }

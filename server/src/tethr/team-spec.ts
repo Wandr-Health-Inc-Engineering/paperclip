@@ -381,6 +381,9 @@ export function agentIdentityText(agent: AgentIdentity): string {
     `The person may also talk to you directly in this chat. Your reports go to ${boss}.`,
     `Tools you may use: web search and your files${agent.connectors.length ? `, plus ${agent.connectors.join(", ")}` : ""}.`,
   ];
+  lines.push(
+    "When you need a decision or a fact from a person before you can go on, call the ask tool: it shows them a card with buttons and tells them it's waiting. Ask once, then finish with what you can do without the answer. Don't bury the question in your report, and don't ask it again on later runs.",
+  );
   if (agent.goalTitle) lines.push(`Your goal: ${agent.goalTitle}. Say how your work moves it.`);
   if (agent.lead && agent.subTeam?.length) lines.push(`Your sub-team: ${agent.subTeam.join(", ")}.`);
   lines.push("", "Your instructions:", agent.instructions);
@@ -480,6 +483,11 @@ export function reportBody(text: string): string {
 /** The team tools: tethr's (main and side chats), and a lead's for its own sub-team. */
 export const TEAM_TOOL_NAMES = ["team_list", "create_agent", "assign_task", "update_agent"] as const;
 
+/** Phase 27: tethr tools every agent on the team has, whatever its connectors:
+ * they're how it reaches a person (a question as a card, a connection it's missing). */
+export const AGENT_ALWAYS_TOOLS = ["ask"] as const;
+const isAlwaysTool = (name: string) => (AGENT_ALWAYS_TOOLS as readonly string[]).includes(name);
+
 /** Claude Code's MCP server name for an Integrations connector label. */
 export function connectorServer(label: string): string {
   return label === "Tethr tools" ? "tethr" : `claude_ai_${label.replace(/ /g, "_")}`;
@@ -487,17 +495,20 @@ export function connectorServer(label: string): string {
 
 /**
  * Per-turn deny rules for an agent's turn: every connector outside its
- * allowlist, the team tools (unless it's a lead), and the shell. A lead without
- * "Tethr tools" still gets the tethr server for its team tools, so the other
- * Tethr tools (`otherTethrTools`) are denied one by one. The hook enforces the same.
+ * allowlist, the team tools (unless it's a lead), and the shell. Every agent
+ * keeps the tethr server for the tools that reach a person (AGENT_ALWAYS_TOOLS),
+ * so one without "Tethr tools" has the other Tethr tools (`otherTethrTools`)
+ * denied one by one. The hook enforces the same.
  */
 export function agentDenyRules(allowed: string[], labels: string[], opts: { lead?: boolean; otherTethrTools?: string[] } = {}): string[] {
   const hasTethrTools = allowed.includes("Tethr tools");
-  const rules = labels
-    .filter((label) => !allowed.includes(label) && !(label === "Tethr tools" && opts.lead))
-    .map((label) => `mcp__${connectorServer(label)}`);
-  if (opts.lead && !hasTethrTools) rules.push(...(opts.otherTethrTools ?? []).map((name) => `mcp__tethr__${name}`));
-  if (!opts.lead && hasTethrTools) rules.push(...TEAM_TOOL_NAMES.map((name) => `mcp__tethr__${name}`));
+  const rules = labels.filter((label) => label !== "Tethr tools" && !allowed.includes(label)).map((label) => `mcp__${connectorServer(label)}`);
+  if (!hasTethrTools) {
+    // Without the list of the other tools there's no way to deny them one by one: deny the whole server.
+    if (opts.otherTethrTools) rules.push(...opts.otherTethrTools.filter((name) => !isAlwaysTool(name)).map((name) => `mcp__tethr__${name}`));
+    else rules.push("mcp__tethr");
+  }
+  if (!opts.lead) rules.push(...TEAM_TOOL_NAMES.map((name) => `mcp__tethr__${name}`));
   rules.push("Bash");
   return rules;
 }
@@ -511,6 +522,7 @@ export function agentToolRefusal(agent: { tag: string; connectors: string[]; lea
       ? null
       : `Tethr approval gate: blocked. Only tethr and team leads create agents or hand out work; ${agent.tag} can't use ${teamTool}.`;
   }
+  if (AGENT_ALWAYS_TOOLS.some((name) => toolName === `mcp__tethr__${name}`)) return null;
   if (connector && !agent.connectors.includes(connector)) {
     return `Tethr approval gate: blocked. ${agent.tag} isn't set up to use ${connector}. If the job needs it, say so in your report so it can be added.`;
   }

@@ -80,6 +80,8 @@ function storeFiles(): string[] {
     pick("TETHR_LEARNING_FILE", "tethr-learning.json"),
     // Phase 24: tethr's own check-ins and daily review (pending reports, turns today).
     pick("TETHR_BRAIN_FILE", "tethr-brain.json"),
+    // Phase 27: questions asked as cards.
+    pick("TETHR_QUESTIONS_FILE", "tethr-questions.json"),
   ];
 }
 

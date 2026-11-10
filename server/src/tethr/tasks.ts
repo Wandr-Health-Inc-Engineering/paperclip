@@ -491,7 +491,7 @@ export function taskService(db: Db) {
     }
   }
 
-  return { load, start, finish, delegate, setStatus, onOutputDecided, resolveTarget };
+  return { load, start, finish, delegate, setStatus, comment, onOutputDecided, resolveTarget };
 }
 
 export type TaskService = ReturnType<typeof taskService>;
