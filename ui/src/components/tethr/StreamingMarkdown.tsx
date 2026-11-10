@@ -20,7 +20,7 @@ const RENDER_EVERY_MS = 32;
 
 export function StreamingMarkdown({ text, live, className }: { text: string; live: boolean; className?: string }) {
   const end = useSmoothReveal(text, live);
-  if (!live && end >= text.length) return <MarkdownBody className={className}>{text}</MarkdownBody>;
+  if (!live && end >= text.length) return <MarkdownBody linkIssueReferences={false} className={className}>{text}</MarkdownBody>;
   return <StreamFrame text={text.slice(0, end)} className={className} />;
 }
 

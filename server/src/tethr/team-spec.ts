@@ -107,9 +107,10 @@ const ICON_RULES: Array<[RegExp, string]> = [
   [/\b(launch|growth)/i, "rocket"],
 ];
 
-/** The icon for an agent's job: its name and title say most, its mission is the fallback. */
+/** The icon for an agent's job: its name says most, then its title, then its mission
+ * ("Content Writer, SEO blog posts" is a writer before it is search). */
 export function iconFor(agent: { name: string; title: string; mission?: string }): string {
-  for (const text of [`${agent.name} ${agent.title}`, agent.mission ?? ""]) {
+  for (const text of [agent.name, agent.title, agent.mission ?? ""]) {
     const rule = ICON_RULES.find(([pattern]) => pattern.test(text));
     if (rule) return rule[1];
   }

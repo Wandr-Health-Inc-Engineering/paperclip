@@ -160,18 +160,27 @@ export function TethrChat() {
   }, [runs, pending]);
 
   // When a run lands, refresh the surfaces it may have touched (Queue, list counts).
-  const settled = useRef(new Set<string>());
+  // Turns that were already finished when the chat opened didn't "land": only one that
+  // finishes while you watch does. (Counting them all refetched the chat once per old turn
+  // on every open; the chats key is also a prefix of this chat's turns.)
+  const settled = useRef<Set<string> | null>(null);
   useEffect(() => {
-    for (const r of runs ?? []) {
-      if (TERMINAL.has(r.status) && !settled.current.has(r.id)) {
-        if (settled.current.size) {
-          queryClient.invalidateQueries({ queryKey: ["tethr", c, "outputs"] });
-          queryClient.invalidateQueries({ queryKey: tethrKeys.chats(c) });
-          queryClient.invalidateQueries({ queryKey: tethrKeys.team(c) });
-        }
-        settled.current.add(r.id);
-      }
+    settled.current = null;
+  }, [threadId]);
+  useEffect(() => {
+    if (!runs) return;
+    const finished = runs.filter((r) => TERMINAL.has(r.status)).map((r) => r.id);
+    if (settled.current === null) {
+      settled.current = new Set(finished);
+      return;
     }
+    const landed = finished.filter((id) => !settled.current!.has(id));
+    if (!landed.length) return;
+    for (const id of landed) settled.current.add(id);
+    queryClient.invalidateQueries({ queryKey: ["tethr", c, "outputs"] });
+    queryClient.invalidateQueries({ queryKey: tethrKeys.chats(c) });
+    queryClient.invalidateQueries({ queryKey: tethrKeys.team(c) });
+    queryClient.invalidateQueries({ queryKey: tethrKeys.needsYou(c) });
   }, [runs, c, queryClient]);
 
   const send = useMutation({
@@ -1051,7 +1060,7 @@ function IdeaCard({ run, companyId }: { run: TethrChatRun; companyId: string }) 
         <span>Idea from tethr · {origin}</span>
         <span className="ml-auto font-mono text-[10.5px]">{formatRelative(run.createdAt)}</span>
       </div>
-      <MarkdownBody className="tethr-chat-md">{run.resultText ?? ""}</MarkdownBody>
+      <MarkdownBody linkIssueReferences={false} className="tethr-chat-md">{run.resultText ?? ""}</MarkdownBody>
       {idea ? (
         <div className="flex flex-wrap items-center gap-2">
           {decided ? (
@@ -1114,7 +1123,7 @@ function AgentReportCard({
       <p className="text-[14px] font-medium leading-snug">{run.requestText}</p>
       {run.resultText ? (
         <div className={cn("relative", long && !expanded && "max-h-48 overflow-hidden [mask-image:linear-gradient(to_bottom,#000_70%,transparent)]")}>
-          <MarkdownBody className="tethr-chat-md">{run.resultText}</MarkdownBody>
+          <MarkdownBody linkIssueReferences={false} className="tethr-chat-md">{run.resultText}</MarkdownBody>
         </div>
       ) : null}
       {files.length ? (
@@ -1228,7 +1237,7 @@ function Turn({ run, companyId }: { run: TethrChatRun; companyId: string }) {
         ) : run.status === "failed" ? (
           <p className="text-[14px] text-[var(--tethr-bad)]">{run.error || run.resultText || "This one failed."}</p>
         ) : run.resultText ? (
-          <MarkdownBody className="tethr-chat-md">{run.resultText}</MarkdownBody>
+          <MarkdownBody linkIssueReferences={false} className="tethr-chat-md">{run.resultText}</MarkdownBody>
         ) : null}
 
         {gated.map((o) => (

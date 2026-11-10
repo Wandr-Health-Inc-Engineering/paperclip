@@ -412,6 +412,10 @@ describe("phase 27: an icon for the job", () => {
     expect(iconFor({ name: "Welcome Series", title: "Lifecycle email" })).toBe("mail");
     expect(iconFor({ name: "Northstar", title: "Helper", mission: "Keeps partner pages current." })).toBe("globe");
     expect(iconFor({ name: "Northstar", title: "Helper" })).toBe("sparkles");
+    // The name outranks the title: a writer of SEO posts is a writer.
+    expect(iconFor({ name: "Content Writer", title: "SEO blog writer" })).toBe("message-square");
+    expect(iconFor({ name: "Content & SEO Research", title: "Topic research" })).toBe("search");
+    expect(iconFor({ name: "Northstar", title: "SEO research" })).toBe("search");
   });
 
   it("keeps an icon it was given when it's one core knows, and never the robot", () => {

@@ -66,7 +66,7 @@ export function LessonCard({ run, companyId }: { run: TethrChatRun; companyId: s
         {lesson?.composite !== null && lesson?.composite !== undefined ? <span className="font-mono text-[10.5px]">score {lesson.composite}</span> : null}
         <span className="ml-auto shrink-0 font-mono text-[10.5px]">{formatRelative(run.createdAt)}</span>
       </div>
-      <MarkdownBody className="tethr-chat-md">{run.resultText ?? ""}</MarkdownBody>
+      <MarkdownBody linkIssueReferences={false} className="tethr-chat-md">{run.resultText ?? ""}</MarkdownBody>
       {lesson ? (
         done ? (
           <p className="flex items-center gap-1.5 text-[12.5px] tethr-text-3">
