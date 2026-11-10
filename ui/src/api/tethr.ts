@@ -170,6 +170,103 @@ export interface TethrChatRun extends TethrRouteRun {
   attachments?: TethrChatAttachment[];
   /** An idea card's idea (phase 21): for the Useful / Not now buttons. */
   idea?: { id: string; status: TethrIdeaStatus; source: string } | null;
+  /** Phase 26.3: an Inbox card's item. */
+  inbox?: TethrInboxItem | null;
+  /** Phase 26.4: Jev's "needs you now / can wait" on an agent's report card. */
+  urgency?: { id: string; pick: string; outcome: string; correctedTo: string | null; options: string[] } | null;
+  /** Phase 26.5: a lesson card's lesson. */
+  lesson?: TethrLesson | null;
+}
+
+/** Phase 26.2: one kind of Jev decision, with its record. */
+export interface TethrDecisionKind {
+  key: string;
+  label: string;
+  about: string;
+  mode: "off" | "suggest" | "auto";
+  neverAuto: boolean;
+  sendsConversation: boolean;
+  answered: number;
+  right: number;
+  bar: number | null;
+  backtest: string;
+  autoBlocked: string | null;
+  pending: number;
+}
+
+export interface TethrDecisions {
+  kinds: TethrDecisionKind[];
+  spentUsd: number;
+  capUsd: number;
+  jev: string;
+}
+
+/** Phase 26.3: a file in tethr's Inbox. */
+export interface TethrInboxItem {
+  id: string;
+  source: "drive" | "chat" | "slack";
+  name: string;
+  relPath: string;
+  size: number;
+  status: "new" | "needs_person" | "suggested" | "filed" | "left" | "failed";
+  suggestion: {
+    type: string;
+    destination: string;
+    alternatives: string[];
+    notify: string;
+    urgency: string;
+    confidence: number;
+    decisions: Record<string, string>;
+  } | null;
+  note: string | null;
+  filedTo: string | null;
+  filedBy: string | null;
+  filedAt: string | null;
+  cardRunId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TethrInbox {
+  connected: boolean;
+  folders: string[];
+  open: TethrInboxItem[];
+  filed: TethrInboxItem[];
+  rules: Array<{ id: string; text: string; status: "proposed" | "active"; at: string }>;
+}
+
+/** Phase 26.5: something tethr learned. */
+export interface TethrLesson {
+  id: string;
+  area: string;
+  areaName?: string;
+  lesson: string;
+  why: string;
+  howToApply: string;
+  applyAs: "principle" | "procedure" | "rule" | "experiment";
+  sources: Array<{ url: string; title: string }>;
+  evidence: string;
+  scores: { fit: number | null; evidence: number | null; usable: number | null; novel: number | null; composite: number | null } | null;
+  status: "candidate" | "proposed" | "applied" | "kept" | "retired" | "rejected";
+  applied: { as: string; ref: string; at: string } | null;
+  reviewAt: string | null;
+  outcome: string | null;
+  verdict: "kept" | "retired" | null;
+  proposedBy: string;
+  composite: number | null;
+  createdAt: string;
+}
+
+export interface TethrLearning {
+  lessons: TethrLesson[];
+  learner: {
+    enabled: boolean;
+    agent: { tag: string; name: string; paused: boolean; threadId: string; maxRunsPerDay: number; budgetMonthlyCents: number; spentMonthlyCents: number } | null;
+    queue: Array<{ topic: string; by: string; at: string }>;
+  };
+  sources: Array<{ domain: string; approved: number; rejected: number; kept: number; retired: number }>;
+  decisions: TethrDecisionKind[];
+  filingRules: string[];
 }
 
 export type TethrIdeaStatus = "new" | "useful" | "not_now" | "answered" | "ignored";
@@ -818,6 +915,9 @@ export const tethrKeys = {
   memorySkill: (c: string, name: string) => ["tethr", c, "memory", "skill", name] as const,
   chatRuns: (c: string, threadId: string) => ["tethr", c, "chats", threadId, "runs"] as const,
   growthMap: (c: string) => ["tethr", c, "growth-map"] as const,
+  decisions: (c: string) => ["tethr", c, "decisions"] as const,
+  inbox: (c: string) => ["tethr", c, "inbox"] as const,
+  learning: (c: string) => ["tethr", c, "learning"] as const,
   routeRun: (c: string, id: string) => ["tethr", c, "route-runs", id] as const,
   outputs: (c: string, status?: string) => ["tethr", c, "outputs", status ?? "all"] as const,
   output: (c: string, id: string) => ["tethr", c, "output", id] as const,
@@ -1015,6 +1115,28 @@ export const tethrApi = {
   setTeamAgentPaused: (c: string, tag: string, paused: boolean) =>
     api.post<{ tag: string; paused: boolean }>(`/tethr/${c}/team/${encodeURIComponent(tag)}/pause`, { paused }),
   proposeTeam: (c: string) => api.post<{ routeRunId: string; threadId: string }>(`/tethr/${c}/team/propose`, {}),
+  /** Phase 26.2: Jev decisions. */
+  decisions: (c: string) => api.get<TethrDecisions>(`/tethr/${c}/decisions`),
+  setDecisions: (c: string, patch: { kind?: string; mode?: string; monthlyCapUsd?: number }) => api.put<TethrDecisions>(`/tethr/${c}/decisions`, patch),
+  answerDecision: (c: string, id: string, answer: string) => api.post<{ ok: boolean }>(`/tethr/${c}/decisions/${id}/answer`, { answer }),
+  /** Phase 26.3: tethr's Inbox. */
+  inbox: (c: string) => api.get<TethrInbox>(`/tethr/${c}/inbox`),
+  fileInboxItem: (c: string, id: string, destination: string) => api.post<TethrInboxItem>(`/tethr/${c}/inbox/${id}/file`, { destination }),
+  leaveInboxItem: (c: string, id: string) => api.post<TethrInboxItem>(`/tethr/${c}/inbox/${id}/leave`, {}),
+  putBackInboxItem: (c: string, id: string) => api.post<TethrInboxItem>(`/tethr/${c}/inbox/${id}/put-back`, {}),
+  routeInboxItem: (c: string, id: string, to: string) => api.post<TethrInboxItem>(`/tethr/${c}/inbox/${id}/route`, { to }),
+  decideFilingRule: (c: string, id: string, accept: boolean) => api.post<unknown>(`/tethr/${c}/inbox/rules/${id}`, { accept }),
+  scanInbox: (c: string) => api.post<TethrInboxItem[]>(`/tethr/${c}/inbox/scan`, {}),
+  fileThis: (c: string, path: string) => api.post<TethrInboxItem>(`/tethr/${c}/inbox/file-this`, { path }),
+  /** Phase 26.5-26.6: learning. */
+  learning: (c: string) => api.get<TethrLearning>(`/tethr/${c}/learning`),
+  setLearner: (c: string, enabled: boolean) => api.post<{ enabled: boolean }>(`/tethr/${c}/learning/learner`, { enabled }),
+  queueStudy: (c: string, topic: string) => api.post<{ queue: TethrLearning["learner"]["queue"] }>(`/tethr/${c}/learning/queue`, { topic }),
+  dropStudy: (c: string, index: number) => api.delete<{ queue: TethrLearning["learner"]["queue"] }>(`/tethr/${c}/learning/queue/${index}`),
+  applyLesson: (c: string, id: string) => api.post<TethrLesson>(`/tethr/${c}/lessons/${id}/apply`, {}),
+  rejectLesson: (c: string, id: string, reason?: string) => api.post<TethrLesson>(`/tethr/${c}/lessons/${id}/reject`, { reason }),
+  offerLesson: (c: string, id: string) => api.post<TethrLesson>(`/tethr/${c}/lessons/${id}/offer`, {}),
+  settleLesson: (c: string, id: string, keep: boolean) => api.post<TethrLesson>(`/tethr/${c}/lessons/${id}/settle`, { keep }),
   /** Phase 26.9: the growth map. */
   growthMap: (c: string) => api.get<TethrGrowthMap>(`/tethr/${c}/growth-map`),
   exploreArea: (c: string, area: TethrAreaId) =>

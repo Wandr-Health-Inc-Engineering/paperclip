@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { JevDecisionsCard } from "./settings/JevDecisionsCard";
+import { LearnerCard } from "./settings/LearnerCard";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Cog, GitCommitHorizontal, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -183,6 +185,10 @@ export function TethrSettings() {
       <TeamSettingsCard settings={integrations.team} onChange={(team) => update.mutate({ team })} />
 
       <MemoryCard companyId={selectedCompanyId} />
+
+      <JevDecisionsCard companyId={selectedCompanyId} />
+
+      <LearnerCard companyId={selectedCompanyId} />
 
       <OverseerRosterCard companyId={selectedCompanyId} />
 

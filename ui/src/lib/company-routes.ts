@@ -22,6 +22,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   // Tethr operate screens (see DECISIONS.md "Core changes")
   "growth",
   "growth-map",
+  "learning",
   "chat",
   "console",
   "company-view",

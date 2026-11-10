@@ -8,6 +8,9 @@ import { tethrApi, tethrKeys } from "@/api/tethr";
 import { Finder, type FinderLocation } from "./drive/Finder";
 import { FolderDialog } from "./drive/FolderDialog";
 import { fsSource, internalSource } from "./drive/adapters";
+import { InboxView } from "./drive/InboxView";
+import { Segmented } from "./setup/controls";
+import { useSearchParams } from "../../lib/router";
 
 // The Drive page: one Finder window. The Google Drive-synced "00 Tethr" folder
 // is the default location (what the team sees); Tethr's internal working drive
@@ -20,6 +23,16 @@ export function TethrDrive() {
   const queryClient = useQueryClient();
   const [fullscreen, setFullscreen] = useState(false);
   const [adding, setAdding] = useState(false);
+  // Phase 26.3: Files (the Finder) or tethr's Inbox.
+  const [params, setParams] = useSearchParams();
+  const view = params.get("view") === "inbox" ? "inbox" : "files";
+  const { data: inbox } = useQuery({
+    queryKey: tethrKeys.inbox(selectedCompanyId ?? ""),
+    queryFn: () => tethrApi.inbox(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+    refetchInterval: 30_000,
+  });
+  const waiting = inbox?.open.length ?? 0;
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Drive" }]);
@@ -87,7 +100,23 @@ export function TethrDrive() {
   return (
     // One screen tall; the Finder window takes whatever the note above it leaves.
     <div className="flex h-[calc(100dvh-10rem)] min-h-[480px] flex-col gap-4 md:h-[calc(100dvh-6rem)]">
-      {status && !mirrorOn ? (
+      <div className="shrink-0">
+        <Segmented
+          value={view}
+          onChange={(v) => setParams((prev) => {
+            const next = new URLSearchParams(prev);
+            if (v === "inbox") next.set("view", "inbox");
+            else next.delete("view");
+            return next;
+          }, { replace: true })}
+          options={[
+            { value: "files", label: "Files" },
+            { value: "inbox", label: waiting ? `Inbox · ${waiting}` : "Inbox" },
+          ]}
+        />
+      </div>
+      {view === "inbox" ? <InboxView companyId={selectedCompanyId} /> : null}
+      {view === "files" && status && !mirrorOn ? (
         <div className="tethr-empty px-4 py-3 text-[13px] text-muted-foreground">
           Google Drive isn't connected, so only the working drive is shown. Set{" "}
           <code className="font-mono">TETHR_MIRROR_DIR</code> to your synced "00 Tethr" folder and make sure Google Drive
@@ -95,13 +124,13 @@ export function TethrDrive() {
         </div>
       ) : null}
 
-      <Finder
+      {view === "files" ? <Finder
         locations={locations}
         onAddLocation={driveRoot ? () => setAdding(true) : undefined}
         addLocationGroup="Google Drive"
         fullscreen={fullscreen}
         onFullscreenChange={setFullscreen}
-      />
+      /> : null}
 
       {adding && driveRoot ? (
         <FolderDialog

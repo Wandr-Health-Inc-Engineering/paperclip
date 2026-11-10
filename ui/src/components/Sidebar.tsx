@@ -13,6 +13,7 @@ import {
   MessagesSquare,
   TrendingUp,
   Orbit,
+  Sprout,
   ShieldCheck,
   HardDrive,
   Wallet,
@@ -104,6 +105,7 @@ export function Sidebar() {
         <SidebarSection label="Operate">
           <SidebarNavItem to="/growth" label="Growth" icon={TrendingUp} />
           <SidebarNavItem to="/growth-map" label="Growth map" icon={Orbit} />
+          <SidebarNavItem to="/learning" label="Learning" icon={Sprout} />
           <SidebarNavItem to="/company-view" label="Company" icon={Network} />
           <SidebarNavItem to="/queue" label="Queue" icon={ShieldCheck} />
           <SidebarNavItem to="/drive" label="Drive" icon={HardDrive} />

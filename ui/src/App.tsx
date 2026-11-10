@@ -55,6 +55,7 @@ import { NotFoundPage } from "./pages/NotFound";
 import { TethrChat } from "./pages/tethr/TethrChat";
 import { TethrGrowth } from "./pages/tethr/TethrGrowth";
 import { TethrGrowthMap } from "./pages/tethr/TethrGrowthMap";
+import { TethrLearning } from "./pages/tethr/TethrLearning";
 import { TethrCompany } from "./pages/tethr/TethrCompany";
 import { TethrQueue } from "./pages/tethr/TethrQueue";
 import { TethrDrive } from "./pages/tethr/TethrDrive";
@@ -80,6 +81,7 @@ function boardRoutes() {
       {/* Tethr operate screens (see DECISIONS.md "Core changes") */}
       <Route path="growth" element={<TethrGrowth />} />
       <Route path="growth-map" element={<TethrGrowthMap />} />
+      <Route path="learning" element={<TethrLearning />} />
       <Route path="chat" element={<TethrChat />} />
       <Route path="console" element={<Navigate to="/chat" replace />} />
       <Route path="company-view" element={<TethrCompany />} />

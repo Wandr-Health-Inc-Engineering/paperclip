@@ -51,6 +51,7 @@ import {
 } from "@/api/tethr";
 import { agentForThread } from "@/lib/tethr-team";
 import { AgentChip, TeamSection } from "./chat/team";
+import { FileThisButton, InboxCard, LessonCard, UrgencyRow } from "./chat/cards";
 
 // Chat (phase 17, formerly the Console; Mark's model): one ONGOING chat with
 // @tethr that everything goes into by default, plus SIDE chats he opens on
@@ -364,10 +365,15 @@ export function TethrChat() {
             {visibleRuns.map((run) => (
               run.sourceKey === "tethr-idea" ? (
                 <IdeaCard key={run.id} run={run} companyId={c} />
+              ) : run.sourceKey === "tethr-inbox" ? (
+                <InboxCard key={run.id} run={run} companyId={c} />
+              ) : run.sourceKey === "tethr-lesson" ? (
+                <LessonCard key={run.id} run={run} companyId={c} />
               ) : run.sourceKey === "tethr-agent-report" ? (
                 <AgentReportCard
                   key={run.id}
                   run={run}
+                  companyId={c}
                   agent={team?.agents.find((a) => a.agentId === run.agentId)}
                   onOpenFile={setPanelPath}
                   onOpenChat={openChat}
@@ -676,11 +682,14 @@ function UserBubble({
   at,
   attachments,
   onOpenFile,
+  companyId,
 }: {
   text: string;
   at?: string;
   attachments?: TethrChatAttachment[];
   onOpenFile?: (path: string) => void;
+  /** Phase 26.3: offers "File this" on each attachment. */
+  companyId?: string;
 }) {
   return (
     <div className="flex flex-col items-end gap-1.5">
@@ -692,7 +701,10 @@ function UserBubble({
       {attachments?.length ? (
         <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
           {attachments.map((a) => (
-            <FileChip key={a.path} name={a.name} kind={a.kind} onClick={a.panelPath && onOpenFile ? () => onOpenFile(a.panelPath!) : undefined} />
+            <span key={a.path} className="flex items-center gap-1">
+              <FileChip name={a.name} kind={a.kind} onClick={a.panelPath && onOpenFile ? () => onOpenFile(a.panelPath!) : undefined} />
+              {companyId ? <FileThisButton path={a.path} companyId={companyId} /> : null}
+            </span>
           ))}
         </div>
       ) : null}
@@ -857,7 +869,7 @@ function SessionTurn({
       {isSystem ? (
         <SystemLine text={run.requestText} />
       ) : (
-        <UserBubble text={run.requestText} at={run.createdAt} attachments={run.attachments} onOpenFile={onOpenFile} />
+        <UserBubble text={run.requestText} at={run.createdAt} attachments={run.attachments} onOpenFile={onOpenFile} companyId={companyId} />
       )}
       {run.resultText ? <StreamingMarkdown text={run.resultText} live={running} className="tethr-chat-md" /> : null}
       {tools.length && !running ? <StepsSummary hops={tools} /> : null}
@@ -1021,11 +1033,13 @@ function IdeaCard({ run, companyId }: { run: TethrChatRun; companyId: string }) 
  * its files), with a way into its own chat. */
 function AgentReportCard({
   run,
+  companyId,
   agent,
   onOpenFile,
   onOpenChat,
 }: {
   run: TethrChatRun;
+  companyId: string;
   agent?: TethrTeamAgent;
   onOpenFile: (path: string) => void;
   onOpenChat: (threadId: string) => void;
@@ -1053,6 +1067,7 @@ function AgentReportCard({
           ))}
         </div>
       ) : null}
+      {run.urgency ? <UrgencyRow run={run} companyId={companyId} /> : null}
       <div className="flex flex-wrap items-center gap-2">
         {long ? (
           <button type="button" onClick={() => setExpanded((v) => !v)} className="tethr-btn tethr-btn-ghost h-8 px-3.5 text-[12.5px]">

@@ -40,6 +40,7 @@ import {
   Compass,
   Brain,
   Orbit,
+  Sprout,
 } from "lucide-react";
 import { Identity } from "./Identity";
 import { agentUrl, projectUrl } from "../lib/utils";
@@ -217,6 +218,10 @@ export function CommandPalette() {
           <CommandItem onSelect={() => go("/growth-map")}>
             <Orbit className="mr-2 h-4 w-4" />
             Growth map
+          </CommandItem>
+          <CommandItem onSelect={() => go("/learning")}>
+            <Sprout className="mr-2 h-4 w-4" />
+            Learning
           </CommandItem>
           <CommandItem onSelect={() => go("/company-view")}>
             <Network className="mr-2 h-4 w-4" />
