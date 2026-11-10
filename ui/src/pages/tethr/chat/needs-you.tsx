@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Hand, X } from "lucide-react";
+import { StatusDot } from "@/components/tethr/primitives";
 import { tethrApi, tethrKeys, type TethrNeedsYou } from "@/api/tethr";
 import { ApprovalCard, QuestionCard } from "./decision-cards";
 
@@ -87,10 +88,7 @@ export function NeedsYouPill({ companyId }: { companyId: string }) {
         aria-haspopup="dialog"
         className="tethr-glass tethr-touch-sized inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-3 text-[12px] font-medium transition-colors hover:text-foreground md:px-3.5 md:text-[12.5px]"
       >
-        <span className="relative flex h-1.5 w-1.5">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--tethr-warn)] opacity-60 motion-reduce:hidden" />
-          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--tethr-warn)]" />
-        </span>
+        <StatusDot tone="warn" />
         {count} {count === 1 ? "needs" : "need"} you
       </button>
       {open && data

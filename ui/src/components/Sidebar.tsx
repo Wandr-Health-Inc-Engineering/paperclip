@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   History,
   Search,
-  SquarePen,
   Network,
   Boxes,
   Repeat,
@@ -27,7 +26,6 @@ import { TethrSetupNavItem } from "./tethr/SetupNavItem";
 import { TethrNeedsYouNavItem } from "./tethr/NeedsYouNavItem";
 import { SidebarProjects } from "./SidebarProjects";
 import { SidebarAgents } from "./SidebarAgents";
-import { useDialogActions } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { heartbeatsApi } from "../api/heartbeats";
 import { instanceSettingsApi } from "../api/instanceSettings";
@@ -37,7 +35,6 @@ import { PluginSlotOutlet } from "@/plugins/slots";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
 
 export function Sidebar() {
-  const { openNewIssue } = useDialogActions();
   const { selectedCompanyId, selectedCompany } = useCompany();
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
@@ -78,17 +75,11 @@ export function Sidebar() {
 
       <nav className="flex-1 min-h-0 overflow-y-auto scrollbar-auto-hide flex flex-col gap-4 px-3 py-2">
         <div className="flex flex-col gap-0.5">
-          {/* New Issue button aligned with nav items */}
-          <button
-            onClick={() => openNewIssue()}
-            className="flex items-center gap-2.5 px-3 py-2 text-[13px] font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
-          >
-            <SquarePen className="h-4 w-4 shrink-0" />
-            <span className="truncate">New Issue</span>
-          </button>
-          {/* Tethr: Chat sits above Dashboard (Mark, 2026-11-07) */}
+          {/* Tethr: the chat is the main way in, so it leads; no "New Issue" here
+              (Mark, 2026-11-10). What needs you comes right after it, above Dashboard. */}
           <TethrSetupNavItem />
           <SidebarNavItem to="/chat" label="Chat" icon={MessagesSquare} />
+          <TethrNeedsYouNavItem />
           <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
           {/* Inbox removed (see DECISIONS.md): its Approve bypassed Tethr gating —
               the Queue is the single approval surface. /inbox redirects there. */}
@@ -107,7 +98,6 @@ export function Sidebar() {
           <SidebarNavItem to="/growth-map" label="Growth map" icon={Orbit} />
           <SidebarNavItem to="/learning" label="Learning" icon={Sprout} />
           <SidebarNavItem to="/company-view" label="Company" icon={Network} />
-          <TethrNeedsYouNavItem />
           <SidebarNavItem to="/drive" label="Drive" icon={HardDrive} />
           <SidebarNavItem to="/budgets" label="Budgets" icon={Wallet} />
           <SidebarNavItem to="/audit" label="Activity" icon={History} />

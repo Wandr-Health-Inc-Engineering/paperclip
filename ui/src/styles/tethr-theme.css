@@ -1316,8 +1316,10 @@ a[role="button"]:active {
     color: var(--foreground);
     transition: transform 240ms var(--tethr-ease);
   }
-  .tethr-avatar:hover {
-    transform: scale(1.04);
+  @media (hover: hover) {
+    .tethr-avatar:hover {
+      transform: scale(1.04);
+    }
   }
   .tethr-avatar::after {
     content: "";
@@ -2295,4 +2297,15 @@ html.tethr-intro-hold .tethr-welcome * {
   .tethr-galaxy-core {
     transition: none;
   }
+}
+
+/* The chats drawer is glass: it blurs whatever is behind it, and WebKit (iPhone, the
+   desktop app) redraws that blur on every frame something under it moves. The avatar's
+   glow and nebula and the working pill run under it while tethr works, which made the
+   drawer stutter (2026-11-10). They hold still while it's open. */
+.tethr-chat:has(.tethr-chats-drawer[data-state="open"]) :is(.tethr-avatar, .tethr-nebula, .tethr-nebula *, .shimmer-text, .tethr-task-pill) {
+  animation-play-state: paused !important;
+}
+.tethr-chat:has(.tethr-chats-drawer[data-state="open"]) .tethr-avatar.is-working::after {
+  animation-play-state: paused !important;
 }

@@ -312,7 +312,7 @@ export function TethrChat() {
   const chat = (
     <div
       className={cn(
-        "flex flex-col",
+        "tethr-chat flex flex-col",
         isMobile
           ? cn("fixed inset-x-0 z-10 [overscroll-behavior:none]", phone && !phone.keyboard && "pb-[env(safe-area-inset-bottom)]")
           : "relative h-[calc(100dvh-10rem)] min-h-[480px] md:h-[calc(100dvh-6rem)]",
@@ -600,8 +600,9 @@ function SideChats({
         aria-label="Chats"
         aria-hidden={!open}
         inert={!open || undefined}
+        data-state={open ? "open" : "closed"}
         className={cn(
-          "tethr-glass absolute bottom-2 left-0 top-12 z-30 flex w-72 max-w-[85vw] flex-col gap-1 overflow-y-auto p-2 transition-[transform,opacity] duration-200 ease-out",
+          "tethr-chats-drawer tethr-glass absolute bottom-2 left-0 top-12 z-30 flex w-72 max-w-[85vw] flex-col gap-1 overflow-y-auto p-2 transition-[transform,opacity] duration-200 ease-out",
           open ? "translate-x-0 opacity-100" : "pointer-events-none -translate-x-3 opacity-0",
         )}
       >
