@@ -2424,3 +2424,52 @@ html.tethr-intro-hold .tethr-welcome * {
 .tethr-chat:has(.tethr-chats-drawer[data-state="open"]) .tethr-orbit * {
   animation-play-state: paused !important;
 }
+
+/* A card that has just been answered (chat/decision-cards.tsx DoneCard): the ring
+   draws, then the tick, while the card settles. It stays a moment, then the
+   lists refresh and the card leaves or folds to its one-line record. */
+.tethr-done-check {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tethr-done-ring {
+  stroke-width: 1.5;
+  opacity: 0.45;
+  stroke-dasharray: 77;
+  stroke-dashoffset: 77;
+  transform-origin: center;
+  transform: rotate(-90deg);
+  animation: tethr-done-draw 520ms cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+.tethr-done-tick {
+  stroke-width: 2.25;
+  stroke-dasharray: 17;
+  stroke-dashoffset: 17;
+  animation: tethr-done-draw 340ms cubic-bezier(0.16, 1, 0.3, 1) 360ms forwards;
+}
+.tethr-done-card {
+  animation: tethr-done-settle 460ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+@keyframes tethr-done-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes tethr-done-settle {
+  from {
+    transform: scale(0.97);
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tethr-done-ring,
+  .tethr-done-tick {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+  .tethr-done-card {
+    animation: none;
+  }
+}

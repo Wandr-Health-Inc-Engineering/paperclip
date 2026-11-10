@@ -1092,7 +1092,8 @@ export const tethrKeys = {
 /** After a person decides an output (Queue, chat card or bell): refresh every
  * view of what's waiting on them, every status filter of the list included. */
 export function refreshAfterDecision(queryClient: QueryClient, c: string): void {
-  for (const queryKey of [["tethr", c, "outputs"], tethrKeys.growth(c), ["tethr", c, "overview"], tethrKeys.needsYou(c), tethrKeys.team(c)]) {
+  // Every chat too: a card shows in the chat that asked, and on an agent's report card in the main chat.
+  for (const queryKey of [["tethr", c, "outputs"], tethrKeys.growth(c), ["tethr", c, "overview"], tethrKeys.needsYou(c), tethrKeys.team(c), ["tethr", c, "chats"]]) {
     void queryClient.invalidateQueries({ queryKey });
   }
 }

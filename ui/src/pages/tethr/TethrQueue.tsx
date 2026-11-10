@@ -22,6 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/EmptyState";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { MarkdownBody } from "@/components/MarkdownBody";
+import { DoneCheck } from "@/components/tethr/DoneCheck";
 import {
   MonoTag,
   OUTPUT_STATUS_LABEL,
@@ -296,6 +297,8 @@ function QueueDetail({
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [note, setNote] = useState("");
+  // The output decided on this screen just now: its record draws a check.
+  const [decidedHere, setDecidedHere] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: tethrKeys.output(companyId, outputId),
@@ -307,10 +310,14 @@ function QueueDetail({
       tethrApi.decide(companyId, outputId, decision, note.trim() || undefined),
     onSuccess: () => {
       setNote("");
+      setDecidedHere(outputId);
       queryClient.invalidateQueries({ queryKey: tethrKeys.output(companyId, outputId) });
       refreshAfterDecision(queryClient, companyId);
     },
   });
+
+  const pressed = (decision: "approve" | "reject" | "request_changes") =>
+    decideMutation.isPending && decideMutation.variables === decision;
 
   const reviseMutation = useMutation({
     mutationFn: () => tethrApi.revise(companyId, outputId, note.trim() || undefined),
@@ -430,7 +437,7 @@ function QueueDetail({
                 disabled={decideMutation.isPending}
               >
                 <Check className="h-3.5 w-3.5" />
-                Approve + publish
+                {pressed("approve") ? "Approving…" : "Approve + publish"}
               </button>
               <button
                 type="button"
@@ -439,7 +446,7 @@ function QueueDetail({
                 disabled={decideMutation.isPending}
               >
                 <Undo2 className="h-3.5 w-3.5" />
-                Request changes
+                {pressed("request_changes") ? "Sending back…" : "Request changes"}
               </button>
               <button
                 type="button"
@@ -448,7 +455,7 @@ function QueueDetail({
                 disabled={decideMutation.isPending}
               >
                 <X className="h-3.5 w-3.5" />
-                Reject
+                {pressed("reject") ? "Rejecting…" : "Reject"}
               </button>
             </div>
             {decideMutation.isError ? (
@@ -463,10 +470,14 @@ function QueueDetail({
             </p>
           </div>
         ) : approval ? (
-          <div className="tethr-rule border-t px-4 py-4">
+          <div className={cn("tethr-rule border-t px-4 py-4", decidedHere === output.id && "tethr-done-card")}>
             <MonoTag>decision record</MonoTag>
             <p className="mt-1.5 flex flex-wrap items-center gap-x-1.5 text-sm">
-              <StatusDot status={approval.status} />
+              {decidedHere === output.id ? (
+                <DoneCheck className="h-5 w-5 shrink-0 text-foreground" />
+              ) : (
+                <StatusDot status={approval.status} />
+              )}
               <span className="font-medium">
                 {approval.status === "approved"
                   ? "Approved"

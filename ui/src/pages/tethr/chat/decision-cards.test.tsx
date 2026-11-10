@@ -6,6 +6,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TethrQuestion } from "@/api/tethr";
 
 vi.mock("../../../lib/router", () => ({ Link: ({ children }: { children: unknown }) => children, useNavigate: () => vi.fn() }));
+const answerQuestion = vi.fn(async () => ({ question: {}, routeRunId: null, threadId: "t1" }));
+vi.mock("@/api/tethr", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/api/tethr")>();
+  return { ...actual, tethrApi: { ...actual.tethrApi, answerQuestion } };
+});
 
 const { QuestionCard } = await import("./decision-cards");
 
@@ -54,6 +59,18 @@ describe("a connection card", () => {
     expect(text).toContain("Give access, on its own");
     expect(text).toContain("Give access, ask each time");
     expect(text).not.toContain("I've connected it");
+  });
+
+  // Mark, 2026-11-10: "it didn't animate or change on approval… animate it into a nice check".
+  it("turns into a drawn check with what happened as soon as it's answered", async () => {
+    render(card({ access: true }));
+    const give = [...host.querySelectorAll("button")].find((b) => b.textContent === "Give access, on its own")!;
+    await act(async () => give.click());
+    await act(async () => new Promise((r) => setTimeout(r, 0)));
+    expect(answerQuestion).toHaveBeenCalledWith("c1", "q1", { choice: "grant_auto" });
+    expect(host.querySelector(".tethr-done-check")).not.toBeNull();
+    expect(host.textContent).toContain("@paid-ads has Google Ads now, and changes run on their own.");
+    expect(host.textContent).not.toContain("Give access, ask each time");
   });
 
   it("offers the fix when it really isn't connected", () => {

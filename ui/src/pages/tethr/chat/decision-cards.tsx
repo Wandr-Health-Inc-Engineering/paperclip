@@ -5,6 +5,7 @@ import { StatusDot, formatRelative } from "@/components/tethr/primitives";
 import { refreshAfterDecision, tethrApi, tethrKeys, type TethrChatOutput, type TethrQuestion } from "@/api/tethr";
 import { cardDetails, cardHeading, decidedLine, previewText } from "@/lib/tethr-cards";
 import { cn } from "@/lib/utils";
+import { DoneCheck } from "@/components/tethr/DoneCheck";
 import { Link } from "../../../lib/router";
 import { fixForConnection } from "../setup/fixes";
 import { FixPanel } from "../setup/FixPanel";
@@ -25,6 +26,37 @@ function errorText(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+// ---- done: a card that has just been answered ---------------------------------
+
+/** How long the check shows before the lists refresh and the card leaves (or folds to its record). */
+const DONE_HOLD_MS = 1500;
+
+/** The answered card: a check that draws itself and what happened, in a line. */
+function DoneCard({ label }: { label: string }) {
+  return (
+    <div className={cn(CARD, "tethr-done-card")} role="status" aria-live="polite">
+      <div className="flex items-center gap-3">
+        <DoneCheck className="h-7 w-7 shrink-0 text-foreground" />
+        <p className="min-w-0 text-[13.5px] font-medium leading-snug [overflow-wrap:anywhere]">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Show the check, then refresh. The refresh waits so the check is seen, and it
+ * isn't cancelled if the card goes away first (every list that shows the card
+ * still has to catch up).
+ */
+function useDone(refresh: () => void): [string | null, (label: string) => void] {
+  const [done, setDone] = useState<string | null>(null);
+  const finish = (label: string) => {
+    setDone(label);
+    window.setTimeout(refresh, DONE_HOLD_MS);
+  };
+  return [done, finish];
+}
+
 // ---- approvals -------------------------------------------------------------------
 
 /** A gated item, decided where you see it. `threadId` is the chat to talk to about it (none: no Comment). */
@@ -32,13 +64,15 @@ export function ApprovalCard({ output, companyId, threadId, from }: { output: Te
   const queryClient = useQueryClient();
   const [replying, setReplying] = useState(false);
   const [open, setOpen] = useState(false);
+  const refresh = () => {
+    if (threadId) queryClient.invalidateQueries({ queryKey: tethrKeys.chatRuns(companyId, threadId) });
+    refreshAfterDecision(queryClient, companyId);
+  };
+  const [done, finish] = useDone(refresh);
   const decide = useMutation({
     mutationFn: (decision: "approve" | "reject") => tethrApi.decide(companyId, output.id, decision),
-    onSettled: () => {
-      if (threadId) queryClient.invalidateQueries({ queryKey: tethrKeys.chatRuns(companyId, threadId) });
-      queryClient.invalidateQueries({ queryKey: tethrKeys.chats(companyId) });
-      refreshAfterDecision(queryClient, companyId);
-    },
+    onSuccess: (_r, decision) => finish(`${decision === "approve" ? (isAction ? "Approved, running now" : "Approved") : "Rejected"}: ${output.title}`),
+    onError: refresh,
   });
   const snippet = useMemo(() => previewText(output.body), [output.body]);
   const details = useMemo(() => cardDetails(output.body), [output.body]);
@@ -46,6 +80,7 @@ export function ApprovalCard({ output, companyId, threadId, from }: { output: Te
   const missing = details?.rows.find(([label, value]) => label === "Needs" && /not connected/.test(value))?.[1] ?? null;
   const isAction = output.kind === "external_action";
   const actionBody = isAction ? output.body.split("\n").slice(2).join("\n").trim() : "";
+  if (done && (output.status === "gated" || output.status === "changes_requested")) return <DoneCard label={done} />;
   return (
     <div className={CARD}>
       <span className="tethr-eyebrow inline-flex items-center gap-1.5">
@@ -86,10 +121,10 @@ export function ApprovalCard({ output, companyId, threadId, from }: { output: Te
       ) : null}
       <div className="mt-1 flex flex-wrap items-center gap-2">
         <button type="button" disabled={decide.isPending} onClick={() => decide.mutate("approve")} className={PRIMARY}>
-          {isAction ? "Approve & run" : "Approve"}
+          {decide.isPending && decide.variables === "approve" ? "Approving…" : isAction ? "Approve & run" : "Approve"}
         </button>
         <button type="button" disabled={decide.isPending} onClick={() => decide.mutate("reject")} className={GHOST}>
-          Reject
+          {decide.isPending && decide.variables === "reject" ? "Rejecting…" : "Reject"}
         </button>
         {threadId ? (
           <button type="button" onClick={() => setReplying((v) => !v)} aria-expanded={replying} className={GHOST}>
@@ -268,17 +303,30 @@ export function answeredWords(q: TethrQuestion): string {
 export function QuestionCard({ question, companyId, from }: { question: TethrQuestion; companyId: string; /** Where it was asked, when shown away from its chat. */ from?: string }) {
   const queryClient = useQueryClient();
   const [commenting, setCommenting] = useState(false);
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: tethrKeys.chatRuns(companyId, question.threadId) });
+    refreshAfterDecision(queryClient, companyId);
+  };
+  const [done, finish] = useDone(refresh);
+  const who = question.agentTag ?? "tethr";
   const answer = useMutation({
     mutationFn: (body: { choice?: string; comment?: string }) => tethrApi.answerQuestion(companyId, question.id, body),
-    onSuccess: () => setCommenting(false),
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: tethrKeys.chatRuns(companyId, question.threadId) });
-      queryClient.invalidateQueries({ queryKey: tethrKeys.team(companyId) });
-      refreshAfterDecision(queryClient, companyId);
+    onSuccess: (_r, body) => {
+      setCommenting(false);
+      finish(
+        body.choice === "approve" && !question.options
+          ? `Approved. ${who} carries on.`
+          : body.choice === "reject" && !question.options
+            ? `Rejected. ${who} knows.`
+            : body.choice
+              ? `Sent "${body.choice}" to ${who}.`
+              : `Your answer went to ${who}.`,
+      );
     },
+    onError: refresh,
   });
-  const who = question.agentTag ?? "tethr";
 
+  if (done && question.status === "open") return <DoneCard label={done} />;
   if (question.status === "open" && question.connection) return <ConnectionCard question={question} connection={question.connection.key} companyId={companyId} from={from} />;
   if (question.status !== "open") {
     return (
@@ -365,21 +413,33 @@ function ConnectionCard({ question, connection, companyId, from }: { question: T
     queryClient.invalidateQueries({ queryKey: tethrKeys.chatRuns(companyId, question.threadId) });
     refreshAfterDecision(queryClient, companyId);
   };
+  const [done, finish] = useDone(refresh);
+  const agent = question.agentTag ?? "tethr";
   const answer = useMutation({
     mutationFn: (choice: "connected" | "without" | "grant" | "grant_auto") => tethrApi.answerQuestion(companyId, question.id, { choice }),
-    onSettled: () => {
-      refresh();
-      queryClient.invalidateQueries({ queryKey: tethrKeys.team(companyId) });
-    },
+    onSuccess: (_r, choice) =>
+      finish(
+        choice === "grant_auto"
+          ? `${agent} has ${connection} now, and changes run on their own.`
+          : choice === "grant"
+            ? `${agent} has ${connection} now; each change asks first.`
+            : choice === "without"
+              ? `${agent} carries on without ${connection}.`
+              : `Marked connected. ${agent} picks up again.`,
+      ),
+    onError: refresh,
   });
   // A key or a mode saved from the fix: tethr re-checks, and closes this itself if that was all it needed.
   const recheck = useMutation({ mutationFn: () => tethrApi.recheckConnections(companyId), onSettled: refresh });
   const pause = useMutation({
     mutationFn: () => tethrApi.setTeamAgentPaused(companyId, question.agentTag!, true),
-    onSettled: refresh,
+    onSuccess: () => finish(`Paused ${agent}.`),
+    onError: refresh,
   });
   const busy = answer.isPending || pause.isPending;
   const error = answer.error ?? pause.error;
+  const pressed = (choice: string, label: string, busyLabel: string) => (answer.isPending && answer.variables === choice ? busyLabel : label);
+  if (done) return <DoneCard label={done} />;
   // The connection works for the company; this agent just isn't given it.
   if (question.access && question.agentTag) {
     return (
@@ -397,10 +457,10 @@ function ConnectionCard({ question, connection, companyId, from }: { question: T
         {question.detail ? <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed tethr-text-3 [overflow-wrap:anywhere]">{question.detail}</p> : null}
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <button type="button" disabled={busy} onClick={() => answer.mutate("grant_auto")} className={PRIMARY}>
-            Give access, on its own
+            {pressed("grant_auto", "Give access, on its own", "Giving access…")}
           </button>
           <button type="button" disabled={busy} onClick={() => answer.mutate("grant")} className={GLASS}>
-            Give access, ask each time
+            {pressed("grant", "Give access, ask each time", "Giving access…")}
           </button>
           <button type="button" disabled={busy} onClick={() => answer.mutate("without")} className={GHOST}>
             Carry on without it

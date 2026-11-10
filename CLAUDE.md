@@ -1209,6 +1209,14 @@ DECISIONS 57-64. No migration. One new store: `tethr-questions.json` (in the res
 - **Cards:** `chat/decision-cards.tsx` (`ApprovalCard` with Details in place, `QuestionCard`,
   `ConnectionCard`, `DecidedLine`); wording in `lib/tethr-cards.ts` (`cardHeading`). tethr says "the
   card below", never "check Slack / the Queue".
+  - **An answered card draws a check at once** (Mark, 2026-11-10: "it didn't animate or change on
+    approval… animate it into a nice check"). `DoneCard` + `components/tethr/DoneCheck.tsx`
+    (`.tethr-done*` in tethr-theme.css: ring, then tick; reduced motion shows it drawn) says what
+    happened ("Approved, running now: …", "@x has Google Ads now…"), and after ~1.5s
+    (`DONE_HOLD_MS`) the chat refetches and it folds into its decided line. The Needs you page's own
+    decision record draws the same check. `refreshAfterDecision` invalidates **every** chat's runs:
+    a card can sit in a chat other than the one open, and before this the main chat kept showing a
+    decided card until a reload, so a second tap said it was already decided.
 - **Slack:** while the chat engine is on, `routeInboundKickoff` never calls the old engine
   (`classicOff`); `answerUnknownSlackSender` replies and, when no admin is linked, keeps the sender as
   `setup.slackClaim`. `PUT /setup/admin-slack` links an ID. **A display name is never proof:** the
