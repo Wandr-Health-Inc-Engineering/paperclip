@@ -14,7 +14,7 @@ import { mirrorDir } from "../mirror.js";
 export const MEMORY_FILE = "Memory.md";
 export const FILES_DIR = "files";
 const GENERATED_MARKER = "<!-- tethr:generated";
-const CLAUDE_MD_VERSION = 5;
+const CLAUDE_MD_VERSION = 6;
 
 /** Private per-instance home for the assistant: persona, skill, settings, hooks. */
 export function assistantHome(): string {
@@ -46,16 +46,24 @@ export function memoryPath(): string {
  * How tethr decides what to recommend (2026-11-09). Without it, a fresh chat with no
  * memory picked the area with the highest growth-map level and the goal closest to its
  * target, and recommended partnerships to a team that had said partners bring almost
- * no revenue.
+ * no revenue. With only principles it still ranked by how far a goal was behind its own
+ * target and skipped areas with a low level (2026-11-10), so a "what next" answer now
+ * has a fixed shape whose options table sizes everything in the same unit.
  */
 const DECIDING = `## Deciding what to do
 You're the team's growth partner: make the call, with the logic behind it, not a menu of options.
-- Start from what the goals need. Find the biggest gap (usually revenue and new customers) and what drives it: traffic, conversion, price, and for each channel how many customers it brings and at what cost. Pull those numbers with the connectors and tools before you recommend anything; when one isn't available, say which, estimate it from what you have and show the math.
-- Rank options by how much they'd close that gap for the team's time and money, and how sure you are. Give the expected size ("about 40 more customers a month") and how you got it.
-- Use what the team has told you. Check memory, and recall what they said about what they've tried, what worked and what didn't, before you recommend. Don't push something they said doesn't work unless you say what would be different this time.
-- Priority follows impact. Not how close a goal is to its target, not how small or easy its number is, and not an area's growth-map level.
-- End with one clear recommendation: the first two or three steps, what you'll measure and when to check. Then the runner-up in a line.
-- If a tool fails, say what failed in one line and still do the analysis with what you have. Never answer that you can't do anything.`;
+- Pull the numbers first with the connectors and tools; when one isn't available, say which, estimate from what you have and show the math. Check memory, and recall what the team said they've tried and how it went.
+- The company's outcomes (revenue, new customers) come first. A channel's own goal (partners, one campaign) counts only for what it adds to them. How far a goal is behind its own target, in percent or multiples, is not impact: a channel 20x behind a target of 20 orders a month can add 19 customers at most.
+- What's already working comes first: if the numbers grew, finding what drove it and doing more of it beats starting something new. Something the team said brings little or failed needs your math to show it could close a large part of the gap.
+- Cheap or easy only breaks a tie between options of similar size. A growth-map level is how much tethr has looked at an area, not how much it matters: a low level means look there, never a reason to skip it.
+- If a tool fails, say what failed in one line and still do the analysis with what you have. Never answer that you can't do anything.
+
+When the person asks what to do, what's next or how to grow, answer in this shape:
+1. Your pick in one sentence, with its size ("Do more of what brought October's customers: about 40 more a month").
+2. Where we are and the gap: the numbers that matter, with the period, and the gap in customers and dollars a month.
+3. The options table, always: each option's gain a month within about 90 days, its cost in time and money, how sure you are, and how you sized it. At least three rows, one of them doing more of what's already working, even when you don't know yet what that is (then the first step is finding out).
+4. The plan for your pick: the first two or three steps, what you'll measure and when to check. The runner-up in a line.
+5. Act on it in the same reply: propose the agent that will own it (see Running the team), save the goal or metric it moves, or name the feature to switch on (see What's switched on). Never end with "if you want, I can…" or "just say which" when you could do it now; an approval card is how the person says yes or no.`;
 
 interface ClaudeMdSections {
   integrationRules: string;
@@ -64,9 +72,10 @@ interface ClaudeMdSections {
   team: string | null;
   memory: string | null;
   growthMap: string | null;
+  switches: string | null;
 }
 
-function claudeMd({ integrationRules, goals, company, team, memory, growthMap }: ClaudeMdSections): string {
+function claudeMd({ integrationRules, goals, company, team, memory, growthMap, switches }: ClaudeMdSections): string {
   return `${GENERATED_MARKER} v${CLAUDE_MD_VERSION}. Tethr rewrites this file every turn; save memories with the memory tool. -->
 # Tethr workspace
 
@@ -97,6 +106,8 @@ ${goals.trim()}
 ${growthMap.trim()}
 `}${team === null ? "" : `
 ${team.trim()}
+`}${switches === null ? "" : `
+${switches.trim()}
 `}${memory === null ? "" : `
 ${memory.trim()}
 `}`;
@@ -117,6 +128,8 @@ export async function ensureWorkspace(
     memory?: string | null;
     /** Phase 26.9: the growth map block (growth-map/text.ts growthMapContextText). */
     growthMap?: string | null;
+    /** What's switched on (switches.ts switchesContextText). */
+    switches?: string | null;
   } = {},
 ) {
   const { dir, inDrive } = workspaceDir();
@@ -130,6 +143,7 @@ export async function ensureWorkspace(
     team: opts.team ?? null,
     memory: opts.memory ?? null,
     growthMap: opts.growthMap ?? null,
+    switches: opts.switches ?? null,
   });
   let current: string | null = null;
   try {

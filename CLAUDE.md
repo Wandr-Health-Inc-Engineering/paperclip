@@ -1463,6 +1463,22 @@ utilize it but stick with the subscription style not API for now." Plan: `tasks/
     can't do anything". The growth map block says a level is how much tethr knows about an area, not
     how much it matters. Before this, a fresh chat with no memory recommended Partnerships for having
     the highest level, after Mark had said partners bring about one order a month.
+  - **A "what next" answer has a fixed shape (2026-11-10):** the pick in one sentence with its size,
+    where we are and the gap, an **options table** (gain a month within ~90 days, cost, confidence, how
+    sized; at least three rows, one of them doing more of what's already working), the plan, then act
+    in the same reply (an agent card, a goal, or a switch to name; never "if you want, I can…"). With
+    principles alone it still ranked partners first for being "20x behind" their own target (a
+    percentage, not impact) in 3 of 4 runs; with the shape, 2 of 2 runs picked organic search/SEO
+    with the math and ranked partners last. **Throwaways started with `pnpm --filter
+    @paperclipai/server dev` don't reload on edits** (`tsx src/index.ts`, no watch): restart one
+    after changing server code, or you're testing the old prompt.
+  - **"What's switched on"** (`assistant/switches.ts`, CLAUDE.md v6): every turn lists tethr's
+    built-in features (Monday plan, Friday scorecard, daily brief, Slack ideas, check-ins, daily
+    review, the learner, the Inbox), whether each is on, and where a person switches it on. tethr
+    can't switch them itself; it recommends one when it serves the pick, and never makes an agent for
+    a job one of them does (no "metrics reporter" agent: that's the Friday scorecard). With no
+    working agents, "Running the team" adds that a recommendation comes with the agent that will run
+    it even if nobody asked about agents. Tests: `tethr-switches.test.ts` (4).
 - **UI:**
   - The Memory page (`TethrMemory.tsx`) has entries with who saved them, edit, remove, add, usage
     bars, the "Not moved" list, a past-conversation search and skills.

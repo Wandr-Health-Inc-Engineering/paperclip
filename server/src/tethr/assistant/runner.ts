@@ -29,6 +29,8 @@ import { TETHR_TOOL_DEFS, TETHR_TOOLS_LABEL } from "./tethr-tools.js";
 const NON_TEAM_TETHR_TOOLS = TETHR_TOOL_DEFS.map((d) => d.name).filter((n) => !(TEAM_TOOL_NAMES as readonly string[]).includes(n));
 import { buildMcpConfig, ensureToolsBridge, removeMcpConfig, writeMcpConfig } from "./tools-bridge.js";
 import { ensureWorkspace, readableRoots } from "./workspace.js";
+import { switchesContextText } from "./switches.js";
+import { decisionMode } from "../decide/decide.js";
 import { renderMemoryBlock } from "../hermes/entries.js";
 import { indexTurnSoon } from "../hermes/indexer.js";
 import { memorySnapshot, migrateFreeformMemory } from "../hermes/memory-layer.js";
@@ -360,15 +362,24 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       cfg = getIntegrations(companyId);
       const goals = goalsContextText(await goalsService(db).list(companyId));
       const company = companyContextText(await companyProfileService(db).get(companyId));
+      const roster = await team.list(companyId);
+      const setup = getSetup(companyId);
       // The team section needs Tethr's tools (create_agent, assign_task…).
       const teamText =
         modeFor(cfg, TETHR_TOOLS_LABEL) === "off"
           ? null
-          : teamContextText(await team.list(companyId), {
+          : teamContextText(roster, {
               settings: cfg.team,
-              timezone: getSetup(companyId).timezone,
+              timezone: setup.timezone,
               ownerNames: Object.fromEntries(Object.entries(getRoster(companyId)).map(([role, o]) => [role, o.name])),
             });
+      const learner = roster.find((a) => a.sandbox) ?? null;
+      const switches = switchesContextText({
+        setup,
+        autonomy: cfg.team.autonomy,
+        learner: learner && { tag: learner.tag, paused: learner.paused, cron: learner.schedule?.cron ?? null },
+        inboxFiling: decisionMode(companyId, "inbox.destination"),
+      });
       // A lead always gets the tethr server, for its team tools.
       tethrTools = modeFor(cfg, TETHR_TOOLS_LABEL) !== "off" && (!member || member.lead || member.connectors.includes(TETHR_TOOLS_LABEL));
       // Phase 25: the Memory block, from Hermes (or the built-in store), every turn.
@@ -389,7 +400,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       // and none of the above: no memory, no team, no goals beyond their titles.
       ws = sandboxed
         ? await ensureSandboxWorkspace(member!.tag, await sandboxClaudeMd(db, companyId))
-        : await ensureWorkspace({ integrationRules: integrationRulesText(cfg), goals, company, team: teamText, memory, growthMap: growthMapText });
+        : await ensureWorkspace({ integrationRules: integrationRulesText(cfg), goals, company, team: teamText, memory, growthMap: growthMapText, switches });
       ({ personaPath, skillDir } = await ensurePersona());
       const hookScript = await ensureHookScript();
       if (tethrTools) bridgeScript = await ensureToolsBridge();
