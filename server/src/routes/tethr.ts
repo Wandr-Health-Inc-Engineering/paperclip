@@ -80,6 +80,8 @@ import { tethrSetupRoutes } from "./tethr-setup.js";
 import { tethrTeamRoutes } from "./tethr-team.js";
 import { tethrMemoryRoutes } from "./tethr-memory.js";
 import { tethrGrowthMapRoutes } from "./tethr-growth-map.js";
+import { tethrDecisionRoutes } from "./tethr-decisions.js";
+import { tethrInboxRoutes } from "./tethr-inbox.js";
 
 const execFileAsync = promisify(execFile);
 let cachedSha: string | null = null;
@@ -626,6 +628,15 @@ export function tethrRoutes(db: Db) {
           .from(tethrIdeas)
           .where(and(eq(tethrIdeas.companyId, companyId), inArray(tethrIdeas.cardRunId, cardIds)))
       : [];
+    // Phase 26.3: Inbox cards carry their item (for the file / leave / put back buttons).
+    const inboxCardIds = runs.filter((r) => r.sourceKey === "tethr-inbox").map((r) => r.id);
+    const { tethrInboxItems } = await import("@paperclipai/db");
+    const inboxItems = inboxCardIds.length
+      ? await db
+          .select()
+          .from(tethrInboxItems)
+          .where(and(eq(tethrInboxItems.companyId, companyId), inArray(tethrInboxItems.cardRunId, inboxCardIds)))
+      : [];
     res.json(
       runs.map((run) => {
         // Attached files come back as their own list; the bubble shows only the words.
@@ -635,6 +646,7 @@ export function tethrRoutes(db: Db) {
           requestText: text,
           attachments: files.map((f) => ({ path: f, name: f.split("/").pop() ?? f, kind: attachmentKind(f), panelPath: panelPathFor(f, ws, mirror) })),
           idea: ideas.find((i) => i.cardRunId === run.id) ?? null,
+          inbox: inboxItems.find((i) => i.cardRunId === run.id) ?? null,
           outputs: outputs.filter((o) => o.routeRunId === run.id),
         };
       }),
@@ -854,6 +866,8 @@ export function tethrRoutes(db: Db) {
   router.use(tethrTeamRoutes(db));
   router.use(tethrMemoryRoutes(db));
   router.use(tethrGrowthMapRoutes(db));
+  router.use(tethrDecisionRoutes(db));
+  router.use(tethrInboxRoutes(db));
 
   router.put("/tethr/:companyId/integrations", async (req, res) => {
     const companyId = req.params.companyId as string;

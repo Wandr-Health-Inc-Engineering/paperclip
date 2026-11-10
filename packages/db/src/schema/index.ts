@@ -95,3 +95,8 @@ export { tethrGoalMetrics } from "./tethr_goal_metrics.js";
 export type { TethrMetricAdjustment, TethrMetricPoint } from "./tethr_goal_metrics.js";
 export { tethrMembers } from "./tethr_members.js";
 export { tethrIdeas } from "./tethr_ideas.js";
+export { tethrDecisions } from "./tethr_decisions.js";
+export { tethrInboxItems } from "./tethr_inbox_items.js";
+export type { InboxSuggestion } from "./tethr_inbox_items.js";
+export { tethrLessons } from "./tethr_lessons.js";
+export type { LessonApplied, LessonScores, LessonSource } from "./tethr_lessons.js";

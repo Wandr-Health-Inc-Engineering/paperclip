@@ -103,3 +103,47 @@ export function injectionReason(text: string): string | null {
   for (const [re, why] of INJECTION) if (re.test(text)) return why;
   return null;
 }
+
+// ---- Card numbers and keys (phase 26.3) -----------------------------------------
+// Before a file's text goes to Jev, it's checked here on the Mac. A payment card
+// number or a secret key means "a person looks at this": nothing is sent and
+// nothing is filed on its own.
+
+const KEY_PATTERNS: Array<[RegExp, string]> = [
+  [/-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----/, "a private key"],
+  [/\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}/, "a Stripe secret key"],
+  [/\bAKIA[0-9A-Z]{16}\b/, "an AWS access key"],
+  [/\bgh[pousr]_[A-Za-z0-9]{30,}/, "a GitHub token"],
+  [/\bxox[abpr]-[A-Za-z0-9-]{10,}/, "a Slack token"],
+  [/\bAIza[0-9A-Za-z_-]{35}\b/, "a Google API key"],
+  [/\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{24,}/, "an API key"],
+  [/\bvck_[A-Za-z0-9]{20,}/, "a Vercel key"],
+];
+
+function luhn(digits: string): boolean {
+  let sum = 0;
+  for (let i = 0; i < digits.length; i++) {
+    let d = Number(digits[digits.length - 1 - i]);
+    if (i % 2 === 1) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+  }
+  return sum % 10 === 0;
+}
+
+/** Why this text holds a payment card number or a secret key, or null. */
+export function secretReason(text: string): string | null {
+  for (const [re, what] of KEY_PATTERNS) if (re.test(text)) return `it contains ${what}`;
+  for (const m of text.matchAll(/\b(?:\d[ -]?){13,19}\b/g)) {
+    const digits = m[0].replace(/\D/g, "");
+    if (digits.length >= 13 && digits.length <= 19 && /^[3-6]/.test(digits) && luhn(digits)) return "it contains what looks like a payment card number";
+  }
+  return null;
+}
+
+/** Why a person has to look at this before anything else happens, or null. */
+export function needsPersonReason(text: string): string | null {
+  return personalHealthReason(text) ?? secretReason(text);
+}

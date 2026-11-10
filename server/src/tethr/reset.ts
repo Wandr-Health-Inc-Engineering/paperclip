@@ -70,6 +70,10 @@ function storeFiles(): string[] {
     pick("TETHR_MEMORY_FILE", "tethr-memory.json"),
     // Phase 26.9: the growth map's audits, links and focus.
     pick("TETHR_GROWTH_MAP_FILE", "tethr-growth-map.json"),
+    // Phase 26: Jev decision settings, the Inbox's folder profiles and rules, the learner.
+    pick("TETHR_DECISIONS_FILE", "tethr-decisions.json"),
+    pick("TETHR_INBOX_FILE", "tethr-inbox.json"),
+    pick("TETHR_LEARNING_FILE", "tethr-learning.json"),
   ];
 }
 

@@ -36,6 +36,9 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
   // Phase 25: past chat turns into Hermes (only for companies that use it).
   const { startMemoryIndexer } = await import("./hermes/indexer.js");
   startMemoryIndexer(db);
+  // Phase 26.3: tethr's Inbox (the Drive's 00 Inbox folder), once a minute.
+  const { startInboxWatcher } = await import("./inbox/pipeline.js");
+  startInboxWatcher(db);
 }
 
 /**

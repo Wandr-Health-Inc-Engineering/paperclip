@@ -5,7 +5,9 @@ import { tethrOutputs, tethrRouteRuns } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { ATTACH_LIMITS, saveAttachment, withAttachments } from "./assistant/attachments.js";
 import type { SlackReplyTarget } from "./assistant/gate.js";
+import { resolveInFiles } from "./assistant/files.js";
 import { workspaceDir } from "./assistant/workspace.js";
+import { mirrorDir } from "./mirror.js";
 import { logFailure } from "./best-effort.js";
 import * as chats from "./chats.js";
 import { companyProfileService } from "./company.js";
@@ -188,6 +190,21 @@ export async function startSlackChatTurn(
       await reply(`I couldn't open ${skipped.map((s) => `${s.name} (${s.why})`).join(", ")}.`);
     }
     if (!paths.length && !req.requestText.trim()) return null;
+    // Phase 26.3: files sent with no message go to tethr's Inbox to be filed.
+    if (!req.requestText.trim() && mirrorDir()) {
+      const { inboxService } = await import("./inbox/pipeline.js");
+      const names: string[] = [];
+      for (const rel of paths) {
+        const resolved = resolveInFiles(workspaceDir().dir, rel, "file");
+        if ("error" in resolved) continue;
+        const item = await inboxService(db).takeWorkspaceFile(companyId, resolved.abs, "slack").catch(logFailure("Slack file to the Inbox"));
+        if (item) names.push(item.name);
+      }
+      if (names.length) {
+        await reply(`Put ${names.join(", ")} in tethr's Inbox. Where ${names.length === 1 ? "it goes" : "they go"} is waiting for you in tethr.`);
+        return null;
+      }
+    }
     text = withAttachments(text, paths);
   }
 
