@@ -33,6 +33,9 @@ import { indexTurnSoon } from "../hermes/indexer.js";
 import { memorySnapshot, migrateFreeformMemory } from "../hermes/memory-layer.js";
 import { growthMap } from "../growth-map/evidence.js";
 import { growthMapContextText } from "../growth-map/text.js";
+import { ensureSandboxWorkspace, sandboxClaudeMd } from "../learn/learner.js";
+import { SANDBOX_TOOLS } from "./learn-tools.js";
+import { SANDBOX_BUILTINS } from "./sandbox.js";
 
 // The chat assistant runner (phase 18). Each Chat thread drives ONE Claude Code
 // session (resumed per thread) through Paperclip core's claude-local adapter
@@ -329,6 +332,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     let settingsPath: string;
     let bridgeScript: string | null = null;
     let tethrTools = false;
+    const sandboxed = member?.sandbox === true;
     try {
       cfg = getIntegrations(companyId);
       const goals = goalsContextText(await goalsService(db).list(companyId));
@@ -357,13 +361,18 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
           logFailure("working out the growth map for a chat turn", { companyId })(err);
           return null;
         });
-      ws = await ensureWorkspace({ integrationRules: integrationRulesText(cfg), goals, company, team: teamText, memory, growthMap: growthMapText });
+      // Phase 26.6: a sandboxed agent (the learner) gets its own sealed folder
+      // and none of the above: no memory, no team, no goals beyond their titles.
+      ws = sandboxed
+        ? await ensureSandboxWorkspace(member!.tag, await sandboxClaudeMd(db, companyId))
+        : await ensureWorkspace({ integrationRules: integrationRulesText(cfg), goals, company, team: teamText, memory, growthMap: growthMapText });
       ({ personaPath, skillDir } = await ensurePersona());
       const hookScript = await ensureHookScript();
       if (tethrTools) bridgeScript = await ensureToolsBridge();
       const deny = [
         ...denyRulesFor(cfg),
         ...(member ? agentDenyRules(member.connectors, teamConnectorLabels(companyId), { lead: member.lead, otherTethrTools: NON_TEAM_TETHR_TOOLS }) : []),
+        ...(sandboxed ? [...TETHR_TOOL_DEFS.filter((d) => !SANDBOX_TOOLS.has(d.name)).map((d) => `mcp__tethr__${d.name}`), "Skill", "TodoWrite"] : []),
       ];
       settingsPath = await writeSettingsFile(companyId, buildSettings({ nodePath: process.execPath, hookScript, deny }), member ? `agent-${member.tag}` : undefined);
     } catch (err) {
@@ -440,7 +449,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     const mirror = mirrorDir();
     const turn = newTurnState();
     const eventCtx = {
-      policy: { workspaceDir: ws.dir, readableRoots: readableRoots(), internalAddresses: cfg.internalAddresses },
+      policy: { workspaceDir: ws.dir, readableRoots: sandboxed ? [ws.dir] : readableRoots(), internalAddresses: cfg.internalAddresses },
       mirrorRoot: mirror,
     };
 
@@ -526,8 +535,9 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
             "dontAsk",
             "--include-partial-messages",
             "--tools",
-            builtinTools(member ? "off" : cfg.shell),
-            ...(mirror && !ws.dir.startsWith(mirror) ? ["--add-dir", mirror] : []),
+            sandboxed ? SANDBOX_BUILTINS.join(",") : builtinTools(member ? "off" : cfg.shell),
+            // The sealed folder sees nothing else: not the shared Drive, not the user's own CLAUDE.md or skills.
+            ...(sandboxed ? ["--setting-sources", "project"] : mirror && !ws.dir.startsWith(mirror) ? ["--add-dir", mirror] : []),
           ],
         },
         context: { tethrPrompt: prompt },

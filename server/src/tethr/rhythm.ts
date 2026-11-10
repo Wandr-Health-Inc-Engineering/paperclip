@@ -42,8 +42,9 @@ ${SAFETY}`,
 1. Call goals_list.
 2. Measure every metric exactly the way its method says, for the period it describes, with the connected tools.
 3. Record each value with record_metric, noting the window you measured.
-4. Write files/scorecards/<YYYY-MM-DD>.md: a table of each metric (baseline, last value, now, target and date, on or off track), what moved and the likely reason, and the 1-3 things most worth doing next week.
-5. Reply with a short summary that leads with anything off track. If a metric couldn't be measured, say why and what's needed to measure it.
+4. What we tried: call lessons_due. For each applied lesson whose review date has come, read the number it should move, say whether the lesson held, and suggest keeping or retiring it with review_lesson (a person confirms).
+5. Write files/scorecards/<YYYY-MM-DD>.md: a table of each metric (baseline, last value, now, target and date, on or off track), what moved and the likely reason, a "What we tried" section, and the 1-3 things most worth doing next week.
+6. Reply with a short summary that leads with anything off track. If a metric couldn't be measured, say why and what's needed to measure it.
 ${SAFETY}`,
   },
   brief: {

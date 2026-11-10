@@ -6,6 +6,8 @@ import type { HookTokenContext } from "./gate.js";
 import { canonicalJson, consumeGrant, createPendingAction, findPending, inputHash, MAX_APPROVAL_INPUT_CHARS, recordFailure, recordOutcome, shortId } from "./grants.js";
 import { classify, decide, resolvesToPrivateHost } from "./policy.js";
 import { agentToolRefusal } from "../team-spec.js";
+import { sandboxDir } from "../learn/learner.js";
+import { sandboxRefusal } from "./sandbox.js";
 import { teamService } from "../team.js";
 import { readableRoots, workspaceDir } from "./workspace.js";
 
@@ -32,12 +34,6 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
   const toolName = String(payload.tool_name ?? "");
   const toolInput = (payload.tool_input ?? {}) as Record<string, unknown>;
   const cfg = getIntegrations(ctx.companyId);
-  const c = classify(toolName, toolInput, {
-    workspaceDir: workspaceDir().dir,
-    readableRoots: readableRoots(),
-    internalAddresses: cfg.internalAddresses,
-    cwd: typeof payload.cwd === "string" && payload.cwd ? payload.cwd : undefined,
-  });
   // Phase 23: in an agent's thread, only its own connectors (and never the
   // shell or tethr's team tools). The turn's deny rules say the same; this is
   // the gate's own check.
@@ -48,6 +44,18 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
     // An agent's limits can't be checked, so nothing runs (never fall back to tethr's own rights).
     return preDecision("deny", "Tethr approval gate: couldn't check whose chat this is, so this was not done. Try again.");
   }
+  // Phase 26.6: a sandboxed agent reads and writes only its own sealed folder.
+  const sealed = member?.sandbox ? sandboxDir(member.tag) : null;
+  if (member && sealed) {
+    const refusal = sandboxRefusal(member.tag, toolName);
+    if (refusal) return preDecision("deny", refusal);
+  }
+  const c = classify(toolName, toolInput, {
+    workspaceDir: sealed ?? workspaceDir().dir,
+    readableRoots: sealed ? [sealed] : readableRoots(),
+    internalAddresses: cfg.internalAddresses,
+    cwd: typeof payload.cwd === "string" && payload.cwd ? payload.cwd : undefined,
+  });
   if (member) {
     const refusal = agentToolRefusal(member, toolName, c.connector);
     if (refusal) return preDecision("deny", refusal);

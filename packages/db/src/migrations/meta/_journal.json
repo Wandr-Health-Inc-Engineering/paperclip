@@ -687,6 +687,13 @@
       "when": 1794282487678,
       "tag": "0097_brave_freak",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1794283178222,
+      "tag": "0098_complete_scourge",
+      "breakpoints": true
     }
   ]
 }

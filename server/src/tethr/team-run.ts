@@ -91,7 +91,12 @@ export async function runTaskInAgentChat(
   const identity: AgentIdentity = { ...agent, subTeam: agent.lead ? (await team.subTeam(companyId, agent.tag)).map((a) => a.tag) : [] };
   const text = input.rollup
     ? agentRollupText(identity, { identifier: issue.identifier, title: issue.title }, input.rollup)
-    : agentTaskText(identity, { identifier: issue.identifier, title: issue.title, brief: issue.description });
+    : agentTaskText(identity, {
+        identifier: issue.identifier,
+        title: issue.title,
+        // Phase 26.6: the learner's brief is built fresh each run (area, goals behind, what's known, sources).
+        brief: agent.sandbox ? await import("./learn/learner.js").then(async (l) => l.studyBrief(await l.planStudy(db, companyId, agent.tag))) : issue.description,
+      });
   const { getAssistantRunner } = await import("./assistant/runner.js");
   const turnStart = new Date(Date.now() - 1_000);
   const { routeRunId } = await getAssistantRunner(db).send({ companyId, threadId: agent.threadId, text, kind: "system", task: true });

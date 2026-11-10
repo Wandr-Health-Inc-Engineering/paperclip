@@ -147,3 +147,24 @@ export function secretReason(text: string): string | null {
 export function needsPersonReason(text: string): string | null {
   return personalHealthReason(text) ?? secretReason(text);
 }
+
+// ---- Medical claims (phase 26.6) ----------------------------------------------------
+// A lesson the learner brings back is about growing the business. One that makes
+// a medical claim (what a drug does, a dose, a diagnosis) is dropped: that's a
+// licensed person's call, never tethr's.
+
+const MEDICAL_CLAIM: RegExp[] = [
+  /\b(?:cures?|cured)\b/i,
+  /\bprevents? (?:malaria|disease|infections?|illness|sickness|[a-z]+ fever)\b/i,
+  /\b(?:dosage|dosing|doses? of|mg\b|milligrams?)\b/i,
+  /\bside[- ]effects?\b/i,
+  /\bcontraindicat\w*/i,
+  /\b(?:efficacy|effective against|clinically proven)\b/i,
+  /\bdiagnos(?:e|es|ed|is|ing)\b/i,
+  /\b(?:take|taking|prescribe|prescribing) (?:it|them|this|these|\w+(?:quine|mycin|cillin|floxacin|zole|prazole))\b/i,
+];
+
+/** Why this text makes a medical claim, or null. */
+export function medicalClaimReason(text: string): string | null {
+  return MEDICAL_CLAIM.some((re) => re.test(text)) ? "it makes a medical claim, which is a licensed person's call" : null;
+}

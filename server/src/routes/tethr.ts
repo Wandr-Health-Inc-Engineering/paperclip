@@ -82,6 +82,10 @@ import { tethrMemoryRoutes } from "./tethr-memory.js";
 import { tethrGrowthMapRoutes } from "./tethr-growth-map.js";
 import { tethrDecisionRoutes } from "./tethr-decisions.js";
 import { tethrInboxRoutes } from "./tethr-inbox.js";
+import { tethrLearningRoutes } from "./tethr-learning.js";
+import { SANDBOX_TOOLS } from "../tethr/assistant/learn-tools.js";
+import { sandboxRefusal } from "../tethr/assistant/sandbox.js";
+import { sandboxDir } from "../tethr/learn/learner.js";
 
 const execFileAsync = promisify(execFile);
 let cachedSha: string | null = null;
@@ -169,7 +173,9 @@ export function tethrRoutes(db: Db) {
       const tools = (
         !member
           ? TETHR_TOOL_DEFS
-          : TETHR_TOOL_DEFS.filter((d) => (isTeamTool(d.name) ? member.lead : member.connectors.includes(TETHR_TOOLS_LABEL)))
+          : member.sandbox
+            ? TETHR_TOOL_DEFS.filter((d) => SANDBOX_TOOLS.has(d.name))
+            : TETHR_TOOL_DEFS.filter((d) => (isTeamTool(d.name) ? member.lead : member.connectors.includes(TETHR_TOOLS_LABEL)))
       )
         .filter((d) => !memoryToolRefusal(d.name, { private: ctx.privateTurn === true, member }, backend))
         .filter((d) => ctx.privateTurn !== true || readOnly(d.name));
@@ -194,6 +200,7 @@ export function tethrRoutes(db: Db) {
     });
     const decision = decide(classified, { mode: modeFor(cfg, TETHR_TOOLS_LABEL), shell: cfg.shell });
     const refusal =
+      (member?.sandbox ? sandboxRefusal(member.tag, `mcp__${TETHR_TOOLS_SERVER}__${name}`) : null) ??
       (member ? agentToolRefusal(member, `mcp__${TETHR_TOOLS_SERVER}__${name}`, TETHR_TOOLS_LABEL) : null) ??
       (ctx.privateTurn === true && classified.cls !== "read" ? `Tethr approval gate: blocked. ${name} isn't available in this one-off check.` : null);
     if (decision.action !== "allow" || refusal) {
@@ -202,7 +209,7 @@ export function tethrRoutes(db: Db) {
       return;
     }
     const result = await runTethrTool(name, body.arguments, {
-      workspaceDir: workspaceDir().dir,
+      workspaceDir: member?.sandbox ? sandboxDir(member.tag) : workspaceDir().dir,
       db,
       companyId: ctx.companyId,
       threadId: ctx.threadId,
@@ -628,6 +635,24 @@ export function tethrRoutes(db: Db) {
           .from(tethrIdeas)
           .where(and(eq(tethrIdeas.companyId, companyId), inArray(tethrIdeas.cardRunId, cardIds)))
       : [];
+    // Phase 26.4: an agent's report card carries Jev's "needs you now / can wait".
+    const reportIds = runs.filter((r) => r.sourceKey === "tethr-agent-report").map((r) => r.id);
+    const { tethrDecisions } = await import("@paperclipai/db");
+    const urgencies = reportIds.length
+      ? await db
+          .select({ id: tethrDecisions.id, subjectId: tethrDecisions.subjectId, pick: tethrDecisions.pick, outcome: tethrDecisions.outcome, correctedTo: tethrDecisions.correctedTo, options: tethrDecisions.options })
+          .from(tethrDecisions)
+          .where(and(eq(tethrDecisions.companyId, companyId), eq(tethrDecisions.kind, "report.urgency"), inArray(tethrDecisions.subjectId, reportIds)))
+      : [];
+    // Phase 26.5: lesson cards carry their lesson (Apply / Not for us).
+    const lessonCardIds = runs.filter((r) => r.sourceKey === "tethr-lesson").map((r) => r.id);
+    const { tethrLessons } = await import("@paperclipai/db");
+    const lessonRows = lessonCardIds.length
+      ? await db
+          .select()
+          .from(tethrLessons)
+          .where(and(eq(tethrLessons.companyId, companyId), inArray(tethrLessons.cardRunId, lessonCardIds)))
+      : [];
     // Phase 26.3: Inbox cards carry their item (for the file / leave / put back buttons).
     const inboxCardIds = runs.filter((r) => r.sourceKey === "tethr-inbox").map((r) => r.id);
     const { tethrInboxItems } = await import("@paperclipai/db");
@@ -647,6 +672,8 @@ export function tethrRoutes(db: Db) {
           attachments: files.map((f) => ({ path: f, name: f.split("/").pop() ?? f, kind: attachmentKind(f), panelPath: panelPathFor(f, ws, mirror) })),
           idea: ideas.find((i) => i.cardRunId === run.id) ?? null,
           inbox: inboxItems.find((i) => i.cardRunId === run.id) ?? null,
+          urgency: urgencies.find((u) => u.subjectId === run.id) ?? null,
+          lesson: lessonRows.find((l) => l.cardRunId === run.id) ?? null,
           outputs: outputs.filter((o) => o.routeRunId === run.id),
         };
       }),
@@ -868,6 +895,7 @@ export function tethrRoutes(db: Db) {
   router.use(tethrGrowthMapRoutes(db));
   router.use(tethrDecisionRoutes(db));
   router.use(tethrInboxRoutes(db));
+  router.use(tethrLearningRoutes(db));
 
   router.put("/tethr/:companyId/integrations", async (req, res) => {
     const companyId = req.params.companyId as string;

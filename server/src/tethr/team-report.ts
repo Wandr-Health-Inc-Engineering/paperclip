@@ -137,7 +137,12 @@ export async function deliverAgentReport(db: Db, r: AgentReport, deps: { post?: 
     .send({ companyId: r.companyId, kind: "run", title: headline, body: summary ?? undefined, href: `/chat?chat=${r.agent.threadId}`, agentTag: r.agent.tag })
     .catch(logFailure("agent report bell", { tag: r.agent.tag }));
 
-  await postReportToSlack(db, r, summary, deps.post);
+  // Phase 26.4: Jev may judge whether it needs the owner now (report.urgency).
+  // A report that can wait is held for the daily review only when that kind is
+  // Automatic and Jev is above its confidence bar.
+  const { reportUrgency } = await import("./decide/points.js");
+  const urgency = await reportUrgency(db, r.companyId, { cardRunId: card.id, agentTag: r.agent.tag, headline, summary, body }).catch(() => null);
+  if (!urgency?.hold) await postReportToSlack(db, r, summary, deps.post);
   return { cardRunId: card.id };
 }
 

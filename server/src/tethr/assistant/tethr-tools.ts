@@ -12,6 +12,7 @@ import { FILES_DIR } from "./workspace.js";
 import { runTeamTool, TEAM_TOOL_DEFS, TEAM_TOOL_SET } from "./team-tools.js";
 import { MEMORY_TOOL_DEFS, MEMORY_TOOL_SET, runMemoryTool } from "./memory-tools.js";
 import { MAP_TOOL_DEFS, MAP_TOOL_SET, runMapTool } from "./map-tools.js";
+import { LEARN_TOOL_DEFS, LEARN_TOOL_SET, runLearnTool } from "./learn-tools.js";
 
 export { parseCsv, toCsv };
 
@@ -110,10 +111,10 @@ export const TETHR_TOOL_DEFS: McpToolDef[] = [
           },
         },
         context: { type: "string", description: "Background every item is judged against (max 4,000 characters)." },
+        template: { type: "string", enum: ["leads", "partners"], description: "Ready-made criteria for leads or partners, used when you give no criteria." },
         top: { type: "integer", minimum: 1, maximum: 100, description: "How many top rows to return (default 25)." },
         save_as: { type: "string", description: "CSV file name in ./files/ for every row." },
       },
-      required: ["criteria"],
     },
   },
   {
@@ -191,9 +192,30 @@ export const TETHR_TOOL_DEFS: McpToolDef[] = [
   ...TEAM_TOOL_DEFS,
   ...MEMORY_TOOL_DEFS,
   ...MAP_TOOL_DEFS,
+  ...LEARN_TOOL_DEFS,
 ];
 
 // ---- criteria --------------------------------------------------------------
+
+/**
+ * Phase 26.4: ready-made criteria for lists the team scores often. `template`
+ * fills `criteria` when none are given; `context` still says what the company
+ * sells and who it's for.
+ */
+export const SCORE_TEMPLATES: Record<string, unknown[]> = {
+  leads: [
+    { name: "fit", question: "How well does this lead fit who the company sells to?", type: "score", levels: ["No fit", "Weak fit", "Some fit", "Good fit", "Ideal customer"], weight: 3 },
+    { name: "need", question: "How likely is it that this lead needs what the company sells soon?", type: "score", levels: ["No sign of need", "Possible someday", "Likely this year", "Clear need now"], weight: 2 },
+    { name: "reachable", question: "Is there a clear way to reach a decision-maker at this lead?", type: "yes_no", weight: 1 },
+    { name: "competitor_customer", question: "Does this lead already use a direct competitor?", type: "yes_no", want: "no", weight: 1 },
+  ],
+  partners: [
+    { name: "audience_overlap", question: "How much does this partner's audience overlap with the company's customers?", type: "score", levels: ["None", "A little", "Some", "A lot", "Almost the same people"], weight: 3 },
+    { name: "trust", question: "How much do that audience trust this partner's recommendations?", type: "score", levels: ["Not at all", "A little", "Somewhat", "A lot"], weight: 2 },
+    { name: "reach", question: "How big is this partner's reach, relative to similar partners?", type: "score", levels: ["Tiny", "Small", "Medium", "Large"], weight: 1 },
+    { name: "conflict", question: "Does this partner sell something that competes with the company?", type: "yes_no", want: "no", weight: 2 },
+  ],
+};
 
 export interface Criterion {
   key: string;
@@ -425,7 +447,9 @@ export async function runScoreList(args: Record<string, unknown>, ctx: TethrTool
       meta: { configured: false },
     };
   }
-  const criteria = parseCriteria(args.criteria);
+  const template = typeof args.template === "string" ? SCORE_TEMPLATES[args.template] : undefined;
+  if (args.template !== undefined && !template) return { text: `score_list: template is one of ${Object.keys(SCORE_TEMPLATES).join(", ")}.`, isError: true };
+  const criteria = parseCriteria(args.criteria ?? template);
   if (typeof criteria === "string") return { text: `score_list: ${criteria}`, isError: true };
   const context = typeof args.context === "string" ? args.context.trim() : "";
   if (context.length > SCORE_LIMITS.contextChars) return { text: "score_list: context is over 4,000 characters; shorten it.", isError: true };
@@ -649,6 +673,7 @@ export async function runTethrTool(name: string, args: unknown, ctx: TethrToolCo
     if (TEAM_TOOL_SET.has(name)) return await runTeamTool(name, a, ctx);
     if (MEMORY_TOOL_SET.has(name)) return await runMemoryTool(name, a, ctx);
     if (MAP_TOOL_SET.has(name)) return await runMapTool(name, a, ctx);
+    if (LEARN_TOOL_SET.has(name)) return await runLearnTool(name, a, ctx);
     return { text: `There's no Tethr tool called ${name}.`, isError: true };
   } catch (err) {
     if (err instanceof GoalInputError) return { text: `${name}: ${err.message}`, isError: true };

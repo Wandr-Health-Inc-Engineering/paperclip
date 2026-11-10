@@ -272,9 +272,12 @@ export class Watcher {
   private async pickCandidate(companyId: string, settled: Conversation[], now: Date): Promise<Candidate | null> {
     const nowMs = now.getTime();
     if (settled.length) {
-      // One at a time; the rest wait for new messages.
-      for (const other of settled.slice(1)) other.evaluatedAt = nowMs;
-      return slackCandidate(this.db, companyId, settled[0]);
+      // One at a time; the rest wait for new messages. Phase 26.4: Jev may rank
+      // them first (idea.rank, off unless a person switched it on).
+      const { rankConversations } = await import("./decide/points.js");
+      const ordered = await rankConversations(this.db, companyId, settled).catch(() => settled);
+      for (const other of ordered.slice(1)) other.evaluatedAt = nowMs;
+      return slackCandidate(this.db, companyId, ordered[0]);
     }
     if (nowMs - this.lastSlowCheckAt < WATCH.slowCheckMs) return null;
     this.lastSlowCheckAt = nowMs;

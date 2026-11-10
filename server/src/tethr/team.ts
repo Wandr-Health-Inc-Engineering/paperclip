@@ -65,6 +65,8 @@ export interface TeamAgent {
   leadTag: string | null;
   goalId: string | null;
   goalTitle: string | null;
+  /** Phase 26.6: works in a sealed room (the learner): its own folder, no memory, no connectors. */
+  sandbox: boolean;
 }
 
 /** The fields of a team agent's adapterConfig. */
@@ -80,6 +82,7 @@ interface TeamConfig {
   lead: boolean;
   leadTag: string | null;
   goalId: string | null;
+  sandbox?: boolean;
 }
 
 type Actor = { userId?: string | null; agentId?: string | null };
@@ -200,6 +203,7 @@ export function teamService(db: Db) {
       leadTag: config.leadTag ?? null,
       goalId: config.goalId ?? null,
       goalTitle: config.goalId ? (goalTitles.get(config.goalId) ?? null) : null,
+      sandbox: config.sandbox === true,
     };
   }
 
@@ -345,7 +349,7 @@ export function teamService(db: Db) {
     companyId: string,
     spec: TeamAgentSpec,
     actor: Actor & { via: "approval" | "auto" },
-    opts: { lead?: TeamAgent | null } = {},
+    opts: { lead?: TeamAgent | null; sandbox?: boolean } = {},
   ): Promise<TeamAgent> {
     const router = await org.getRouterProfile(companyId);
     if (!router) throw new Error("No @tethr agent in this company.");
@@ -372,6 +376,7 @@ export function teamService(db: Db) {
       lead: !lead && spec.lead,
       leadTag: lead?.tag ?? null,
       goalId,
+      ...(opts.sandbox ? { sandbox: true } : {}),
     };
     const [row] = await db
       .insert(agents)

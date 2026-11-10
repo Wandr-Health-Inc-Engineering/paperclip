@@ -53,6 +53,8 @@ export const tethrLessons = pgTable(
     reviewAt: timestamp("review_at", { withTimezone: true }),
     /** What happened when it was reviewed, or why it was turned down. */
     outcome: text("outcome"),
+    /** tethr's suggestion at review time (kept | retired), waiting for a person. */
+    verdict: text("verdict"),
     proposedBy: text("proposed_by").notNull(),
     /** The main-chat card offering it. */
     cardRunId: uuid("card_run_id"),

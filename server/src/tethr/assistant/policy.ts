@@ -141,7 +141,7 @@ const CONNECTOR_RULES: Record<string, Rule[]> = {
   // run in the Tethr server; they change nothing outside its files/ folder.
   "Tethr tools": [
     // make_document only writes a new file into Tethr's own files/ folder.
-    [/^(score_list|keyword_ideas|goals_list|make_document|team_list|growth_map)$/, "read"],
+    [/^(score_list|keyword_ideas|goals_list|make_document|team_list|growth_map|lessons_due)$/, "read"],
     // Goals live in Tethr itself: saving one changes nothing outside Tethr.
     [/^(save_goal|save_metric|record_metric)$/, "draft"],
     // Phase 23: running tethr's team happens inside Tethr. New agents and
@@ -153,6 +153,8 @@ const CONNECTOR_RULES: Record<string, Rule[]> = {
     [/^(memory|skill_save)$/, "draft"],
     // Phase 26.9: the growth map lives in Tethr; an audit or link changes nothing outside it.
     [/^map_area$/, "draft"],
+    // Phase 26.5-26.6: lessons are proposed, queued and reviewed inside Tethr; only a person applies one.
+    [/^(propose_lesson|study|review_lesson)$/, "draft"],
     [/.*/, "blocked"],
   ],
 };
@@ -275,6 +277,10 @@ function summarize(connector: string, name: string, input: Record<string, unknow
     return `Scoring ${n ? `${n} items` : from ? from : "a list"} with Jev`;
   }
   if (connector === "Tethr tools" && name === "goals_list") return "Reading the goals";
+  if (connector === "Tethr tools" && name === "propose_lesson") return `Proposing a lesson${typeof input.lesson === "string" ? `: “${input.lesson.slice(0, 60)}”` : ""}`;
+  if (connector === "Tethr tools" && name === "study") return `Queueing a topic to study${typeof input.topic === "string" ? `: “${input.topic.slice(0, 60)}”` : ""}`;
+  if (connector === "Tethr tools" && name === "lessons_due") return "Reading the lessons due for review";
+  if (connector === "Tethr tools" && name === "review_lesson") return input.verdict === "retired" ? "Suggesting a lesson be retired" : "Suggesting a lesson be kept";
   if (connector === "Tethr tools" && name === "growth_map") return input.area ? `Reading the growth map (${areaLabel(input.area)})` : "Reading the growth map";
   if (connector === "Tethr tools" && name === "map_area") {
     if (typeof input.score === "number") return `Recording an audit of ${areaLabel(input.area)}`;
