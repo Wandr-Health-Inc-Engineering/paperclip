@@ -63,6 +63,8 @@ export interface AgentEvidence {
 
 export interface MapEvidence {
   companyName: string;
+  /** The company's time zone (setup), for the dates the map shows. */
+  timezone?: string;
   state: CompanyMapState;
   notes: NoteEvidence[];
   skills: Array<{ name: string; description: string }>;
@@ -127,7 +129,7 @@ export interface AreaView {
 }
 
 export interface GrowthMapView {
-  company: { name: string; level: number; max: number };
+  company: { name: string; level: number; max: number; timezone?: string };
   focus: { area: AreaId; name: string; at: string; why?: string } | null;
   areas: AreaView[];
   links: Array<{ from: AreaId; to: AreaId; lit: boolean }>;
@@ -136,7 +138,15 @@ export interface GrowthMapView {
 const SCHEDULE_LABEL: Record<AreaSchedule, string> = { scorecard: "the Friday scorecard" };
 
 const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
-const shortDate = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+/** "Nov 9", in the company's time zone (UTC when it has none or it's not a real zone). */
+export function shortDate(iso: string, timeZone?: string): string {
+  const when = new Date(iso);
+  try {
+    return when.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: timeZone || "UTC" });
+  } catch {
+    return when.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  }
+}
 
 /** The scorecard's rule (ui Scorecard.tsx metricState): where the number stands against its line. */
 export function metricState(m: MetricEvidence, now: number): MetricState {
@@ -195,6 +205,7 @@ function audited(record: { audits?: AreaAudit[] } | undefined): { last: AreaAudi
 
 interface AreaFacts {
   area: GrowthArea;
+  timezone?: string;
   knows: number;
   last: AreaAudit | null;
   change: number | null;
@@ -211,7 +222,7 @@ function unlockOf(key: UnlockKey, f: AreaFacts): UnlockView {
   switch (key) {
     case "mapped":
       return f.last
-        ? make(true, `Audited ${shortDate(f.last.at)}: ${f.last.score} out of 100.`)
+        ? make(true, `Audited ${shortDate(f.last.at, f.timezone)}: ${f.last.score} out of 100.`)
         : make(false, "Explore it with tethr: an audit scores it out of 100.");
     case "equipped": {
       const on = f.data.filter((d) => d.connected);
@@ -281,6 +292,7 @@ export function computeGrowthMap(ev: MapEvidence, now: Date = new Date()): Growt
     const data = area.data.map((source) => ({ source, label: DATA_LABEL[source], connected: ev.data[source].connected, detail: ev.data[source].detail }));
     const facts: AreaFacts = {
       area,
+      timezone: ev.timezone,
       knows: areaNotes.length + areaSkills.length,
       last,
       change,
@@ -325,7 +337,12 @@ export function computeGrowthMap(ev: MapEvidence, now: Date = new Date()): Growt
   const visible = areas.filter((a) => !a.hidden);
   const levelOf = new Map(areas.map((a) => [a.id, a.level]));
   return {
-    company: { name: ev.companyName, level: visible.reduce((n, a) => n + a.level, 0), max: visible.length * UNLOCKS.length },
+    company: {
+      name: ev.companyName,
+      level: visible.reduce((n, a) => n + a.level, 0),
+      max: visible.length * UNLOCKS.length,
+      ...(ev.timezone ? { timezone: ev.timezone } : {}),
+    },
     focus: focus ? { area: focus.area, name: areas.find((a) => a.id === focus.area)!.name, at: focus.at, ...(focus.why ? { why: focus.why } : {}) } : null,
     areas,
     links: AREA_LINKS.filter(([a, b]) => !hidden.has(a) && !hidden.has(b)).map(([from, to]) => ({

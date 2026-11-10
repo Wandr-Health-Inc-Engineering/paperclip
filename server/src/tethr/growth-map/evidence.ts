@@ -89,9 +89,11 @@ export async function gatherEvidence(db: Db, companyId: string): Promise<MapEvid
   const running = await runningAgentIds(db, team.map((a) => a.agentId));
   const cfg = getIntegrations(companyId);
   const memory = memorySnapshot(companyId);
-  const schedulesOn: AreaSchedule[] = getSetup(companyId).rhythm.scorecard.enabled ? ["scorecard"] : [];
+  const setup = getSetup(companyId);
+  const schedulesOn: AreaSchedule[] = setup.rhythm.scorecard.enabled ? ["scorecard"] : [];
   return {
     companyName: profile?.name ?? "Your company",
+    timezone: setup.timezone,
     state: getMapState(companyId),
     notes: [...memory.stores.company.entries, ...memory.stores.people.entries].map((e) => ({
       text: e.text,

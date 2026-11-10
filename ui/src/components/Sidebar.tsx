@@ -12,6 +12,7 @@ import {
   Settings,
   MessagesSquare,
   TrendingUp,
+  Orbit,
   ShieldCheck,
   HardDrive,
   Wallet,
@@ -102,6 +103,7 @@ export function Sidebar() {
         {/* Tethr operate surfaces (see DECISIONS.md "Core changes") */}
         <SidebarSection label="Operate">
           <SidebarNavItem to="/growth" label="Growth" icon={TrendingUp} />
+          <SidebarNavItem to="/growth-map" label="Growth map" icon={Orbit} />
           <SidebarNavItem to="/company-view" label="Company" icon={Network} />
           <SidebarNavItem to="/queue" label="Queue" icon={ShieldCheck} />
           <SidebarNavItem to="/drive" label="Drive" icon={HardDrive} />

@@ -1,6 +1,6 @@
 # Phase 26: Jev decides, tethr learns
 
-Status: 26.1 is built. The rest is a plan; each step waits for Mark's go.
+Status: 26.1 and 26.9 are built. The rest is a plan; each step waits for Mark's go.
 
 ## What Mark asked for (2026-11-09)
 
@@ -250,7 +250,7 @@ revenue, its own agents for content, outreach and follow-up), a public proof pag
 outcomes with names removed (anything public always asks), hosted logins, and learning kept
 separate per customer so one company's data never feeds another's lessons.
 
-## 26.9 The growth map (a galaxy)
+## 26.9 The growth map (a galaxy) (built 2026-11-09)
 
 Sketch, with sample levels: `tasks/phase-26-growth-map-sketch.png` (and `.svg`).
 
@@ -425,7 +425,7 @@ Each unlock is earned by something tethr can check, never by opinion.
 | Step | Delivers | Needs from you |
 |---|---|---|
 | 26.1 | Slack and the terminal reach the real tethr; Slack accepts files | built |
-| 26.9 | The growth map: every area on one galaxy, with levels | a yes on the sketch; built next |
+| 26.9 | The growth map: every area on one galaxy, with levels | built |
 | 26.2 | Jev decisions with a record, modes and a cap | nothing (the key works) |
 | 26.3 | The Inbox, with suggestions | first test: drop files in the Inbox folder |
 | 26.4 | Report urgency, lesson scoring | nothing |

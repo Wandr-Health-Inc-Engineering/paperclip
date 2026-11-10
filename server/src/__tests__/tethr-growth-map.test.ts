@@ -260,6 +260,14 @@ describe("tethr growth map — unlocks from evidence", () => {
     expect(metricState(metric({ baseline: 10, target: 5, current: 7 }), ms)).toBe("on_track");
   });
 
+  it("dates audits in the company's time zone", () => {
+    const late = { audits: [{ score: 60, summary: "x", nextSteps: [], at: "2026-11-10T03:21:00Z", by: "@tethr" }] };
+    const mapped = (timezone?: string) => seoOf(evidence({ timezone, state: { areas: { seo: late } } })).unlocks[0].detail;
+    expect(mapped("America/Los_Angeles")).toBe("Audited Nov 9: 60 out of 100.");
+    expect(mapped()).toBe("Audited Nov 10: 60 out of 100.");
+    expect(mapped("Not/AZone")).toBe("Audited Nov 10: 60 out of 100.");
+  });
+
   it("reads the company's website from the addresses inside the company", () => {
     expect(companyDomain({ ...DEFAULT_INTEGRATIONS, internalAddresses: ["gmail.com", "acme.com"] })).toBe("acme.com");
     expect(companyDomain({ ...DEFAULT_INTEGRATIONS, internalAddresses: ["mark@gmail.com"] })).toBeNull();

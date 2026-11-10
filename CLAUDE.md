@@ -1219,6 +1219,57 @@ DECISIONS 42-43.
   Slack poster). The classic-engine test clears `ANTHROPIC_API_KEY`: a key in the shell made a
   real (refused) API call before.
 
+## The growth map: a galaxy of growth areas (phase 26.9, 2026-11-09)
+
+Mark: "a growth map… like a galaxy solar star style system… RPG games… skills and improvement. I
+want it to improve with a visual understanding." Plan: `tasks/phase-26.md` 26.9; DECISIONS 44-47.
+- **Twelve areas** (`server/src/tethr/growth-map/areas.ts`, the same for every company): Positioning,
+  Content & social, Search (SEO), AI search (GEO), Paid ads, Measurement on one spiral arm; Customer
+  voice, Conversion, Pricing & offers, Retention, Email & lifecycle, Partnerships on the other. Each
+  names its playbooks (skills in `~/.claude/skills`, `TETHR_SKILLS_DIR` in tests; only installed ones
+  are listed), its data sources, what tethr can't see yet, and links only to its neighbours.
+- **Six unlocks per area, from evidence only** (`map.ts` `computeGrowthMap`, pure; `evidence.ts`
+  gathers): Mapped (an audit with a score), Equipped (any of its sources connected: a claude.ai
+  connector counts once tethr has SEEN it on a real turn, `discovered`; Google Ads by its settings;
+  "website" = a non-freemail domain in Integrations' inside addresses; "profile" = setup's "what the
+  company sells"), Informed (3+ notes or skills placed there), Aimed (a linked goal metric), Staffed
+  (an unpaused agent placed there, or the Friday scorecard switched on for Measurement), Proven (a
+  linked metric on track or hit, by the scorecard's rule, over 2+ measurements; or the latest audit
+  10+ points above the first). Level = unlocks (Unexplored … Mastered); company level = sum over
+  visible areas (max 72, less when areas are hidden). Nobody can set a level; it drops with the
+  evidence.
+- **Placement:** a note's area is in memory provenance (`Provenance.area`; a patch with no area keeps
+  the old note's), a skill's in the map store (`skillAreas`), metrics/agents linked by `map_area` stay
+  in those areas only; anything else goes through `sort.ts` keyword rules, where a tie places nothing.
+  Metrics are sorted by name + goal, never their method.
+- **Store** `growth-map/store.ts` → instance-dir `tethr-growth-map.json` (`TETHR_GROWTH_MAP_FILE`):
+  audits per area (20 kept), linked metric ids and agent tags, the week's focus (shown 8 days),
+  hidden areas, skill areas. In the reset's store list. No database change.
+- **Tools** (`assistant/map-tools.ts`, on the tethr server): `growth_map` (read; one area in full with
+  `area`) and `map_area` (draft, no card): score 0-100 + summary (both or neither), up to 5 next
+  steps, `file` that must exist in files/, `metric_ids`/`agent_tags` (each list replaces; validated),
+  `focus` (tethr's own chats only). Summary, steps and focus reason pass the health screen and the
+  injection check. A private turn can read but not write (endpoint: reads only). `memory` and
+  `skill_save` take an optional `area`.
+- **Every turn:** CLAUDE.md v5 has "## Growth map" (`text.ts growthMapContextText`): one computed line
+  per area (level, next unlock, playbooks, FOCUS), never saved text. The Monday plan playbook
+  (rhythm.ts) calls growth_map and sets the focus with map_area.
+- **Routes** `routes/tethr-growth-map.ts`: `GET /tethr/:c/growth-map` (audits carry `panelPath` for
+  the side panel), `POST /growth-map/:area/explore` (people only: a system turn in the main chat,
+  `exploreBrief`, first line "Explore <Area> on the growth map…"), `POST /growth-map/:area/hidden`.
+- **UI** `/growth-map` (nav "Growth map" under Growth, palette): `TethrGrowthMap.tsx` + `map/Galaxy.tsx`
+  (SVG, all currentColor; the live dot is the only color), `map/AreaPanel.tsx` (unlocks with what
+  earns the next, Explore, last audit with its file in the side panel, knowledge, numbers, owners,
+  playbooks, data, blind spots, hide/show), `map/AreaList.tsx`, `map/Overview.tsx`. Geometry is pure in
+  `ui/src/lib/tethr-growth-map.ts` (`specFor(width)`: wide 800×512 or compact 600×660 under 640px;
+  text sized to land 12.5/10px wide, 11px compact; labels placed so none overlaps another label, a
+  star, the center or the frame). Desktop ≥980px: map | panel; narrower: panel below; phone: compact
+  map, the list under it, the panel as a sheet. New unlocks since the last visit (localStorage
+  `tethr.growthMap.seen.<company>`, nothing on a first visit) bloom once and carry a "new" tag. Styles:
+  `.tethr-galaxy*` at the end of tethr-theme.css; reduced motion stops orbits, swirl, halo and bloom.
+- Tests: `tethr-growth-map.test.ts` (server, 26), `ui/src/lib/tethr-growth-map.test.ts` (layout at
+  320-1200px with every level, full orbits and each focus; what's new).
+
 ## Hermes is tethr's memory, on the subscription (phase 25, 2026-11-09)
 
 Mark: "I want to use tethr as our main thing but you can use hermes as the memory layer. We need to

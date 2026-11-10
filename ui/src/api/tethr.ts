@@ -719,6 +719,80 @@ export interface TethrMemoryState extends TethrMemorySnapshot {
   /** Notes that couldn't be moved into the active store, with why. */
   notMoved: Array<{ target: TethrMemoryTarget; text: string; reason: string; at: string }>;
 }
+/** Phase 26.9: the growth map (server growth-map/map.ts GrowthMapView). */
+export type TethrAreaId =
+  | "positioning"
+  | "content"
+  | "seo"
+  | "geo"
+  | "paid_ads"
+  | "measurement"
+  | "customer_voice"
+  | "conversion"
+  | "pricing"
+  | "retention"
+  | "email"
+  | "partnerships";
+
+export type TethrUnlockKey = "mapped" | "equipped" | "informed" | "aimed" | "staffed" | "proven";
+export type TethrPlacedBy = "tethr" | "keywords";
+export type TethrMapMetricState = "no_target" | "not_measured" | "target_hit" | "on_track" | "behind" | "in_progress";
+
+export interface TethrAreaUnlock {
+  key: TethrUnlockKey;
+  label: string;
+  earned: boolean;
+  detail: string;
+}
+
+export interface TethrAreaAudit {
+  score: number;
+  summary: string;
+  nextSteps: string[];
+  file?: string;
+  /** Where the write-up opens in the side panel (relative to 00 Tethr), when it's in Drive. */
+  panelPath?: string | null;
+  at: string;
+  by: string;
+}
+
+export interface TethrGrowthArea {
+  id: TethrAreaId;
+  name: string;
+  short: string;
+  blurb: string;
+  arm: 0 | 1;
+  step: number;
+  level: number;
+  levelName: string;
+  unlocks: TethrAreaUnlock[];
+  next: TethrAreaUnlock | null;
+  hidden: boolean;
+  focus: boolean;
+  active: boolean;
+  knowledge: {
+    notes: Array<{ text: string; savedBy?: string; savedAt?: string; placedBy: TethrPlacedBy }>;
+    skills: Array<{ name: string; description: string; placedBy: TethrPlacedBy }>;
+  };
+  metrics: Array<{ id: string; name: string; goalTitle: string; unit: string; current: number | null; target: number | null; state: TethrMapMetricState; placedBy: TethrPlacedBy }>;
+  agents: Array<{ tag: string; name: string; paused: boolean; running: boolean; placedBy: TethrPlacedBy }>;
+  schedules: string[];
+  playbooks: string[];
+  data: Array<{ source: string; label: string; connected: boolean; detail: string }>;
+  dataNote: string;
+  blindSpots: string[];
+  lastAudit: TethrAreaAudit | null;
+  scoreChange: number | null;
+  audits: Array<{ score: number; at: string }>;
+}
+
+export interface TethrGrowthMap {
+  company: { name: string; level: number; max: number };
+  focus: { area: TethrAreaId; name: string; at: string; why?: string } | null;
+  areas: TethrGrowthArea[];
+  links: Array<{ from: TethrAreaId; to: TethrAreaId; lit: boolean }>;
+}
+
 export interface TethrRecallHit {
   sessionId: string;
   title: string | null;
@@ -743,6 +817,7 @@ export const tethrKeys = {
   memorySearch: (c: string, q: string) => ["tethr", c, "memory", "search", q] as const,
   memorySkill: (c: string, name: string) => ["tethr", c, "memory", "skill", name] as const,
   chatRuns: (c: string, threadId: string) => ["tethr", c, "chats", threadId, "runs"] as const,
+  growthMap: (c: string) => ["tethr", c, "growth-map"] as const,
   routeRun: (c: string, id: string) => ["tethr", c, "route-runs", id] as const,
   outputs: (c: string, status?: string) => ["tethr", c, "outputs", status ?? "all"] as const,
   output: (c: string, id: string) => ["tethr", c, "output", id] as const,
@@ -940,6 +1015,11 @@ export const tethrApi = {
   setTeamAgentPaused: (c: string, tag: string, paused: boolean) =>
     api.post<{ tag: string; paused: boolean }>(`/tethr/${c}/team/${encodeURIComponent(tag)}/pause`, { paused }),
   proposeTeam: (c: string) => api.post<{ routeRunId: string; threadId: string }>(`/tethr/${c}/team/propose`, {}),
+  /** Phase 26.9: the growth map. */
+  growthMap: (c: string) => api.get<TethrGrowthMap>(`/tethr/${c}/growth-map`),
+  exploreArea: (c: string, area: TethrAreaId) =>
+    api.post<{ routeRunId: string; threadId: string }>(`/tethr/${c}/growth-map/${area}/explore`, {}),
+  setAreaHidden: (c: string, area: TethrAreaId, hidden: boolean) => api.post<TethrGrowthMap>(`/tethr/${c}/growth-map/${area}/hidden`, { hidden }),
   updateIntegrations: (c: string, patch: TethrIntegrationsPatch) =>
     api.put<{ ok: boolean }>(`/tethr/${c}/integrations`, patch),
   stopChatTurn: (c: string, runId: string) =>

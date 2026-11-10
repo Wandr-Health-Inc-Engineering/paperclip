@@ -350,7 +350,13 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       // Company-level only: CLAUDE.md is one file for every thread (see renderMemoryBlock).
       const memory = renderMemoryBlock(snapshot, { tools: modeFor(cfg, TETHR_TOOLS_LABEL) !== "off" });
       // Phase 26.9: the growth map, one line per area (company-level, like the rest).
-      const growthMapText = growthMapContextText(await growthMap(db, companyId), { tools: modeFor(cfg, TETHR_TOOLS_LABEL) !== "off" });
+      // It's a guide, not a requirement: if it can't be worked out, the turn runs without it.
+      const growthMapText = await growthMap(db, companyId)
+        .then((view) => growthMapContextText(view, { tools: modeFor(cfg, TETHR_TOOLS_LABEL) !== "off" }))
+        .catch((err: unknown) => {
+          logFailure("working out the growth map for a chat turn", { companyId })(err);
+          return null;
+        });
       ws = await ensureWorkspace({ integrationRules: integrationRulesText(cfg), goals, company, team: teamText, memory, growthMap: growthMapText });
       ({ personaPath, skillDir } = await ensurePersona());
       const hookScript = await ensureHookScript();
