@@ -466,7 +466,8 @@ export function agentIdentityText(agent: AgentIdentity): string {
 }
 
 const REPORT_ENDING = [
-  'When you\'re done: put any file you make in files/, then, under a line that says "Report:", write a short report (what you did, what you found with the numbers, what you\'d do next).',
+  'When you\'re done: put any file you make in files/, then, under a line that says "Report:", write a short report. Its first sentence says the result, and what you need from the person if anything; it\'s all most people will read. Then at most four short lines with the numbers that matter and what you\'ll do next. Leave out housekeeping (retries, files you tidied, tools that didn\'t answer); the details are in your files.',
+  "To clear out files you made that aren't needed any more, use delete_files (the person approves); don't overwrite them to \"discard\" them.",
   `End with one line that starts "Slack summary:" and says the result in a sentence, with no customer names, emails or health details. It's the only part that goes to Slack.`,
 ];
 
@@ -560,7 +561,7 @@ export const TEAM_TOOL_NAMES = ["team_list", "create_agent", "assign_task", "upd
 
 /** Phase 27: tethr tools every agent on the team has, whatever its connectors:
  * they're how it reaches a person (a question as a card, a connection it's missing). */
-export const AGENT_ALWAYS_TOOLS = ["ask", "need_connection"] as const;
+export const AGENT_ALWAYS_TOOLS = ["ask", "need_connection", "delete_files"] as const;
 const isAlwaysTool = (name: string) => (AGENT_ALWAYS_TOOLS as readonly string[]).includes(name);
 
 /** Claude Code's MCP server name for an Integrations connector label. */

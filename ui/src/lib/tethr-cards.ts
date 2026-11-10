@@ -49,7 +49,9 @@ export function cardHeading(output: Pick<CardOutput, "kind" | "status" | "sensit
         ? "new agent"
         : output.kind === "team_change"
           ? "change to an agent"
-          : kindLabel(output.kind).toLowerCase();
+          : output.kind === "drive_change"
+            ? "delete files"
+            : kindLabel(output.kind).toLowerCase();
   return `${lead}: ${what}${why ? ` · ${why}` : ""}`;
 }
 
@@ -60,6 +62,7 @@ export function decidedLine(output: Pick<CardOutput, "kind" | "status" | "meta">
   if (applyError) return { tone: "bad", label: `Couldn't be applied: ${applyError}` };
   if (output.status === "rejected") return { tone: "bad", label: "Rejected" };
   if (output.kind === "team_agent") return { tone: "ok", label: "Approved: it's on the team" };
+  if (output.kind === "drive_change") return { tone: "ok", label: "Deleted: moved to the archive" };
   return { tone: "ok", label: "Approved" };
 }
 
@@ -98,4 +101,58 @@ export function cardDetails(body: string): CardDetails | null {
     })
     .filter((b) => b.text);
   return { rows, blocks };
+}
+
+// ---- agents' reports ---------------------------------------------------------------
+
+const LEAD_MAX = 220;
+
+/** Markdown down to plain words: no marks, links as their text, one line. */
+function plainWords(markdown: string): string {
+  return markdown
+    .replace(/^---\r?\n[\s\S]*?\r?\n---\s*/, "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+[.)])\s+/gm, "")
+    .replace(/[*_`~|]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * A report's first sentence, as the one line most people will read (agents are
+ * told to make it the result and what they need). Cut at a word with "…" when long.
+ */
+export function reportLead(markdown: string | null | undefined): string {
+  const text = plainWords(markdown ?? "");
+  if (!text) return "";
+  const end = text.search(/[.!?](\s|$)/);
+  const sentence = end >= 0 ? text.slice(0, end + 1) : text;
+  if (sentence.length <= LEAD_MAX) return sentence;
+  const cut = sentence.slice(0, LEAD_MAX);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), LEAD_MAX - 40)).replace(/[,;:\s]+$/, "")}…`;
+}
+
+/** Whether a report says more than its first line (so "Read the report" has something to show). */
+export function reportHasMore(markdown: string | null | undefined): boolean {
+  const text = plainWords(markdown ?? "");
+  return text.length > reportLead(markdown).replace(/…$/, "").length + 20;
+}
+
+export type ChatSegment<T> = { kind: "one"; run: T } | { kind: "reports"; runs: T[] };
+
+/** Reports that land one after another sit together as one "updates from your team" card. */
+export function groupReports<T extends { sourceKey?: string | null }>(runs: T[], reportSource = "tethr-agent-report"): Array<ChatSegment<T>> {
+  const out: Array<ChatSegment<T>> = [];
+  for (const run of runs) {
+    const last = out[out.length - 1];
+    if (run.sourceKey === reportSource) {
+      if (last?.kind === "reports") last.runs.push(run);
+      else out.push({ kind: "reports", runs: [run] });
+    } else {
+      out.push({ kind: "one", run });
+    }
+  }
+  return out;
 }

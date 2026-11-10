@@ -57,7 +57,9 @@ import { QueuedTray, waitingBehind } from "./chat/queue";
 import { NeedsYouPill, useNeedsYou } from "./chat/needs-you";
 import { FileThisButton, InboxCard, LessonCard, UrgencyRow } from "./chat/cards";
 import { ApprovalCard, DecidedLine, QuestionCard } from "./chat/decision-cards";
-import { kindLabel } from "@/lib/tethr-cards";
+import { FileChip, FileChips } from "./chat/file-chip";
+import { TeamUpdates } from "./chat/team-updates";
+import { groupReports, kindLabel } from "@/lib/tethr-cards";
 
 // Chat (phase 17, formerly the Console; Mark's model): one ONGOING chat with
 // @tethr that everything goes into by default, plus SIDE chats he opens on
@@ -309,6 +311,26 @@ export function TethrChat() {
   const looseCards = waiting ? [...waiting.connections, ...waiting.questions].filter((q) => q.threadId === threadId && !shownCards.has(q.id)) : [];
   const empty = !isLoading && !allRuns.length && !pendingHere && !looseCards.length;
 
+  // One turn of the chat (agents' reports are grouped separately, in TeamUpdates).
+  const renderRun = (run: TethrChatRun) =>
+    run.sourceKey === "tethr-idea" ? (
+      <IdeaCard key={run.id} run={run} companyId={c} />
+    ) : run.sourceKey === "tethr-inbox" ? (
+      <InboxCard key={run.id} run={run} companyId={c} />
+    ) : run.sourceKey === "tethr-lesson" ? (
+      <LessonCard key={run.id} run={run} companyId={c} />
+    ) : run.invocationSource === "chat" ? (
+      <SessionTurn
+        key={run.id}
+        run={run}
+        companyId={c}
+        onOpenFile={setPanelPath}
+        waitsBehind={run.status === "queued" && allRuns.some((r) => r.id !== run.id && r.status === "running")}
+      />
+    ) : (
+      <Turn key={run.id} run={run} companyId={c} />
+    );
+
   const chat = (
     <div
       className={cn(
@@ -417,28 +439,20 @@ export function TethrChat() {
               </button>
             ) : null}
             {isLoading ? <p className="text-center font-mono text-[11px] tethr-text-3">Loading…</p> : null}
-            {visibleRuns.map((run) => (
-              run.sourceKey === "tethr-idea" ? (
-                <IdeaCard key={run.id} run={run} companyId={c} />
-              ) : run.sourceKey === "tethr-inbox" ? (
-                <InboxCard key={run.id} run={run} companyId={c} />
-              ) : run.sourceKey === "tethr-lesson" ? (
-                <LessonCard key={run.id} run={run} companyId={c} />
-              ) : run.sourceKey === "tethr-agent-report" ? (
-                <AgentReportCard
-                  key={run.id}
-                  run={run}
+            {groupReports(visibleRuns).map((segment) =>
+              segment.kind === "reports" ? (
+                <TeamUpdates
+                  key={segment.runs[0]!.id}
+                  runs={segment.runs}
                   companyId={c}
-                  agent={team?.agents.find((a) => a.agentId === run.agentId)}
+                  agentFor={(r) => team?.agents.find((a) => a.agentId === r.agentId)}
                   onOpenFile={setPanelPath}
                   onOpenChat={openChat}
                 />
-              ) : run.invocationSource === "chat" ? (
-                <SessionTurn key={run.id} run={run} companyId={c} onOpenFile={setPanelPath} waitsBehind={run.status === "queued" && allRuns.some((r) => r.id !== run.id && r.status === "running")} />
               ) : (
-                <Turn key={run.id} run={run} companyId={c} />
-              )
-            ))}
+                renderRun(segment.run)
+              ),
+            )}
             {looseCards.map((q) => (
               <QuestionCard key={q.id} question={q} companyId={c} />
             ))}
@@ -768,55 +782,6 @@ function UserBubble({
   );
 }
 
-/** A file pill: opens in the side panel when it can. */
-function FileChip({
-  name,
-  kind,
-  detail,
-  tone,
-  onClick,
-  onRemove,
-}: {
-  name: string;
-  kind?: TethrChatAttachment["kind"];
-  detail?: string;
-  tone?: "live" | "bad";
-  onClick?: () => void;
-  onRemove?: () => void;
-}) {
-  const Icon = kind === "image" ? FileImage : FileText;
-  const body = (
-    <>
-      {tone ? <StatusDot tone={tone} /> : <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-      <span className="max-w-[200px] truncate">{name}</span>
-      {detail ? <span className="shrink-0 font-mono text-[10.5px] tethr-text-3">{detail}</span> : null}
-    </>
-  );
-  return (
-    <span className={cn("inline-flex max-w-full items-center gap-1.5 rounded-full py-1 text-[12px]", CHIP_SURFACE, onRemove ? "pl-2.5 pr-1" : "px-2.5", onClick && CHIP_HOVER)}>
-      {onClick ? (
-        <button type="button" onClick={onClick} title={`Open ${name}`} className="inline-flex min-w-0 items-center gap-1.5">
-          {body}
-        </button>
-      ) : (
-        <span className="inline-flex min-w-0 items-center gap-1.5" title={name}>
-          {body}
-        </span>
-      )}
-      {onRemove ? (
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label={`Remove ${name}`}
-          className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-[var(--tethr-frost-strong)] hover:text-foreground"
-        >
-          <X className="h-3 w-3" />
-        </button>
-      ) : null}
-    </span>
-  );
-}
-
 /** The live status while a turn runs, as one "background task" pill (like
  * Claude): the nebula (looping until the turn ends), what's happening, how long
  * it's been going, the steps so far (opens the list), and Stop. It sits at the
@@ -935,13 +900,7 @@ function SessionTurn({
         <p className="text-[13.5px] text-[var(--tethr-bad)]">{run.error || "Something went wrong."}</p>
       ) : null}
       {run.status === "stopped" ? <p className="text-[12.5px] tethr-text-3">Stopped.</p> : null}
-      {files.length ? (
-        <div className="flex flex-wrap gap-1.5">
-          {files.map((f) => (
-            <FileChip key={f} name={f.split("/").pop() ?? f} onClick={() => onOpenFile(f)} />
-          ))}
-        </div>
-      ) : null}
+      <FileChips files={files} onOpen={onOpenFile} />
       {gated.map((o) => (
         <ApprovalCard key={o.id} output={o} companyId={companyId} threadId={run.threadId ?? ""} />
       ))}
@@ -949,7 +908,7 @@ function SessionTurn({
         <QuestionCard key={q.id} question={q} companyId={companyId} />
       ))}
       {run.outputs
-        .filter((o) => (o.kind === "team_agent" || o.kind === "team_change") && !DECIDABLE.has(o.status))
+        .filter((o) => (o.kind === "team_agent" || o.kind === "team_change" || (o.kind === "drive_change" && !!o.meta?.cleanup)) && !DECIDABLE.has(o.status))
         .map((o) => (
           <DecidedLine key={o.id} output={o} />
         ))}
@@ -1092,74 +1051,6 @@ function IdeaCard({ run, companyId }: { run: TethrChatRun; companyId: string }) 
           )}
         </div>
       ) : null}
-    </div>
-  );
-}
-
-/** Phase 23: an agent on tethr's team reporting back (its headline, its report,
- * its files), with a way into its own chat. */
-function AgentReportCard({
-  run,
-  companyId,
-  agent,
-  onOpenFile,
-  onOpenChat,
-}: {
-  run: TethrChatRun;
-  companyId: string;
-  agent?: TethrTeamAgent;
-  onOpenFile: (path: string) => void;
-  onOpenChat: (threadId: string) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const files = [...new Set(run.hops.filter((h) => h.layer === "tool" && h.file && h.status === "ok").map((h) => h.file as string))];
-  const long = (run.resultText ?? "").length > 700;
-  return (
-    <div className="tethr-glass space-y-2.5 rounded-[16px] px-4 py-3.5">
-      <div className="flex items-center gap-2 text-[11.5px] tethr-text-3">
-        <Users className="h-3.5 w-3.5 shrink-0" />
-        <span className="min-w-0 truncate">{agent ? `${agent.name} reported back` : "An agent reported back"}</span>
-        <span className="ml-auto shrink-0 font-mono text-[10.5px]">{formatRelative(run.createdAt)}</span>
-      </div>
-      <p className="text-[14px] font-medium leading-snug">{run.requestText}</p>
-      {run.resultText ? (
-        <div className={cn("relative", long && !expanded && "max-h-48 overflow-hidden [mask-image:linear-gradient(to_bottom,#000_70%,transparent)]")}>
-          <MarkdownBody linkIssueReferences={false} className="tethr-chat-md">{run.resultText}</MarkdownBody>
-        </div>
-      ) : null}
-      {files.length ? (
-        <div className="flex flex-wrap gap-1.5">
-          {files.map((f) => (
-            <FileChip key={f} name={f.split("/").pop() ?? f} onClick={() => onOpenFile(f)} />
-          ))}
-        </div>
-      ) : null}
-      {run.urgency ? <UrgencyRow run={run} companyId={companyId} /> : null}
-      {run.needsYou ? (
-        // What this agent (and its sub-team) waits on you for, to settle right here.
-        <div className="space-y-2.5 border-t border-[var(--tethr-rim)] pt-3">
-          <p className="tethr-eyebrow">needs you</p>
-          {run.needsYou.questions.map((q) => (
-            <QuestionCard key={q.id} question={q} companyId={companyId} />
-          ))}
-          {run.needsYou.approvals.map((o) => (
-            <ApprovalCard key={o.id} output={o} companyId={companyId} threadId={typeof o.meta?.threadId === "string" ? o.meta.threadId : ""} />
-          ))}
-        </div>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-2">
-        {long ? (
-          <button type="button" onClick={() => setExpanded((v) => !v)} className="tethr-btn tethr-btn-ghost h-8 px-3.5 text-[12.5px]">
-            {expanded ? "Show less" : "Show all"}
-          </button>
-        ) : null}
-        {agent ? (
-          <button type="button" onClick={() => onOpenChat(agent.threadId)} className="tethr-btn tethr-btn-glass h-8 px-3.5 text-[12.5px]">
-            Open {agent.tag}'s chat
-            <ArrowRight className="h-3.5 w-3.5" />
-          </button>
-        ) : null}
-      </div>
     </div>
   );
 }

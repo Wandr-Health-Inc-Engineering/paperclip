@@ -506,6 +506,15 @@ export function gatingService(db: Db) {
         .addNote(input.companyId, lead?.threadId ?? chats.mainThreadId(input.companyId), `Rejected in tethr: ${output.title}${input.note ? ` (${input.note})` : ""}. Don't propose it again unless someone asks.`)
         .catch(() => {});
     }
+    if (output.kind === "drive_change" && input.decision === "reject") {
+      const meta = (output.meta ?? {}) as Record<string, unknown>;
+      if (meta.cleanup && typeof meta.threadId === "string") {
+        const chats = await import("./chats.js");
+        await chats
+          .addNote(input.companyId, meta.threadId, `Rejected: keep those files (${output.title})${input.note ? `: ${input.note}` : ""}. Don't ask again unless someone does.`)
+          .catch(() => {});
+      }
+    }
     if (output.kind === "external_action" && input.decision === "reject") {
       // Tell the chat on its next turn (no wake: it's just context).
       const meta = (output.meta ?? {}) as Record<string, unknown>;
@@ -767,7 +776,10 @@ export function gatingService(db: Db) {
   ) {
     const meta = output.meta as {
       driveChange?: import("./drive-changes.js").DriveChangeSpec;
+      cleanup?: import("./assistant/cleanup.js").CleanupSpec;
+      threadId?: string;
     } | null;
+    if (meta?.cleanup) return approveCleanup(output, companyId, reviewer, meta.cleanup, meta.threadId ?? null);
     if (!meta?.driveChange) throw new Error("This output has no staged file archive to apply");
     const { applyDriveChange } = await import("./drive-changes.js");
     const applied = await applyDriveChange(db, {
@@ -833,6 +845,45 @@ export function gatingService(db: Db) {
       body: `Moved to ${applied.to} — recoverable any time.`,
       href: `/queue/${output.id}`,
     });
+    return updated;
+  }
+
+  /** Phase 27: files tethr or an agent asked to remove from its folder. Approving moves
+   * what's still there to the archive; the chat that asked hears what happened. */
+  async function approveCleanup(output: typeof tethrOutputs.$inferSelect, companyId: string, reviewer: string, spec: import("./assistant/cleanup.js").CleanupSpec, threadId: string | null) {
+    const { applyCleanup, cleanupDestination } = await import("./assistant/cleanup.js");
+    const chats = await import("./chats.js");
+    const { moved, missing } = await applyCleanup(spec);
+    const base = (output.meta as Record<string, unknown>) ?? {};
+    if (!moved.length) {
+      const reason = missing.join(" ") || "none of the files were there";
+      const [closed] = await db
+        .update(tethrOutputs)
+        .set({ status: "rejected", updatedAt: new Date(), meta: { ...base, applyError: reason } })
+        .where(eq(tethrOutputs.id, output.id))
+        .returning();
+      if (threadId) await chats.addNote(companyId, threadId, `"${output.title}" was approved but nothing was moved: ${reason}`).catch(() => {});
+      return closed;
+    }
+    const [updated] = await db
+      .update(tethrOutputs)
+      .set({ status: "published", updatedAt: new Date(), meta: { ...base, applied: { moved, missing, at: new Date().toISOString() } } })
+      .where(eq(tethrOutputs.id, output.id))
+      .returning();
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: reviewer,
+      action: "tethr_files_cleaned_up",
+      entityType: "tethr_output",
+      entityId: output.id,
+      agentId: output.agentId,
+      details: { moved: moved.map((m) => m.from), missing: missing.length },
+    });
+    if (threadId) {
+      const note = `Approved: moved ${moved.length} file${moved.length === 1 ? "" : "s"} out of files/ to ${cleanupDestination()} (${moved.map((m) => m.from).join(", ")}).${missing.length ? ` Not moved: ${missing.join(" ")}` : ""}`;
+      await chats.addNote(companyId, threadId, note).catch(() => {});
+    }
     return updated;
   }
 

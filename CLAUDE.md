@@ -1226,6 +1226,27 @@ DECISIONS 57-64. No migration. One new store: `tethr-questions.json` (in the res
   `tethr-assistant-runner` (+1), `tethr-team` (+4); UI `tethr-cards`, `tethr-agent-tree`,
   `chat/queue`, `NotificationDetail`, `SetupNavItem`.
 
+## A calmer chat, and deleting with approval (phase 27 follow-up, 2026-11-10)
+
+Mark: "I'm getting overwhelmed... if my assistant brought me all this I'd say this isn't helpful. It
+needs to feel more guided and smooth, not data dumps." And: "add capacity for tethr to delete within
+its folder with approval, it's just gonna end up getting clogged."
+- **tethr writes like a chief of staff** (CLAUDE.md v8 "Talking with the team"): the point in one or
+  two sentences, about 100 words, no headings or tables in the chat, depth in a short doc in files/
+  (it opens beside the chat), one next step at a time, no housekeeping. A "what next" answer puts the
+  sizing, options table and plan in `files/plans/` and gives only the pick, its size and why in the chat.
+- **Agents' reports lead with one sentence** (team-spec.ts `REPORT_ENDING`): the result and what they
+  need; at most four more short lines; no housekeeping.
+- **Report cards are calm** (`chat/team-updates.tsx`): agent, headline (without its own tag), the
+  report's first sentence (`reportLead`), what needs you, then "Read the report · N files" and "Open
+  chat". Reports that land one after another are one "updates from your team" card (`groupReports`).
+  A turn's files show two chips and "+N more" (`chat/file-chip.tsx`).
+- **`delete_files`** (person-tools.ts, every agent has it; not private turns or the learner): up to 20
+  files in `files/`, one approval card (kind `drive_change`, sensitivity `destructive`, so never
+  automatic), `meta.cleanup`. Approving MOVES them (`assistant/cleanup.ts`): Drive → `00 Tethr/99
+  Archive/tethr files`, no Drive → the workspace's `archive/`. Nothing is erased; each file is checked
+  again on approval; the chat that asked gets a note either way.
+
 ## Wiring review (2026-11-09): what's true, and two known gaps
 
 Mark asked for a check that the systems are wired the way the design says. Verified on his live

@@ -6,7 +6,7 @@ import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
-import { agents, createDb, issues, tethrNotifications, tethrRouteRuns } from "@paperclipai/db";
+import { agents, createDb, issues, tethrNotifications, tethrOutputs, tethrRouteRuns } from "@paperclipai/db";
 import { seedTethrCore } from "../tethr/seed/tethr-core.ts";
 import { assistantRunner, resetAssistantRunnerForTests, setAssistantRunnerForTests } from "../tethr/assistant/runner.ts";
 import { runTethrTool, TETHR_TOOL_DEFS } from "../tethr/assistant/tethr-tools.ts";
@@ -19,6 +19,7 @@ import { executeTeamTask } from "../tethr/team-run.ts";
 import { healTeamIcons, teamConnectorLabels, teamService } from "../tethr/team.ts";
 import { connectionsContextText, findConnection, needResolver } from "../tethr/connections.ts";
 import { updateIntegrations } from "../tethr/integrations.ts";
+import { takeNotes } from "../tethr/chats.ts";
 import { taskService } from "../tethr/tasks.ts";
 import { gatingService } from "../tethr/gating.ts";
 import { tethrRoutes } from "../routes/tethr.ts";
@@ -503,6 +504,51 @@ describePg("an agent waits on a missing connection, and spends nothing until it'
     expect(await iconOf()).toBe("mail");
     // A second pass finds nothing to do; tethr itself (not a team agent) keeps its own icon.
     expect(await healTeamIcons(db)).toBe(0);
+  });
+
+  it("deletes files from tethr's folder only with approval, by moving them to the archive", async () => {
+    const files = path.join(dir, "workspace", "files");
+    fs.mkdirSync(path.join(files, "content"), { recursive: true });
+    fs.writeFileSync(path.join(files, "content", "draft-a.md"), "old draft a");
+    fs.writeFileSync(path.join(files, "content", "draft-b.md"), "old draft b");
+    fs.writeFileSync(path.join(dir, "workspace", "Memory.md"), "memory");
+    const agent = await makeAgent("Content Writer");
+
+    // Nothing outside files/, no folders, nothing that isn't there.
+    expect((await tool("delete_files", { paths: ["Memory.md"], why: "x" }, agent.threadId)).isError).toBe(true);
+    expect((await tool("delete_files", { paths: ["files/../Memory.md"], why: "x" }, agent.threadId)).isError).toBe(true);
+    expect((await tool("delete_files", { paths: ["files/content"], why: "x" }, agent.threadId)).isError).toBe(true);
+    expect((await tool("delete_files", { paths: ["files/content/draft-a.md"] }, agent.threadId)).isError).toBe(true); // why is required
+
+    const res = await tool("delete_files", { paths: ["files/content/draft-a.md", "content/draft-b.md", "files/nope.md"], why: "Replaced by the de-duplicated drafts." }, agent.threadId);
+    expect(res.isError).toBeFalsy();
+    expect(res.text).toContain("remove 2 files");
+    expect(res.text).toContain("Left out: files/nope.md isn't there.");
+    const [card] = await db.select().from(tethrOutputs).where(and(eq(tethrOutputs.companyId, companyId), eq(tethrOutputs.kind, "drive_change")));
+    expect(card).toMatchObject({ status: "gated", sensitivity: "destructive", agentId: agent.agentId });
+    expect(card!.body).toContain("- files/content/draft-a.md");
+    expect(card!.body).toContain("Nothing is erased");
+    // Nothing moved before a person says yes.
+    expect(fs.existsSync(path.join(files, "content", "draft-a.md"))).toBe(true);
+
+    await gatingService(db).decide({ companyId, outputId: card!.id, decision: "approve", reviewer: "mark" });
+    const [after] = await db.select().from(tethrOutputs).where(eq(tethrOutputs.id, card!.id));
+    expect(after!.status).toBe("published");
+    expect(fs.existsSync(path.join(files, "content", "draft-a.md"))).toBe(false);
+    expect(fs.existsSync(path.join(files, "content", "draft-b.md"))).toBe(false);
+    // Out of the way, not erased (no Drive here: the workspace's archive folder).
+    expect(fs.readdirSync(path.join(dir, "workspace", "archive")).sort()).toEqual(["draft-a.md", "draft-b.md"]);
+    expect(fs.readFileSync(path.join(dir, "workspace", "Memory.md"), "utf8")).toBe("memory");
+    const notes = await takeNotes(companyId, agent.threadId);
+    expect(notes.some((n) => n.startsWith("Approved: moved 2 files out of files/"))).toBe(true);
+
+    // Rejected: nothing moves, and the chat that asked hears it.
+    fs.writeFileSync(path.join(files, "keep.md"), "keep");
+    await tool("delete_files", { paths: ["files/keep.md"], why: "Looks unused." }, agent.threadId);
+    const [second] = (await db.select().from(tethrOutputs).where(and(eq(tethrOutputs.companyId, companyId), eq(tethrOutputs.kind, "drive_change"), eq(tethrOutputs.status, "gated"))));
+    await gatingService(db).decide({ companyId, outputId: second!.id, decision: "reject", reviewer: "mark" });
+    expect(fs.existsSync(path.join(files, "keep.md"))).toBe(true);
+    expect((await takeNotes(companyId, agent.threadId)).some((n) => n.startsWith("Rejected: keep those files"))).toBe(true);
   });
 
   it("reads Google Ads only when it's set up, and points at the card when it isn't", async () => {

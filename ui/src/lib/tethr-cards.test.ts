@@ -30,7 +30,7 @@ describe("what a waiting card says", () => {
       "Needs your approval: Gmail action · goes outside the company",
     );
     expect(cardHeading({ kind: "external_action", status: "gated", sensitivity: "external", meta: { connector: "Slack" } })).toBe("Needs your approval: Slack action");
-    expect(cardHeading({ kind: "drive_change", status: "changes_requested", sensitivity: "destructive" })).toBe("Changes requested: drive change · deletes or overwrites");
+    expect(cardHeading({ kind: "drive_change", status: "changes_requested", sensitivity: "destructive" })).toBe("Changes requested: delete files · deletes or overwrites");
   });
 
   it("says what happened once it's decided", () => {
@@ -62,5 +62,32 @@ describe("an agent card's details", () => {
   it("leaves a body that isn't shaped like a spec to be shown whole", () => {
     expect(cardDetails("# Brief\n\nSome prose about a plan.")).toBeNull();
     expect(cardDetails("")).toBeNull();
+  });
+});
+
+describe("an agent's report, the way an assistant would bring it", () => {
+  it("leads with the report's first sentence, as plain words", async () => {
+    const { reportLead, reportHasMore } = await import("./tethr-cards");
+    const body = "**Shortlisted 6 topics** with real demand; [two](files/x.md) need your OK. Then the details:\n\n- one\n- two";
+    expect(reportLead(body)).toBe("Shortlisted 6 topics with real demand; two need your OK.");
+    expect(reportHasMore(body)).toBe(true);
+    expect(reportHasMore("Done.")).toBe(false);
+    expect(reportLead("")).toBe("");
+    const long = `${"word ".repeat(80)}end.`;
+    expect(reportLead(long).length).toBeLessThanOrEqual(221);
+    expect(reportLead(long).endsWith("…")).toBe(true);
+  });
+
+  it("puts reports that land one after another together, and leaves everything else alone", async () => {
+    const { groupReports } = await import("./tethr-cards");
+    const r = (id: string, sourceKey: string | null) => ({ id, sourceKey });
+    const segments = groupReports([r("a", null), r("b", "tethr-agent-report"), r("c", "tethr-agent-report"), r("d", null), r("e", "tethr-agent-report")]);
+    expect(segments.map((s) => (s.kind === "one" ? s.run.id : s.runs.map((x) => x.id).join("+")))).toEqual(["a", "b+c", "d", "e"]);
+  });
+
+  it("says plainly what a file cleanup card wants, and what happened", async () => {
+    const { cardHeading, decidedLine } = await import("./tethr-cards");
+    expect(cardHeading({ kind: "drive_change", status: "gated", sensitivity: "destructive" })).toBe("Needs your approval: delete files · deletes or overwrites");
+    expect(decidedLine({ kind: "drive_change", status: "published" })).toEqual({ tone: "ok", label: "Deleted: moved to the archive" });
   });
 });
