@@ -49,6 +49,7 @@ import { runTethrTool, TETHR_TOOL_DEFS, TETHR_TOOLS_LABEL, TETHR_TOOLS_SERVER } 
 import { classify, decide } from "../tethr/assistant/policy.js";
 import { AGENT_ALWAYS_TOOLS, agentToolRefusal, TEAM_TOOL_NAMES, TeamInputError } from "../tethr/team-spec.js";
 import { answerQuestion, answerText, closeQuestionsAnsweredInChat, getQuestion, QuestionInputError, questionsByRun } from "../tethr/assistant/questions.js";
+import { checklistDismissedNote, checklistDoneText, ChecklistInputError, checklistsByRun, dismissChecklist, getChecklist, setChecklistStep } from "../tethr/assistant/checklists.js";
 import { settleConnectionCard, stillMissing } from "../tethr/team-needs.js";
 import { connectionCardsOnCreationTurns, needsYouOnReportCards } from "../tethr/needs-you.js";
 import { teamService } from "../tethr/team.js";
@@ -674,6 +675,7 @@ export function tethrRoutes(db: Db) {
           .where(and(eq(tethrInboxItems.companyId, companyId), inArray(tethrInboxItems.cardRunId, inboxCardIds)))
       : [];
     const questionsOfRuns = questionsByRun(companyId, new Set(runs.map((r) => r.id)));
+    const checklistsOfRuns = checklistsByRun(companyId, new Set(runs.map((r) => r.id)));
     // Phase 27: an agent's newest report card in this chat carries what it's waiting
     // on a person for (approval cards, questions, missing connections), its sub-team's too.
     const needsYouByCard = await needsYouOnReportCards(db, companyId, runs);
@@ -693,6 +695,8 @@ export function tethrRoutes(db: Db) {
           outputs: outputs.filter((o) => o.routeRunId === run.id),
           // Phase 27: questions this turn put to the person, as cards with buttons.
           questions: [...(questionsOfRuns.get(run.id) ?? []), ...(waitingOnCreation.get(run.id) ?? [])],
+          // Step-by-step jobs this turn handed the person, ticked off on the card.
+          checklists: checklistsOfRuns.get(run.id) ?? [],
           needsYou: needsYouByCard.get(run.id) ?? null,
         };
       }),
@@ -775,6 +779,62 @@ export function tethrRoutes(db: Db) {
       requestedByUserId: userId,
     });
     res.json({ question, ...ids });
+  });
+
+  // A checklist tethr or an agent handed the person: tick steps as they go. Ticking
+  // the last one tells that chat, as the person's own message, so it can check it took.
+  router.post("/tethr/:companyId/checklists/:id/steps/:stepId", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
+    const actor = getActorInfo(req);
+    if (typeof req.body?.done !== "boolean") {
+      res.status(400).json({ error: "done must be true or false" });
+      return;
+    }
+    let result;
+    try {
+      result = await setChecklistStep(companyId, req.params.id as string, req.params.stepId as string, req.body.done);
+    } catch (err) {
+      if (err instanceof ChecklistInputError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+    if (!result.finished) {
+      res.json({ checklist: result.checklist, routeRunId: null });
+      return;
+    }
+    const ids = await getAssistantRunner(db).send({
+      companyId,
+      threadId: result.checklist.threadId,
+      text: checklistDoneText(result.checklist),
+      requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
+    });
+    res.json({ checklist: result.checklist, ...ids });
+  });
+
+  // Put a checklist away unfinished. No turn: its chat hears it in a note next time.
+  router.post("/tethr/:companyId/checklists/:id/dismiss", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
+    if (!getChecklist(companyId, req.params.id as string)) {
+      res.status(404).json({ error: "Checklist not found" });
+      return;
+    }
+    try {
+      const checklist = await dismissChecklist(companyId, req.params.id as string);
+      await chats.addNote(companyId, checklist.threadId, checklistDismissedNote(checklist)).catch(logFailure("noting a put-away checklist"));
+      res.json({ checklist });
+    } catch (err) {
+      if (err instanceof ChecklistInputError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
   });
 
   // Phase 27: a message sent while tethr is still working waits its turn. Until it

@@ -439,6 +439,10 @@ export interface AgentIdentity {
   leadTag?: string | null;
   goalTitle?: string | null;
   subTeam?: string[];
+  /** The installed playbooks for its job's area (growth-map/playbooks.ts playbooksForJob). */
+  playbooks?: string[];
+  /** The sealed learner: no skills, no person-facing tools. */
+  sandbox?: boolean;
 }
 
 /** Who an agent is, at the top of a fresh session or a task. */
@@ -457,7 +461,16 @@ export function agentIdentityText(agent: AgentIdentity): string {
   lines.push(
     "When you need a decision or a fact from a person before you can go on, call the ask tool: it shows them a card with buttons and tells them it's waiting. Ask once, then finish with what you can do without the answer. Don't bury the question in your report, and don't ask it again on later runs.",
     "When the job can't be done without a tool or connection you don't have, or one doesn't answer, call need_connection: the person gets a card with the fix, and you aren't run again until it's sorted. Don't work around a missing connection run after run.",
+    "Fit what you plan to the budget: a small budget or a first test goes into one campaign aimed at the highest-intent targets, and grows on results; never spread it thin over many campaigns, ad groups or channels. Say what each part gets.",
   );
+  if (!agent.sandbox) {
+    lines.push(
+      "When a step has to be done by a person outside tethr (in an ad account, a tool's settings, the website) because you can't do it, hand them a checklist with the checklist tool: the steps in order, one action each, the exact values to paste in copy. Don't write the steps into your report.",
+    );
+  }
+  if (agent.playbooks?.length && !agent.sandbox) {
+    lines.push(`Your playbooks: ${agent.playbooks.join(", ")}. Load them with the Skill tool before you plan or write, and follow them; say which one a recommendation follows.`);
+  }
   if (agent.waived?.length) lines.push(`The team said to work without ${agent.waived.join(", ")}: don't ask for it again. Do what you can and say what you couldn't.`);
   if (agent.goalTitle) lines.push(`Your goal: ${agent.goalTitle}. Say how your work moves it.`);
   if (agent.lead && agent.subTeam?.length) lines.push(`Your sub-team: ${agent.subTeam.join(", ")}.`);
@@ -561,7 +574,7 @@ export const TEAM_TOOL_NAMES = ["team_list", "create_agent", "assign_task", "upd
 
 /** Phase 27: tethr tools every agent on the team has, whatever its connectors:
  * they're how it reaches a person (a question as a card, a connection it's missing). */
-export const AGENT_ALWAYS_TOOLS = ["ask", "need_connection", "delete_files"] as const;
+export const AGENT_ALWAYS_TOOLS = ["ask", "need_connection", "delete_files", "checklist"] as const;
 const isAlwaysTool = (name: string) => (AGENT_ALWAYS_TOOLS as readonly string[]).includes(name);
 
 /** Claude Code's MCP server name for an Integrations connector label. */

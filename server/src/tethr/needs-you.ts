@@ -2,6 +2,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { tethrOutputs } from "@paperclipai/db";
 import { openQuestions, type Question } from "./assistant/questions.js";
+import { openChecklists, type Checklist } from "./assistant/checklists.js";
 import * as chats from "./chats.js";
 import { AGENT_REPORT_SOURCE } from "./team-report.js";
 import { teamService, type TeamAgent } from "./team.js";
@@ -21,6 +22,8 @@ export interface NeedsYou {
   approvals: Array<OutputRow & { from: string | null; threadId: string | null }>;
   questions: Array<Question & { from: string }>;
   connections: Array<Question & { from: string }>;
+  /** Step-by-step jobs only a person can do outside tethr (set up a campaign, connect a tool). */
+  checklists: Array<Checklist & { from: string }>;
   count: number;
 }
 
@@ -60,7 +63,8 @@ export async function needsYou(db: Db, companyId: string): Promise<NeedsYou> {
   });
   const questions = open.filter((q) => !q.connection);
   const connections = open.filter((q) => !!q.connection);
-  return { approvals, questions, connections, count: approvals.length + questions.length + connections.length };
+  const checklists = [...openChecklists(companyId)].reverse().map((c) => ({ ...c, from: chatName(companyId, c.threadId, agents) }));
+  return { approvals, questions, connections, checklists, count: approvals.length + questions.length + connections.length + checklists.length };
 }
 
 /** For a chat's turns: what each agent's newest report card should show as waiting on the person. */
@@ -68,8 +72,8 @@ export async function needsYouOnReportCards(
   db: Db,
   companyId: string,
   runs: Array<{ id: string; sourceKey: string | null; agentId: string | null }>,
-): Promise<Map<string, { approvals: OutputRow[]; questions: Question[] }>> {
-  const byCard = new Map<string, { approvals: OutputRow[]; questions: Question[] }>();
+): Promise<Map<string, { approvals: OutputRow[]; questions: Question[]; checklists: Checklist[] }>> {
+  const byCard = new Map<string, { approvals: OutputRow[]; questions: Question[]; checklists: Checklist[] }>();
   // Runs come oldest first: the last card of each agent wins.
   const newest = new Map<string, string>();
   for (const run of runs) if (run.sourceKey === AGENT_REPORT_SOURCE && run.agentId) newest.set(run.agentId, run.id);
@@ -81,7 +85,8 @@ export async function needsYouOnReportCards(
     const group = [agent, ...agents.filter((a) => a.leadTag === agent.tag)];
     const approvals = await pendingOutputs(db, companyId, group.map((a) => a.agentId));
     const questions = group.flatMap((a) => openQuestions(companyId, { agentTag: a.tag }));
-    if (approvals.length || questions.length) byCard.set(cardId, { approvals, questions });
+    const checklists = group.flatMap((a) => openChecklists(companyId, { agentTag: a.tag }));
+    if (approvals.length || questions.length || checklists.length) byCard.set(cardId, { approvals, questions, checklists });
   }
   return byCard;
 }

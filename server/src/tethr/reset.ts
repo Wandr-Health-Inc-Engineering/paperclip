@@ -82,6 +82,7 @@ function storeFiles(): string[] {
     pick("TETHR_BRAIN_FILE", "tethr-brain.json"),
     // Phase 27: questions asked as cards.
     pick("TETHR_QUESTIONS_FILE", "tethr-questions.json"),
+    pick("TETHR_CHECKLISTS_FILE", "tethr-checklists.json"),
   ];
 }
 

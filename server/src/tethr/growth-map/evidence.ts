@@ -1,6 +1,3 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { and, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { tethrRouteRuns } from "@paperclipai/db";
@@ -11,9 +8,10 @@ import { getIntegrations, modeFor, type IntegrationsConfig } from "../integratio
 import { getSetup } from "../setup.js";
 import { teamService } from "../team.js";
 import { googleAdsConfigured } from "../tools/google-ads.js";
-import { CONNECTOR_OF, GROWTH_AREAS, type AreaSchedule, type DataSource } from "./areas.js";
+import { CONNECTOR_OF, type AreaSchedule, type DataSource } from "./areas.js";
 import { computeGrowthMap, type GrowthMapView, type MapEvidence } from "./map.js";
 import { getMapState } from "./store.js";
+import { installedPlaybooks } from "./playbooks.js";
 
 // Gathers what the growth map is worked out from (phase 26.9): memory notes and
 // skills, goal metrics, the team, connections, schedules and the playbooks on
@@ -22,16 +20,7 @@ import { getMapState } from "./store.js";
 /** Email domains that say nothing about which company someone works at. */
 const FREEMAIL = new Set(["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com", "icloud.com", "me.com", "aol.com", "proton.me", "protonmail.com"]);
 
-/** Where the playbooks (Claude Code skills) live on this machine. */
-export function playbooksDir(): string {
-  return process.env.TETHR_SKILLS_DIR || path.join(os.homedir(), ".claude", "skills");
-}
-
-export function installedPlaybooks(): Set<string> {
-  const wanted = new Set(GROWTH_AREAS.flatMap((a) => a.playbooks));
-  const dir = playbooksDir();
-  return new Set([...wanted].filter((name) => fs.existsSync(path.join(dir, name, "SKILL.md"))));
-}
+export { installedPlaybooks, playbooksDir } from "./playbooks.js";
 
 /** The company's own web domain, from the addresses that count as inside it. */
 export function companyDomain(cfg: IntegrationsConfig): string | null {

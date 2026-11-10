@@ -7,6 +7,7 @@ import { reportHasMore, reportLead } from "@/lib/tethr-cards";
 import { cn } from "@/lib/utils";
 import { UrgencyRow } from "./cards";
 import { ApprovalCard, QuestionCard } from "./decision-cards";
+import { ChecklistCard } from "./checklist-card";
 import { FileChips } from "./file-chip";
 
 // What tethr's agents report, the way an assistant would bring it to you (Mark,
@@ -61,6 +62,9 @@ function ReportItem({ run, companyId, agent, onOpenFile, onOpenChat }: Omit<Repo
           ))}
           {needs.approvals.map((o) => (
             <ApprovalCard key={o.id} output={o} companyId={companyId} threadId={typeof o.meta?.threadId === "string" ? o.meta.threadId : ""} />
+          ))}
+          {(needs.checklists ?? []).map((l) => (
+            <ChecklistCard key={l.id} checklist={l} companyId={companyId} />
           ))}
         </div>
       ) : null}

@@ -80,7 +80,7 @@ export function TethrQueue() {
     outputs?.filter((o) => ["gated", "changes_requested"].includes(o.status)).length ?? 0;
   // Questions and missing connections wait on a person too; approvals are listed below with their detail view.
   const { data: waiting } = useNeedsYou(selectedCompanyId ?? "");
-  const asked = (waiting?.questions.length ?? 0) + (waiting?.connections.length ?? 0);
+  const asked = (waiting?.questions.length ?? 0) + (waiting?.connections.length ?? 0) + (waiting?.checklists?.length ?? 0);
 
   if (!selectedCompanyId) {
     return <EmptyState icon={Inbox} message="Select a company to see what needs you." />;

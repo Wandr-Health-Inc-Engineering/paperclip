@@ -5,6 +5,7 @@ import { Hand, X } from "lucide-react";
 import { StatusDot } from "@/components/tethr/primitives";
 import { tethrApi, tethrKeys, type TethrNeedsYou } from "@/api/tethr";
 import { ApprovalCard, QuestionCard } from "./decision-cards";
+import { ChecklistCard } from "./checklist-card";
 
 // "Needs you": everything that waits on a person, in one list (Mark,
 // 2026-11-10: "I don't feel the UI is really intuitive on knowing what is
@@ -48,6 +49,11 @@ export function NeedsYouList({ companyId, data, approvals = true }: { companyId:
           <QuestionCard key={q.id} question={q} companyId={companyId} from={q.from} />
         ))}
       </Group>
+      <Group title="For you to do" count={data.checklists?.length ?? 0}>
+        {(data.checklists ?? []).map((l) => (
+          <ChecklistCard key={l.id} checklist={l} companyId={companyId} from={l.from} />
+        ))}
+      </Group>
       {approvals ? (
         <Group title="Approvals" count={data.approvals.length}>
           {data.approvals.map((o) => (
@@ -59,7 +65,7 @@ export function NeedsYouList({ companyId, data, approvals = true }: { companyId:
   );
 }
 
-export const NOTHING_NEEDS_YOU = "Nothing needs you. Approvals, questions from tethr and its agents, and missing connections show up here.";
+export const NOTHING_NEEDS_YOU = "Nothing needs you. Approvals, questions from tethr and its agents, checklists of things to do yourself, and missing connections show up here.";
 
 /** The chat's pill: how many things wait on you. Opens them as a sheet, buttons and all. Hidden at zero. */
 export function NeedsYouPill({ companyId }: { companyId: string }) {

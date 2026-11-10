@@ -156,3 +156,15 @@ export function groupReports<T extends { sourceKey?: string | null }>(runs: T[],
   }
   return out;
 }
+
+/** Where a checklist stands: how many steps are ticked, and which one is next (-1 when all are). */
+export function checklistProgress(steps: Array<{ done: boolean }>): { done: number; total: number; next: number } {
+  const done = steps.filter((s) => s.done).length;
+  return { done, total: steps.length, next: steps.findIndex((s) => !s.done) };
+}
+
+/** The message "Ask about it" sends, so tethr knows which checklist (and step) it's about. */
+export function checklistQuestionText(title: string, step: number | null, message: string): string {
+  const about = title.length > 120 ? `${title.slice(0, 120)}…` : title;
+  return `About the checklist "${about}"${step !== null ? `, step ${step + 1}` : ""}: ${message}`;
+}

@@ -178,7 +178,7 @@ function CardReply({ title, companyId, threadId, onSent, onCancel }: { title: st
 }
 
 /** The free-text box under a card. */
-function CommentBox({
+export function CommentBox({
   placeholder,
   label,
   note,

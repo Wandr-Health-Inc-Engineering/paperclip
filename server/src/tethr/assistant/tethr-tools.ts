@@ -121,7 +121,7 @@ export const TETHR_TOOL_DEFS: McpToolDef[] = [
   {
     name: "google_ads_report",
     description:
-      "Read-only numbers from the company's Google Ads account: report is overview (spend, clicks, conversions, cost per conversion), campaigns, keywords or search_terms; days is the lookback (default 30). Use it for what the ads actually did; keyword_ideas is for search volumes before spending. It can't change campaigns, budgets or bids: recommend changes and a person makes them.",
+      "Read-only numbers from the company's Google Ads account: report is overview (spend, clicks, conversions, cost per conversion), campaigns, keywords or search_terms; days is the lookback (default 30). Use it for what the ads actually did; keyword_ideas is for search volumes before spending. It can't change campaigns, budgets or bids: a person makes changes, so hand them a checklist (the checklist tool) with the exact settings to enter.",
     inputSchema: {
       type: "object",
       properties: {

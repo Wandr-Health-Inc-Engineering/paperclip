@@ -57,6 +57,7 @@ import { QueuedTray, waitingBehind } from "./chat/queue";
 import { NeedsYouPill, useNeedsYou } from "./chat/needs-you";
 import { FileThisButton, InboxCard, LessonCard, UrgencyRow } from "./chat/cards";
 import { ApprovalCard, DecidedLine, QuestionCard } from "./chat/decision-cards";
+import { ChecklistCard } from "./chat/checklist-card";
 import { FileChip, FileChips } from "./chat/file-chip";
 import { TeamUpdates } from "./chat/team-updates";
 import { groupReports, kindLabel } from "@/lib/tethr-cards";
@@ -309,7 +310,9 @@ export function TethrChat() {
   // Cards asked in this chat that no turn here shows (an agent held before it ever ran, say): they sit at the end.
   const shownCards = new Set(allRuns.flatMap((r) => [...(r.questions ?? []), ...(r.needsYou?.questions ?? [])].map((q) => q.id)));
   const looseCards = waiting ? [...waiting.connections, ...waiting.questions].filter((q) => q.threadId === threadId && !shownCards.has(q.id)) : [];
-  const empty = !isLoading && !allRuns.length && !pendingHere && !looseCards.length;
+  const shownChecklists = new Set(allRuns.flatMap((r) => [...(r.checklists ?? []), ...(r.needsYou?.checklists ?? [])].map((l) => l.id)));
+  const looseChecklists = waiting ? (waiting.checklists ?? []).filter((l) => l.threadId === threadId && !shownChecklists.has(l.id)) : [];
+  const empty = !isLoading && !allRuns.length && !pendingHere && !looseCards.length && !looseChecklists.length;
 
   // One turn of the chat (agents' reports are grouped separately, in TeamUpdates).
   const renderRun = (run: TethrChatRun) =>
@@ -455,6 +458,9 @@ export function TethrChat() {
             )}
             {looseCards.map((q) => (
               <QuestionCard key={q.id} question={q} companyId={c} />
+            ))}
+            {looseChecklists.map((l) => (
+              <ChecklistCard key={l.id} checklist={l} companyId={c} />
             ))}
             {showPending ? (
               <div className="flex flex-col gap-4">
@@ -906,6 +912,9 @@ function SessionTurn({
       ))}
       {(run.questions ?? []).map((q) => (
         <QuestionCard key={q.id} question={q} companyId={companyId} />
+      ))}
+      {(run.checklists ?? []).map((l) => (
+        <ChecklistCard key={l.id} checklist={l} companyId={companyId} />
       ))}
       {run.outputs
         .filter((o) => (o.kind === "team_agent" || o.kind === "team_change" || (o.kind === "drive_change" && !!o.meta?.cleanup)) && !DECIDABLE.has(o.status))

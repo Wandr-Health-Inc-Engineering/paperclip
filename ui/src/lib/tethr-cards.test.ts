@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardDetails, cardHeading, decidedLine } from "./tethr-cards";
+import { cardDetails, cardHeading, checklistProgress, checklistQuestionText, decidedLine } from "./tethr-cards";
 
 const AGENT_BODY = `Paid Ads (@paid-ads): Paid acquisition lead
 Mission: Owns paid search for new customers.
@@ -89,5 +89,17 @@ describe("an agent's report, the way an assistant would bring it", () => {
     const { cardHeading, decidedLine } = await import("./tethr-cards");
     expect(cardHeading({ kind: "drive_change", status: "gated", sensitivity: "destructive" })).toBe("Needs your approval: delete files · deletes or overwrites");
     expect(decidedLine({ kind: "drive_change", status: "published" })).toEqual({ tone: "ok", label: "Deleted: moved to the archive" });
+  });
+});
+
+describe("checklists", () => {
+  it("counts what's ticked and points at the next step", () => {
+    expect(checklistProgress([{ done: true }, { done: false }, { done: false }])).toEqual({ done: 1, total: 3, next: 1 });
+    expect(checklistProgress([{ done: true }, { done: true }])).toEqual({ done: 2, total: 2, next: -1 });
+  });
+
+  it("says which checklist, and which step, a question is about", () => {
+    expect(checklistQuestionText("Launch the campaign", 1, "Where's the budget setting?")).toBe('About the checklist "Launch the campaign", step 2: Where\'s the budget setting?');
+    expect(checklistQuestionText("x".repeat(130), null, "Hi")).toBe(`About the checklist "${"x".repeat(120)}…": Hi`);
   });
 });

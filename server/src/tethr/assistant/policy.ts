@@ -158,7 +158,7 @@ const CONNECTOR_RULES: Record<string, Rule[]> = {
     // Phase 27: a question to the person is a card inside Tethr. It grants nothing:
     // the answer comes back as their own message.
     // delete_files only stages a card (destructive: always a person's yes).
-    [/^(ask|need_connection|delete_files)$/, "draft"],
+    [/^(ask|need_connection|delete_files|checklist)$/, "draft"],
     [/.*/, "blocked"],
   ],
 };
@@ -281,6 +281,7 @@ function summarize(connector: string, name: string, input: Record<string, unknow
     return `Scoring ${n ? `${n} items` : from ? from : "a list"} with Jev`;
   }
   if (connector === "Tethr tools" && name === "goals_list") return "Reading the goals";
+  if (connector === "Tethr tools" && name === "checklist") return `Making you a checklist${typeof input.title === "string" ? `: “${input.title.slice(0, 60)}”` : ""}`;
   if (connector === "Tethr tools" && name === "delete_files") {
     const n = Array.isArray(input.paths) ? input.paths.length : 0;
     return n ? `Asking to delete ${n} file${n === 1 ? "" : "s"}` : "Asking to delete files";

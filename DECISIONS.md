@@ -300,6 +300,16 @@ Branch: `mark-sandbox` (local only). Date started: 2026-06-11.
 63. **Icons follow the job** and use only core's agent icon names, so the sidebar and tethr's pages agree.
 64. **No core edit to hide Paperclip's "no workspace" line.** It's in a busy upstream file; tethr's own
     line on the run page explains it.
+65. **What only a person can do comes as a checklist, not prose** (Mark, 2026-11-10, after tethr explained
+    in paragraphs how to set up a Google Ads campaign it couldn't create). The `checklist` tool makes a card
+    the person ticks off; the last tick is sent into the chat as their message so tethr checks it took.
+    It grants nothing and touches nothing outside tethr. "Not now" puts it away with a note, no turn.
+66. **Playbooks are loaded, not just listed.** A small-budget ask came back as five ad groups; the paid-ads
+    skill was installed but never loaded. CLAUDE.md now has a "## Playbooks" section above "Deciding"
+    (installed skills per area, "load it in that turn and follow it, say which"), plus a budget-fit rule
+    (a small budget or first test = one channel, one campaign, highest-intent targets, grow on results).
+    An agent's identity names the playbooks for its job's area (`playbooksForJob`, the growth map's
+    keyword rules). The sealed learner gets neither.
 
 ## Core changes (keep merge-safe)
 

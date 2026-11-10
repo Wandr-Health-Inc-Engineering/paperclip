@@ -29,6 +29,7 @@ import {
   validateSchedule,
 } from "./team-spec.js";
 import { DAY } from "./time.js";
+import { installedPlaybooks, playbooksForJob } from "./growth-map/playbooks.js";
 
 // Phase 23: tethr's team. An agent on the team is a real Paperclip agent (a
 // core agents row, a Tethr profile, a hard-stop budget policy, and a core
@@ -73,6 +74,8 @@ export interface TeamAgent {
   sandbox: boolean;
   /** The icon that stands for its job (a core agent icon name). */
   icon: string | null;
+  /** The installed playbooks for its job's area. */
+  playbooks: string[];
   /** Phase 27: connections its job can't be done without. */
   needs: AgentNeed[];
   /** Connections the team said to work without. */
@@ -230,8 +233,13 @@ export function teamService(db: Db) {
     return heartbeatService(db);
   }
 
-  function toAgent(row: { agent: typeof agents.$inferSelect; profile: typeof tethrAgentProfiles.$inferSelect }, goalTitles: Map<string, string>): TeamAgent {
+  function toAgent(
+    row: { agent: typeof agents.$inferSelect; profile: typeof tethrAgentProfiles.$inferSelect },
+    goalTitles: Map<string, string>,
+    installed: Set<string>,
+  ): TeamAgent {
     const config = (row.agent.adapterConfig ?? {}) as Partial<TeamConfig>;
+    const sandbox = config.sandbox === true;
     const tag = row.profile.tag;
     return {
       agentId: row.agent.id,
@@ -254,7 +262,9 @@ export function teamService(db: Db) {
       leadTag: config.leadTag ?? null,
       goalId: config.goalId ?? null,
       goalTitle: config.goalId ? (goalTitles.get(config.goalId) ?? null) : null,
-      sandbox: config.sandbox === true,
+      sandbox,
+      // The playbooks for its job's area: it's told to load them before it plans or writes.
+      playbooks: sandbox ? [] : playbooksForJob(`${row.agent.title ?? ""} ${row.profile.mission ?? ""} ${config.instructions ?? ""}`, installed),
       icon: row.agent.icon ?? null,
       needs: Array.isArray(config.needs) ? config.needs : [],
       waived: Array.isArray(config.waived) ? config.waived : [],
@@ -273,7 +283,8 @@ export function teamService(db: Db) {
     if (!rows.length) return [];
     const goalRows = await db.select({ id: goals.id, title: goals.title }).from(goals).where(eq(goals.companyId, companyId));
     const goalTitles = new Map(goalRows.map((g) => [g.id, g.title]));
-    return rows.map((row) => toAgent(row, goalTitles));
+    const installed = installedPlaybooks();
+    return rows.map((row) => toAgent(row, goalTitles, installed));
   }
 
   /** A lead's sub-agents. */
@@ -477,7 +488,11 @@ export function teamService(db: Db) {
       hardStopEnabled: true,
       createdByUserId: "tethr-team",
     });
-    let agent = toAgent({ agent: row, profile }, new Map(spec.goal ? [[goalId!, spec.goal.title]] : lead?.goalId ? [[lead.goalId, lead.goalTitle ?? ""]] : []));
+    let agent = toAgent(
+      { agent: row, profile },
+      new Map(spec.goal ? [[goalId!, spec.goal.title]] : lead?.goalId ? [[lead.goalId, lead.goalTitle ?? ""]] : []),
+      installedPlaybooks(),
+    );
     if (spec.schedule) {
       const routineId = await syncSchedule(companyId, agent, spec.schedule, true, actor);
       await writeConfig(agent, { routineId });

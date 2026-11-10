@@ -1246,6 +1246,21 @@ its folder with approval, it's just gonna end up getting clogged."
   automatic), `meta.cleanup`. Approving MOVES them (`assistant/cleanup.ts`): Drive → `00 Tethr/99
   Archive/tethr files`, no Drive → the workspace's `archive/`. Nothing is erased; each file is checked
   again on approval; the chat that asked gets a note either way.
+- **Checklists for what only a person can do** (Mark: "help me get it set up like a checklist"):
+  tool `checklist` (person-tools.ts, every agent has it; not private turns or the learner), store
+  `assistant/checklists.ts` → instance-dir `tethr-checklists.json` (in the reset list). 2-12 steps, each
+  `do` (one line) + optional `detail` + `copy` (exact text to paste); at most 3 open per chat, no two
+  open with one title. Card `chat/checklist-card.tsx` (progress, a tick per step, Copy, "Ask tethr",
+  "Not now" with an inline confirm). Routes (people only): `POST /checklists/:id/steps/:stepId {done}`
+  (the tick that completes it sends `checklistDoneText` into that chat as the person's message) and
+  `POST /checklists/:id/dismiss` (a note for the chat, no turn). Runs carry `checklists`; Needs you has
+  a "For you to do" group and counts them; an agent's newest report card carries its open ones.
+- **Playbooks are loaded first** (Mark: "ensure it's invoking skills… not sure it's using its paid ads
+  expertise"): `growth-map/playbooks.ts` (`installedPlaybooks`, `playbooksContextText`,
+  `playbooksForJob`) gives CLAUDE.md v9 a "## Playbooks" section (installed skills per area; load in that
+  turn, follow it, say which) above "Deciding", which gains a budget-fit rule. A team agent's
+  `playbooks` (TeamAgent, from its title/mission/instructions) go into its identity text. Verified on the
+  live chat (read-only): the small-budget campaign turn made no Skill call.
 
 ## Wiring review (2026-11-09): what's true, and two known gaps
 

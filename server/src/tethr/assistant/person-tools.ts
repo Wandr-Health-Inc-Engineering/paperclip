@@ -6,6 +6,7 @@ import { isTainted, mainThreadId } from "../chats.js";
 import { connections, findConnection } from "../connections.js";
 import { orgService } from "../org.js";
 import { checkCleanup, cleanupCardBody, cleanupDestination, CLEANUP_LIMITS } from "./cleanup.js";
+import { ChecklistInputError, createChecklist, parseChecklist } from "./checklists.js";
 import { personalHealthReason } from "../screen.js";
 import { teamService } from "../team.js";
 import { askQuestion, buttonsOf, parseAsk, QuestionInputError, type Question } from "./questions.js";
@@ -16,7 +17,7 @@ import type { McpToolDef, TethrToolContext, TethrToolResult } from "./tethr-tool
 // agent on the team has these whatever its connectors (team-spec.ts
 // AGENT_ALWAYS_TOOLS); a private turn and the sealed learner don't.
 
-export const PERSON_TOOL_NAMES = ["ask", "need_connection", "delete_files"] as const;
+export const PERSON_TOOL_NAMES = ["ask", "need_connection", "delete_files", "checklist"] as const;
 export const PERSON_TOOL_SET = new Set<string>(PERSON_TOOL_NAMES);
 
 export const PERSON_TOOL_DEFS: McpToolDef[] = [
@@ -58,6 +59,33 @@ export const PERSON_TOOL_DEFS: McpToolDef[] = [
         why: { type: "string", description: "What can't be done without it, in a sentence or two. Shown on the card." },
       },
       required: ["connector", "why"],
+    },
+  },
+  {
+    name: "checklist",
+    description:
+      "Hand the person a step-by-step checklist for something only they can do outside tethr (set up a campaign in Google Ads, connect a tool, change a setting in Stripe or on the website). It shows as a card they tick off as they go; each step can carry the exact text to paste. When they tick the last step you're told, so you can check it took. Use this instead of describing the steps in your reply or offering a doc. Steps in order, one action each, the way they'd click through it; put the values to paste in copy.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "What it gets done, in a few words (\"Launch the malaria search campaign\")." },
+        why: { type: "string", description: "Optional: one line on why it matters." },
+        steps: {
+          type: "array",
+          minItems: 2,
+          maxItems: 12,
+          items: {
+            type: "object",
+            properties: {
+              do: { type: "string", description: "The action, in one line (\"In Google Ads, create a Search campaign named …\")." },
+              detail: { type: "string", description: "Optional: where to find it or what to check, in a line or two." },
+              copy: { type: "string", description: "Optional: exact text to paste (headlines, a keyword list, a budget)." },
+            },
+            required: ["do"],
+          },
+        },
+      },
+      required: ["title", "steps"],
     },
   },
   {
@@ -153,6 +181,17 @@ async function needConnection(args: Record<string, unknown>, ctx: TethrToolConte
   };
 }
 
+/** A step-by-step checklist the person ticks off; the chat hears when it's done. */
+async function makeChecklist(args: Record<string, unknown>, ctx: TethrToolContext & { db: Db; companyId: string; threadId: string }): Promise<TethrToolResult> {
+  const parsed = parseChecklist(args);
+  const member = await teamService(ctx.db).byThread(ctx.companyId, ctx.threadId);
+  const list = await createChecklist(ctx.companyId, { ...parsed, threadId: ctx.threadId, runId: ctx.runId ?? null, agentTag: member?.tag ?? null }, ctx.now?.() ?? new Date());
+  return {
+    text: `The checklist "${list.title}" (${list.steps.length} steps) is a card right under your reply. Say in a line what it's for and end your reply; don't repeat the steps. You'll be told when they've ticked the last one.`,
+    meta: { checklistId: list.id, steps: list.steps.length },
+  };
+}
+
 /** Ask the person to remove files from files/: one approval card for the lot. */
 async function deleteFiles(args: Record<string, unknown>, ctx: TethrToolContext & { db: Db; companyId: string; threadId: string }): Promise<TethrToolResult> {
   const why = typeof args.why === "string" ? args.why.replace(/\s+/g, " ").trim().slice(0, CLEANUP_LIMITS.why) : "";
@@ -193,9 +232,10 @@ export async function runPersonTool(name: string, args: Record<string, unknown>,
     if (name === "ask") return await ask(args, scoped);
     if (name === "need_connection") return await needConnection(args, scoped);
     if (name === "delete_files") return await deleteFiles(args, scoped);
+    if (name === "checklist") return await makeChecklist(args, scoped);
     return { text: `There's no tool called ${name}.`, isError: true };
   } catch (err) {
-    if (err instanceof QuestionInputError) return { text: `${name}: ${err.message}`, isError: true };
+    if (err instanceof QuestionInputError || err instanceof ChecklistInputError) return { text: `${name}: ${err.message}`, isError: true };
     throw err;
   }
 }

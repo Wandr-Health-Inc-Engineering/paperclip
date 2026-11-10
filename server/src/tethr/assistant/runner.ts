@@ -40,6 +40,7 @@ import { indexTurnSoon } from "../hermes/indexer.js";
 import { memorySnapshot, migrateFreeformMemory } from "../hermes/memory-layer.js";
 import { growthMap } from "../growth-map/evidence.js";
 import { growthMapContextText } from "../growth-map/text.js";
+import { installedPlaybooks, playbooksContextText } from "../growth-map/playbooks.js";
 import { ensureSandboxWorkspace, sandboxClaudeMd, sealedThreadTag } from "../learn/learner.js";
 import { SANDBOX_TOOLS } from "./learn-tools.js";
 import { SANDBOX_BUILTINS } from "./sandbox.js";
@@ -441,6 +442,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
             growthMap: growthMapText,
             switches,
             connections: connectionsContextText(companyId),
+            playbooks: playbooksContextText(installedPlaybooks()),
           });
       ({ personaPath, skillDir } = await ensurePersona());
       const hookScript = await ensureHookScript();

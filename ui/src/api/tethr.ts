@@ -179,7 +179,25 @@ export interface TethrChatRun extends TethrRouteRun {
   /** Phase 27: questions this turn asked as cards with buttons. */
   questions?: TethrQuestion[];
   /** Phase 27: on an agent's newest report card, what it (and its sub-team) waits on a person for. */
-  needsYou?: { approvals: TethrChatOutput[]; questions: TethrQuestion[] } | null;
+  needsYou?: { approvals: TethrChatOutput[]; questions: TethrQuestion[]; checklists?: TethrChecklist[] } | null;
+  /** Step-by-step jobs this turn handed the person, ticked off on the card. */
+  checklists?: TethrChecklist[];
+}
+
+/** A step-by-step job only a person can do outside tethr (set up a campaign, connect a tool). */
+export interface TethrChecklist {
+  id: string;
+  threadId: string;
+  runId: string | null;
+  /** The agent that made it, or null for tethr. */
+  agentTag: string | null;
+  title: string;
+  why: string | null;
+  steps: Array<{ id: string; do: string; detail: string | null; copy: string | null; done: boolean; doneAt: string | null }>;
+  /** dismissed = put away unfinished. */
+  status: "open" | "done" | "dismissed";
+  createdAt: string;
+  doneAt: string | null;
 }
 
 /** Phase 27: everything that waits on a person, as one list. */
@@ -187,6 +205,7 @@ export interface TethrNeedsYou {
   approvals: Array<TethrChatOutput & { from: string | null; threadId: string | null }>;
   questions: Array<TethrQuestion & { from: string }>;
   connections: Array<TethrQuestion & { from: string }>;
+  checklists: Array<TethrChecklist & { from: string }>;
   count: number;
 }
 
@@ -1208,6 +1227,9 @@ export const tethrApi = {
   /** Everything waiting on a person: approvals, questions, missing connections. */
   needsYou: (c: string) => api.get<TethrNeedsYou>(`/tethr/${c}/needs-you`),
   /** After fixing a connection from a card: close the cards it answers and start what waited. */
+  tickChecklistStep: (c: string, id: string, stepId: string, done: boolean) =>
+    api.post<{ checklist: TethrChecklist; routeRunId: string | null }>(`/tethr/${c}/checklists/${id}/steps/${stepId}`, { done }),
+  dismissChecklist: (c: string, id: string) => api.post<{ checklist: TethrChecklist }>(`/tethr/${c}/checklists/${id}/dismiss`, {}),
   recheckConnections: (c: string) => api.post<{ closed: number; startedTasks: number }>(`/tethr/${c}/team/recheck`, {}),
   /** A message still waiting behind another turn: change its words, or take it back. 409 once it has started. */
   editQueuedTurn: (c: string, runId: string, text: string) => api.patch<{ ok: true }>(`/tethr/${c}/chat-turns/${runId}`, { text }),
