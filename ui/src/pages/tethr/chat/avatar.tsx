@@ -4,7 +4,10 @@ import { AgentGlyph, StatusDot } from "@/components/tethr/primitives";
 import type { TethrTeamAgent } from "@/api/tethr";
 import { agentStatusWords, agentTone } from "@/lib/tethr-team";
 import { cn } from "@/lib/utils";
+import { Settings2 } from "lucide-react";
+import { Link } from "../../../lib/router";
 import { AgentAbout } from "./team";
+import { AgentSettingsSheet } from "./agent-settings";
 
 // Who you're talking to, top centre of the chat (Mark, 2026-11-10: "an avatar
 // like circle in the middle with a static logo and then when it's working it
@@ -27,6 +30,9 @@ export function ChatAvatar({
   companyId: string;
 }) {
   const [open, setOpen] = useState(false);
+  // The settings sheet is the avatar's own, not the popover's: the popover closes on
+  // any click outside it, and the sheet is drawn on the page (outside it).
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -71,7 +77,14 @@ export function ChatAvatar({
       {open ? (
         <div className="tethr-glass tethr-fix-panel absolute left-1/2 top-12 z-30 w-[min(21rem,85vw)] -translate-x-1/2 space-y-3 rounded-[14px] p-3.5 text-left">
           {agent ? (
-            <AgentAbout agent={agent} companyId={companyId} />
+            <AgentAbout
+              agent={agent}
+              companyId={companyId}
+              onOpenSettings={() => {
+                setOpen(false);
+                setSettingsOpen(true);
+              }}
+            />
           ) : (
             <>
               <p className="text-[13.5px] font-medium">{name}</p>
@@ -80,10 +93,16 @@ export function ChatAvatar({
                   ? "A side chat with tethr, for one task or project. It shares tethr's memory, goals and team with your ongoing chat."
                   : "Your one ongoing chat with tethr. It's always here and can't be closed; open a side chat for a focused task."}
               </p>
+              <Link to="/tethr-settings" onClick={() => setOpen(false)} className="tethr-btn tethr-btn-glass inline-flex h-8 px-3.5 text-[12.5px]">
+                <Settings2 className="h-3.5 w-3.5" />
+                tethr's settings and connections
+              </Link>
+              <p className="text-[11.5px] leading-snug tethr-text-3">Each agent's settings are in its own chat: tap its avatar.</p>
             </>
           )}
         </div>
       ) : null}
+      {agent && settingsOpen ? <AgentSettingsSheet companyId={companyId} tag={agent.tag} onClose={() => setSettingsOpen(false)} /> : null}
     </div>
   );
 }

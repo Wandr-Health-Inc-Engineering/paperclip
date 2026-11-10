@@ -2,6 +2,7 @@ import type { Db } from "@paperclipai/db";
 import { logActivity } from "../../services/activity-log.js";
 import { isTainted, markTainted } from "../chats.js";
 import { autonomyFor, getIntegrations, modeFor } from "../integrations.js";
+import { effectiveSettings, settingsOwner } from "../agent-settings.js";
 import { spendAdapterFor } from "../spend/adapters.js";
 import { checkSpend, type SpendCheck } from "../spend/guard.js";
 import { recordChange, recordChangeOutcome } from "../spend/log.js";
@@ -80,10 +81,11 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
       return preDecision("deny", "Tethr approval gate: blocked — the chat can't open pages on this computer or its local network.");
     }
   }
+  // An agent goes by its own settings (a sub-agent by its lead's); tethr by Integrations.
+  const lead = member?.leadTag ? await teamService(db).get(ctx.companyId, member.leadTag).catch(() => null) : null;
+  const { mode, autonomy } = member ? effectiveSettings(cfg, settingsOwner(member, lead), c.connector) : { mode: modeFor(cfg, c.connector), autonomy: autonomyFor(cfg, c.connector) };
   // Spending: whether this call spends more (an account tethr can read knows a
-  // budget cut isn't), and whether it stays under the connector's monthly cap.
-  const mode = modeFor(cfg, c.connector);
-  const autonomy = autonomyFor(cfg, c.connector);
+  // budget cut isn't), and whether it stays under the cap that applies.
   let spend: SpendCheck | null = null;
   if (c.connector && (mode === "auto" || mode === "ask") && (c.cls === "money" || (c.cls === "write" && spendAdapterFor(c.connector)))) {
     spend = await checkSpend(ctx.companyId, c, toolInput, autonomy);

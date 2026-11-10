@@ -30,6 +30,7 @@ import {
 } from "./team-spec.js";
 import { DAY } from "./time.js";
 import { installedPlaybooks, playbooksForJob } from "./growth-map/playbooks.js";
+import { settingsForTools, settingsLines, widensSettings, widensSpending, type AgentSettings } from "./agent-settings.js";
 
 // Phase 23: tethr's team. An agent on the team is a real Paperclip agent (a
 // core agents row, a Tethr profile, a hard-stop budget policy, and a core
@@ -76,6 +77,8 @@ export interface TeamAgent {
   icon: string | null;
   /** The installed playbooks for its job's area. */
   playbooks: string[];
+  /** Its own settings per tool; empty = it follows tethr's (or, for a sub-agent, its lead's). */
+  settings: AgentSettings;
   /** Phase 27: connections its job can't be done without. */
   needs: AgentNeed[];
   /** Connections the team said to work without. */
@@ -133,6 +136,8 @@ interface TeamConfig {
   needs?: AgentNeed[];
   waived?: string[];
   heldIssues?: string[];
+  /** Its own settings per tool (agent-settings.ts). Missing: it follows tethr's (agents made before this). */
+  settings?: AgentSettings;
 }
 
 type Actor = { userId?: string | null; agentId?: string | null };
@@ -165,6 +170,8 @@ export interface TeamPatch {
   ownerRole?: OverseerRole;
   /** The whole list of connections its job depends on (replaces the old one). */
   needs?: string[];
+  /** Settings for some of its tools (merged in; agent-settings.ts parseAgentSettings). */
+  settings?: AgentSettings;
 }
 
 /** Check a change to an agent (update_agent). Only the fields given are changed. */
@@ -204,8 +211,14 @@ export function validateTeamPatch(raw: Record<string, unknown>, companyId: strin
 export function raisesLimits(agent: TeamAgent, patch: TeamPatch): boolean {
   return (
     (patch.budgetMonthlyUsd !== undefined && Math.round(patch.budgetMonthlyUsd * 100) > agent.budgetMonthlyCents) ||
-    (patch.maxRunsPerDay !== undefined && patch.maxRunsPerDay > agent.maxRunsPerDay)
+    (patch.maxRunsPerDay !== undefined && patch.maxRunsPerDay > agent.maxRunsPerDay) ||
+    (patch.settings !== undefined && widensSpending(agent.settings, patch.settings))
   );
+}
+
+/** Does the change let it do more on its own (only a person decides that)? */
+export function widensAutonomy(agent: TeamAgent, patch: TeamPatch): boolean {
+  return patch.settings !== undefined && widensSettings(agent.settings, patch.settings);
 }
 
 /** A change in plain words, for its approval card and the activity log. */
@@ -214,6 +227,10 @@ export function describePatch(agent: TeamAgent, patch: TeamPatch, timezone?: str
   if (patch.title !== undefined) lines.push(`Title: ${agent.title} → ${patch.title}`);
   if (patch.mission !== undefined) lines.push(`Mission: ${patch.mission}`);
   if (patch.connectors !== undefined) lines.push(`Tools: ${patch.connectors.length ? patch.connectors.join(", ") : "none"} (was ${agent.connectors.join(", ") || "none"})`);
+  if (patch.settings !== undefined) {
+    const tools = patch.connectors ?? agent.connectors;
+    lines.push(...settingsLines(settingsForTools(tools, patch.settings, agent.settings), tools));
+  }
   if (patch.schedule !== undefined) {
     lines.push(patch.schedule ? `Schedule: ${scheduleWords(patch.schedule.cron, timezone)}\n${patch.schedule.brief}` : "Schedule: none (only when tethr assigns work)");
   }
@@ -263,6 +280,7 @@ export function teamService(db: Db) {
       goalId: config.goalId ?? null,
       goalTitle: config.goalId ? (goalTitles.get(config.goalId) ?? null) : null,
       sandbox,
+      settings: config.settings && typeof config.settings === "object" ? config.settings : {},
       // The playbooks for its job's area: it's told to load them before it plans or writes.
       playbooks: sandbox ? [] : playbooksForJob(`${row.agent.title ?? ""} ${row.profile.mission ?? ""} ${config.instructions ?? ""}`, installed),
       icon: row.agent.icon ?? null,
@@ -443,6 +461,7 @@ export function teamService(db: Db) {
       leadTag: lead?.tag ?? null,
       goalId,
       ...(opts.sandbox ? { sandbox: true } : {}),
+      ...(!lead && Object.keys(spec.settings ?? {}).length ? { settings: spec.settings } : {}),
       ...(spec.needs.length ? { needs: spec.needs.map((key) => ({ key, why: null, confirmFirst: false })) } : {}),
     };
     const [row] = await db
@@ -528,6 +547,13 @@ export function teamService(db: Db) {
     const config: Partial<TeamConfig> = {};
     if (patch.instructions !== undefined) config.instructions = patch.instructions;
     if (patch.connectors !== undefined) config.connectors = patch.connectors;
+    // Its own settings: the tools it has (new ones need approval until set), changed ones merged in.
+    // A sub-agent keeps none of its own; it uses its lead's.
+    if (!agent.leadTag && (patch.connectors !== undefined || patch.settings !== undefined)) {
+      const tools = patch.connectors ?? agent.connectors;
+      const known = Object.keys(agent.settings).length > 0 || patch.settings !== undefined;
+      if (known) config.settings = settingsForTools(tools, patch.settings ?? {}, agent.settings);
+    }
     if (patch.maxRunsPerDay !== undefined) config.maxRunsPerDay = patch.maxRunsPerDay;
     // A need that stays keeps what's known about it; one that's dropped no longer holds the agent.
     if (patch.needs !== undefined) {

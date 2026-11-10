@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Pause, Play, Users } from "lucide-react";
+import { ChevronRight, Pause, Play, Settings2, Users } from "lucide-react";
 import { AgentGlyph, StatusDot } from "@/components/tethr/primitives";
 import { tethrApi, tethrKeys, type TethrTeamAgent } from "@/api/tethr";
 import { readClosed, writeClosed } from "@/lib/tethr-agent-tree";
@@ -107,7 +107,7 @@ export function TeamSection({
 }
 
 /** What an agent is, what it's allowed, what it has used, and Pause/Resume. Opens from the chat's avatar. */
-export function AgentAbout({ agent, companyId }: { agent: TethrTeamAgent; companyId: string }) {
+export function AgentAbout({ agent, companyId, onOpenSettings }: { agent: TethrTeamAgent; companyId: string; /** Opens its settings sheet (owned by the caller, outside any popover). */ onOpenSettings: () => void }) {
   const queryClient = useQueryClient();
   const pause = useMutation({
     mutationFn: (paused: boolean) => tethrApi.setTeamAgentPaused(companyId, agent.tag, paused),
@@ -146,11 +146,21 @@ export function AgentAbout({ agent, companyId }: { agent: TethrTeamAgent; compan
         </dd>
         <dt className="tethr-text-3">Tools</dt>
         <dd>{["Web search", "its files", ...agent.connectors].join(", ")}</dd>
+        {agent.settingsSummary ? (
+          <>
+            <dt className="tethr-text-3">On its own</dt>
+            <dd>{agent.settingsSummary.onItsOwn.length ? agent.settingsSummary.onItsOwn.join("; ") : "Nothing yet: changes need approval"}</dd>
+          </>
+        ) : null}
       </dl>
       <div className="flex items-center justify-between gap-3 pt-0.5">
         <span className="text-[11.5px] leading-snug tethr-text-3">
-          {agent.paused ? "Paused: no scheduled or assigned runs." : "To change its job or schedule, ask tethr."}
+          {agent.paused ? "Paused: no scheduled or assigned runs." : agent.leadTag ? `Its settings live on ${agent.leadTag}.` : "Its tools, what it does on its own and its limits are in Settings."}
         </span>
+        <button type="button" onClick={onOpenSettings} className="tethr-btn tethr-btn-glass h-8 shrink-0 px-3.5 text-[12.5px]">
+          <Settings2 className="h-3.5 w-3.5" />
+          Settings
+        </button>
         <button
           type="button"
           onClick={() => pause.mutate(!agent.paused)}

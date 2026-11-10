@@ -71,6 +71,7 @@ import { mirrorDir } from "../tethr/mirror.js";
 import multer from "multer";
 import { autonomyFor, getIntegrations, KNOWN_CONNECTORS, modeFor, sanitizeIntegrationsPatch, updateIntegrations } from "../tethr/integrations.js";
 import { nativeConnectorOf } from "../tethr/native-connectors.js";
+import { effectiveSettings, settingsOwner } from "../tethr/agent-settings.js";
 import { checkSpend } from "../tethr/spend/guard.js";
 import { recentChanges, recordChange, spentThisMonth } from "../tethr/spend/log.js";
 import { spendAdapterFor } from "../tethr/spend/adapters.js";
@@ -188,10 +189,11 @@ export function tethrRoutes(db: Db) {
       const listCfg = getIntegrations(ctx.companyId);
       // A tool that is its own connector (Google Ads' changes) is listed only while
       // that connector can change things, and only to an agent given it.
+      const listLead = member?.leadTag ? await teamService(db).get(ctx.companyId, member.leadTag).catch(() => null) : null;
       const nativeOk = (name: string) => {
         const connector = nativeConnectorOf(name);
         if (!connector) return true;
-        const mode = modeFor(listCfg, connector);
+        const mode = member ? effectiveSettings(listCfg, settingsOwner(member, listLead), connector).mode : modeFor(listCfg, connector);
         return (mode === "ask" || mode === "auto") && (connector !== "Google Ads" || adsBackend().configured()) && (!member || member.connectors.includes(connector));
       };
       const tools = (
@@ -233,10 +235,13 @@ export function tethrRoutes(db: Db) {
     // A tool that is its own connector (Google Ads) follows that connector's mode,
     // autonomy and spending cap, exactly as the PreToolUse gate decided.
     const connector = classified.connector ?? TETHR_TOOLS_LABEL;
-    const autonomy = autonomyFor(cfg, connector);
+    // An agent goes by its own settings (a sub-agent by its lead's); tethr by Integrations.
+    const callLead = member?.leadTag ? await teamService(db).get(ctx.companyId, member.leadTag).catch(() => null) : null;
+    const settings = member ? effectiveSettings(cfg, settingsOwner(member, callLead), connector) : { mode: modeFor(cfg, connector), autonomy: autonomyFor(cfg, connector) };
+    const autonomy = settings.autonomy;
     const spend = connector !== TETHR_TOOLS_LABEL && (classified.cls === "money" || classified.cls === "write") ? await checkSpend(ctx.companyId, classified, args, autonomy) : null;
     if (spend) classified = spend.classified;
-    const decision = decide(classified, { mode: modeFor(cfg, connector), shell: cfg.shell, autonomy, withinCap: spend?.withinCap, spendNote: spend?.spendNote });
+    const decision = decide(classified, { mode: settings.mode, shell: cfg.shell, autonomy, withinCap: spend?.withinCap, spendNote: spend?.spendNote });
     const hash = inputHash(fullName, args);
     // The gate held it for a person and they approved it: the grant it just used lets it run here, once.
     const approved = decision.action === "ask" && connector !== TETHR_TOOLS_LABEL ? !!(await claimApprovedCall(db, ctx.companyId, ctx.threadId, hash)) : false;

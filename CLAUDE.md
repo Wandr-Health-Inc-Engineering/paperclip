@@ -1319,6 +1319,24 @@ DECISIONS 67-68.
   Integration rules.) A saved Gmail draft sent as it is (`draftId`) runs when Gmail's outside people
   are Automatic and is refused otherwise, never a card (`Classified.opaque`). Tethr tools and PostHog
   get a Deleting setting. Mark's instance: every connector on Automatic, the three kinds on Ask.
+- **Each agent has its own settings, in its pane** (Mark: "nesting settings for the agent within the agent
+  panes themselves is better… if there's a paid ad agent that's the head that's where all the settings
+  should live"). `agent-settings.ts`: `adapterConfig.settings` = per tool `{ mode: read|ask|auto, autonomy }`
+  (`TeamAgent.settings`). `effectiveSettings(cfg, owner, connector)`: Integrations Off wins for everyone; a
+  sub-agent uses its lead's (`settingsOwner`); an agent with no entry follows tethr's (agents made before
+  this). The hook handler and the tools endpoint use it in an agent's thread (mode, autonomy, cap). New
+  agents get an entry per tool (`settingsForTools`, default Approval needed); `create_agent`/`update_agent`
+  take `settings` as modes only (`parseAgentSettings(byPerson:false)` keeps the three kinds on ask); a
+  proposal with anything on Automatic is always a card, and `update_agent` widening is a card
+  (`widensAutonomy`; spending → "spend"). A person sets everything in the sheet: `GET|PUT
+  /tethr/:c/team/:tag/settings` (people only; a sub-agent's tools → 409 "settings live on @lead"; its
+  connectors stay within the lead's; an agent that followed tethr's starts from them when first set). Cards
+  and the sheet show `settingsSummary` (Runs on its own / Needs your approval / Looks only); the roster
+  carries it. UI: `chat/agent-settings.tsx` `AgentSettingsSheet` (portaled; tools with
+  `settings/AutonomyKinds.tsx`, the same controls as Integrations' `ConnectorAutonomy`, limits, sub-team,
+  pause), opened from the agent's avatar (the avatar owns it: the popover closes on outside clicks, which
+  once closed the sheet; `chat/avatar.test.tsx`) and the Company page. Integrations = what's connected +
+  tethr's own. Tests: `tethr-agent-settings.test.ts` (7).
 - **The working pill's loop is the "tethered orbit"** (`components/tethr/Orbit.tsx`, `.tethr-orbit*`): a
   body circling a centre point on a hairline tether with a fading trail. The nebula stays the avatar's.
 

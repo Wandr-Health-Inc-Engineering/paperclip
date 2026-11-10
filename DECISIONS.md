@@ -320,6 +320,12 @@ Branch: `mark-sandbox` (local only). Date started: 2026-06-11.
     "Google Ads" (Read only by default). New campaigns start paused; turning one on or raising a budget
     is spending. A person's edit in Google Ads within 14 days makes a card instead of being undone.
     Mark's instance: Google Ads set to Automatic with spending on "Ask an admin" and no cap, his call.
+69. **Settings live on each agent; a lead's cover its team** (Mark, 2026-11-10). Integrations keeps what's
+    connected (Off is off for everyone) and tethr's own settings. Each agent has a mode per tool (Read only,
+    Approval needed, Automatic) and the three kinds under Automatic, set in its pane. New agents start on
+    Approval needed; tethr can propose modes, but anything that lets an agent do more on its own is a
+    person's call (a card, or the person's own edit). Agents made before this follow tethr's settings until
+    their own are set.
 
 ## Core changes (keep merge-safe)
 

@@ -112,6 +112,9 @@ export function TethrSettings() {
           <MonoTag>connectors</MonoTag>
           <span className="text-[11.5px] tethr-text-3">From your Claude account on this Mac</span>
         </div>
+        <p className="px-1 text-[12px] leading-snug tethr-text-3">
+          These are tethr's own settings, for your chats with it. Each agent has its own in its chat (tap its avatar, then Settings); a lead's cover its team. Off here turns a connector off for everyone.
+        </p>
         <div className="tethr-panel divide-y divide-[var(--tethr-rim)] overflow-hidden">
           {integrations.connectors.map((c) => (
             <ConnectorRow

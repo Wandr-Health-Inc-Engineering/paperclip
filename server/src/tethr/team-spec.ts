@@ -3,6 +3,7 @@ import { METRIC_SOURCES, METRIC_UNITS } from "./goals.js";
 import { inferOverseerRole, OVERSEER_ROLES, type OverseerRole } from "./overseers.js";
 import { validCron } from "./setup.js";
 import { GOOGLE_ADS_WRITE_TOOLS, nativeConnectorOf } from "./native-connectors.js";
+import { AgentSettingsError, parseAgentSettings, settingsForTools, settingsLines, type AgentSettings } from "./agent-settings.js";
 
 // Phase 23-24: the spec of an agent on tethr's team, and the words around it.
 // No DB here: validation, the schedule in plain words, the approval card's
@@ -83,6 +84,8 @@ export interface TeamAgentSpec {
   needs: string[];
   /** Phase 27: the icon that stands for its job (one of core's agent icons). */
   icon: string;
+  /** Its own settings per tool (agent-settings.ts): what runs on its own, what needs approval. Empty for a sub-agent (it uses its lead's). */
+  settings: AgentSettings;
 }
 
 /** The learner's icon. */
@@ -326,7 +329,19 @@ export function validateTeamSpec(raw: unknown, ctx: SpecContext): TeamAgentSpec 
     needs: validateNeeds(r.needs, ctx),
     // An icon it was given is kept if it's one core knows; otherwise its job picks one.
     icon: typeof r.icon === "string" && (AGENT_ICON_NAMES as readonly string[]).includes(r.icon) && r.icon !== "bot" ? r.icon : iconFor({ name, title, mission }),
+    // A sub-agent works under its lead's settings. tethr proposes modes; only a person
+    // puts spending, outside people or deletes on Automatic.
+    settings: ctx.lead ? {} : settingsForTools(connectors, specSettings(r.settings, connectors)),
   };
+}
+
+function specSettings(raw: unknown, connectors: string[]): AgentSettings {
+  try {
+    return parseAgentSettings(raw, connectors, { byPerson: false });
+  } catch (err) {
+    if (err instanceof AgentSettingsError) throw new TeamInputError(err.message);
+    throw err;
+  }
 }
 
 /** A stored spec (a card's meta) back into validate's input shape, to check it again on approval. */
@@ -407,7 +422,8 @@ export function teamSpecText(
     ...(spec.goal ? [goalLine(spec.goal)!] : []),
     `Runs: ${spec.schedule ? `${scheduleWords(spec.schedule.cron, opts.timezone)}, and when ${boss} assigns it work` : `only when ${boss} assigns it work`}`,
     `Limits: up to ${spec.maxRunsPerDay} runs a day, $${spec.budgetMonthlyUsd} a month (hard stop)`,
-    `Tools: web search and its files${spec.connectors.length ? `, plus ${spec.connectors.join(", ")}` : ""}. Anything it would send, post, spend or delete still asks first.`,
+    `Tools: web search and its files${spec.connectors.length ? `, plus ${spec.connectors.join(", ")}` : ""}.`,
+    ...(opts.leadTag ? [`Settings: ${opts.leadTag}'s (a sub-agent works under its lead's settings).`] : settingsLines(spec.settings, spec.connectors)),
     ...(opts.needs?.length ? [needsLine(opts.needs)] : []),
     opts.leadTag
       ? `Part of ${opts.leadTag}'s team: it reports to ${opts.leadTag}, which reports to tethr.`

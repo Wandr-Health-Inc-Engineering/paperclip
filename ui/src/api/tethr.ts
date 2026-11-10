@@ -615,6 +615,49 @@ export interface TethrTeamAgent {
   lastReportAt: string | null;
   budgetMonthlyCents: number;
   spentMonthlyCents: number;
+  /** What runs on its own and what needs approval (a sub-agent: its lead's settings). */
+  settingsSummary?: TethrSettingsSummary;
+}
+
+export interface TethrSettingsSummary {
+  onItsOwn: string[];
+  needsApproval: string[];
+  lookOnly: string[];
+}
+
+/** One tool on an agent: how far it goes on its own. */
+export interface TethrAgentTool {
+  connector: string;
+  /** The company's mode for it (Off there is off for everyone). */
+  company: TethrConnectorMode;
+  /** Its own setting, or null while it follows tethr's. */
+  own: { mode: "read" | "ask" | "auto"; autonomy: TethrConnectorAutonomy } | null;
+  mode: TethrConnectorMode;
+  autonomy: TethrConnectorAutonomy;
+  kinds: Array<"spend" | "outside" | "deletes">;
+  readsAccount: boolean;
+}
+
+/** An agent's own settings (its pane), or its lead's for a sub-agent. */
+export interface TethrAgentSettings {
+  tag: string;
+  name: string;
+  settingsFrom: string | null;
+  /** Every tool it has (tethr's own internal tools included). */
+  connectors: string[];
+  tools: TethrAgentTool[];
+  canAdd: string[];
+  summary: TethrSettingsSummary;
+  limits: { budgetMonthlyUsd: number; maxRunsPerDay: number; spentMonthlyUsd: number };
+  paused: boolean;
+  subTeam: Array<{ tag: string; name: string; title: string; icon: string | null; paused: boolean; connectors: string[]; budgetMonthlyUsd: number; maxRunsPerDay: number }>;
+}
+
+export interface TethrAgentSettingsPatch {
+  connectors?: string[];
+  tools?: Record<string, { mode: "read" | "ask" | "auto"; autonomy?: TethrConnectorAutonomy }>;
+  budgetMonthlyUsd?: number;
+  maxRunsPerDay?: number;
 }
 
 export interface TethrTeam {
@@ -1007,6 +1050,7 @@ export const tethrKeys = {
   routeRuns: (c: string) => ["tethr", c, "route-runs"] as const,
   chats: (c: string) => ["tethr", c, "chats"] as const,
   team: (c: string) => ["tethr", c, "team"] as const,
+  agentSettings: (c: string, tag: string) => ["tethr", c, "team", "settings", tag] as const,
   needsYou: (c: string) => ["tethr", c, "needs-you"] as const,
   integrations: (c: string) => ["tethr", c, "integrations"] as const,
   connectorActivity: (c: string, label: string) => ["tethr", c, "integrations", "activity", label] as const,
@@ -1223,6 +1267,9 @@ export const tethrApi = {
     api.post<{ notMoved: TethrMemoryState["notMoved"] }>(`/tethr/${c}/memory/not-moved/dismiss`, index === "all" ? {} : { index }),
   /** Phase 23: tethr's team of agents. */
   team: (c: string) => api.get<TethrTeam>(`/tethr/${c}/team`),
+  agentSettings: (c: string, tag: string) => api.get<TethrAgentSettings>(`/tethr/${c}/team/${encodeURIComponent(tag)}/settings`),
+  updateAgentSettings: (c: string, tag: string, patch: TethrAgentSettingsPatch) =>
+    api.put<{ tag: string; connectors: string[] }>(`/tethr/${c}/team/${encodeURIComponent(tag)}/settings`, patch),
   setTeamAgentPaused: (c: string, tag: string, paused: boolean) =>
     api.post<{ tag: string; paused: boolean }>(`/tethr/${c}/team/${encodeURIComponent(tag)}/pause`, { paused }),
   proposeTeam: (c: string) => api.post<{ routeRunId: string; threadId: string }>(`/tethr/${c}/team/propose`, {}),

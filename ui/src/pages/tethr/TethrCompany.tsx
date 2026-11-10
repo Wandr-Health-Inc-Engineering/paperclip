@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ChevronRight, Crown, Network, Plus, Sparkles } from "lucide-react";
+import { Archive, ChevronRight, Crown, Network, Plus, Sparkles, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -36,6 +36,7 @@ import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
 import { Link } from "../../lib/router";
 import { cn } from "@/lib/utils";
+import { AgentSettingsSheet } from "./chat/agent-settings";
 import {
   TETHR_ARCHIVE_PAUSE_REASON,
   tethrApi,
@@ -52,6 +53,7 @@ export function TethrCompany() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const [divisionDialogOpen, setDivisionDialogOpen] = useState(false);
   const [proposeOpen, setProposeOpen] = useState(false);
+  const [settingsTag, setSettingsTag] = useState<string | null>(null);
   const [agentDialog, setAgentDialog] = useState<{
     divisionId: string | null;
     divisionName: string;
@@ -167,6 +169,11 @@ export function TethrCompany() {
               return (
                 <div key={entry.agent.id} className="space-y-2">
                   <AgentRow entry={entry} reportsToTag={reportsToTag(entry)} />
+                  {/* Its settings (and its sub-team's) live on it. */}
+                  <button type="button" onClick={() => setSettingsTag(entry.profile.tag)} className="tethr-btn tethr-btn-ghost h-7 px-2.5 text-[12px]">
+                    <Settings2 className="h-3.5 w-3.5" />
+                    {subTeam.length ? `Settings for ${entry.profile.tag} and its team` : "Settings"}
+                  </button>
                   {subTeam.length ? (
                     <div className="ml-4 space-y-2 border-l border-[var(--tethr-rim)] pl-3">
                       {subTeam.map((sub) => (
@@ -180,6 +187,8 @@ export function TethrCompany() {
           </div>
         </div>
       ) : null}
+
+      {settingsTag ? <AgentSettingsSheet companyId={selectedCompanyId} tag={settingsTag} onClose={() => setSettingsTag(null)} /> : null}
 
       {!ceo && ceoReports.length === 0 && orgDivisions.length === 0 && teamAgents.length === 0 ? (
         <p className="mx-auto max-w-xl text-center text-xs text-muted-foreground">

@@ -21,7 +21,8 @@ import {
   validateTeamSpec,
   type TeamAgentSpec,
 } from "../team-spec.js";
-import { describePatch, raisesLimits, teamConnectorLabels, teamService, validateTeamPatch, type TeamAgent, type TeamPatch } from "../team.js";
+import { describePatch, raisesLimits, teamConnectorLabels, teamService, validateTeamPatch, widensAutonomy, type TeamAgent, type TeamPatch } from "../team.js";
+import { AgentSettingsError, parseAgentSettings } from "../agent-settings.js";
 import type { McpToolDef, TethrToolContext, TethrToolResult } from "./tethr-tools.js";
 
 // Phase 23-24: the tools for running tethr's team, on the "tethr" MCP server.
@@ -124,6 +125,12 @@ export const TEAM_TOOL_DEFS: McpToolDef[] = [
           description:
             'Connections the job can\'t be done without, by their names in the Connections section (e.g. "Google Ads", "Stripe"). While one is missing the agent doesn\'t run, and spends nothing, until it\'s connected or the person says to carry on without it. Leave out what it can work without.',
         },
+        settings: {
+          type: "object",
+          additionalProperties: { type: "string", enum: ["read", "ask", "auto"] },
+          description:
+            'Per tool it has, how far it goes on its own: "read" (looks only), "ask" (each change needs approval, the default) or "auto" (changes run on their own). E.g. { "Google Ads": "auto" }. Spending, reaching outside people and deleting always need approval until a person changes that in the agent\'s settings. Anything on "auto" makes this an approval card. A sub-agent uses its lead\'s settings.',
+        },
         why: { type: "string", description: "Why the team needs it, in a sentence or two. Shown on the approval card." },
       },
       required: ["name", "title", "mission", "instructions"],
@@ -146,7 +153,7 @@ export const TEAM_TOOL_DEFS: McpToolDef[] = [
   {
     name: "update_agent",
     description:
-      "Change an agent on the team: pause or resume it, or change its title, mission, instructions, connectors, schedule (null removes it), budget, runs a day or owner. Pausing happens at once. Other changes follow the team setting; raising its budget or runs always asks the person. A lead can change only its own sub-agents.",
+      "Change an agent on the team: pause or resume it, or change its title, mission, instructions, connectors, settings (how far it goes on its own per tool), schedule (null removes it), budget, runs a day or owner. Pausing happens at once. Other changes follow the team setting; raising its budget or runs, or letting it do more on its own, always asks the person. A lead can change only its own sub-agents.",
     inputSchema: {
       type: "object",
       properties: {
@@ -161,6 +168,12 @@ export const TEAM_TOOL_DEFS: McpToolDef[] = [
         max_runs_per_day: { type: "number" },
         owner: { type: "string", enum: ["tech", "exec", "growth"] },
         needs: { type: "array", items: { type: "string" }, description: "The whole list of connections its job can't be done without (replaces the old list)." },
+        settings: {
+          type: "object",
+          additionalProperties: { type: "string", enum: ["read", "ask", "auto"] },
+          description:
+            'Per tool it has, how far it goes on its own: "read" (looks only), "ask" (each change needs approval, the default) or "auto" (changes run on their own). E.g. { "Google Ads": "auto" }. Spending, reaching outside people and deleting always need approval until a person changes that in the agent\'s settings. Anything on "auto" makes this an approval card. A sub-agent uses its lead\'s settings.',
+        },
         why: { type: "string", description: "Why, in a sentence. Shown on the approval card." },
       },
       required: ["agent"],
@@ -312,7 +325,9 @@ async function createAgent(ctx: Scoped, caller: Caller, args: Record<string, unk
   const forTeam = lead ? ` for ${lead.tag}'s team` : "";
 
   let overLimit: string | null = null;
-  if (settings.newAgents === "auto") {
+  // Anything on Automatic is a person's call: it comes as a card even when new agents are automatic.
+  const proposesAuto = Object.values(spec.settings).some((s) => s.mode === "auto");
+  if (settings.newAgents === "auto" && !proposesAuto) {
     overLimit = await overTeamLimits(ctx, spec.budgetMonthlyUsd);
     if (!overLimit) {
       const router = await orgService(ctx.db).getRouterProfile(ctx.companyId);
@@ -346,7 +361,7 @@ async function createAgent(ctx: Scoped, caller: Caller, args: Record<string, unk
     meta: { spec, why, leadTag: lead?.tag ?? null },
   });
   return {
-    text: `Sent ${spec.tag} for approval${overLimit ? ` (automatic creation is on, but ${overLimit})` : ""}: a card with its full spec${spec.goal ? " and its goal" : ""} is right under your reply, where they approve or reject it (say "the card below", not Slack or another page). It's created when they approve; don't call create_agent for it again.${waits}${lead ? "" : " Tell them in a line what it's for."}`,
+    text: `Sent ${spec.tag} for approval${overLimit ? ` (automatic creation is on, but ${overLimit})` : proposesAuto && settings.newAgents === "auto" ? " (it would change things on its own, which is the person's call)" : ""}: a card with its full spec${spec.goal ? " and its goal" : ""} is right under your reply, where they approve or reject it (say "the card below", not Slack or another page). It's created when they approve; don't call create_agent for it again.${waits}${lead ? "" : " Tell them in a line what it's for."}`,
     meta: { tag: spec.tag, outputId: output.id, via: "card" },
   };
 }
@@ -389,7 +404,17 @@ async function updateAgent(ctx: Scoped, caller: Caller, args: Record<string, unk
     await team.setPaused(ctx.companyId, agent.tag, true, {});
     done.push(`Paused ${agent.tag}: no scheduled or assigned runs until it's resumed.`);
   }
-  const patch: TeamPatch = validateTeamPatch(fields, ctx.companyId);
+  const { settings: rawSettings, ...plainFields } = fields;
+  const patch: TeamPatch = validateTeamPatch(plainFields, ctx.companyId);
+  if (rawSettings !== undefined) {
+    if (agent.leadTag) return { text: `update_agent: ${agent.tag} works under ${agent.leadTag}'s settings; change ${agent.leadTag}'s instead.`, isError: true };
+    try {
+      patch.settings = parseAgentSettings(rawSettings, patch.connectors ?? agent.connectors, { byPerson: false, before: agent.settings });
+    } catch (err) {
+      if (err instanceof AgentSettingsError) return { text: `update_agent: ${err.message}`, isError: true };
+      throw err;
+    }
+  }
   if (caller.kind === "lead" && patch.connectors) {
     const extra = patch.connectors.filter((c) => !caller.agent.connectors.includes(c));
     if (extra.length) return { text: `update_agent: a sub-agent can only use tools you have; you don't have ${extra.join(", ")}.`, isError: true };
@@ -400,7 +425,8 @@ async function updateAgent(ctx: Scoped, caller: Caller, args: Record<string, unk
   }
   const settings = getIntegrations(ctx.companyId).team;
   const raises = raisesLimits(agent, patch);
-  if (settings.newAgents === "auto" && !raises) {
+  // Letting it do more on its own is always a person's call.
+  if (settings.newAgents === "auto" && !raises && !widensAutonomy(agent, patch)) {
     if (Object.keys(patch).length) await team.update(ctx.companyId, agent.tag, patch, {});
     if (resume) await team.setPaused(ctx.companyId, agent.tag, false, {});
     done.push(`Updated ${agent.tag}${resume ? " and resumed it" : ""}.`);
