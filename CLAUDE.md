@@ -1860,6 +1860,28 @@ Frosted panels floating over warm ink: the Aina glass card + Oura's calm and big
     beats Tailwind sizes. No new 9px text: 10px is the floor.
   - The Drive's `Finder` fills its parent (a flex column with a height), so a note above it can't push it
     off screen. Growth's "waiting on you" counts the Queue's pending items, not only tasks in review.
+  - **Phone pass (2026-11-09, Mark on his iPhone):**
+    - **Text fields are 16px on touch screens** (tethr-theme.css, unlayered). Under 16px, iPhone Safari zooms
+      into the field when it's tapped and stays zoomed, which pushed the top bar and tabs off screen. Never
+      undo this with a smaller field size on phones.
+    - **The chat is a fixed frame on phones** (`chat/phone-frame.ts` `usePhoneFrame`). It sits between the top
+      bar and the tabs, or fills the visible area above the keyboard (`visualViewport`). Only the messages
+      scroll. Core's phone layout scrolls the whole page and hides the tabs on scroll, so the keyboard left
+      the composer mid-screen. The frame measures an empty anchor where the chat would start; the anchor is
+      state, because the loading view renders without it.
+    - On phones the chat's controls (chats, where you are, start over, the setup pill) are a row above the
+      messages; on wider screens that row is `contents` and they float as before.
+    - Round icon buttons opt out of the 44px touch height (`tethr-touch-sized` + `pointer-coarse:h-8/10`) so
+      they stay circles; pill buttons keep 44px.
+    - The theme control is one button (Auto → Day → Night) on phones.
+    - Notifications fit the phone (`min(24rem, 100vw - 1rem)`); long links wrap, nothing scrolls sideways.
+  - **The bell asks only while a card is open:** the notifications list carries each Queue item's
+    `outputStatus` now (`notify.ts withOutputStatus`), and "needs you" shows only for gated / changes
+    requested. Before, a withdrawn or decided card kept saying "needs you".
+  - **A chat turn calls tethr on its own address** (`self-url.ts selfApiUrl`: the loopback listener;
+    `TETHR_HOOK_URL` overrides), never `PAPERCLIP_API_URL`. The server sets that from
+    `PAPERCLIP_ALLOWED_HOSTNAMES`, so starting tethr with an ngrok host allowed sent every hook call to the
+    tunnel host, and the chat said its tools weren't reachable.
 - **Theme:** Auto (follows the computer/phone — the default) · Day · Night, via
   `TethrThemeSwitch` (top bar) and the account menu. `paperclip.theme` stores
   `system|light|dark`; `ThemeContext` exposes `preference/setPreference` + the old API.

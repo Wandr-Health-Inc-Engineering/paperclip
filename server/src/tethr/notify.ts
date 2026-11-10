@@ -1,12 +1,15 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { tethrNotifications } from "@paperclipai/db";
+import { tethrNotifications, tethrOutputs } from "@paperclipai/db";
 import type {
   TethrNotificationChannel,
   TethrNotificationKind,
 } from "@paperclipai/shared";
 import { logger } from "../middleware/logger.js";
 import { postSlackMessage, slackConfigured } from "./slack.js";
+
+const QUEUE_HREF = "/queue/";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Notifications adapter. The in-app center is the working local
 // implementation; Slack is real once SLACK_BOT_TOKEN is set (Phase 2), else it
@@ -116,12 +119,36 @@ export function notificationService(db: Db) {
   async function list(companyId: string, opts: { unreadOnly?: boolean; limit?: number } = {}) {
     const conditions = [eq(tethrNotifications.companyId, companyId)];
     if (opts.unreadOnly) conditions.push(isNull(tethrNotifications.readAt));
-    return db
+    const rows = await db
       .select()
       .from(tethrNotifications)
       .where(and(...conditions))
       .orderBy(desc(tethrNotifications.createdAt))
       .limit(opts.limit ?? 50);
+    return withOutputStatus(companyId, rows);
+  }
+
+  /**
+   * A notification about a Queue item says what that item is NOW (`outputStatus`; null
+   * when it's gone), so the bell never asks for a decision on a card that was already
+   * decided or withdrawn (2026-11-09: three withdrawn cards still said "needs you").
+   */
+  async function withOutputStatus<T extends { href: string | null }>(companyId: string, rows: T[]) {
+    const idOf = (href: string | null) => {
+      const id = href?.startsWith(QUEUE_HREF) ? href.slice(QUEUE_HREF.length) : "";
+      return UUID.test(id) ? id : null;
+    };
+    const ids = [...new Set(rows.map((r) => idOf(r.href)).filter((id): id is string => !!id))];
+    if (!ids.length) return rows;
+    const outputs = await db
+      .select({ id: tethrOutputs.id, status: tethrOutputs.status })
+      .from(tethrOutputs)
+      .where(and(eq(tethrOutputs.companyId, companyId), inArray(tethrOutputs.id, ids)));
+    const status = new Map(outputs.map((o) => [o.id, o.status]));
+    return rows.map((r) => {
+      const id = idOf(r.href);
+      return id ? { ...r, outputStatus: status.get(id) ?? null } : r;
+    });
   }
 
   async function markRead(companyId: string, id: string) {

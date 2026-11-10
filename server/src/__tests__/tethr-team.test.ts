@@ -14,6 +14,7 @@ import { runTethrTool } from "../tethr/assistant/tethr-tools.ts";
 import { handlePreToolUse } from "../tethr/assistant/hook-handler.ts";
 import { issueHookToken, revokeHookToken } from "../tethr/assistant/gate.ts";
 import { gatingService } from "../tethr/gating.ts";
+import { notificationService } from "../tethr/notify.ts";
 import { takeNotes } from "../tethr/chats.ts";
 import { updateIntegrations } from "../tethr/integrations.ts";
 import { setRoster } from "../tethr/overseers.ts";
@@ -197,8 +198,13 @@ describePg("tethr team — agents that work in their own chats and report back",
     const [card] = await db.select().from(tethrOutputs).where(and(eq(tethrOutputs.companyId, companyId), eq(tethrOutputs.kind, "team_agent")));
     expect(card).toMatchObject({ status: "gated", sensitivity: "org" });
     expect(card.body).toContain("Why: Pricing moves weekly.");
+    // The bell asks for a decision only while the card is still open.
+    const bellFor = async () =>
+      (await notificationService(db).list(companyId)).find((n) => n.href === `/queue/${card.id}`) as { outputStatus?: string | null } | undefined;
+    expect((await bellFor())?.outputStatus).toBe("gated");
 
     await approve(card.id);
+    expect((await bellFor())?.outputStatus).not.toBe("gated");
     const team = teamService(db);
     scout = (await team.get(companyId, "@price-scout"))!;
     expect(scout).toMatchObject({ paused: false, connectors: ["Google Drive", "Tethr tools"], threadId: agentThreadId(companyId, "@price-scout") });

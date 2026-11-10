@@ -671,6 +671,8 @@ export interface TethrNotification {
   agentTag: string | null;
   readAt: string | null;
   createdAt: string;
+  /** For a Queue item: its status now (null when it's gone). */
+  outputStatus?: string | null;
 }
 
 export interface TethrAgentDetail {

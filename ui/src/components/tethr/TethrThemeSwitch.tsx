@@ -14,12 +14,29 @@ const OPTIONS: { value: ThemePreference; label: string; icon: LucideIcon }[] = [
  */
 export function TethrThemeSwitch({ className }: { className?: string }) {
   const { preference, setPreference } = useTheme();
+  const current = OPTIONS.find((o) => o.value === preference) ?? OPTIONS[0]!;
+  const CurrentIcon = current.icon;
   return (
+    <>
+    {/* Phones: one button that steps Auto → Day → Night; the three-way control took
+        half the top bar. */}
+    <button
+      type="button"
+      aria-label={`Theme: ${current.label}. Tap to change.`}
+      title={`Theme: ${current.label}`}
+      onClick={() => setPreference(nextThemePreference(preference))}
+      className={cn(
+        "tethr-btn tethr-touch-sized h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground md:hidden",
+        className,
+      )}
+    >
+      <CurrentIcon className="h-4 w-4" />
+    </button>
     <div
       role="radiogroup"
       aria-label="Theme"
       className={cn(
-        "inline-flex shrink-0 items-center gap-0.5 rounded-full p-0.5",
+        "hidden shrink-0 items-center gap-0.5 rounded-full p-0.5 md:inline-flex",
         "bg-[var(--tethr-frost)] shadow-[inset_0_0_0_1px_var(--tethr-rim)]",
         className,
       )}
@@ -49,6 +66,7 @@ export function TethrThemeSwitch({ className }: { className?: string }) {
         );
       })}
     </div>
+    </>
   );
 }
 

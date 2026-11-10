@@ -34,10 +34,12 @@ import { Nebula } from "@/components/tethr/Nebula";
 import { StreamingMarkdown } from "@/components/tethr/StreamingMarkdown";
 import { OutputStatusBadge, StatusDot, formatRelative } from "@/components/tethr/primitives";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
+import { useSidebar } from "../../context/SidebarContext";
 import { useCompany } from "../../context/CompanyContext";
 import { Link, useSearchParams } from "../../lib/router";
 import { cn } from "@/lib/utils";
 import { formatBytes } from "./drive/filePreview";
+import { usePhoneFrame } from "./chat/phone-frame";
 import {
   refreshAfterDecision,
   tethrApi,
@@ -94,6 +96,9 @@ export function TethrChat() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const [panelPath, setPanelPath] = useState<string | null>(null);
+  const { isMobile } = useSidebar();
+  const [phoneAnchor, setPhoneAnchor] = useState<HTMLDivElement | null>(null);
+  const phone = usePhoneFrame(isMobile, phoneAnchor);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Chat" }]);
@@ -265,6 +270,7 @@ export function TethrChat() {
       if (stickToBottom.current) el.scrollTop = el.scrollHeight;
     });
     observer.observe(content);
+    observer.observe(el);
     return () => observer.disconnect();
   }, [content]);
 
@@ -277,12 +283,21 @@ export function TethrChat() {
   const empty = !isLoading && !visibleRuns.length && !showPending;
 
   return (
+    <>
+    {isMobile ? <div ref={setPhoneAnchor} aria-hidden="true" /> : null}
     <div
       className={cn(
-        "relative flex h-[calc(100dvh-10rem)] min-h-[480px] flex-col md:h-[calc(100dvh-6rem)]",
+        "flex flex-col",
+        phone
+          ? "fixed inset-x-0 z-10 [overscroll-behavior:none]"
+          : "relative h-[calc(100dvh-10rem)] min-h-[480px] md:h-[calc(100dvh-6rem)]",
         panelFile && "md:pr-[calc(min(600px,52%)_+_16px)]",
       )}
+      style={phone ? { top: phone.top, height: phone.height } : undefined}
     >
+      {/* Phones: the chat's controls are a row above the messages, never over them.
+          Wider screens: \`contents\`, so they float over the conversation as before. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 pb-1 pt-1 md:contents">
       <SideChats
         isMain={isMain}
         isDraft={isDraft}
@@ -301,9 +316,12 @@ export function TethrChat() {
       />
 
       {threadId && !isDraft && visibleRuns.length ? (
-        <div className="absolute right-0 top-1 z-20 flex items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-2 md:absolute md:right-0 md:top-1 md:z-20">
           {resetNote ? (
-            <span className="tethr-glass rounded-full px-3 py-1.5 text-[12px]">Fresh start: your next message begins a new session.</span>
+            <span className="tethr-glass rounded-full px-3 py-1.5 text-[12px]">
+              <span className="md:hidden">Fresh start</span>
+              <span className="hidden md:inline">Fresh start: your next message begins a new session.</span>
+            </span>
           ) : null}
           <button
             type="button"
@@ -319,7 +337,7 @@ export function TethrChat() {
                 resetSession.mutate();
               }
             }}
-            className="tethr-glass grid h-9 w-9 place-items-center rounded-full text-foreground/80 transition-colors hover:text-foreground disabled:opacity-50"
+            className="tethr-glass tethr-touch-sized grid h-9 w-9 place-items-center rounded-full text-foreground/80 transition-colors hover:text-foreground disabled:opacity-50"
           >
             <RotateCcw className="h-4 w-4" />
           </button>
@@ -327,11 +345,12 @@ export function TethrChat() {
       ) : null}
 
       {isMain ? (
-        // Phones: its own row under the chip, so the two never overlap.
-        <div className="absolute left-1/2 top-[52px] z-20 -translate-x-1/2 md:top-1">
+        // Phones: its own line under the controls. Wider screens: centered in the bar.
+        <div className="order-last flex w-full justify-center empty:hidden md:absolute md:left-1/2 md:top-1 md:z-20 md:w-auto md:-translate-x-1/2">
           <TethrSetupNudge />
         </div>
       ) : null}
+      </div>
 
       {/* One area: the conversation sits on the page, under the floating bar. */}
       <div
@@ -340,14 +359,14 @@ export function TethrChat() {
           const el = e.currentTarget;
           stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
         }}
-        className="relative z-0 min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent_0,transparent_40px,#000_68px,#000_calc(100%-14px),transparent_100%)]"
+        className="relative z-0 min-h-0 flex-1 overflow-y-auto [overscroll-behavior:contain] [mask-image:linear-gradient(to_bottom,transparent_0,#000_14px,#000_calc(100%-14px),transparent_100%)] md:[mask-image:linear-gradient(to_bottom,transparent_0,transparent_40px,#000_68px,#000_calc(100%-14px),transparent_100%)]"
       >
         {empty ? (
           <ChatEmpty isDraft={isDraft} agent={teamAgent} onPick={(s) => send.mutate({ text: s, attachments: [] })} />
         ) : (
           <div
             ref={setContent}
-            className={cn("mx-auto flex w-full max-w-3xl flex-col gap-9 px-4 pb-6 pt-[72px] md:px-6", isMain && "pt-[112px] md:pt-[72px]")}
+            className="mx-auto flex w-full max-w-3xl flex-col gap-9 px-4 pb-6 pt-4 md:px-6 md:pt-[72px]"
           >
             {visibleRuns.length >= limit && limit < 100 ? (
               <button
@@ -416,6 +435,7 @@ export function TethrChat() {
         />
       ) : null}
     </div>
+    </>
   );
 }
 
@@ -499,7 +519,7 @@ function SideChats({
 
   return (
     <>
-      <div className="absolute left-0 top-1 z-20 flex max-w-[calc(100%-3rem)] items-center gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2 md:absolute md:left-0 md:top-1 md:z-20 md:max-w-[calc(100%-3rem)]">
         <button
           ref={toggleRef}
           type="button"
@@ -507,7 +527,7 @@ function SideChats({
           aria-label={open ? "Hide chats" : "Show chats"}
           aria-expanded={open}
           title="Chats"
-          className="tethr-glass relative grid h-9 w-9 shrink-0 place-items-center rounded-full text-foreground/80 transition-colors hover:text-foreground"
+          className="tethr-glass tethr-touch-sized relative grid h-9 w-9 shrink-0 place-items-center rounded-full text-foreground/80 transition-colors hover:text-foreground"
         >
           {open ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
           {sideChats.length && !open ? (
@@ -534,7 +554,7 @@ function SideChats({
               onClick={onOpenMain}
               title="Back to tethr"
               aria-label="Back to tethr"
-              className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-[var(--tethr-select-blur)] hover:text-foreground"
+              className="tethr-touch-sized grid h-7 w-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-[var(--tethr-select-blur)] hover:text-foreground pointer-coarse:h-8 pointer-coarse:w-8"
             >
               <CornerUpLeft className="h-3.5 w-3.5" />
             </button>
@@ -607,7 +627,7 @@ function SideChats({
               onClick={() => onRemoveSide(s.threadId)}
               title="Remove from the list (its history stays in Activity)"
               aria-label={`Remove ${s.title}`}
-              className="mr-1 grid h-6 w-6 shrink-0 place-items-center rounded-full tethr-text-3 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+              className="tethr-touch-sized mr-1 grid h-6 w-6 shrink-0 place-items-center rounded-full tethr-text-3 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 pointer-coarse:h-9 pointer-coarse:w-9 pointer-coarse:opacity-100"
             >
               <X className="h-3 w-3" />
             </button>
@@ -1512,7 +1532,7 @@ function Composer({
               disabled={drafts.length >= MAX_ATTACHMENTS}
               aria-label="Attach files"
               title="Attach files (images, PDFs, text)"
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-[var(--tethr-frost-strong)] hover:text-foreground disabled:opacity-30"
+              className="tethr-touch-sized grid h-9 w-9 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-[var(--tethr-frost-strong)] hover:text-foreground disabled:opacity-30 pointer-coarse:h-10 pointer-coarse:w-10"
             >
               <Paperclip className="h-4 w-4" />
             </button>
@@ -1537,14 +1557,14 @@ function Composer({
               }}
               placeholder={placeholder}
               aria-label="Message"
-              className="max-h-[200px] min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-[14px] leading-5 outline-none placeholder:text-[var(--tethr-text-3)]"
+              className="tethr-touch-sized max-h-[200px] min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-[14px] leading-5 outline-none placeholder:text-[var(--tethr-text-3)] pointer-coarse:py-2.5"
             />
             <button
               type="button"
               onClick={submit}
               disabled={!canSend}
               aria-label="Send"
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-opacity disabled:opacity-30"
+              className="tethr-touch-sized grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-opacity disabled:opacity-30 pointer-coarse:h-10 pointer-coarse:w-10"
             >
               <ArrowUp className="h-4 w-4" />
             </button>

@@ -1368,6 +1368,20 @@ a[role="button"]:active {
   }
 }
 
+/* ---- Phones: typing never zooms the page ----------------------------------
+   iPhone Safari zooms into any text field under 16px when it's tapped, and stays
+   zoomed: the top bar and tabs end up off screen and the chat looks broken
+   (Mark's phone, 2026-11-09). On touch screens up to tablet width, fields are 16px.
+   Unlayered, so it wins over the 13-14px utilities fields use on desktop. */
+@media (pointer: coarse) and (max-width: 1023px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+  textarea,
+  select,
+  [contenteditable="true"] {
+    font-size: 16px;
+  }
+}
+
 /* ---- Documents (Queue preview, Memory, Drive reader) -----------------------
    Same reasoning as chat answers: upstream's unlayered `.paperclip-markdown`
    sets 15px text and 600-700 headings over any Tailwind size. Documents read a

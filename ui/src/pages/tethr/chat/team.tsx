@@ -116,7 +116,7 @@ export function AgentChip({ agent, companyId, onBack }: { agent: TethrTeamAgent;
           onClick={onBack}
           title="Back to tethr"
           aria-label="Back to tethr"
-          className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-[var(--tethr-select-blur)] hover:text-foreground"
+          className="tethr-touch-sized grid h-7 w-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-[var(--tethr-select-blur)] hover:text-foreground pointer-coarse:h-8 pointer-coarse:w-8"
         >
           <CornerUpLeft className="h-3.5 w-3.5" />
         </button>

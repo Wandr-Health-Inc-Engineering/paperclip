@@ -14,9 +14,14 @@ import { MonoTag, StatusDot, formatRelative } from "./primitives";
 // reject a staged item inline, jump to the right page, or dismiss.
 
 /** What a notification lets you do, derived from its kind + href. */
-function actionsFor(n: TethrNotification): { pendingOutputId?: string; viewLabel?: string; viewTo?: string } {
+const PENDING_STATUSES = new Set(["gated", "changes_requested"]);
+
+export function actionsFor(n: TethrNotification): { pendingOutputId?: string; viewLabel?: string; viewTo?: string } {
   // A staged item awaiting review carries /queue/<outputId> and a "for review" title.
-  if (n.href?.startsWith("/queue/") && /for review|staged/i.test(n.title)) {
+  // It asks for a decision only while the item is still open (the server says its status
+  // now; an item decided, withdrawn or gone just links to the Queue).
+  const stillOpen = n.outputStatus === undefined || (n.outputStatus !== null && PENDING_STATUSES.has(n.outputStatus));
+  if (n.href?.startsWith("/queue/") && /for review|staged/i.test(n.title) && stillOpen) {
     return { pendingOutputId: n.href.slice("/queue/".length) };
   }
   if (n.href?.startsWith("/queue/")) return { viewLabel: "Open the Queue", viewTo: "/queue" };
@@ -95,7 +100,12 @@ export function TethrBell() {
             ) : null}
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-96 overflow-hidden p-0">
+        <PopoverContent
+          align="end"
+          collisionPadding={8}
+          // Never wider than the phone, and nothing in it scrolls sideways (long links wrap).
+          className="w-[min(24rem,calc(100vw-1rem))] overflow-hidden p-0"
+        >
           <div className="tethr-rule flex items-center justify-between border-b px-4 py-2.5">
             <MonoTag>notifications</MonoTag>
             {unread.length > 0 ? (
@@ -107,7 +117,7 @@ export function TethrBell() {
               </button>
             ) : null}
           </div>
-          <div className="max-h-96 overflow-auto">
+          <div className="max-h-[min(24rem,65dvh)] overflow-y-auto overflow-x-hidden overscroll-contain [overflow-wrap:anywhere]">
             {notifications?.length ? (
               notifications.slice(0, 25).map((n) => {
                 const { pendingOutputId } = actionsFor(n);
@@ -227,7 +237,10 @@ function NotificationDetail({
       className="tethr-scrim fixed inset-0 z-[60] flex items-center justify-center p-4"
       onClick={onClose}
     >
-      <div className="tethr-glass-heavy w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="tethr-glass-heavy max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto overflow-x-hidden [overflow-wrap:anywhere]"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="tethr-rule flex items-start justify-between gap-3 border-b px-5 py-4">
           <div className="min-w-0">
             <h3 className="text-[15px] font-medium leading-snug tracking-[-0.01em]">{n.title}</h3>
