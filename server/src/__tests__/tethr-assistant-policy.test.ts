@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classify, decide, isInternal, parseMcpTool, resolvesToPrivateHost, type PolicyContext } from "../tethr/assistant/policy.js";
+import { selfApiUrl } from "../tethr/self-url.js";
 
 // Phase 18: the chat's approval gate policy (pure).
 
@@ -231,5 +232,16 @@ describe("tethr assistant policy — names that resolve to this machine", () => 
     expect(await resolvesToPrivateHost("nowhere.invalid", lookup({}))).toBe(false);
     const slow = () => new Promise<Array<{ address: string }>>(() => {});
     expect(await resolvesToPrivateHost("slow.example.com", slow, 20)).toBe(false);
+  });
+});
+
+describe("selfApiUrl", () => {
+  it("calls the server on its own loopback listener, never the public address", () => {
+    expect(selfApiUrl({ PAPERCLIP_API_URL: "http://tunnel.example.dev:3100", PAPERCLIP_LISTEN_HOST: "127.0.0.1", PAPERCLIP_LISTEN_PORT: "3100" })).toBe("http://127.0.0.1:3100");
+    expect(selfApiUrl({ PAPERCLIP_LISTEN_HOST: "0.0.0.0", PAPERCLIP_LISTEN_PORT: "8080" })).toBe("http://127.0.0.1:8080");
+    expect(selfApiUrl({ PAPERCLIP_LISTEN_HOST: "::1", PAPERCLIP_LISTEN_PORT: "3100" })).toBe("http://[::1]:3100");
+    expect(selfApiUrl({ PAPERCLIP_LISTEN_HOST: "100.64.1.2", PAPERCLIP_LISTEN_PORT: "3100" })).toBe("http://100.64.1.2:3100");
+    expect(selfApiUrl({})).toBe("http://127.0.0.1:3100");
+    expect(selfApiUrl({ TETHR_HOOK_URL: "http://127.0.0.1:4000/" })).toBe("http://127.0.0.1:4000");
   });
 });

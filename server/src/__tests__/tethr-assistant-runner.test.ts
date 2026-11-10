@@ -118,6 +118,7 @@ describePg("tethr assistant runner", () => {
     expect(env.ANTHROPIC_API_KEY).toBe("");
     expect(env.MCP_CONNECTION_NONBLOCKING).toBe("false");
     expect(env.TETHR_HOOK_TOKEN).toBeTruthy();
+    expect(env.TETHR_HOOK_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
 
     // The generated workspace (memory rendered in, phase 25) + per-turn settings with the gate hooks.
     const claudeMd = fs.readFileSync(path.join(dir, "workspace", "CLAUDE.md"), "utf8");

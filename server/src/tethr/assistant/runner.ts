@@ -20,6 +20,7 @@ import { getRoster } from "../overseers.js";
 import { getSetup } from "../setup.js";
 import { applyStreamLine, newTurnState } from "./events.js";
 import { buildSettings, ensureHookScript, issueHookToken, revokeHookToken, writeSettingsFile, type SlackReplyTarget } from "./gate.js";
+import { selfApiUrl } from "../self-url.js";
 import { logFailure } from "../best-effort.js";
 import { ensurePersona } from "./persona.js";
 import { TETHR_TOOL_DEFS, TETHR_TOOLS_LABEL } from "./tethr-tools.js";
@@ -455,8 +456,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     // Best-effort: without it the turn still runs, just without those tools.
     let mcpConfigPath: string | null = null;
     if (bridgeScript) {
-      const url = process.env.TETHR_HOOK_URL || process.env.PAPERCLIP_API_URL || "http://localhost:3100";
-      mcpConfigPath = await writeMcpConfig(runId, buildMcpConfig({ nodePath: process.execPath, bridgeScript, token, url })).catch(() => null);
+      mcpConfigPath = await writeMcpConfig(runId, buildMcpConfig({ nodePath: process.execPath, bridgeScript, token, url: selfApiUrl() })).catch(() => null);
     }
     const mirror = mirrorDir();
     const turn = newTurnState();
@@ -528,6 +528,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
           paperclipRuntimeSkills: [{ key: "tethr", runtimeName: "tethr", source: skillDir, required: true }],
           env: {
             TETHR_HOOK_TOKEN: token,
+            TETHR_HOOK_URL: selfApiUrl(),
             // Wait for the claude.ai connectors to connect before the prompt is processed.
             // Without this, a RESUMED turn starts before they reconnect, Claude Code tells
             // the model their tools were "removed", and it reports the connector as down
