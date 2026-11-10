@@ -140,7 +140,7 @@ export function TethrAgentPage() {
             <p className="text-xs text-muted-foreground">
               {profile.approvalGate === "none" || profile.approvalGate === "internal"
                 ? "No hard gate — internal output."
-                : "Output stops in the Queue for a human."}
+                : "Output stops in Needs you for a person."}
             </p>
           </div>
         </FactCard>
@@ -359,7 +359,7 @@ function ApprovalsCard({
         <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
           {profile.autoApprove
             ? "This agent applies its role-appropriate org decisions (create/modify agents) without you. Budget, medical, public & PR still need your approval; new agents still start paused."
-            : "Everything this agent stages waits for you to approve in the Queue."}
+            : "Everything this agent stages waits for you to approve in Needs you."}
         </p>
       </div>
 

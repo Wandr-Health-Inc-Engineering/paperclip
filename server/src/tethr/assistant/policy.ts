@@ -141,7 +141,7 @@ const CONNECTOR_RULES: Record<string, Rule[]> = {
   // run in the Tethr server; they change nothing outside its files/ folder.
   "Tethr tools": [
     // make_document only writes a new file into Tethr's own files/ folder.
-    [/^(score_list|keyword_ideas|goals_list|make_document|team_list|growth_map|lessons_due)$/, "read"],
+    [/^(score_list|keyword_ideas|goals_list|make_document|team_list|growth_map|lessons_due|google_ads_report)$/, "read"],
     // Goals live in Tethr itself: saving one changes nothing outside Tethr.
     [/^(save_goal|save_metric|record_metric)$/, "draft"],
     // Phase 23: running tethr's team happens inside Tethr. New agents and
@@ -157,7 +157,7 @@ const CONNECTOR_RULES: Record<string, Rule[]> = {
     [/^(propose_lesson|study|review_lesson)$/, "draft"],
     // Phase 27: a question to the person is a card inside Tethr. It grants nothing:
     // the answer comes back as their own message.
-    [/^ask$/, "draft"],
+    [/^(ask|need_connection)$/, "draft"],
     [/.*/, "blocked"],
   ],
 };
@@ -280,6 +280,8 @@ function summarize(connector: string, name: string, input: Record<string, unknow
     return `Scoring ${n ? `${n} items` : from ? from : "a list"} with Jev`;
   }
   if (connector === "Tethr tools" && name === "goals_list") return "Reading the goals";
+  if (connector === "Tethr tools" && name === "need_connection") return `Asking for a connection${typeof input.connector === "string" ? `: ${input.connector.slice(0, 40)}` : ""}`;
+  if (connector === "Tethr tools" && name === "google_ads_report") return `Reading Google Ads (${typeof input.report === "string" ? input.report : "overview"})`;
   if (connector === "Tethr tools" && name === "ask") return `Asking you${typeof input.question === "string" ? `: “${input.question.slice(0, 80)}”` : ""}`;
   if (connector === "Tethr tools" && name === "propose_lesson") return `Proposing a lesson${typeof input.lesson === "string" ? `: “${input.lesson.slice(0, 60)}”` : ""}`;
   if (connector === "Tethr tools" && name === "study") return `Queueing a topic to study${typeof input.topic === "string" ? `: “${input.topic.slice(0, 60)}”` : ""}`;

@@ -229,7 +229,7 @@ export function CommandPalette() {
           </CommandItem>
           <CommandItem onSelect={() => go("/queue")}>
             <ShieldCheck className="mr-2 h-4 w-4" />
-            Queue
+            Needs you
           </CommandItem>
           <CommandItem onSelect={() => go("/drive")}>
             <HardDrive className="mr-2 h-4 w-4" />

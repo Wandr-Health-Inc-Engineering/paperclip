@@ -604,7 +604,7 @@ function OrgChangeLog({ companyId }: { companyId: string }) {
           <p className="border-t tethr-rule px-4 py-2 text-xs text-muted-foreground">
             Revert staged —{" "}
             <Link to="/queue" className="font-medium text-foreground underline underline-offset-2">
-              approve it in the Queue
+              approve it in Needs you
             </Link>{" "}
             to apply.
           </p>
@@ -648,7 +648,7 @@ function ProposeAgentDialog({
           <DialogTitle>Ask the CEO to propose an agent</DialogTitle>
           <DialogDescription>
             The CEO drafts a new agent for the area you name (or its own pick). It lands in
-            the Queue and Slack as a yes/no — nothing is created until you approve it.
+            Needs you and Slack as a yes/no — nothing is created until you approve it.
           </DialogDescription>
         </DialogHeader>
         {propose.data ? (

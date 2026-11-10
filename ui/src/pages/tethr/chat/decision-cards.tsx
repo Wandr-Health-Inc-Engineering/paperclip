@@ -1,17 +1,20 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Check, ChevronDown, CornerUpLeft, Lock, MessageCircleQuestion, Send } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, CornerUpLeft, Lock, MessageCircleQuestion, Pause, Plug, Send } from "lucide-react";
 import { StatusDot, formatRelative } from "@/components/tethr/primitives";
 import { refreshAfterDecision, tethrApi, tethrKeys, type TethrChatOutput, type TethrQuestion } from "@/api/tethr";
 import { cardDetails, cardHeading, decidedLine, previewText } from "@/lib/tethr-cards";
 import { cn } from "@/lib/utils";
 import { Link } from "../../../lib/router";
+import { fixForConnection } from "../setup/fixes";
+import { FixPanel } from "../setup/FixPanel";
 
 // The cards that wait on a person, in one look (Mark, 2026-11-10: "the agent
 // approval card is beautiful so stick with that design"): an approval (a new
 // agent, an outward action), and a question tethr or an agent asks with
-// buttons. Used in the chat and on the Needs you page. What a card says it
-// wants comes from lib/tethr-cards.ts, so it reads the same everywhere.
+// buttons, and a connection an agent can't run without, with the fix in place.
+// Used in the chat and on the Needs you page. What a card says it wants comes
+// from lib/tethr-cards.ts, so it reads the same everywhere.
 
 const CARD = "tethr-glass flex max-w-2xl flex-col gap-2.5 p-4";
 const PRIMARY = "tethr-btn tethr-btn-primary h-8 px-4 text-[12.5px]";
@@ -39,6 +42,8 @@ export function ApprovalCard({ output, companyId, threadId, from }: { output: Te
   });
   const snippet = useMemo(() => previewText(output.body), [output.body]);
   const details = useMemo(() => cardDetails(output.body), [output.body]);
+  // An agent that would start out waiting on a connection says so on the card itself.
+  const missing = details?.rows.find(([label, value]) => label === "Needs" && /not connected/.test(value))?.[1] ?? null;
   const isAction = output.kind === "external_action";
   const actionBody = isAction ? output.body.split("\n").slice(2).join("\n").trim() : "";
   return (
@@ -61,6 +66,12 @@ export function ApprovalCard({ output, companyId, threadId, from }: { output: Te
         <CardDetailsView body={output.body} details={details} />
       ) : snippet ? (
         <p className="line-clamp-3 text-[13px] leading-relaxed text-muted-foreground">{snippet}</p>
+      ) : null}
+      {missing && !open ? (
+        <p className="flex items-start gap-2 text-[12.5px] leading-relaxed">
+          <StatusDot tone="warn" className="mt-[0.45em]" />
+          <span>Needs: {missing}</span>
+        </p>
       ) : null}
       {!isAction && output.body.trim() ? (
         <button
@@ -234,6 +245,11 @@ function CommentBox({
 export function answeredWords(q: TethrQuestion): string {
   const a = q.answer;
   if (!a) return "";
+  if (q.connection) {
+    if (a.choice === "without") return "You said to carry on without it";
+    // tethr closes the card itself when it can see the connection is there.
+    return a.by === "tethr" ? "Connected" : "You connected it";
+  }
   if (a.via === "chat") return "You answered in the chat";
   if (!q.options && a.choice === "approve") return "You approved";
   if (!q.options && a.choice === "reject") return "You rejected";
@@ -261,6 +277,7 @@ export function QuestionCard({ question, companyId, from }: { question: TethrQue
   });
   const who = question.agentTag ?? "tethr";
 
+  if (question.status === "open" && question.connection) return <ConnectionCard question={question} connection={question.connection.key} companyId={companyId} from={from} />;
   if (question.status !== "open") {
     return (
       <div className="flex min-w-0 max-w-2xl flex-col gap-1 text-[12.5px]">
@@ -327,6 +344,65 @@ export function QuestionCard({ question, companyId, from }: { question: TethrQue
           onCancel={() => setCommenting(false)}
         />
       ) : null}
+    </div>
+  );
+}
+
+// ---- connections -----------------------------------------------------------------
+
+/**
+ * A connection tethr or an agent can't do its job without. The fix opens right
+ * here (a key to paste, a mode to pick, or where to connect it). An agent that
+ * asked isn't running, and isn't spending, until this is answered: connected,
+ * or told to carry on without it.
+ */
+function ConnectionCard({ question, connection, companyId, from }: { question: TethrQuestion; connection: string; companyId: string; from?: string }) {
+  const queryClient = useQueryClient();
+  const [fixing, setFixing] = useState(false);
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: tethrKeys.chatRuns(companyId, question.threadId) });
+    refreshAfterDecision(queryClient, companyId);
+  };
+  const answer = useMutation({
+    mutationFn: (choice: "connected" | "without") => tethrApi.answerQuestion(companyId, question.id, { choice }),
+    onSettled: refresh,
+  });
+  // A key or a mode saved from the fix: tethr re-checks, and closes this itself if that was all it needed.
+  const recheck = useMutation({ mutationFn: () => tethrApi.recheckConnections(companyId), onSettled: refresh });
+  const pause = useMutation({
+    mutationFn: () => tethrApi.setTeamAgentPaused(companyId, question.agentTag!, true),
+    onSettled: refresh,
+  });
+  const busy = answer.isPending || pause.isPending;
+  const error = answer.error ?? pause.error;
+  return (
+    <div className={CARD}>
+      <span className="tethr-eyebrow inline-flex items-center gap-1.5">
+        <Plug className="h-3 w-3" />
+        {question.agentTag ? `${question.agentTag} is waiting on a connection` : "tethr needs a connection"}
+        {from ? ` · ${from}` : ""}
+      </span>
+      <p className="text-[14.5px] font-medium leading-snug">{question.agentTag ? question.question : `Connect ${connection}`}</p>
+      {question.detail ? <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{question.detail}</p> : null}
+      {fixing ? <FixPanel fix={fixForConnection(connection)} companyId={companyId} onFixed={() => recheck.mutate()} /> : null}
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <button type="button" onClick={() => setFixing((v) => !v)} aria-expanded={fixing} className={fixing ? GHOST : PRIMARY}>
+          {fixing ? "Hide the fix" : `Connect ${connection}`}
+        </button>
+        <button type="button" disabled={busy} onClick={() => answer.mutate("connected")} className={GLASS}>
+          I've connected it
+        </button>
+        <button type="button" disabled={busy} onClick={() => answer.mutate("without")} className={GHOST}>
+          Carry on without it
+        </button>
+        {question.agentTag ? (
+          <button type="button" disabled={busy} onClick={() => pause.mutate()} className={GHOST}>
+            <Pause className="h-3.5 w-3.5" />
+            Pause {question.agentTag}
+          </button>
+        ) : null}
+      </div>
+      {error ? <p className="text-[12px] text-[var(--tethr-bad)]">{errorText(error, "That didn't go through.")}</p> : null}
     </div>
   );
 }

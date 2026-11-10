@@ -47,8 +47,10 @@ import { memoryBackend } from "../tethr/hermes/memory-layer.js";
 import { handlePostToolUse, handlePreToolUse } from "../tethr/assistant/hook-handler.js";
 import { runTethrTool, TETHR_TOOL_DEFS, TETHR_TOOLS_LABEL, TETHR_TOOLS_SERVER } from "../tethr/assistant/tethr-tools.js";
 import { classify, decide } from "../tethr/assistant/policy.js";
-import { AGENT_ALWAYS_TOOLS, agentToolRefusal, TEAM_TOOL_NAMES } from "../tethr/team-spec.js";
-import { answerQuestion, answerText, closeQuestionsAnsweredInChat, QuestionInputError, questionsByRun } from "../tethr/assistant/questions.js";
+import { AGENT_ALWAYS_TOOLS, agentToolRefusal, TEAM_TOOL_NAMES, TeamInputError } from "../tethr/team-spec.js";
+import { answerQuestion, answerText, closeQuestionsAnsweredInChat, getQuestion, QuestionInputError, questionsByRun } from "../tethr/assistant/questions.js";
+import { settleConnectionCard, stillMissing } from "../tethr/team-needs.js";
+import { needsYouOnReportCards } from "../tethr/needs-you.js";
 import { teamService } from "../tethr/team.js";
 import {
   ATTACH_LIMITS,
@@ -672,6 +674,9 @@ export function tethrRoutes(db: Db) {
           .where(and(eq(tethrInboxItems.companyId, companyId), inArray(tethrInboxItems.cardRunId, inboxCardIds)))
       : [];
     const questionsOfRuns = questionsByRun(companyId, new Set(runs.map((r) => r.id)));
+    // Phase 27: an agent's newest report card in this chat carries what it's waiting
+    // on a person for (approval cards, questions, missing connections), its sub-team's too.
+    const needsYouByCard = await needsYouOnReportCards(db, companyId, runs);
     res.json(
       runs.map((run) => {
         // Attached files come back as their own list; the bubble shows only the words.
@@ -687,6 +692,7 @@ export function tethrRoutes(db: Db) {
           outputs: outputs.filter((o) => o.routeRunId === run.id),
           // Phase 27: questions this turn put to the person, as cards with buttons.
           questions: questionsOfRuns.get(run.id) ?? [],
+          needsYou: needsYouByCard.get(run.id) ?? null,
         };
       }),
     );
@@ -735,21 +741,37 @@ export function tethrRoutes(db: Db) {
     assertCompanyAccess(req, companyId);
     if (!requirePerson(req, res)) return;
     const actor = getActorInfo(req);
+    const userId = actor.actorType === "user" ? actor.actorId : null;
     let question;
+    let startedTasks = 0;
     try {
+      // A connection card settles the need before it closes, so a "connected" that
+      // isn't true yet leaves the card open and says what's still missing.
+      const asked = getQuestion(companyId, req.params.id as string);
+      const choice = typeof req.body?.choice === "string" ? req.body.choice : "";
+      if (asked?.status === "open" && asked.connection && (choice === "connected" || choice === "without")) {
+        const missing = choice === "connected" ? stillMissing(companyId, asked.connection.key) : null;
+        if (missing) throw new QuestionInputError(missing);
+        ({ startedTasks } = await settleConnectionCard(db, companyId, asked, choice, { userId }));
+      }
       question = await answerQuestion(companyId, req.params.id as string, { choice: req.body?.choice, comment: req.body?.comment, by: actor.actorId });
     } catch (err) {
-      if (err instanceof QuestionInputError) {
+      if (err instanceof QuestionInputError || err instanceof TeamInputError) {
         res.status(409).json({ error: err.message });
         return;
       }
       throw err;
     }
+    // Work that was waiting on it has started: the news rides along as a note, not as a second turn.
+    if (startedTasks > 0) {
+      res.json({ question, startedTasks, threadId: question.threadId, routeRunId: null });
+      return;
+    }
     const ids = await getAssistantRunner(db).send({
       companyId,
       threadId: question.threadId,
       text: answerText(question),
-      requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
+      requestedByUserId: userId,
     });
     res.json({ question, ...ids });
   });
@@ -920,6 +942,9 @@ export function tethrRoutes(db: Db) {
       return;
     }
     await logEnv(req, "tethr_env_updated", key);
+    // A key an agent was waiting on (the Google Ads settings, say) starts what waited.
+    const { recheckConnections } = await import("../tethr/team-needs.js");
+    await recheckConnections(db, req.params.companyId as string).catch(() => {});
     res.json({ ok: true });
   });
 
@@ -1011,6 +1036,8 @@ export function tethrRoutes(db: Db) {
       entityId: companyId,
       details: { patch },
     }).catch(() => {});
+    const { recheckConnections } = await import("../tethr/team-needs.js");
+    await recheckConnections(db, companyId).catch(() => {});
     res.json({ ok: true, defaultMode: cfg.defaultMode });
   });
 

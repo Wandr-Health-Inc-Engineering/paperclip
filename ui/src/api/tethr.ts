@@ -178,6 +178,16 @@ export interface TethrChatRun extends TethrRouteRun {
   lesson?: TethrLesson | null;
   /** Phase 27: questions this turn asked as cards with buttons. */
   questions?: TethrQuestion[];
+  /** Phase 27: on an agent's newest report card, what it (and its sub-team) waits on a person for. */
+  needsYou?: { approvals: TethrChatOutput[]; questions: TethrQuestion[] } | null;
+}
+
+/** Phase 27: everything that waits on a person, as one list. */
+export interface TethrNeedsYou {
+  approvals: Array<TethrChatOutput & { from: string | null; threadId: string | null }>;
+  questions: Array<TethrQuestion & { from: string }>;
+  connections: Array<TethrQuestion & { from: string }>;
+  count: number;
 }
 
 /** Phase 27: a question tethr or an agent put to a person as a card. */
@@ -191,6 +201,8 @@ export interface TethrQuestion {
   detail: string | null;
   /** null = Approve / Reject. */
   options: Array<{ label: string; description: string | null }> | null;
+  /** A connection card: what's missing. Its answers are "connected" and "without". */
+  connection?: { key: string };
   status: "open" | "answered";
   answer: { choice: string | null; comment: string | null; by: string; at: string; via: "card" | "chat" } | null;
   askedAt: string;
@@ -545,6 +557,8 @@ export interface TethrTeamAgent {
   openTasks: number;
   running: boolean;
   waitingOnYou: number;
+  /** Connections its job needs that are missing: while any is, it doesn't run. */
+  waitingFor: string[];
   lastReportAt: string | null;
   budgetMonthlyCents: number;
   spentMonthlyCents: number;
@@ -940,6 +954,7 @@ export const tethrKeys = {
   routeRuns: (c: string) => ["tethr", c, "route-runs"] as const,
   chats: (c: string) => ["tethr", c, "chats"] as const,
   team: (c: string) => ["tethr", c, "team"] as const,
+  needsYou: (c: string) => ["tethr", c, "needs-you"] as const,
   integrations: (c: string) => ["tethr", c, "integrations"] as const,
   env: (c: string) => ["tethr", c, "env"] as const,
   goals: (c: string) => ["tethr", c, "goals"] as const,
@@ -977,7 +992,7 @@ export const tethrKeys = {
 /** After a person decides an output (Queue, chat card or bell): refresh every
  * view of what's waiting on them, every status filter of the list included. */
 export function refreshAfterDecision(queryClient: QueryClient, c: string): void {
-  for (const queryKey of [["tethr", c, "outputs"], tethrKeys.growth(c), ["tethr", c, "overview"]]) {
+  for (const queryKey of [["tethr", c, "outputs"], tethrKeys.growth(c), ["tethr", c, "overview"], tethrKeys.needsYou(c), tethrKeys.team(c)]) {
     void queryClient.invalidateQueries({ queryKey });
   }
 }
@@ -1189,7 +1204,11 @@ export const tethrApi = {
     api.post<{ stopped: boolean }>(`/tethr/${c}/chat-turns/${runId}/stop`, {}),
   /** Answer a question card. The answer goes into its chat as your message. */
   answerQuestion: (c: string, id: string, body: { choice?: string; comment?: string }) =>
-    api.post<{ question: TethrQuestion; routeRunId: string; threadId: string }>(`/tethr/${c}/questions/${id}/answer`, body),
+    api.post<{ question: TethrQuestion; routeRunId: string | null; threadId: string; startedTasks?: number }>(`/tethr/${c}/questions/${id}/answer`, body),
+  /** Everything waiting on a person: approvals, questions, missing connections. */
+  needsYou: (c: string) => api.get<TethrNeedsYou>(`/tethr/${c}/needs-you`),
+  /** After fixing a connection from a card: close the cards it answers and start what waited. */
+  recheckConnections: (c: string) => api.post<{ closed: number; startedTasks: number }>(`/tethr/${c}/team/recheck`, {}),
   /** A message still waiting behind another turn: change its words, or take it back. 409 once it has started. */
   editQueuedTurn: (c: string, runId: string, text: string) => api.patch<{ ok: true }>(`/tethr/${c}/chat-turns/${runId}`, { text }),
   removeQueuedTurn: (c: string, runId: string) => api.delete<{ ok: true }>(`/tethr/${c}/chat-turns/${runId}`),

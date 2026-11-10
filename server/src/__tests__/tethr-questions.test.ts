@@ -17,7 +17,10 @@ import { questionDmText } from "../tethr/assistant/person-tools.ts";
 import { agentDenyRules, agentToolRefusal, TEAM_TOOL_NAMES, validateTeamSpec } from "../tethr/team-spec.ts";
 import { executeTeamTask } from "../tethr/team-run.ts";
 import { teamConnectorLabels, teamService } from "../tethr/team.ts";
+import { connectionsContextText, findConnection, needResolver } from "../tethr/connections.ts";
+import { updateIntegrations } from "../tethr/integrations.ts";
 import { taskService } from "../tethr/tasks.ts";
+import { gatingService } from "../tethr/gating.ts";
 import { tethrRoutes } from "../routes/tethr.ts";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 
@@ -276,4 +279,218 @@ describePg("questions as cards: asked, answered, and held on", () => {
     expect(ran.out.summary).not.toContain("waiting for an answer");
     expect(await turnsInItsChat()).toBeGreaterThan(before + 1);
   }, 60_000);
+});
+
+// ---- phase 27.5: connections an agent's job depends on -------------------------------
+
+describePg("an agent waits on a missing connection, and spends nothing until it's sorted", () => {
+  let db!: ReturnType<typeof createDb>;
+  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+  let companyId!: string;
+  let dir!: string;
+  const calls: string[] = [];
+
+  const fakeExecute = async (ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> => {
+    calls.push(String(ctx.context.tethrPrompt));
+    await ctx.onLog("stdout", JSON.stringify({ type: "result", result: "Report:\nDid the work.\n\nSlack summary: Done.", is_error: false }) + "\n");
+    return { exitCode: 0, signal: null, timedOut: false, summary: "ok" };
+  };
+  const PERSON = { type: "board", source: "local_implicit", userId: "mark", isInstanceAdmin: true };
+  const appFor = (actor: Record<string, unknown>) => {
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      (req as unknown as { actor: unknown }).actor = actor;
+      next();
+    });
+    app.use("/api", tethrRoutes(db));
+    return app;
+  };
+  const tool = (name: string, args: Record<string, unknown>, threadId: string) =>
+    runTethrTool(name, args, { workspaceDir: path.join(dir, "workspace"), db, companyId, threadId });
+  const answer = (id: string, body: Record<string, unknown>) => request(appFor(PERSON)).post(`/api/tethr/${companyId}/questions/${id}/answer`).send(body);
+  const turnsIn = async (threadId: string) =>
+    (await db.select().from(tethrRouteRuns).where(and(eq(tethrRouteRuns.companyId, companyId), eq(tethrRouteRuns.threadId, threadId), eq(tethrRouteRuns.sourceKey, "chat-system")))).length;
+  const makeAgent = async (name: string, extra: Record<string, unknown> = {}, lead?: Awaited<ReturnType<ReturnType<typeof teamService>["get"]>>) => {
+    const team = teamService(db);
+    const spec = validateTeamSpec(
+      { name, title: `${name} agent`, mission: "Owns part of paid search.", instructions: "Plan and track paid search campaigns.", connectors: [], ...extra },
+      { takenTags: await team.takenTags(companyId), connectors: teamConnectorLabels(companyId), ...needResolver(companyId), lead: lead ? { tag: lead.tag, connectors: lead.connectors } : null },
+    );
+    return team.create(companyId, spec, { userId: "mark", via: "approval" }, { lead: lead ?? null });
+  };
+  const runTask = async (agent: { agentId: string; tag: string }, originKind: "manual" | "routine_execution") => {
+    const [issue] = await db.insert(issues).values({ companyId, title: "Reconcile ad spend", status: "todo", assigneeAgentId: agent.agentId, originKind }).returning();
+    const ctx = { agent: { id: agent.agentId, companyId }, runId: null, context: {}, onLog: async () => {} } as unknown as AdapterExecutionContext;
+    const out = await executeTeamTask(db, { ctx, issueId: issue!.id, issue: issue!, tasks: taskService(db), agentTag: agent.tag });
+    const [after] = await db.select().from(issues).where(eq(issues.id, issue!.id));
+    return { out, status: after!.status, issueId: issue!.id };
+  };
+
+  beforeAll(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "tethr-needs-"));
+    for (const [key, name] of [
+      ["TETHR_SETUP_FILE", "setup.json"],
+      ["TETHR_CHATS_FILE", "chats.json"],
+      ["TETHR_INTEGRATIONS_FILE", "integrations.json"],
+      ["TETHR_PAUSED_FILE", "paused.json"],
+      ["TETHR_OVERSEERS_FILE", "overseers.json"],
+      ["TETHR_QUESTIONS_FILE", "questions.json"],
+      ["TETHR_MEMORY_FILE", "memory.json"],
+    ]) {
+      process.env[key!] = path.join(dir, name!);
+    }
+    process.env.TETHR_ASSISTANT_HOME = path.join(dir, "home");
+    process.env.TETHR_WORKSPACE_DIR = path.join(dir, "workspace");
+    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-tethr-needs-");
+    db = createDb(tempDb.connectionString);
+    companyId = (await seedTethrCore(db)).companyId;
+    resetAssistantRunnerForTests();
+    setAssistantRunnerForTests(assistantRunner(db, { execute: fakeExecute }));
+  }, 60_000);
+
+  afterAll(async () => {
+    setAssistantRunnerForTests(null);
+    resetAssistantRunnerForTests();
+    await tempDb?.cleanup();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("knows what's connected, by any of a connection's names", () => {
+    expect(findConnection(companyId, "google ads api")).toMatchObject({ key: "Google Ads", ok: false, fixKey: "google_ads" });
+    expect(findConnection(companyId, "stripe")).toMatchObject({ key: "Stripe", ok: true, fixKey: "stripe" });
+    expect(findConnection(companyId, "Mercury")).toMatchObject({ ok: false });
+    expect(findConnection(companyId, "Tethr tools")).toBeNull();
+    expect(findConnection(companyId, "telepathy")).toBeNull();
+    const text = connectionsContextText(companyId);
+    expect(text).toMatch(/^## Connections/);
+    expect(text).toContain("- Google Ads: not set up");
+    expect(text).toContain("call need_connection");
+    expect(() => validateTeamSpec({ name: "X Y", title: "T t", mission: "Does a thing.", instructions: "Do the thing carefully each week.", needs: ["telepathy"] }, { takenTags: [], connectors: [], ...needResolver(companyId) })).toThrow(
+      /isn't a connection tethr knows/,
+    );
+  });
+
+  it("holds every run while a declared need is missing: no turn, one card, and a waiting task starts once it's connected", async () => {
+    const lead = await makeAgent("Paid Ads", { lead: true, needs: ["canva"], schedule: { cron: "0 9 * * 1", brief: "Weekly check." } });
+    expect(lead.needs).toEqual([{ key: "Canva", why: null, confirmFirst: false }]);
+    const sub = await makeAgent("Ads Reporting", {}, lead);
+    const team = teamService(db);
+    expect((await team.unmetNeeds(companyId, sub)).map((n) => [n.key, n.ofTag])).toEqual([["Canva", "@paid-ads"]]);
+
+    // A scheduled run is skipped; a task someone handed over waits. Neither spends a turn.
+    const scheduled = await runTask(lead, "routine_execution");
+    expect(scheduled.status).toBe("cancelled");
+    expect(scheduled.out.summary).toContain("waiting for Canva");
+    const handed = await runTask(lead, "manual");
+    expect(handed.status).toBe("blocked");
+    const subRun = await runTask(sub, "routine_execution");
+    expect(subRun.out.summary).toContain("(its lead @paid-ads needs it)");
+    expect(await turnsIn(lead.threadId)).toBe(0);
+    expect(await turnsIn(sub.threadId)).toBe(0);
+    expect(calls).toHaveLength(0);
+
+    // One card, however often it was held; the main chat heard once; the roster says what it's waiting for.
+    const cards = openQuestions(companyId, { agentTag: "@paid-ads" });
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ question: "@paid-ads needs Canva", connection: { key: "Canva" } });
+    const mainCards = await db.select().from(tethrRouteRuns).where(and(eq(tethrRouteRuns.threadId, companyId), eq(tethrRouteRuns.sourceKey, "tethr-agent-report")));
+    expect(mainCards.map((r) => r.requestText)).toEqual(["@paid-ads is waiting on a connection: Canva"]);
+    const roster = (await request(appFor(PERSON)).get(`/api/tethr/${companyId}/team`).expect(200)).body.agents as Array<{ tag: string; waitingFor: string[]; waitingOnYou: number }>;
+    expect(roster.find((a) => a.tag === "@paid-ads")).toMatchObject({ waitingFor: ["Canva"], waitingOnYou: 1 });
+    expect(roster.find((a) => a.tag === "@ads-reporting")!.waitingFor).toEqual(["Canva"]);
+    const list = (await request(appFor(PERSON)).get(`/api/tethr/${companyId}/needs-you`).expect(200)).body;
+    expect(list).toMatchObject({ count: 1, approvals: [], questions: [] });
+    expect(list.connections[0]).toMatchObject({ question: "@paid-ads needs Canva", from: "@paid-ads's chat" });
+    // The agent's report card in the main chat carries the card to act on.
+    const turns = (await request(appFor(PERSON)).get(`/api/tethr/${companyId}/chats/${companyId}/runs`).expect(200)).body as Array<{ sourceKey: string | null; needsYou: { questions: Question[] } | null }>;
+    expect(turns.find((t) => t.sourceKey === "tethr-agent-report")!.needsYou!.questions.map((q) => q.question)).toEqual(["@paid-ads needs Canva"]);
+
+    // "I've connected it" isn't taken on faith while tethr still can't use it.
+    const refused = await answer(cards[0]!.id, { choice: "connected" }).expect(409);
+    expect(refused.body.error).toMatch(/still can't use Canva/);
+    expect(openQuestions(companyId, { agentTag: "@paid-ads" })).toHaveLength(1);
+
+    // It's switched on in Integrations: the card closes by itself and the waiting task starts.
+    // (Google Ads can't be switched on under tests, so a connector stands in.)
+    await updateIntegrations(companyId, { connectors: { Canva: { mode: "ask" } } });
+    const rechecked = await request(appFor(PERSON)).post(`/api/tethr/${companyId}/team/recheck`).send({}).expect(200);
+    expect(rechecked.body).toEqual({ closed: 1, startedTasks: 1 });
+    expect(openQuestions(companyId, { agentTag: "@paid-ads" })).toHaveLength(0);
+    const [reopened] = await db.select().from(issues).where(eq(issues.id, handed.issueId));
+    expect(reopened!.status).not.toBe("blocked");
+    expect((await team.get(companyId, "@paid-ads"))!.heldIssues).toEqual([]);
+    expect((await team.unmetNeeds(companyId, (await team.get(companyId, "@ads-reporting"))!))).toEqual([]);
+    await updateIntegrations(companyId, { connectors: { Canva: { mode: "off" } } });
+  }, 60_000);
+
+  it("an agent that says a connection doesn't answer is held until a person says it's fixed, or to carry on without it", async () => {
+    const agent = await makeAgent("Funnel Watch", { connectors: ["PostHog"] });
+    const team = teamService(db);
+    // tethr thinks PostHog is on; the agent found it doesn't answer.
+    const raised = await tool("need_connection", { connector: "posthog", why: "It asks for authorization, so I can't read traffic." }, agent.threadId);
+    expect(raised.isError).toBeFalsy();
+    expect(raised.text).toContain("You won't be run again until they answer");
+    expect((await team.get(companyId, agent.tag))!.needs).toEqual([{ key: "PostHog", why: "It asks for authorization, so I can't read traffic.", confirmFirst: true }]);
+    expect((await tool("need_connection", { connector: "telepathy", why: "x" }, agent.threadId)).isError).toBe(true);
+
+    const held = await runTask(agent, "manual");
+    expect(held.status).toBe("blocked");
+    expect(await turnsIn(agent.threadId)).toBe(0);
+    // A saved setting doesn't clear it: only a person's word does.
+    expect((await request(appFor(PERSON)).post(`/api/tethr/${companyId}/team/recheck`).send({}).expect(200)).body).toEqual({ closed: 0, startedTasks: 0 });
+
+    const [card] = openQuestions(companyId, { agentTag: agent.tag });
+    expect(card).toMatchObject({ connection: { key: "PostHog" }, detail: expect.stringContaining("It asks for authorization") });
+    const done = await answer(card!.id, { choice: "without" }).expect(200);
+    // The waiting task starts, so the news rides along as a note instead of a turn of its own.
+    expect(done.body).toMatchObject({ startedTasks: 1, routeRunId: null });
+    const after = (await team.get(companyId, agent.tag))!;
+    expect(after.waived).toEqual(["PostHog"]);
+    expect(await team.unmetNeeds(companyId, after)).toEqual([]);
+    // Told once; asking again is turned away without a new card.
+    const again = await tool("need_connection", { connector: "PostHog", why: "Still can't read traffic." }, agent.threadId);
+    expect(again.text).toMatch(/already said to work without PostHog/);
+    expect(openQuestions(companyId, { agentTag: agent.tag })).toHaveLength(0);
+  }, 60_000);
+
+  it("from tethr's own chat it's a card with the fix, and no hold", async () => {
+    const res = await tool("need_connection", { connector: "Google Ads", why: "I can't see what the campaigns spent." }, companyId);
+    expect(res.isError).toBeFalsy();
+    const [card] = openQuestions(companyId, { threadId: companyId });
+    expect(card).toMatchObject({ question: "Connect Google Ads", agentTag: null, connection: { key: "Google Ads" } });
+    await answer(card!.id, { choice: "approve" }).expect(409); // not one of a connection card's answers
+    await answer(card!.id, { choice: "connected" }).expect(409); // still not set up
+    const done = await answer(card!.id, { choice: "without" }).expect(200);
+    const [msg] = await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.id, done.body.routeRunId));
+    expect(msg!.requestText).toMatch(/^Carry on without Google Ads\. Don't ask for it again/);
+  });
+
+  it("a proposed agent's card says what it would wait for, and sits in Needs you until it's decided", async () => {
+    const res = await tool(
+      "create_agent",
+      { name: "Email Scout", title: "Lifecycle email", mission: "Finds lifecycle email wins.", instructions: "Review the welcome series each week and propose one test.", needs: ["Mercury", "gmail"], why: "Email is under-used." },
+      companyId,
+    );
+    expect(res.isError).toBeFalsy();
+    expect(res.text).toContain("It needs Mercury, which isn't connected");
+    const list = (await request(appFor(PERSON)).get(`/api/tethr/${companyId}/needs-you`).expect(200)).body;
+    const card = list.approvals.find((o: { kind: string }) => o.kind === "team_agent");
+    expect(card).toMatchObject({ status: "gated", from: "your chat with tethr", threadId: companyId });
+    expect(card.body).toContain("Needs: Mercury (not connected), Gmail (connected). It won't run, or spend anything, until that's connected or you say to carry on without it.");
+
+    // Approved: it's on the team, waiting, with its own connection card; the approval has left the list.
+    await gatingService(db).decide({ companyId, outputId: card.id, decision: "approve", reviewer: "mark" });
+    const after = (await request(appFor(PERSON)).get(`/api/tethr/${companyId}/needs-you`).expect(200)).body;
+    expect(after.approvals.find((o: { id: string }) => o.id === card.id)).toBeUndefined();
+    expect(after.connections.map((q: { question: string }) => q.question)).toContain("@email-scout needs Mercury");
+    expect((await teamService(db).get(companyId, "@email-scout"))!.needs.map((n) => n.key)).toEqual(["Mercury", "Gmail"]);
+  });
+
+  it("reads Google Ads only when it's set up, and points at the card when it isn't", async () => {
+    const res = await tool("google_ads_report", { report: "overview" }, companyId);
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain("need_connection");
+    expect(classify("mcp__tethr__google_ads_report", { report: "campaigns" }, { workspaceDir: "/w", readableRoots: ["/w"], internalAddresses: [] })).toMatchObject({ cls: "read" });
+  });
 });

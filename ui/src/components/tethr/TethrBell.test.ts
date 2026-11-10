@@ -19,7 +19,7 @@ describe("the bell's actions", () => {
     expect(actionsFor(staged("gated")).pendingOutputId).toBe("0b0a0c0d-0000-4000-8000-000000000001");
     expect(actionsFor(staged("changes_requested")).pendingOutputId).toBeTruthy();
     for (const closed of ["rejected", "approved", "published", null]) {
-      expect(actionsFor(staged(closed))).toEqual({ viewLabel: "Open the Queue", viewTo: "/queue" });
+      expect(actionsFor(staged(closed))).toEqual({ viewLabel: "Open Needs you", viewTo: "/queue" });
     }
   });
 });

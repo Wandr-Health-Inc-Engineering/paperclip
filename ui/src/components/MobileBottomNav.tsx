@@ -42,7 +42,7 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
       { type: "link", to: "/chat", label: "Chat", icon: MessagesSquare },
       { type: "link", to: "/growth", label: "Growth", icon: TrendingUp },
       // Inbox removed (see DECISIONS.md): the Queue is the single approval surface.
-      { type: "link", to: "/queue", label: "Queue", icon: ShieldCheck },
+      { type: "link", to: "/queue", label: "Needs you", icon: ShieldCheck },
       { type: "link", to: "/drive", label: "Drive", icon: HardDrive },
       { type: "link", to: "/issues", label: "Issues", icon: CircleDot },
     ],

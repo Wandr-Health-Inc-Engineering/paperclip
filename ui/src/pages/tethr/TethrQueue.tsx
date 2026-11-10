@@ -35,11 +35,15 @@ import { useCompany } from "../../context/CompanyContext";
 import { useNavigate, useParams } from "../../lib/router";
 import { cn } from "@/lib/utils";
 import { refreshAfterDecision, tethrApi, tethrKeys, type TethrOutputListItem } from "@/api/tethr";
+import { NeedsYouList, NOTHING_NEEDS_YOU, useNeedsYou } from "./chat/needs-you";
 
-// The Queue: every gated output (medical / public-facing / spend / PR) stops
-// here. Approve publishes to the Drive; reject and request-changes send it
-// back. Every decision is recorded with reviewer + reason in the audit log.
-// Nothing gated ships any other way.
+// Needs you (formerly "the Queue"; Mark, 2026-11-10: "I don't know if the queue
+// tab means anything"): the one page for everything that waits on a person.
+// Questions tethr and its agents asked and connections they're missing sit on
+// top, with their buttons; under them every gated output (medical / public /
+// spend / PR / a new agent) stops here. Approve publishes or applies; reject and
+// request-changes send it back. Every decision is recorded with reviewer and
+// reason. Nothing gated ships any other way.
 
 export function TethrQueue() {
   const { selectedCompanyId } = useCompany();
@@ -50,7 +54,7 @@ export function TethrQueue() {
   const [tab, setTab] = useState<"pending" | "decided" | "all">("pending");
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Queue", href: "/queue" }]);
+    setBreadcrumbs([{ label: "Needs you", href: "/queue" }]);
   }, [setBreadcrumbs]);
 
   const { data: outputs, isLoading } = useQuery({
@@ -74,9 +78,12 @@ export function TethrQueue() {
 
   const pendingCount =
     outputs?.filter((o) => ["gated", "changes_requested"].includes(o.status)).length ?? 0;
+  // Questions and missing connections wait on a person too; approvals are listed below with their detail view.
+  const { data: waiting } = useNeedsYou(selectedCompanyId ?? "");
+  const asked = (waiting?.questions.length ?? 0) + (waiting?.connections.length ?? 0);
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={Inbox} message="Select a company to view the queue." />;
+    return <EmptyState icon={Inbox} message="Select a company to see what needs you." />;
   }
   if (isLoading) return <PageSkeleton variant="approvals" />;
 
@@ -87,12 +94,15 @@ export function TethrQueue() {
           value={tab}
           onValueChange={(v) => setTab(v as typeof tab)}
           items={[
-            { value: "pending", label: `Pending${pendingCount ? ` (${pendingCount})` : ""}` },
+            { value: "pending", label: `Needs you${pendingCount + asked ? ` (${pendingCount + asked})` : ""}` },
             { value: "decided", label: "Decided" },
             { value: "all", label: "All" },
           ]}
         />
       </div>
+
+      {tab === "pending" && waiting && asked ? <NeedsYouList companyId={selectedCompanyId} data={waiting} approvals={false} /> : null}
+      {tab === "pending" && pendingCount && asked ? <p className="tethr-eyebrow pt-1">Approvals · {pendingCount}</p> : null}
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         {/* List — hidden on mobile when a detail is open */}
@@ -100,10 +110,8 @@ export function TethrQueue() {
           {filtered.length === 0 ? (
             <div className="tethr-empty flex flex-col items-center px-4 py-12 text-center">
               <ShieldCheck className="mb-3 h-7 w-7 text-muted-foreground/40" />
-              <p className="text-sm text-muted-foreground">
-                {tab === "pending"
-                  ? "Nothing in the queue."
-                  : "No decided items yet."}
+              <p className="max-w-sm text-sm text-muted-foreground">
+                {tab === "pending" ? (asked ? "No approvals waiting." : NOTHING_NEEDS_YOU) : "Nothing decided yet."}
               </p>
             </div>
           ) : (
@@ -333,7 +341,7 @@ function QueueDetail({
         onClick={onBack}
         className="tethr-btn tethr-btn-ghost h-8 px-3 text-[12.5px] lg:hidden"
       >
-        <ArrowLeft className="h-3.5 w-3.5" /> back to queue
+        <ArrowLeft className="h-3.5 w-3.5" /> back to the list
       </button>
 
       <div className="tethr-panel overflow-hidden">

@@ -77,6 +77,8 @@ export interface TeamAgentSpec {
   /** May build and run a small sub-team of its own. Never true for a sub-agent. */
   lead: boolean;
   goal: TeamGoal | null;
+  /** Phase 27: connections its job can't be done without (connections.ts names). While one is missing it doesn't run. */
+  needs: string[];
 }
 
 export class TeamInputError extends Error {}
@@ -230,6 +232,26 @@ export interface SpecContext {
   goals?: Map<string, string>;
   /** When a lead is creating this agent for its sub-team. */
   lead?: { tag: string; connectors: string[] } | null;
+  /** A connection's proper name from whatever it was called, or null (connections.ts needResolver). */
+  resolveNeed?: (name: string) => string | null;
+  needOptions?: string[];
+}
+
+const NEEDS_MAX = 6;
+
+/** The connections a job depends on, by their proper names. */
+export function validateNeeds(value: unknown, ctx: Pick<SpecContext, "resolveNeed" | "needOptions">): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new TeamInputError("needs is a list of connection names.");
+  const needs: string[] = [];
+  for (const raw of value) {
+    const name = typeof raw === "string" ? raw.trim() : "";
+    const key = name ? (ctx.resolveNeed?.(name) ?? null) : null;
+    if (!key) throw new TeamInputError(`"${name || String(raw)}" isn't a connection tethr knows. Use one of: ${(ctx.needOptions ?? []).join(", ") || "none available"}.`);
+    if (!needs.includes(key)) needs.push(key);
+  }
+  if (needs.length > NEEDS_MAX) throw new TeamInputError(`List at most ${NEEDS_MAX} needs: only what the job can't be done without.`);
+  return needs;
 }
 
 /** Check a new agent's spec. */
@@ -264,6 +286,7 @@ export function validateTeamSpec(raw: unknown, ctx: SpecContext): TeamAgentSpec 
     firstTask: r.first_task || r.firstTask ? validateTask(r.first_task ?? r.firstTask, "first_task") : null,
     lead,
     goal: validateGoal(r, ctx.goals ?? new Map()),
+    needs: validateNeeds(r.needs, ctx),
   };
 }
 
@@ -334,7 +357,10 @@ export function goalLine(goal: TeamGoal | null, opts: { pending?: boolean } = {}
 }
 
 /** The approval card's body: everything the agent will be, in plain text. */
-export function teamSpecText(spec: TeamAgentSpec, opts: { ownerName?: string; timezone?: string; why?: string; leadTag?: string | null } = {}): string {
+export function teamSpecText(
+  spec: TeamAgentSpec,
+  opts: { ownerName?: string; timezone?: string; why?: string; leadTag?: string | null; /** Where each of its needs stands now. */ needs?: Array<{ key: string; ok: boolean }> } = {},
+): string {
   const boss = opts.leadTag ?? "tethr";
   const lines = [
     `${spec.name} (${spec.tag}): ${spec.title}`,
@@ -343,6 +369,7 @@ export function teamSpecText(spec: TeamAgentSpec, opts: { ownerName?: string; ti
     `Runs: ${spec.schedule ? `${scheduleWords(spec.schedule.cron, opts.timezone)}, and when ${boss} assigns it work` : `only when ${boss} assigns it work`}`,
     `Limits: up to ${spec.maxRunsPerDay} runs a day, $${spec.budgetMonthlyUsd} a month (hard stop)`,
     `Tools: web search and its files${spec.connectors.length ? `, plus ${spec.connectors.join(", ")}` : ""}. Anything it would send, post, spend or delete still asks first.`,
+    ...(opts.needs?.length ? [needsLine(opts.needs)] : []),
     opts.leadTag
       ? `Part of ${opts.leadTag}'s team: it reports to ${opts.leadTag}, which reports to tethr.`
       : `Reports to: ${opts.ownerName ? `${opts.ownerName} (${spec.ownerRole})` : spec.ownerRole} on Slack, and to the main chat`,
@@ -355,7 +382,15 @@ export function teamSpecText(spec: TeamAgentSpec, opts: { ownerName?: string; ti
   return lines.join("\n");
 }
 
+/** The card's line about what the job depends on, and what a missing one means. */
+export function needsLine(needs: Array<{ key: string; ok: boolean }>): string {
+  const missing = needs.some((n) => !n.ok);
+  return `Needs: ${needs.map((n) => `${n.key} (${n.ok ? "connected" : "not connected"})`).join(", ")}.${missing ? " It won't run, or spend anything, until that's connected or you say to carry on without it." : ""}`;
+}
+
 export interface AgentIdentity {
+  /** Connections the team said to work without. */
+  waived?: string[];
   tag: string;
   name: string;
   title: string;
@@ -383,7 +418,9 @@ export function agentIdentityText(agent: AgentIdentity): string {
   ];
   lines.push(
     "When you need a decision or a fact from a person before you can go on, call the ask tool: it shows them a card with buttons and tells them it's waiting. Ask once, then finish with what you can do without the answer. Don't bury the question in your report, and don't ask it again on later runs.",
+    "When the job can't be done without a tool or connection you don't have, or one doesn't answer, call need_connection: the person gets a card with the fix, and you aren't run again until it's sorted. Don't work around a missing connection run after run.",
   );
+  if (agent.waived?.length) lines.push(`The team said to work without ${agent.waived.join(", ")}: don't ask for it again. Do what you can and say what you couldn't.`);
   if (agent.goalTitle) lines.push(`Your goal: ${agent.goalTitle}. Say how your work moves it.`);
   if (agent.lead && agent.subTeam?.length) lines.push(`Your sub-team: ${agent.subTeam.join(", ")}.`);
   lines.push("", "Your instructions:", agent.instructions);
@@ -485,7 +522,7 @@ export const TEAM_TOOL_NAMES = ["team_list", "create_agent", "assign_task", "upd
 
 /** Phase 27: tethr tools every agent on the team has, whatever its connectors:
  * they're how it reaches a person (a question as a card, a connection it's missing). */
-export const AGENT_ALWAYS_TOOLS = ["ask"] as const;
+export const AGENT_ALWAYS_TOOLS = ["ask", "need_connection"] as const;
 const isAlwaysTool = (name: string) => (AGENT_ALWAYS_TOOLS as readonly string[]).includes(name);
 
 /** Claude Code's MCP server name for an Integrations connector label. */
@@ -524,7 +561,7 @@ export function agentToolRefusal(agent: { tag: string; connectors: string[]; lea
   }
   if (AGENT_ALWAYS_TOOLS.some((name) => toolName === `mcp__tethr__${name}`)) return null;
   if (connector && !agent.connectors.includes(connector)) {
-    return `Tethr approval gate: blocked. ${agent.tag} isn't set up to use ${connector}. If the job needs it, say so in your report so it can be added.`;
+    return `Tethr approval gate: blocked. ${agent.tag} isn't set up to use ${connector}. If the job can't be done without it, call need_connection (tethr tools) so the person can add it; otherwise carry on without.`;
   }
   return null;
 }

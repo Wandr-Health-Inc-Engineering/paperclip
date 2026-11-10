@@ -14,7 +14,6 @@ import {
   TrendingUp,
   Orbit,
   Sprout,
-  ShieldCheck,
   HardDrive,
   Wallet,
   Plug,
@@ -25,6 +24,7 @@ import { NavLink } from "@/lib/router";
 import { SidebarSection } from "./SidebarSection";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { TethrSetupNavItem } from "./tethr/SetupNavItem";
+import { TethrNeedsYouNavItem } from "./tethr/NeedsYouNavItem";
 import { SidebarProjects } from "./SidebarProjects";
 import { SidebarAgents } from "./SidebarAgents";
 import { useDialogActions } from "../context/DialogContext";
@@ -107,7 +107,7 @@ export function Sidebar() {
           <SidebarNavItem to="/growth-map" label="Growth map" icon={Orbit} />
           <SidebarNavItem to="/learning" label="Learning" icon={Sprout} />
           <SidebarNavItem to="/company-view" label="Company" icon={Network} />
-          <SidebarNavItem to="/queue" label="Queue" icon={ShieldCheck} />
+          <TethrNeedsYouNavItem />
           <SidebarNavItem to="/drive" label="Drive" icon={HardDrive} />
           <SidebarNavItem to="/budgets" label="Budgets" icon={Wallet} />
           <SidebarNavItem to="/audit" label="Activity" icon={History} />

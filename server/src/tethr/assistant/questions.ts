@@ -50,10 +50,15 @@ export interface Question {
   detail: string | null;
   /** null = Approve / Reject. */
   options: QuestionOption[] | null;
+  /** Set on a connection card: what's missing. Its answers are "connected" and "without". */
+  connection?: { key: string };
   status: "open" | "answered";
   answer: QuestionAnswer | null;
   askedAt: string;
 }
+
+/** A connection card's two answers: it's connected now, or carry on without it. */
+export const CONNECTION_ANSWERS = ["connected", "without"] as const;
 
 interface QuestionsState {
   questions?: Question[];
@@ -120,7 +125,7 @@ export function questionsByRun(companyId: string, runIds: Set<string>): Map<stri
 /** Record a question. Throws when the chat already has too many unanswered, or this one is already open. */
 export async function askQuestion(
   companyId: string,
-  ask: ParsedAsk & { threadId: string; runId: string | null; agentTag: string | null },
+  ask: ParsedAsk & { threadId: string; runId: string | null; agentTag: string | null; connection?: { key: string } },
   now = new Date(),
 ): Promise<Question> {
   let made: Question | null = null;
@@ -132,11 +137,25 @@ export async function askQuestion(
       refused = "That question is already waiting on the person. Don't ask it again; go on with what you can.";
       return s;
     }
-    if (open.length >= QUESTION_LIMITS.openPerChat) {
-      refused = `${open.length} questions are already waiting on the person in this chat. Wait for an answer before asking more.`;
+    // A missing connection is a fact, not a choice: its card doesn't count toward the limit.
+    const asked = open.filter((q) => !q.connection);
+    if (!ask.connection && asked.length >= QUESTION_LIMITS.openPerChat) {
+      refused = `${asked.length} questions are already waiting on the person in this chat. Wait for an answer before asking more.`;
       return s;
     }
-    made = { id: randomUUID(), threadId: ask.threadId, runId: ask.runId, agentTag: ask.agentTag, question: ask.question, detail: ask.detail, options: ask.options, status: "open", answer: null, askedAt: now.toISOString() };
+    made = {
+      id: randomUUID(),
+      threadId: ask.threadId,
+      runId: ask.runId,
+      agentTag: ask.agentTag,
+      question: ask.question,
+      detail: ask.detail,
+      options: ask.options,
+      ...(ask.connection ? { connection: ask.connection } : {}),
+      status: "open",
+      answer: null,
+      askedAt: now.toISOString(),
+    };
     return { ...s, questions: [...questions, made].slice(-QUESTION_LIMITS.kept) };
   });
   if (refused) throw new QuestionInputError(refused);
@@ -145,6 +164,7 @@ export async function askQuestion(
 
 /** Whether a choice fits the card: Approve/Reject on a yes/no, one of the labels on a choice card. */
 function validChoice(q: Question, choice: string): boolean {
+  if (q.connection) return (CONNECTION_ANSWERS as readonly string[]).includes(choice);
   return q.options ? q.options.some((o) => o.label === choice) : choice === "approve" || choice === "reject";
 }
 
@@ -195,6 +215,8 @@ export function answerText(q: Question): string {
   if (!a) return "";
   const about = `"${q.question}"`;
   const comment = a.comment ? `\n${a.comment}` : "";
+  if (q.connection && a.choice === "connected") return `Connected: ${q.connection.key}. Check that it answers, then carry on.${comment}`;
+  if (q.connection && a.choice === "without") return `Carry on without ${q.connection.key}. Don't ask for it again; do what you can and say what you couldn't.${comment}`;
   if (a.choice === "approve" && !q.options) return `Approved: ${about}${comment}`;
   if (a.choice === "reject" && !q.options) return `Rejected: ${about}${comment}`;
   if (a.choice) return `About ${about}: ${a.choice}${comment}`;
@@ -202,6 +224,7 @@ export function answerText(q: Question): string {
 }
 
 /** How a card's buttons read, for the tool's result. */
-export function buttonsOf(q: Pick<Question, "options">): string {
+export function buttonsOf(q: Pick<Question, "options" | "connection">): string {
+  if (q.connection) return `the fix in place, "I've connected it" and "Carry on without it"`;
   return q.options ? `${q.options.map((o) => `"${o.label}"`).join(", ")} and Comment` : "Approve, Reject and Comment";
 }

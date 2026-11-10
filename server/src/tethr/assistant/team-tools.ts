@@ -7,6 +7,7 @@ import { getIntegrations } from "../integrations.js";
 import { orgService } from "../org.js";
 import { getRoster } from "../overseers.js";
 import { getSetup } from "../setup.js";
+import { findConnection, needResolver } from "../connections.js";
 import { announceNewAgent } from "../team-report.js";
 import { taskIssueForRun } from "../team-run.js";
 import {
@@ -112,6 +113,12 @@ export const TEAM_TOOL_DEFS: McpToolDef[] = [
           properties: { title: { type: "string" }, brief: { type: "string" } },
           required: ["title", "brief"],
         },
+        needs: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            'Connections the job can\'t be done without, by their names in the Connections section (e.g. "Google Ads", "Stripe"). While one is missing the agent doesn\'t run, and spends nothing, until it\'s connected or the person says to carry on without it. Leave out what it can work without.',
+        },
         why: { type: "string", description: "Why the team needs it, in a sentence or two. Shown on the approval card." },
       },
       required: ["name", "title", "mission", "instructions"],
@@ -148,6 +155,7 @@ export const TEAM_TOOL_DEFS: McpToolDef[] = [
         budget_usd: { type: "number" },
         max_runs_per_day: { type: "number" },
         owner: { type: "string", enum: ["tech", "exec", "growth"] },
+        needs: { type: "array", items: { type: "string" }, description: "The whole list of connections its job can't be done without (replaces the old list)." },
         why: { type: "string", description: "Why, in a sentence. Shown on the approval card." },
       },
       required: ["agent"],
@@ -285,7 +293,11 @@ async function createAgent(ctx: Scoped, caller: Caller, args: Record<string, unk
     connectors: teamConnectorLabels(ctx.companyId),
     goals: await goalTitles(ctx.db, ctx.companyId),
     lead: lead ? { tag: lead.tag, connectors: lead.connectors } : null,
+    ...needResolver(ctx.companyId),
   });
+  const needs = spec.needs.map((key) => ({ key, ok: findConnection(ctx.companyId, key)?.ok === true }));
+  const missing = needs.filter((n) => !n.ok).map((n) => n.key);
+  const waits = missing.length ? ` It needs ${missing.join(", ")}, which ${missing.length === 1 ? "isn't" : "aren't"} connected: it won't run, or spend anything, until that's connected or the person says to carry on without it. Say so.` : "";
   if (await pendingCardFor(ctx.db, ctx.companyId, TEAM_AGENT_KIND, spec.tag)) {
     return { text: `${spec.tag} is already waiting for approval. Don't propose it again.`, isError: true };
   }
@@ -301,11 +313,18 @@ async function createAgent(ctx: Scoped, caller: Caller, args: Record<string, unk
       const router = await orgService(ctx.db).getRouterProfile(ctx.companyId);
       const agent = await team.create(ctx.companyId, spec, { via: "auto", agentId: lead?.agentId ?? router?.agent.id ?? null }, { lead });
       await announceNewAgent(ctx.db, ctx.companyId, agent, why);
+      const { openNeedCards } = await import("../team-needs.js");
+      await openNeedCards(ctx.db, ctx.companyId, await team.unmetNeeds(ctx.companyId, agent), ctx.runId ?? null);
       return {
         text: [
           `Created ${agent.tag} (${agent.name}, ${agent.title})${forTeam}. It's live${agent.schedule ? ` and runs ${scheduleWords(agent.schedule.cron, tz)}` : ""}.`,
           spec.goal ? `${goalLine(spec.goal, { pending: false })}.` : "",
-          spec.firstTask ? `Its first task, "${spec.firstTask.title}", has started; the report will come back to ${lead?.tag ?? "you"}.` : "Give it work with assign_task.",
+          waits.trim(),
+          missing.length
+            ? ""
+            : spec.firstTask
+              ? `Its first task, "${spec.firstTask.title}", has started; the report will come back to ${lead?.tag ?? "you"}.`
+              : "Give it work with assign_task.",
           lead ? "" : "Tell the person what you created and why.",
         ]
           .filter(Boolean)
@@ -317,12 +336,12 @@ async function createAgent(ctx: Scoped, caller: Caller, args: Record<string, unk
   const output = await stageCard(ctx, caller, {
     kind: TEAM_AGENT_KIND,
     title: `New agent${forTeam}: ${spec.name} (${spec.tag}), ${spec.title}`,
-    body: teamSpecText(spec, { ownerName: ownerName(ctx.companyId, spec.ownerRole), timezone: tz, why, leadTag: lead?.tag ?? null }),
+    body: teamSpecText(spec, { ownerName: ownerName(ctx.companyId, spec.ownerRole), timezone: tz, why, leadTag: lead?.tag ?? null, needs }),
     sensitivity: "org",
     meta: { spec, why, leadTag: lead?.tag ?? null },
   });
   return {
-    text: `Sent ${spec.tag} for approval${overLimit ? ` (automatic creation is on, but ${overLimit})` : ""}: a card with its full spec${spec.goal ? " and its goal" : ""} is right under your reply, where they approve or reject it (say "the card below", not Slack or another page). It's created when they approve; don't call create_agent for it again.${lead ? "" : " Tell them in a line what it's for."}`,
+    text: `Sent ${spec.tag} for approval${overLimit ? ` (automatic creation is on, but ${overLimit})` : ""}: a card with its full spec${spec.goal ? " and its goal" : ""} is right under your reply, where they approve or reject it (say "the card below", not Slack or another page). It's created when they approve; don't call create_agent for it again.${waits}${lead ? "" : " Tell them in a line what it's for."}`,
     meta: { tag: spec.tag, outputId: output.id, via: "card" },
   };
 }

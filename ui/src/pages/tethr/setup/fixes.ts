@@ -71,3 +71,11 @@ export const CHECK_FIX: Record<string, CheckFix> = {
     fields: [{ key: "TETHR_MIRROR_DIR", label: "Folder path", placeholder: "/Users/you/Library/CloudStorage/GoogleDrive-…/My Drive/00 Tethr", secret: false }],
   },
 };
+
+/** The Connections row that fixes each thing an agent can be waiting for. */
+const FIX_FOR_CONNECTION: Record<string, string> = { Stripe: "stripe", PostHog: "posthog", Gmail: "gmail", Slack: "slack_connector", "Google Ads": "google_ads" };
+
+/** How a missing connection is fixed in place (a connection card in the chat or on Needs you). */
+export function fixForConnection(key: string): CheckFix {
+  return CHECK_FIX[FIX_FOR_CONNECTION[key] ?? ""] ?? { kind: "connector", connector: key, how: CONNECTOR_HOW };
+}

@@ -23,7 +23,7 @@ import type { SlackPoster } from "./watch.js";
 
 export const AGENT_REPORT_SOURCE = "tethr-agent-report";
 
-export type ReportOutcome = "done" | "failed" | "skipped" | "capped" | "waiting" | "update";
+export type ReportOutcome = "done" | "failed" | "skipped" | "capped" | "waiting" | "update" | "held";
 
 export interface AgentReport {
   companyId: string;
@@ -49,6 +49,9 @@ export function reportHeadline(r: Pick<AgentReport, "agent" | "title" | "identif
       return `${r.agent.tag} has an update: ${what}`;
     case "waiting":
       return `${r.agent.tag} needs your approval to finish ${what}`;
+    case "held":
+      // Phase 27: it didn't run because a connection its job needs is missing (the title names it).
+      return `${r.agent.tag} is waiting on a connection: ${r.title}`;
     case "capped":
       return `${r.agent.tag} hit its daily limit before ${what}`;
     case "skipped":

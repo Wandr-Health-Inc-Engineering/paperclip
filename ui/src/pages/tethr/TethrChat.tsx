@@ -54,6 +54,7 @@ import { agentForThread } from "@/lib/tethr-team";
 import { TeamSection } from "./chat/team";
 import { ChatAvatar } from "./chat/avatar";
 import { QueuedTray, waitingBehind } from "./chat/queue";
+import { NeedsYouPill } from "./chat/needs-you";
 import { FileThisButton, InboxCard, LessonCard, UrgencyRow } from "./chat/cards";
 import { ApprovalCard, DecidedLine, QuestionCard } from "./chat/decision-cards";
 import { kindLabel } from "@/lib/tethr-cards";
@@ -325,14 +326,21 @@ export function TethrChat() {
         <ChatAvatar working={working} agent={teamAgent} caption={isMain || teamAgent ? null : isDraft ? "New side chat" : (sideChat?.title ?? "Side chat")} companyId={c} />
       </div>
 
-      {threadId && !isDraft && allRuns.length ? (
-        <div className="ml-auto flex shrink-0 items-center gap-2 md:absolute md:right-0 md:top-1 md:z-20">
-          {resetNote ? (
-            <span className="tethr-glass rounded-full px-3 py-1.5 text-[12px]">
-              <span className="md:hidden">Fresh start</span>
-              <span className="hidden md:inline">Fresh start: your next message begins a new session.</span>
-            </span>
-          ) : null}
+      {/* Right: what waits on you, then start over. The setup pill joins them on wider screens. */}
+      <div className="ml-auto flex shrink-0 items-center gap-2 md:absolute md:right-0 md:top-1 md:z-20">
+        {isMain ? (
+          <span className="hidden md:contents">
+            <TethrSetupNudge />
+          </span>
+        ) : null}
+        <NeedsYouPill companyId={c} />
+        {resetNote ? (
+          <span className="tethr-glass rounded-full px-3 py-1.5 text-[12px]">
+            <span className="md:hidden">Fresh start</span>
+            <span className="hidden md:inline">Fresh start: your next message begins a new session.</span>
+          </span>
+        ) : null}
+        {threadId && !isDraft && allRuns.length ? (
           <button
             type="button"
             title="Start over"
@@ -351,13 +359,12 @@ export function TethrChat() {
           >
             <RotateCcw className="h-4 w-4" />
           </button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
       {isMain ? (
         // Shown only while setup isn't done. Phones: its own line under the controls.
-        // Wider screens: beside the start-over button.
-        <div className={cn("order-last flex w-full justify-center empty:hidden md:absolute md:top-1 md:z-20 md:w-auto", allRuns.length ? "md:right-11" : "md:right-0")}>
+        <div className="order-last flex w-full justify-center empty:hidden md:hidden">
           <TethrSetupNudge />
         </div>
       ) : null}
@@ -1103,6 +1110,18 @@ function AgentReportCard({
         </div>
       ) : null}
       {run.urgency ? <UrgencyRow run={run} companyId={companyId} /> : null}
+      {run.needsYou ? (
+        // What this agent (and its sub-team) waits on you for, to settle right here.
+        <div className="space-y-2.5 border-t border-[var(--tethr-rim)] pt-3">
+          <p className="tethr-eyebrow">needs you</p>
+          {run.needsYou.questions.map((q) => (
+            <QuestionCard key={q.id} question={q} companyId={companyId} />
+          ))}
+          {run.needsYou.approvals.map((o) => (
+            <ApprovalCard key={o.id} output={o} companyId={companyId} threadId={typeof o.meta?.threadId === "string" ? o.meta.threadId : ""} />
+          ))}
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
         {long ? (
           <button type="button" onClick={() => setExpanded((v) => !v)} className="tethr-btn tethr-btn-ghost h-8 px-3.5 text-[12.5px]">

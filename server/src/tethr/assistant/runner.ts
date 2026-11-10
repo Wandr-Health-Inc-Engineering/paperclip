@@ -33,6 +33,7 @@ const NON_TEAM_TETHR_TOOLS = TETHR_TOOL_DEFS.map((d) => d.name).filter((n) => !(
 import { buildMcpConfig, ensureToolsBridge, removeMcpConfig, writeMcpConfig } from "./tools-bridge.js";
 import { ensureWorkspace, readableRoots } from "./workspace.js";
 import { switchesContextText } from "./switches.js";
+import { connectionsContextText } from "../connections.js";
 import { decisionMode } from "../decide/decide.js";
 import { renderMemoryBlock } from "../hermes/entries.js";
 import { indexTurnSoon } from "../hermes/indexer.js";
@@ -431,7 +432,16 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       // and none of the above: no memory, no team, no goals beyond their titles.
       ws = sandboxed
         ? await ensureSandboxWorkspace(member!.tag, await sandboxClaudeMd(db, companyId))
-        : await ensureWorkspace({ integrationRules: integrationRulesText(cfg), goals, company, team: teamText, memory, growthMap: growthMapText, switches });
+        : await ensureWorkspace({
+            integrationRules: integrationRulesText(cfg),
+            goals,
+            company,
+            team: teamText,
+            memory,
+            growthMap: growthMapText,
+            switches,
+            connections: connectionsContextText(companyId),
+          });
       ({ personaPath, skillDir } = await ensurePersona());
       const hookScript = await ensureHookScript();
       if (tethrTools) bridgeScript = await ensureToolsBridge();

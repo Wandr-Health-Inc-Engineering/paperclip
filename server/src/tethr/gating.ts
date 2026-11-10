@@ -593,6 +593,7 @@ export function gatingService(db: Db) {
   // so the Queue never wedges. The main chat hears either way.
   async function approveTeamCard(output: typeof tethrOutputs.$inferSelect, companyId: string, reviewer: string) {
     const { teamConnectorLabels, teamService } = await import("./team.js");
+    const { needResolver } = await import("./connections.js");
     const { goalLine, scheduleWords, specToInput, validateTeamSpec } = await import("./team-spec.js");
     const { specFromCard } = await import("./assistant/team-tools.js");
     const { goalsService } = await import("./goals.js");
@@ -616,10 +617,20 @@ export function gatingService(db: Db) {
           connectors: teamConnectorLabels(companyId),
           goals: new Map(goals.map((g) => [g.id, g.title])),
           lead: lead ? { tag: lead.tag, connectors: lead.connectors } : null,
+          ...needResolver(companyId),
         });
         const agent = await team.create(companyId, spec, { ...actor, via: "approval" }, { lead });
+        // Phase 27: an agent that starts out missing a connection waits on it; the person gets the card now.
+        const unmet = await team.unmetNeeds(companyId, agent);
+        const { openNeedCards } = await import("./team-needs.js");
+        await openNeedCards(db, companyId, unmet);
         const goal = spec.goal ? ` ${goalLine(spec.goal, { pending: false })}.` : "";
-        note = `Approved: ${agent.tag} (${agent.name}) is on ${lead ? `${lead.tag}'s team` : "the team"}${agent.schedule ? ` and runs ${scheduleWords(agent.schedule.cron)}` : ""}.${goal}${spec.firstTask ? ` Its first task, "${spec.firstTask.title}", has started; the report will come back to ${lead ? lead.tag : "you"}.` : " Give it work with assign_task."}`;
+        const start = unmet.length
+          ? ` It's waiting for ${[...new Set(unmet.map((n) => n.key))].join(", ")}: it won't run until that's connected or the person says to carry on without it (they have a card for it).`
+          : spec.firstTask
+            ? ` Its first task, "${spec.firstTask.title}", has started; the report will come back to ${lead ? lead.tag : "you"}.`
+            : " Give it work with assign_task.";
+        note = `Approved: ${agent.tag} (${agent.name}) is on ${lead ? `${lead.tag}'s team` : "the team"}${agent.schedule ? ` and runs ${scheduleWords(agent.schedule.cron)}` : ""}.${goal}${start}`;
         if (lead) noteThread = lead.threadId;
         // A lead whose new sub-agent has no first task is woken to hand it one,
         // so approving it starts the work instead of waiting for the schedule.

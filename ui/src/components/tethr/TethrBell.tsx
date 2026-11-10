@@ -26,7 +26,7 @@ export function actionsFor(n: TethrNotification): { pendingOutputId?: string; vi
   if (n.href?.startsWith("/queue/") && /for review|staged/i.test(n.title) && stillOpen) {
     return { pendingOutputId: n.href.slice("/queue/".length) };
   }
-  if (n.href?.startsWith("/queue/")) return { viewLabel: "Open the Queue", viewTo: "/queue" };
+  if (n.href?.startsWith("/queue/")) return { viewLabel: "Open Needs you", viewTo: "/queue" };
   if (n.href === "/company-view") return { viewLabel: "View on the Company page", viewTo: "/company-view" };
   if (n.href) return { viewLabel: "Open", viewTo: n.href };
   return {};
@@ -298,7 +298,7 @@ export function NotificationDetail({
                 onClick={() => go("/queue")}
                 className="tethr-eyebrow flex w-full items-center justify-center gap-1.5 py-1.5 transition-colors hover:text-foreground"
               >
-                Open the full Queue <ExternalLink className="h-3 w-3" />
+                Open Needs you <ExternalLink className="h-3 w-3" />
               </button>
             </div>
           ) : (

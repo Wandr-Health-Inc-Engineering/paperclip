@@ -9,10 +9,10 @@ import * as chats from "../tethr/chats.js";
 import { adminFirstName, CompanyInputError, companyProfileService } from "../tethr/company.js";
 import { GROWTH_PACES, PACE_LABEL, PACE_UPLIFT, type GrowthPace } from "../tethr/goal-pace.js";
 import { GoalInputError, goalsService } from "../tethr/goals.js";
-import { getIntegrations, modeFor, sanitizeIntegrationsPatch, updateIntegrations } from "../tethr/integrations.js";
-import { jevHealth, jevHealthText, type JevHealth } from "../tethr/jev.js";
+import { connectionChecks } from "../tethr/connections.js";
+import { getIntegrations, sanitizeIntegrationsPatch, updateIntegrations } from "../tethr/integrations.js";
+import { jevHealth } from "../tethr/jev.js";
 import { foldInterviewIntoMainChat } from "../tethr/main-chat.js";
-import { mirrorDir } from "../tethr/mirror.js";
 import { TETHR_MISSION } from "../tethr/mission.js";
 import { describeAllowance, getPace, IDEAS_LEVELS, IDEAS_LEVELS_ORDER, type IdeasLevel } from "../tethr/pace.js";
 import { POSITIONS } from "../tethr/positions.js";
@@ -28,8 +28,7 @@ import {
   validCron,
   validTimezone,
 } from "../tethr/setup.js";
-import { slackConfigured, slackUserByEmail } from "../tethr/slack.js";
-import { googleAdsConfigured } from "../tethr/tools/google-ads.js";
+import { slackUserByEmail } from "../tethr/slack.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { requirePerson } from "./tethr-people.js";
 
@@ -77,40 +76,6 @@ export function tethrSetupRoutes(db: Db): Router {
   }));
 
   // ---- Setup / onboarding (phase 20) -------------------------------------------
-  const setupChecks = (companyId: string, adminSlackId: string | null, jev: JevHealth) => {
-    const cfg = getIntegrations(companyId);
-    const mode = (label: string) => modeFor(cfg, label);
-    const listening = slackConfigured() && !!process.env.SLACK_APP_TOKEN?.trim();
-    return [
-      { key: "stripe", label: "Stripe (revenue and new customers)", ok: mode("Stripe") !== "off", detail: `Mode: ${mode("Stripe")}`, href: "/tethr-settings" },
-      { key: "posthog", label: "PostHog (traffic and conversion)", ok: mode("PostHog") !== "off", detail: `Mode: ${mode("PostHog")}`, href: "/tethr-settings" },
-      { key: "google_ads", label: "Google Ads (spend and keyword volumes)", ok: googleAdsConfigured(), detail: googleAdsConfigured() ? "Connected" : "Add the GOOGLE_ADS_* settings", href: "/environment" },
-      { key: "gmail", label: "Gmail", ok: mode("Gmail") !== "off", detail: `Mode: ${mode("Gmail")}`, href: "/tethr-settings" },
-      { key: "slack_connector", label: "Slack (reading)", ok: mode("Slack") !== "off", detail: `Mode: ${mode("Slack")}`, href: "/tethr-settings" },
-      { key: "slack_bot", label: "Slack bot for #tethr posts and approvals", ok: slackConfigured(), detail: slackConfigured() ? "Token set" : "Add SLACK_BOT_TOKEN", href: "/environment" },
-      {
-        key: "approver",
-        label: "Your Slack member ID (so Slack reaches tethr as you)",
-        ok: !!adminSlackId,
-        detail: adminSlackId ? "Linked" : "Not linked: tethr won't act on your Slack messages",
-        href: "/setup",
-      },
-      {
-        key: "slack_listen",
-        label: "tethr hears Slack conversations",
-        ok: listening,
-        detail: listening
-          ? "Invite @tethr to the channels it should hear. Private channels and group DMs need two more Slack permissions (see MANUAL-STEPS)."
-          : "Needs the Slack bot and app tokens",
-        href: "/environment",
-        optional: true,
-      },
-      // "ok" only when TypeSafe accepts the key (a saved key can still be rejected).
-      { key: "jev", label: "Jev (fast decisions and list scoring)", ok: jev === "ok", detail: jevHealthText(jev), href: "/environment", optional: true },
-      { key: "drive", label: "Google Drive folder (00 Tethr)", ok: !!mirrorDir(), detail: mirrorDir() ?? "Not found", href: "/drive" },
-    ];
-  };
-
   /** What the "On its own" step shows: where each switch stands now. */
   const autonomyNow = async (companyId: string) => {
     const cfg = getIntegrations(companyId);
@@ -132,7 +97,7 @@ export function tethrSetupRoutes(db: Db): Router {
     const pace = getPace(companyId, state.ideas);
     res.json({
       state,
-      checks: setupChecks(companyId, profile?.admin?.slackUserId ?? null, await jevHealth()),
+      checks: connectionChecks(companyId, profile?.admin?.slackUserId ?? null, await jevHealth()),
       goals: await goalsService(db).list(companyId),
       rhythms: RHYTHMS,
       profile,

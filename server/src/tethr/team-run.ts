@@ -164,6 +164,16 @@ export async function executeTeamTask(
     rollup = children;
   }
 
+  // Phase 27: a job that depends on a connection that's missing doesn't run, so it
+  // spends nothing, until a person connects it or says to carry on without it. A
+  // roll-up closes work already done, so it isn't held.
+  const unmet = rollup ? [] : await teamService(db).unmetNeeds(companyId, agent);
+  if (unmet.length) {
+    const { holdTaskForNeeds } = await import("./team-needs.js");
+    const why = await holdTaskForNeeds(db, { companyId, agent, issueId, issue, unmet, tasks, ctx });
+    return { ...base, exitCode: 0, summary: why };
+  }
+
   await ctx.onLog("stdout", `[tethr] ${agent.tag} ${rollup ? "rolling up" : "working"} ${issue.identifier ?? issueId} in its chat\n`);
   let out = await runTaskInAgentChat(db, { companyId, agent, issue, rollup });
   // Its sub-team already finished while it was still on its turn: roll up now

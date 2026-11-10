@@ -3,6 +3,7 @@ import type { Db } from "@paperclipai/db";
 import { tethrRouteRuns } from "@paperclipai/db";
 import { logFailure } from "../best-effort.js";
 import { mainThreadId } from "../chats.js";
+import { connections, findConnection } from "../connections.js";
 import { personalHealthReason } from "../screen.js";
 import { teamService } from "../team.js";
 import { askQuestion, buttonsOf, parseAsk, QuestionInputError, type Question } from "./questions.js";
@@ -13,7 +14,7 @@ import type { McpToolDef, TethrToolContext, TethrToolResult } from "./tethr-tool
 // agent on the team has these whatever its connectors (team-spec.ts
 // AGENT_ALWAYS_TOOLS); a private turn and the sealed learner don't.
 
-export const PERSON_TOOL_NAMES = ["ask"] as const;
+export const PERSON_TOOL_NAMES = ["ask", "need_connection"] as const;
 export const PERSON_TOOL_SET = new Set<string>(PERSON_TOOL_NAMES);
 
 export const PERSON_TOOL_DEFS: McpToolDef[] = [
@@ -44,6 +45,19 @@ export const PERSON_TOOL_DEFS: McpToolDef[] = [
       required: ["question"],
     },
   },
+  {
+    name: "need_connection",
+    description:
+      "Say that a job can't be done without a tool or connection that's missing, switched off or not answering (see the Connections section). The person gets a card with the fix in place, plus \"I've connected it\" and \"Carry on without it\". Call it once per connection, then finish with what you have and say what you couldn't do. From an agent's chat it also stops that agent's runs until the card is answered, so nothing is spent waiting. Don't use it for something that's merely nice to have.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        connector: { type: "string", description: 'What\'s missing, by its name in the Connections section (e.g. "Google Ads", "PostHog").' },
+        why: { type: "string", description: "What can't be done without it, in a sentence or two. Shown on the card." },
+      },
+      required: ["connector", "why"],
+    },
+  },
 ];
 
 /** The Slack line that tells an owner a question is waiting. The question itself goes
@@ -52,12 +66,13 @@ export function questionDmText(who: string, question: Question): string {
   const base = (process.env.PAPERCLIP_PUBLIC_URL ?? "").trim().replace(/\/+$/, "");
   const where = base ? `<${base}/queue|Answer it in tethr>` : "Answer it in tethr (Needs you, or the chat).";
   const safe = personalHealthReason(`${question.question} ${question.detail ?? ""}`) === null;
+  if (question.connection) return `*${question.question}*, and isn't running until it's connected or you say to carry on without it. ${where}`;
   return safe ? `${who} has a question for you: *${question.question}* ${where}` : `${who} has a question for you. ${where}`;
 }
 
 /** Tell the person a question is waiting when they aren't in the chat it was asked in:
  * an agent's own chat, or a turn tethr started itself (a task, a check-in, a routine). */
-async function buzz(db: Db, companyId: string, question: Question, startedByTethr: boolean): Promise<void> {
+export async function tellPersonAboutQuestion(db: Db, companyId: string, question: Question, startedByTethr: boolean): Promise<void> {
   if (!question.agentTag && !startedByTethr) return;
   const who = question.agentTag ?? "tethr";
   const { notificationService } = await import("../notify.js");
@@ -65,7 +80,7 @@ async function buzz(db: Db, companyId: string, question: Question, startedByTeth
     .send({
       companyId,
       kind: "approval",
-      title: `${who} asks: ${question.question}`,
+      title: question.connection ? question.question : `${who} asks: ${question.question}`,
       body: question.detail ?? undefined,
       href: question.threadId === mainThreadId(companyId) ? "/chat" : `/chat?chat=${question.threadId}`,
       agentTag: question.agentTag ?? "@tethr",
@@ -80,10 +95,42 @@ async function ask(args: Record<string, unknown>, ctx: TethrToolContext & { db: 
   const member = await teamService(ctx.db).byThread(ctx.companyId, ctx.threadId);
   const question = await askQuestion(ctx.companyId, { ...parsed, threadId: ctx.threadId, runId: ctx.runId ?? null, agentTag: member?.tag ?? null }, ctx.now?.() ?? new Date());
   const [run] = ctx.runId ? await ctx.db.select({ sourceKey: tethrRouteRuns.sourceKey }).from(tethrRouteRuns).where(eq(tethrRouteRuns.id, ctx.runId)) : [];
-  await buzz(ctx.db, ctx.companyId, question, run?.sourceKey === "chat-system").catch(logFailure("telling the person about a question", { questionId: question.id }));
+  await tellPersonAboutQuestion(ctx.db, ctx.companyId, question, run?.sourceKey === "chat-system").catch(logFailure("telling the person about a question", { questionId: question.id }));
   return {
     text: `Shown to the person as a card with ${buttonsOf(question)}. End your reply here: their answer arrives as their next message. Don't ask it again in your text, and don't act as if they had answered.`,
     meta: { questionId: question.id, options: question.options?.length ?? 0 },
+  };
+}
+
+/** A missing connection, as a card with the fix. In an agent's chat it also holds the agent. */
+async function needConnection(args: Record<string, unknown>, ctx: TethrToolContext & { db: Db; companyId: string; threadId: string }): Promise<TethrToolResult> {
+  const name = typeof args.connector === "string" ? args.connector.trim() : "";
+  const connection = name ? findConnection(ctx.companyId, name) : null;
+  if (!connection) {
+    return { text: `need_connection: "${name}" isn't a connection tethr knows. Use one of: ${connections(ctx.companyId).map((c) => c.key).join(", ")}. For anything else, ask the person with the ask tool.`, isError: true };
+  }
+  const why = typeof args.why === "string" ? args.why.replace(/\s+/g, " ").trim().slice(0, 400) : "";
+  if (!why) return { text: "need_connection: say in a sentence what can't be done without it (why).", isError: true };
+  const team = teamService(ctx.db);
+  const member = await team.byThread(ctx.companyId, ctx.threadId);
+  if (!member) {
+    // tethr's own chat: a card, no hold (tethr isn't on a schedule here).
+    try {
+      const card = await askQuestion(ctx.companyId, { question: `Connect ${connection.key}`, detail: `${why}\nRight now: ${connection.detail}.`, options: null, threadId: ctx.threadId, runId: ctx.runId ?? null, agentTag: null, connection: { key: connection.key } }, ctx.now?.() ?? new Date());
+      return { text: `Shown to the person as a card with ${buttonsOf(card)}. Carry on with what you can do without ${connection.key} and say what you couldn't; don't ask for it again.`, meta: { questionId: card.id, connection: connection.key } };
+    } catch (err) {
+      if (err instanceof QuestionInputError) return { text: `The person already has a card for ${connection.key}. Carry on with what you can do without it.` };
+      throw err;
+    }
+  }
+  const raised = await team.raiseNeed(ctx.companyId, member.tag, connection.key, why);
+  if (raised === "waived") return { text: `The team already said to work without ${connection.key}. Don't ask for it again: do what you can and say what you couldn't.` };
+  const { openNeedCards } = await import("../team-needs.js");
+  const fresh = await team.get(ctx.companyId, member.tag);
+  await openNeedCards(ctx.db, ctx.companyId, fresh ? await team.unmetNeeds(ctx.companyId, fresh) : [], ctx.runId ?? null);
+  return {
+    text: `Recorded: the person has a card to connect ${connection.key} or to tell you to carry on without it. Finish this turn with what you have and say plainly what you couldn't do. You won't be run again until they answer, so nothing is spent waiting.`,
+    meta: { connection: connection.key, raised },
   };
 }
 
@@ -92,6 +139,7 @@ export async function runPersonTool(name: string, args: Record<string, unknown>,
   const scoped = { ...ctx, db: ctx.db, companyId: ctx.companyId, threadId: ctx.threadId };
   try {
     if (name === "ask") return await ask(args, scoped);
+    if (name === "need_connection") return await needConnection(args, scoped);
     return { text: `There's no tool called ${name}.`, isError: true };
   } catch (err) {
     if (err instanceof QuestionInputError) return { text: `${name}: ${err.message}`, isError: true };

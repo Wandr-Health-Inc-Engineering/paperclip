@@ -9,6 +9,7 @@ import { queueIssueAssignmentWakeup } from "../services/issue-assignment-wakeup.
 import { routineService } from "../services/routines.js";
 import { goalsService } from "./goals.js";
 import { stableThreadId } from "./ids.js";
+import { findConnection, needResolver } from "./connections.js";
 import { getIntegrations, KNOWN_CONNECTORS } from "./integrations.js";
 import { orgService } from "./org.js";
 import { normalizeOverseerRole, type OverseerRole } from "./overseers.js";
@@ -21,6 +22,7 @@ import {
   type TeamSchedule,
   type TeamTask,
   validateConnectors,
+  validateNeeds,
   validateOwner,
   validateSchedule,
 } from "./team-spec.js";
@@ -69,6 +71,44 @@ export interface TeamAgent {
   sandbox: boolean;
   /** The icon that stands for its job (a core agent icon name). */
   icon: string | null;
+  /** Phase 27: connections its job can't be done without. */
+  needs: AgentNeed[];
+  /** Connections the team said to work without. */
+  waived: string[];
+  /** Tasks handed to it while it was waiting on a connection; they start when it's sorted. */
+  heldIssues: string[];
+}
+
+/** A connection an agent's job depends on. */
+export interface AgentNeed {
+  key: string;
+  why: string | null;
+  /** The agent raised it while tethr thought it was connected (it didn't answer): a person has to say it's fixed. */
+  confirmFirst: boolean;
+}
+
+/** A need that keeps an agent from running right now. */
+export interface UnmetNeed {
+  key: string;
+  why: string | null;
+  /** Where the connection stands, in plain words. */
+  detail: string;
+  /** The Setup → Connections row that fixes it in place, when there is one. */
+  fixKey: string | null;
+  /** Whose need it is: the agent's own, or its lead's. */
+  ofTag: string;
+}
+
+/** The needs of one agent that aren't met and that the team hasn't waived. */
+export function unmetOwnNeeds(companyId: string, agent: Pick<TeamAgent, "tag" | "needs" | "waived">): UnmetNeed[] {
+  return agent.needs
+    .filter((need) => !agent.waived.includes(need.key))
+    .flatMap((need) => {
+      const connection = findConnection(companyId, need.key);
+      if (connection?.ok && !need.confirmFirst) return [];
+      const detail = !connection ? "tethr doesn't know this connection" : connection.ok ? "tethr thinks it's on, but it didn't answer when the agent used it" : connection.detail;
+      return [{ key: need.key, why: need.why, detail, fixKey: connection?.fixKey ?? null, ofTag: agent.tag }];
+    });
 }
 
 /** The fields of a team agent's adapterConfig. */
@@ -85,6 +125,9 @@ interface TeamConfig {
   leadTag: string | null;
   goalId: string | null;
   sandbox?: boolean;
+  needs?: AgentNeed[];
+  waived?: string[];
+  heldIssues?: string[];
 }
 
 type Actor = { userId?: string | null; agentId?: string | null };
@@ -115,6 +158,8 @@ export interface TeamPatch {
   budgetMonthlyUsd?: number;
   maxRunsPerDay?: number;
   ownerRole?: OverseerRole;
+  /** The whole list of connections its job depends on (replaces the old one). */
+  needs?: string[];
 }
 
 /** Check a change to an agent (update_agent). Only the fields given are changed. */
@@ -146,6 +191,7 @@ export function validateTeamPatch(raw: Record<string, unknown>, companyId: strin
     patch.maxRunsPerDay = n;
   }
   if (raw.owner !== undefined) patch.ownerRole = validateOwner(raw.owner, "");
+  if (raw.needs !== undefined) patch.needs = validateNeeds(raw.needs, needResolver(companyId));
   return patch;
 }
 
@@ -169,6 +215,7 @@ export function describePatch(agent: TeamAgent, patch: TeamPatch, timezone?: str
   if (patch.budgetMonthlyUsd !== undefined) lines.push(`Budget: $${agent.budgetMonthlyCents / 100} → $${patch.budgetMonthlyUsd} a month`);
   if (patch.maxRunsPerDay !== undefined) lines.push(`Runs a day: ${agent.maxRunsPerDay} → ${patch.maxRunsPerDay}`);
   if (patch.ownerRole !== undefined) lines.push(`Reports to: ${agent.ownerRole} → ${patch.ownerRole}`);
+  if (patch.needs !== undefined) lines.push(`Needs: ${patch.needs.join(", ") || "nothing"} (was ${agent.needs.map((n) => n.key).join(", ") || "nothing"})`);
   if (patch.instructions !== undefined) lines.push("", "New instructions:", patch.instructions);
   return lines;
 }
@@ -207,6 +254,9 @@ export function teamService(db: Db) {
       goalTitle: config.goalId ? (goalTitles.get(config.goalId) ?? null) : null,
       sandbox: config.sandbox === true,
       icon: row.agent.icon ?? null,
+      needs: Array.isArray(config.needs) ? config.needs : [],
+      waived: Array.isArray(config.waived) ? config.waived : [],
+      heldIssues: Array.isArray(config.heldIssues) ? config.heldIssues : [],
     };
   }
 
@@ -380,6 +430,7 @@ export function teamService(db: Db) {
       leadTag: lead?.tag ?? null,
       goalId,
       ...(opts.sandbox ? { sandbox: true } : {}),
+      ...(spec.needs.length ? { needs: spec.needs.map((key) => ({ key, why: null, confirmFirst: false })) } : {}),
     };
     const [row] = await db
       .insert(agents)
@@ -461,6 +512,11 @@ export function teamService(db: Db) {
     if (patch.instructions !== undefined) config.instructions = patch.instructions;
     if (patch.connectors !== undefined) config.connectors = patch.connectors;
     if (patch.maxRunsPerDay !== undefined) config.maxRunsPerDay = patch.maxRunsPerDay;
+    // A need that stays keeps what's known about it; one that's dropped no longer holds the agent.
+    if (patch.needs !== undefined) {
+      config.needs = patch.needs.map((key) => agent.needs.find((n) => n.key === key) ?? { key, why: null, confirmFirst: false });
+      config.waived = agent.waived.filter((key) => patch.needs!.includes(key));
+    }
     if (patch.schedule !== undefined) {
       config.schedule = patch.schedule;
       config.routineId = await syncSchedule(companyId, agent, patch.schedule, !agent.paused, actor);
@@ -575,7 +631,112 @@ export function teamService(db: Db) {
     return { issueId: issue.id, identifier: issue.identifier ?? null, agent };
   }
 
-  return { list, get, byThread, byAgentId, subTeam, takenTags, activeBudgetCents, runsToday, openTasks, create, update, setPaused, assign };
+  // ---- phase 27: connections an agent's job depends on ------------------------------
+
+  /** What keeps an agent from running: its own missing connections, and its lead's
+   * (a sub-team works toward its lead's job; a need the lead waived holds nobody). */
+  async function unmetNeeds(companyId: string, agent: TeamAgent): Promise<UnmetNeed[]> {
+    const own = unmetOwnNeeds(companyId, agent);
+    const lead = agent.leadTag ? await get(companyId, agent.leadTag) : null;
+    if (!lead) return own;
+    const fromLead = unmetOwnNeeds(companyId, lead).filter((n) => !agent.waived.includes(n.key) && !own.some((o) => o.key === n.key));
+    return [...own, ...fromLead];
+  }
+
+  /** An agent says its job can't be done without a connection. "waived" when the team already said to work without it. */
+  async function raiseNeed(companyId: string, tag: string, key: string, why: string | null): Promise<"raised" | "known" | "waived"> {
+    const agent = await get(companyId, tag);
+    if (!agent) throw new TeamInputError(`There's no agent ${tag} on the team.`);
+    if (agent.waived.includes(key)) return "waived";
+    const connection = findConnection(companyId, key);
+    const known = agent.needs.find((n) => n.key === key);
+    // Raised against something tethr believes is on: it didn't work in practice, so only a person's word clears it.
+    const confirmFirst = connection?.ok === true;
+    if (known && (known.confirmFirst || !confirmFirst)) return "known";
+    const need: AgentNeed = { key, why: why ?? known?.why ?? null, confirmFirst };
+    await writeConfig(agent, { needs: [...agent.needs.filter((n) => n.key !== key), need] });
+    return "raised";
+  }
+
+  /** A person settles a need: it's connected now, or the agent should carry on without it. */
+  async function settleNeed(companyId: string, tag: string, key: string, how: "connected" | "without", actor: Actor): Promise<TeamAgent> {
+    const agent = await get(companyId, tag);
+    if (!agent) throw new TeamInputError(`There's no agent ${tag} on the team.`);
+    if (how === "connected") {
+      const connection = findConnection(companyId, key);
+      if (!connection?.ok) throw new TeamInputError(`tethr still can't use ${key}: ${connection?.detail ?? "it isn't a connection tethr knows"}.`);
+      await writeConfig(agent, { needs: agent.needs.map((n) => (n.key === key ? { ...n, confirmFirst: false } : n)) });
+    } else {
+      await writeConfig(agent, { waived: [...new Set([...agent.waived, key])] });
+    }
+    await logActivity(db, {
+      companyId,
+      actorType: actor.userId ? "user" : "system",
+      actorId: actor.userId ?? "tethr",
+      action: how === "connected" ? "tethr_team_need_connected" : "tethr_team_need_waived",
+      entityType: "agent",
+      entityId: agent.agentId,
+      agentId: agent.agentId,
+      details: { tag: agent.tag, need: key },
+    }).catch(() => {});
+    await releaseHeld(companyId, agent.tag);
+    return (await get(companyId, agent.tag))!;
+  }
+
+  /** Remember a task handed to an agent while it waits on a connection. */
+  async function holdTask(agent: TeamAgent, issueId: string): Promise<void> {
+    if (!agent.heldIssues.includes(issueId)) await writeConfig(agent, { heldIssues: [...agent.heldIssues, issueId] });
+  }
+
+  /** Once nothing holds an agent, start the tasks that waited (and its sub-team's). Returns how many were started. */
+  async function releaseHeld(companyId: string, tag: string): Promise<number> {
+    const agent = await get(companyId, tag);
+    if (!agent || agent.paused || (await unmetNeeds(companyId, agent)).length) return 0;
+    let started = 0;
+    for (const issueId of agent.heldIssues) {
+      const [issue] = await db.select().from(issues).where(and(eq(issues.id, issueId), eq(issues.companyId, companyId)));
+      if (!issue || issue.status !== "blocked" || issue.assigneeAgentId !== agent.agentId) continue;
+      const reopened = await issueService(db).update(issueId, { status: "todo" } as never);
+      if (!reopened) continue;
+      started += 1;
+      void queueIssueAssignmentWakeup({ heartbeat: await heartbeat(), issue: reopened, reason: "issue_assigned", mutation: "update", contextSource: "tethr.team", requestedByActorType: "system", requestedByActorId: null });
+    }
+    if (agent.heldIssues.length) await writeConfig(agent, { heldIssues: [] });
+    for (const sub of await subTeam(companyId, agent.tag)) started += await releaseHeld(companyId, sub.tag);
+    return started;
+  }
+
+  /** After a key or a connector setting was saved: start whatever was only waiting on that. */
+  async function recheckHolds(companyId: string): Promise<number> {
+    let started = 0;
+    // From the top: releasing a lead also releases its sub-team.
+    for (const agent of await list(companyId)) {
+      if (!agent.leadTag) started += await releaseHeld(companyId, agent.tag);
+    }
+    return started;
+  }
+
+  return {
+    list,
+    get,
+    byThread,
+    byAgentId,
+    subTeam,
+    takenTags,
+    activeBudgetCents,
+    runsToday,
+    openTasks,
+    create,
+    update,
+    setPaused,
+    assign,
+    unmetNeeds,
+    raiseNeed,
+    settleNeed,
+    holdTask,
+    releaseHeld,
+    recheckHolds,
+  };
 }
 
 export type TeamService = ReturnType<typeof teamService>;
@@ -624,7 +785,8 @@ export function teamContextText(
     "",
     "## Running the team",
     "You're the brain: the person talks to you, and you decide who does what.",
-    "- When you recommend an ongoing effort (a channel like paid ads, a campaign, a recurring check), don't stop at advice and don't ask whether to: propose an agent to own it (create_agent) in the same reply, with a schedule if the work repeats. Tie it to the goal it moves: goal_id if one fits, otherwise new_goal with a metric. A goal doesn't have to exist first, and missing setup is no reason to wait. The card is how the person says yes or no; anything that needs money or a sign-off stays the agent's to propose, never to do.",
+    "- When you recommend an ongoing effort (a channel like paid ads, a campaign, a recurring check), don't stop at advice and don't ask whether to: propose an agent to own it (create_agent) in the same reply, with a schedule if the work repeats. Tie it to the goal it moves: goal_id if one fits, otherwise new_goal with a metric. A goal doesn't have to exist first. The card is how the person says yes or no; anything that needs money or a sign-off stays the agent's to propose, never to do.",
+    "- Check the Connections section before you propose one. If the job can't be done without something that's missing, still propose the agent, list that in needs, and tell the person plainly: it's created, but it won't run or spend anything until that's connected or they say to carry on without it. Never set an agent to work around a missing connection week after week.",
     "- For a bigger effort, make it a lead (lead: true) and give it a first task to set up its sub-team: for paid ads, say, one agent for keywords and one for strategy.",
     ...(agents.some((a) => !a.paused && !a.sandbox)
       ? []

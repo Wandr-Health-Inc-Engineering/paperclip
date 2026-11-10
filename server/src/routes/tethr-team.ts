@@ -3,6 +3,8 @@ import { and, count, eq, inArray, max } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { tethrOutputs, tethrRouteRuns } from "@paperclipai/db";
 import { openQuestions } from "../tethr/assistant/questions.js";
+import { needsYou } from "../tethr/needs-you.js";
+import { recheckConnections } from "../tethr/team-needs.js";
 import { getAssistantRunner } from "../tethr/assistant/runner.js";
 import * as chats from "../tethr/chats.js";
 import { adminFirstName, companyProfileService } from "../tethr/company.js";
@@ -78,11 +80,30 @@ export function tethrTeamRoutes(db: Db): Router {
           // Approval cards it's waiting on, plus questions it asked that nobody has answered.
           waitingOnYou: Number(by(waiting, a.agentId)?.n ?? 0) + openQuestions(companyId, { agentTag: a.tag }).length,
           lastReportAt: by(reports, a.agentId)?.at ?? null,
+          // Phase 27: connections its job needs that are missing. While any is, it doesn't run.
+          waitingFor: [...new Set((await team.unmetNeeds(companyId, a)).map((n) => n.key))],
           budgetMonthlyCents: a.budgetMonthlyCents,
           spentMonthlyCents: a.spentMonthlyCents,
         })),
       ),
     });
+  });
+
+  // Phase 27: everything that waits on a person, as one list (the chat's pill, the
+  // Needs you page, the sidebar count).
+  router.get("/tethr/:companyId/needs-you", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    res.json(await needsYou(db, companyId));
+  });
+
+  // After a key or a connector setting was saved from a card: close the cards it
+  // answers and start what was only waiting on that.
+  router.post("/tethr/:companyId/team/recheck", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
+    res.json(await recheckConnections(db, companyId));
   });
 
   // Pause or resume an agent. A person deciding this needs no card.

@@ -3,7 +3,7 @@ import type { Db } from "@paperclipai/db";
 import { writeNewFile } from "../atomic.js";
 import { GoalInputError, goalsContextText, goalsService, METRIC_SOURCES, METRIC_UNITS } from "../goals.js";
 import { JevError, jevAsk, jevConfigured, jevCostUsd, type JevAnswer, type JevCallOptions, type JevQuestion } from "../jev.js";
-import { googleAdsConfigured } from "../tools/google-ads.js";
+import { googleAdsConfigured, googleAdsReportTool } from "../tools/google-ads.js";
 import { generateKeywordIdeas, KeywordPlannerAccessError, type KeywordIdea } from "../tools/keyword-planner.js";
 import { parseCsv, toCsv } from "../csv.js";
 import { readTextInFiles, safeFileName } from "./files.js";
@@ -116,6 +116,19 @@ export const TETHR_TOOL_DEFS: McpToolDef[] = [
         top: { type: "integer", minimum: 1, maximum: 100, description: "How many top rows to return (default 25)." },
         save_as: { type: "string", description: "CSV file name in ./files/ for every row." },
       },
+    },
+  },
+  {
+    name: "google_ads_report",
+    description:
+      "Read-only numbers from the company's Google Ads account: report is overview (spend, clicks, conversions, cost per conversion), campaigns, keywords or search_terms; days is the lookback (default 30). Use it for what the ads actually did; keyword_ideas is for search volumes before spending. It can't change campaigns, budgets or bids: recommend changes and a person makes them.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        report: { type: "string", enum: ["overview", "campaigns", "keywords", "search_terms"] },
+        days: { type: "number", description: "Lookback in days, 1 to 365 (default 30)." },
+      },
+      required: ["report"],
     },
   },
   {
@@ -663,11 +676,22 @@ async function runMakeDocument(args: Record<string, unknown>, ctx: TethrToolCont
   };
 }
 
+/** Read-only numbers from the company's Google Ads account (the same report the old engine's agents had). */
+async function runGoogleAdsReport(args: Record<string, unknown>): Promise<TethrToolResult> {
+  if (!googleAdsConfigured()) {
+    return { text: "Google Ads isn't set up in Tethr (the GOOGLE_ADS_* settings are missing). Call need_connection with connector \"Google Ads\" so the person can add them.", isError: true };
+  }
+  const out = await googleAdsReportTool.execute({} as never, args);
+  const failed = /^Google Ads (query failed|is not configured)/.test(out.output);
+  return { text: out.output, isError: failed, meta: { report: typeof args.report === "string" ? args.report : "overview" } };
+}
+
 export async function runTethrTool(name: string, args: unknown, ctx: TethrToolContext): Promise<TethrToolResult> {
   const a = args && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
   try {
     if (name === "score_list") return await runScoreList(a, ctx);
     if (name === "keyword_ideas") return await runKeywordIdeas(a, ctx);
+    if (name === "google_ads_report") return await runGoogleAdsReport(a);
     if (name === "make_document") return await runMakeDocument(a, ctx);
     if (name === "goals_list" || name === "save_goal" || name === "save_metric" || name === "record_metric") {
       return await runGoalTool(name, a, ctx);

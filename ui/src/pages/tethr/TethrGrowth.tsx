@@ -164,7 +164,7 @@ export function TethrGrowth() {
           label="waiting on you"
           value={String(waitingOnYou)}
           tone={waitingOnYou ? "warn" : undefined}
-          sub={waitingOnYou ? "decide in the Queue" : "nothing to decide"}
+          sub={waitingOnYou ? "decide in Needs you" : "nothing to decide"}
           to={waitingOnYou ? "/queue" : undefined}
         />
         <Stat label="open tasks" value={String(counts.open)} tone={lanes.working.length ? "live" : undefined} sub={`${lanes.working.length} being worked now`} />
@@ -210,7 +210,7 @@ export function TethrGrowth() {
           <p className="text-[15px] text-foreground">No growth work in flight.</p>
           <p className="mx-auto mt-2 max-w-[56ch] text-[13px]">
             Ask tethr in the chat to plan a push or take on a piece of work. Tasks it opens show up here while
-            they're being worked, and anything that needs your OK waits in the Queue.
+            they're being worked, and anything that needs your OK waits in Needs you.
           </p>
           <Link to="/chat" className="tethr-btn tethr-btn-primary mt-5 h-9 px-4 text-sm">
             Open the chat

@@ -155,7 +155,7 @@ export const KNOWN_CONNECTORS: Array<{ label: string; blurb: string; tools: numb
   { label: "Canva", blurb: "Designs (large tool set, off by default).", tools: 47 },
   { label: "Figma", blurb: "Design files (large tool set, off by default).", tools: 40 },
   { label: "Mercury", blurb: "Bank account. Never moves money on its own.", tools: 0 },
-  { label: "Tethr tools", blurb: "Tethr's own tools: score long lists with Jev, Google keyword ideas, goals, memory, the growth map, lessons, documents, running its team of agents, and asking you a question as a card.", tools: 22 },
+  { label: "Tethr tools", blurb: "Tethr's own tools: score long lists with Jev, Google keyword ideas, goals, memory, the growth map, lessons, documents, Google Ads reports, running its team of agents, and asking you with a card (a question, or a missing connection).", tools: 24 },
 ];
 
 const MODES = new Set(["off", "read", "ask", "auto"]);
