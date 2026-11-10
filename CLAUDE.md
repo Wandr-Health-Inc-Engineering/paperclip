@@ -1864,11 +1864,14 @@ Frosted panels floating over warm ink: the Aina glass card + Oura's calm and big
     - **Text fields are 16px on touch screens** (tethr-theme.css, unlayered). Under 16px, iPhone Safari zooms
       into the field when it's tapped and stays zoomed, which pushed the top bar and tabs off screen. Never
       undo this with a smaller field size on phones.
-    - **The chat is a fixed frame on phones** (`chat/phone-frame.ts` `usePhoneFrame`). It sits between the top
-      bar and the tabs, or fills the visible area above the keyboard (`visualViewport`). Only the messages
-      scroll. Core's phone layout scrolls the whole page and hides the tabs on scroll, so the keyboard left
-      the composer mid-screen. The frame measures an empty anchor where the chat would start; the anchor is
-      state, because the loading view renders without it.
+    - **No bottom tabs on phones** (Mark: "the hamburger menu does just fine"): `Layout.tsx` no longer renders
+      `MobileBottomNav` and the phone bottom padding is 1.5rem + the safe area (DECISIONS.md core row).
+    - **The chat is a fixed frame on phones** (`chat/phone-frame.ts` `usePhoneFrame`). It runs from under the
+      top bar to the bottom of the screen (home-bar inset as padding), or fills the visible area above the
+      keyboard (`visualViewport`). Only the messages scroll. Core's phone layout scrolls the whole page, so
+      the keyboard left the composer mid-screen. The frame measures an empty anchor where the chat would
+      start (state, because the loading view renders without it) and is **portaled to `document.body`**: the
+      shell's entrance animation puts a transform on `<main>`, which would carry a fixed frame with it.
     - On phones the chat's controls (chats, where you are, start over, the setup pill) are a row above the
       messages; on wider screens that row is `contents` and they float as before.
     - Round icon buttons opt out of the 44px touch height (`tethr-touch-sized` + `pointer-coarse:h-8/10`) so

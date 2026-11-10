@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 
-// The chat on a phone. Core's phone layout scrolls the whole page and slides the top
-// bar and tabs away on scroll, so the iPhone keyboard (which scrolls the page to show
-// the text box) left the composer floating mid-screen with both bars gone. On phones
-// the chat is a fixed frame instead: between the top bar and the tabs, or, while the
-// keyboard is up, the whole visible area above it. Only the messages scroll.
+// The chat on a phone. Core's phone layout scrolls the whole page, so the iPhone
+// keyboard (which scrolls the page to show the text box) left the composer floating
+// mid-screen with the top bar gone. On phones the chat is a fixed frame instead: from
+// under the top bar to the bottom of the screen (above the tabs, if a layout has them),
+// or, while the keyboard is up, the whole visible area above it. Only the messages scroll.
 
 export interface PhoneFrame {
   top: number;
   height: number;
+  /** The keyboard is up: the frame ends at it, so no room for the home bar is needed. */
+  keyboard: boolean;
 }
 
 export interface PhoneViewport {
@@ -29,11 +31,11 @@ const MIN_FRAME_PX = 240;
 
 export function phoneFrame(v: PhoneViewport): PhoneFrame {
   if (v.innerHeight - v.viewportHeight > KEYBOARD_MIN_PX) {
-    return { top: Math.round(v.viewportTop), height: Math.round(v.viewportHeight) };
+    return { top: Math.round(v.viewportTop), height: Math.round(v.viewportHeight), keyboard: true };
   }
   const top = Math.max(0, v.anchorTop);
   const bottom = Math.min(v.navTop ?? Infinity, v.viewportTop + v.viewportHeight);
-  return { top: Math.round(top), height: Math.round(Math.max(MIN_FRAME_PX, bottom - top)) };
+  return { top: Math.round(top), height: Math.round(Math.max(MIN_FRAME_PX, bottom - top)), keyboard: false };
 }
 
 const NAV_SELECTOR = 'nav[aria-label="Mobile navigation"]';
@@ -64,7 +66,7 @@ export function usePhoneFrame(enabled: boolean, anchor: HTMLElement | null): Pho
         anchorTop: anchor.getBoundingClientRect().top,
         navTop: nav ? nav.getBoundingClientRect().top : null,
       });
-      setFrame((prev) => (prev && prev.top === next.top && prev.height === next.height ? prev : next));
+      setFrame((prev) => (prev && prev.top === next.top && prev.height === next.height && prev.keyboard === next.keyboard ? prev : next));
     };
     const schedule = () => {
       if (!raf) raf = requestAnimationFrame(measure);

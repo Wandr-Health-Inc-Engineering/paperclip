@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -282,18 +283,16 @@ export function TethrChat() {
   const showPending = pending && (pending.threadId === threadId || (isDraft && !pending.threadId));
   const empty = !isLoading && !visibleRuns.length && !showPending;
 
-  return (
-    <>
-    {isMobile ? <div ref={setPhoneAnchor} aria-hidden="true" /> : null}
+  const chat = (
     <div
       className={cn(
         "flex flex-col",
-        phone
-          ? "fixed inset-x-0 z-10 [overscroll-behavior:none]"
+        isMobile
+          ? cn("fixed inset-x-0 z-10 [overscroll-behavior:none]", phone && !phone.keyboard && "pb-[env(safe-area-inset-bottom)]")
           : "relative h-[calc(100dvh-10rem)] min-h-[480px] md:h-[calc(100dvh-6rem)]",
         panelFile && "md:pr-[calc(min(600px,52%)_+_16px)]",
       )}
-      style={phone ? { top: phone.top, height: phone.height } : undefined}
+      style={isMobile ? (phone ? { top: phone.top, height: phone.height } : { top: 0, height: 0, visibility: "hidden" }) : undefined}
     >
       {/* Phones: the chat's controls are a row above the messages, never over them.
           Wider screens: \`contents\`, so they float over the conversation as before. */}
@@ -435,7 +434,18 @@ export function TethrChat() {
         />
       ) : null}
     </div>
+  );
+
+  // Phones: the chat is a fixed frame on the page body, outside the shell's entrance
+  // animation (a transform on <main> would carry a fixed frame along with it); an empty
+  // anchor in the page marks where it starts.
+  return isMobile ? (
+    <>
+      <div ref={setPhoneAnchor} aria-hidden="true" />
+      {createPortal(chat, document.body)}
     </>
+  ) : (
+    chat
   );
 }
 
