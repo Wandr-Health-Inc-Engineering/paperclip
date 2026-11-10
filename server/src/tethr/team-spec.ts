@@ -86,15 +86,22 @@ const RESERVED_TAGS = new Set(["@tethr", "@all", "@here", "@channel", "@everyone
 const TAG_RE = /^@[a-z][a-z0-9-]{1,23}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** "Competitor Scout" → "@competitor-scout" (lowercase, hyphens, ≤ 24 chars). */
+const TAG_SLUG_MAX = 23;
+
+/** "Competitor Scout" → "@competitor-scout" (lowercase, hyphens, ≤ 24 chars). A long
+ * name is cut at a word, never mid-word ("@paid-ads-keyword", not "@paid-ads-keyword-resear"). */
 export function tagFromName(name: string): string {
   const slug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 23)
-    .replace(/-+$/g, "");
-  return `@${slug || "agent"}`;
+    .replace(/^-+|-+$/g, "");
+  if (slug.length <= TAG_SLUG_MAX) return `@${slug || "agent"}`;
+  const cut = slug.slice(0, TAG_SLUG_MAX);
+  // The next character is a hyphen: the cut already ends on a whole word.
+  if (slug[TAG_SLUG_MAX] === "-") return `@${cut}`;
+  const lastWordStart = cut.lastIndexOf("-");
+  // One long word has nowhere better to cut.
+  return `@${lastWordStart >= 2 ? cut.slice(0, lastWordStart) : cut}`;
 }
 
 function text(value: unknown, field: string, min: number, max: number): string {

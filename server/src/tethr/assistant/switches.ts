@@ -79,7 +79,7 @@ function inboxLine(mode: DecisionMode): string {
 export function switchesContextText(s: SwitchesState): string {
   return [
     "## What's switched on",
-    "tethr's built-in features, whether each is on, and where a person switches it on. You can't switch these yourself. Setup is \"Set up tethr\" in the sidebar, or Growth → Edit goals once setup is done.",
+    "tethr's built-in features, whether each is on, and where a person switches it on. You can't switch these yourself. Setup is \"Set up tethr\" in the sidebar, or Growth → Edit goals once setup is done; its \"On its own\" step has check-ins, the daily review and the learner too.",
     ...(["plan", "scorecard", "brief"] as RhythmKey[]).map((k) => rhythmLine(k, s)),
     ideasLine(s),
     ...autonomyLines(s.autonomy),

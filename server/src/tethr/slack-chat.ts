@@ -21,9 +21,11 @@ import {
   slackBotToken,
   slackDecisionIntent,
   slackSourceKey,
+  slackUserName,
   toSlackMrkdwn,
 } from "./slack.js";
-import { SECOND } from "./time.js";
+import { updateSetup } from "./setup.js";
+import { HOUR, SECOND } from "./time.js";
 
 // Phase 26.1: one brain behind every door. A message to tethr in Slack from a
 // company admin reaches the same tethr as the app's chat (memory, recall,
@@ -68,6 +70,60 @@ export async function chatBrainAsker(db: Db, companyId: string, slackUserId: str
   if (getIntegrations(companyId).assistant.engine !== "session") return null;
   const admins = await companyProfileService(db).adminSlackIds(companyId);
   return admins.find((a) => a.slackId === slackUserId) ?? null;
+}
+
+// ---- a sender tethr doesn't know ----------------------------------------------------
+
+const UNKNOWN_BELL_EVERY = HOUR;
+const lastUnknownBell = new Map<string, number>();
+
+/** What tethr says in Slack to someone it can't act for. */
+export function unknownSenderText(input: { slackUserId?: string; adminNames: string[] }): string {
+  if (input.adminNames.length) {
+    const who = input.adminNames.map((n) => n.split(/\s+/)[0]).join(" or ");
+    return `For now I take requests in Slack from ${who} only, so I haven't acted on that. Ask them, or use tethr directly.`;
+  }
+  if (!input.slackUserId) return "I couldn't tell who sent that, so I haven't acted on it.";
+  return (
+    "I don't know who you are in Slack yet, so I haven't acted on that. If you run tethr for your company, open tethr → Setup → Connections and tap " +
+    `"That's me" (your Slack member ID is ${input.slackUserId}). Then ask me again.`
+  );
+}
+
+/**
+ * Phase 27: a Slack message from someone who isn't a known admin, while the chat
+ * brain is the engine. It never reaches the old engine. tethr says why it didn't
+ * act; when no admin has linked a Slack ID yet, the sender is kept as a claim that
+ * Setup → Connections offers back as "That's me".
+ */
+export async function answerUnknownSlackSender(
+  db: Db,
+  companyId: string,
+  from: { channel?: string; threadTs?: string; userId?: string },
+  now = Date.now(),
+): Promise<void> {
+  const admins = await companyProfileService(db).adminSlackIds(companyId);
+  await poster({ channel: from.channel, threadTs: from.threadTs, text: unknownSenderText({ slackUserId: from.userId, adminNames: admins.map((a) => a.name) }) });
+  if (admins.length || !from.userId) return;
+
+  const slackUserId = from.userId;
+  const name = await slackUserName(slackUserId).catch(() => null);
+  await updateSetup(companyId, (s) => ({ ...s, slackClaim: { slackUserId, name, at: new Date(now).toISOString() } }));
+
+  const key = `${companyId}:${slackUserId}`;
+  if (now - (lastUnknownBell.get(key) ?? 0) < UNKNOWN_BELL_EVERY) return;
+  lastUnknownBell.set(key, now);
+  const { notificationService } = await import("./notify.js");
+  await notificationService(db)
+    .send({
+      companyId,
+      kind: "system",
+      title: "Someone wrote to tethr in Slack",
+      body: `${name ?? slackUserId} isn't linked to a person in tethr, so the message wasn't acted on. If that's you, link it in Setup → Connections.`,
+      href: "/setup?step=connect",
+      agentTag: "@tethr",
+    })
+    .catch(logFailure("unknown Slack sender bell", { companyId }));
 }
 
 // ---- files ------------------------------------------------------------------------

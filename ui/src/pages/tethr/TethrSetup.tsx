@@ -9,7 +9,8 @@ import { cn } from "@/lib/utils";
 import { tethrApi, tethrKeys } from "@/api/tethr";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
-import { STEPS, stepDone, type SetupData, type StepKey } from "./setup/shared";
+import { useSearchParams } from "../../lib/router";
+import { LAST_STEP, STEPS, stepDone, type SetupData, type StepKey } from "./setup/shared";
 import { STEP_GUIDE } from "./setup/guide";
 import { SetupWelcome } from "./setup/Welcome";
 import { CompanyStep } from "./setup/CompanyStep";
@@ -17,16 +18,20 @@ import { FocusStep } from "./setup/FocusStep";
 import { ConnectStep } from "./setup/ConnectStep";
 import { InterviewStep } from "./setup/InterviewStep";
 import { RhythmStep } from "./setup/RhythmStep";
-import { FinishStep } from "./setup/FinishStep";
+import { AutonomyStep } from "./setup/AutonomyStep";
 
-// Set up tethr, as a guided onboarding: a welcome (what tethr is, how setup
-// goes, what to have ready), then one step at a time with a progress rail and,
-// beside each form, why it matters, what tethr does with it, what you need and
-// a tip (setup/guide.ts). The forms live in ./setup/.
+// Set up tethr, as a guided onboarding: a short welcome, then one step at a
+// time with a progress rail and, beside each form, why it matters, what tethr
+// does with it, what you need and a tip (setup/guide.ts). The forms come first;
+// the goals interview is last and opens the chat. The forms live in ./setup/.
 
 const SETUP_REFRESH_MS = 8_000;
 /** Steps you can pass over and come back to. */
-const SKIPPABLE: StepKey[] = ["connect", "interview", "rhythm"];
+const SKIPPABLE: StepKey[] = ["connect", "rhythm", "autonomy"];
+
+function isStepKey(value: string | null): value is StepKey {
+  return STEPS.some((s) => s.key === value);
+}
 
 export function TethrSetup() {
   const { selectedCompanyId } = useCompany();
@@ -41,7 +46,10 @@ export function TethrSetup() {
     staleTime: 0,
     refetchOnMount: "always",
   });
-  const [view, setView] = useState<StepKey | "welcome" | null>(null);
+  // A link can open one step directly (/setup?step=connect), e.g. from a notification.
+  const [searchParams] = useSearchParams();
+  const linked = searchParams.get("step");
+  const [view, setView] = useState<StepKey | "welcome" | null>(isStepKey(linked) ? linked : null);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Set up tethr" }]);
@@ -53,7 +61,7 @@ export function TethrSetup() {
   if (isLoading || !data) return <PageSkeleton variant="detail" />;
 
   const done = stepDone(data);
-  const firstOpen = STEPS.find((s) => !done[s.key])?.key ?? "finish";
+  const firstOpen = STEPS.find((s) => !done[s.key])?.key ?? LAST_STEP;
   const untouched = !data.state.completedAt && STEPS.every((s) => !done[s.key]);
   const current = view ?? (untouched ? "welcome" : firstOpen);
 
@@ -154,7 +162,7 @@ function SetupWizard({
 
         <div className="tethr-onboard-body">
           <section className="tethr-panel tethr-onboard-form" aria-label={meta.title}>
-            {renderStep(step, { companyId, data, done, onDone: () => go(next ?? "finish"), goTo: go })}
+            {renderStep(step, { companyId, data, onDone: () => go(next ?? LAST_STEP), goTo: go })}
           </section>
           <aside className="tethr-onboard-guide">
             <GuideBlock label="why it matters">
@@ -215,13 +223,7 @@ function GuideBlock({ label, children }: { label: string; children: ReactNode })
 /** Each step's form; saving it moves on. */
 function renderStep(
   key: StepKey,
-  {
-    companyId,
-    data,
-    done,
-    onDone,
-    goTo,
-  }: { companyId: string; data: SetupData; done: Record<StepKey, boolean>; onDone: () => void; goTo: (step: StepKey) => void },
+  { companyId, data, onDone, goTo }: { companyId: string; data: SetupData; onDone: () => void; goTo: (step: StepKey) => void },
 ): ReactNode {
   switch (key) {
     case "company":
@@ -230,11 +232,11 @@ function renderStep(
       return <FocusStep companyId={companyId} data={data} onDone={onDone} />;
     case "connect":
       return <ConnectStep companyId={companyId} data={data} onDone={onDone} goTo={goTo} />;
-    case "interview":
-      return <InterviewStep companyId={companyId} data={data} onDone={onDone} />;
     case "rhythm":
       return <RhythmStep companyId={companyId} data={data} onDone={onDone} />;
-    case "finish":
-      return <FinishStep companyId={companyId} data={data} done={done} />;
+    case "autonomy":
+      return <AutonomyStep companyId={companyId} data={data} onDone={onDone} />;
+    case "interview":
+      return <InterviewStep companyId={companyId} data={data} onDone={onDone} />;
   }
 }

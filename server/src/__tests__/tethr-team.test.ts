@@ -380,3 +380,24 @@ describePg("tethr team — agents that work in their own chats and report back",
     expect(claudeMd).toContain("## Running the team");
   }, 30_000);
 });
+
+describe("phase 27: tags and the run page", () => {
+  it("cuts a long agent tag at a whole word", async () => {
+    const { tagFromName } = await import("../tethr/team-spec.ts");
+    expect(tagFromName("Competitor Scout")).toBe("@competitor-scout");
+    expect(tagFromName("Paid Ads Keyword Research")).toBe("@paid-ads-keyword");
+    expect(tagFromName("Paid Ads Reporting")).toBe("@paid-ads-reporting");
+    // Exactly at the limit, and one long word with nowhere to cut.
+    expect(tagFromName("abcdefghijk lmnopqrstuv")).toBe("@abcdefghijk-lmnopqrstuv");
+    expect(tagFromName("Supercalifragilisticexpialidocious")).toBe("@supercalifragilisticexp");
+    expect(tagFromName("!!!")).toBe("@agent");
+  });
+
+  it("says what a run with no task did, so the run page doesn't read like an error", async () => {
+    const { idleRunSummary } = await import("../tethr/adapter.ts");
+    const scheduled = idleRunSummary("Sage", "no-such-company", { engine: "session", schedule: { cron: "0 10 * * 3", brief: "Study." } });
+    expect(scheduled).toContain("Sage had no task for this run, so nothing ran and nothing was spent.");
+    expect(scheduled).toMatch(/scheduled runs are .*Wednesday/);
+    expect(idleRunSummary("Scout", "no-such-company", { engine: "session" })).toContain("It has no schedule; give it a task from tethr's chat.");
+  });
+});

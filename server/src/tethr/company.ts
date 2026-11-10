@@ -25,7 +25,8 @@ export interface CompanyProfile {
 
 export class CompanyInputError extends Error {}
 
-const SLACK_ID = /^[UW][A-Z0-9]{6,20}$/;
+export const SLACK_ID = /^[UW][A-Z0-9]{6,20}$/;
+const SLACK_ID_HELP = "A Slack member ID looks like U0123ABCD (Profile → ⋯ → Copy member ID).";
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export interface CompanyStepInput {
@@ -59,9 +60,7 @@ export function parseCompanyStep(input: CompanyStepInput): { companyName: string
   const customTitle = oneLine(input.positionTitle, 60);
   if (position === "other" && !customTitle) throw new CompanyInputError("Say what your position is.");
   const slackUserId = oneLine(input.slackUserId, 24).toUpperCase();
-  if (slackUserId && !SLACK_ID.test(slackUserId)) {
-    throw new CompanyInputError("A Slack member ID looks like U0123ABCD (Profile → ⋯ → Copy member ID).");
-  }
+  if (slackUserId && !SLACK_ID.test(slackUserId)) throw new CompanyInputError(SLACK_ID_HELP);
   return {
     companyName,
     sells: oneLine(input.sells, 240),
@@ -111,6 +110,21 @@ export function companyProfileService(db: Db) {
       await saveAdmin(companyId, step.admin, now);
       // The root goal everything hangs under follows the company's name; the mission is built in.
       await goalsService(db).saveGoal(companyId, { level: "company", title: companyGoalTitle(step.companyName), description: TETHR_MISSION });
+      return (await get(companyId))!;
+    },
+
+    /** Link the admin's Slack member ID by itself (Setup → Connections). With it, a
+     * Slack message from that person reaches the same tethr as the app. */
+    async setAdminSlackId(companyId: string, raw: unknown): Promise<CompanyProfile> {
+      const slackUserId = oneLine(raw, 24).toUpperCase();
+      if (!SLACK_ID.test(slackUserId)) throw new CompanyInputError(SLACK_ID_HELP);
+      const [admin] = await db
+        .select({ id: tethrMembers.id })
+        .from(tethrMembers)
+        .where(and(eq(tethrMembers.companyId, companyId), eq(tethrMembers.role, "admin")))
+        .limit(1);
+      if (!admin) throw new CompanyInputError("Add yourself in Setup → Your company first.");
+      await db.update(tethrMembers).set({ slackUserId, updatedAt: new Date() }).where(eq(tethrMembers.id, admin.id));
       return (await get(companyId))!;
     },
 

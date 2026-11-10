@@ -329,7 +329,7 @@ export interface TethrRhythmChoice {
   routineId?: string;
 }
 
-export type TethrSetupStepKey = "company" | "focus" | "connect" | "interview" | "rhythm";
+export type TethrSetupStepKey = "company" | "focus" | "connect" | "rhythm" | "autonomy" | "interview";
 export type TethrGrowthPace = "steady" | "balanced" | "ambitious";
 export type TethrIdeasLevel = "light" | "normal" | "busy";
 
@@ -343,6 +343,17 @@ export interface TethrSetupState {
   growthPace: TethrGrowthPace;
   autoAdjust: boolean;
   ideas: { level: TethrIdeasLevel; adaptive: boolean; slackListen: boolean };
+  /** Someone tethr doesn't know wrote to it in Slack; offered as "That's me". */
+  slackClaim: { slackUserId: string; name: string | null; at: string } | null;
+}
+
+/** Setup's "On its own" step: how much tethr does without being asked. */
+export interface TethrSetupAutonomy {
+  newAgents: "ask" | "auto";
+  actOnReports: boolean;
+  dailyReview: { enabled: boolean; time: string; weekdaysOnly: boolean };
+  learner: boolean;
+  defaultMode: TethrConnectorMode;
 }
 
 export interface TethrSetupCheck {
@@ -386,6 +397,7 @@ export interface TethrSetup {
   growthPaces: Array<{ key: TethrGrowthPace; label: string; uplift: number }>;
   ideasLevels: Array<{ key: TethrIdeasLevel; label: string; blurb: string }>;
   ideasPace: { allowance: number; now: string; recent: Array<{ at: string; outcome: string }> };
+  autonomy: TethrSetupAutonomy;
 }
 
 export interface TethrEnvEntry {
@@ -1092,6 +1104,13 @@ export const tethrApi = {
   runRhythm: (c: string, key: TethrRhythmKey) =>
     api.post<{ issueId: string | null; threadId: string }>(`/tethr/${c}/setup/rhythm/${key}/run`, {}),
   completeSetup: (c: string, done = true) => api.post<TethrSetupState>(`/tethr/${c}/setup/complete`, { done }),
+  setupAutonomy: (c: string, body: Omit<TethrSetupAutonomy, "defaultMode"> & { defaultMode: "ask" | "auto" }) =>
+    api.put<TethrSetupState>(`/tethr/${c}/setup/autonomy`, body),
+  /** Link the admin's Slack member ID, so Slack reaches the same tethr as the app. */
+  setAdminSlack: (c: string, slackUserId: string) =>
+    api.put<{ state: TethrSetupState; profile: TethrCompanyProfile }>(`/tethr/${c}/setup/admin-slack`, { slackUserId }),
+  slackLookup: (c: string) =>
+    api.post<{ found: { slackUserId: string; name: string | null } | null; reason: string | null }>(`/tethr/${c}/setup/slack-lookup`, {}),
   /** Phase 19.2: the instance .env (names and status only; values via reveal). */
   env: (c: string) => api.get<TethrEnv>(`/tethr/${c}/env`),
   revealEnv: (c: string, key: string) => api.post<{ key: string; value: string }>(`/tethr/${c}/env/reveal`, { key }),

@@ -9,7 +9,9 @@ import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclip
 import { companies, createDb, issues, routines, routineTriggers, tethrRouteRuns } from "@paperclipai/db";
 import { seedTethrCore } from "../tethr/seed/tethr-core.ts";
 import { applyRhythm, operationsThreadId, runTaskInOperationsChat } from "../tethr/rhythm.ts";
-import { DEFAULT_RHYTHM, getSetup, interviewBrief, updateSetup, validCron, validTimezone } from "../tethr/setup.ts";
+import { DEFAULT_RHYTHM, getSetup, interviewBrief, SETUP_STEPS, updateSetup, validCron, validTimezone } from "../tethr/setup.ts";
+import { getIntegrations, updateIntegrations } from "../tethr/integrations.ts";
+import { teamService } from "../tethr/team.ts";
 import { assistantRunner, resetAssistantRunnerForTests, setAssistantRunnerForTests } from "../tethr/assistant/runner.ts";
 import { addSideChat, clearSession, getSession, listSideChats, setSession } from "../tethr/chats.ts";
 import { foldInterviewIntoMainChat } from "../tethr/main-chat.ts";
@@ -175,6 +177,59 @@ describePg("tethr setup — routes, rhythm, operations chat, wipe", () => {
     expect(turns).toHaveLength(1);
     expect(turns[0].requestText.startsWith("Setup: goals interview")).toBe(true);
     expect(turns[0].sourceKey).toBe("chat-system");
+    // The interview is the last step: starting it finishes setup, so the chat it
+    // opens never asks the person to "finish setting up".
+    expect(getSetup(companyId).completedAt).toBeTruthy();
+  });
+
+  it("keeps the forms first and the conversation last", () => {
+    expect(SETUP_STEPS).toEqual(["company", "focus", "connect", "rhythm", "autonomy", "interview"]);
+  });
+
+  it("saves the On its own step through the same settings as Integrations", async () => {
+    const app = await appFor(mark);
+    const saved = await request(app)
+      .put(`/api/tethr/${companyId}/setup/autonomy`)
+      .send({ newAgents: "auto", actOnReports: true, dailyReview: { enabled: true, time: "07:30" }, learner: true, defaultMode: "auto" })
+      .expect(200);
+    expect(saved.body.steps.autonomy).toBeTruthy();
+    const cfg = getIntegrations(companyId);
+    expect(cfg.team.newAgents).toBe("auto");
+    expect(cfg.team.autonomy.actOnReports).toBe(true);
+    expect(cfg.team.autonomy.dailyReview).toMatchObject({ enabled: true, time: "07:30", weekdaysOnly: true });
+    expect(cfg.defaultMode).toBe("auto");
+    const view = await request(app).get(`/api/tethr/${companyId}/setup`).expect(200);
+    expect(view.body.autonomy).toMatchObject({ newAgents: "auto", actOnReports: true, learner: true, defaultMode: "auto" });
+    // The learner is a real agent on the team, made because a person switched it on.
+    const sage = await teamService(db).get(companyId, "@sage");
+    expect(sage).toMatchObject({ sandbox: true, paused: false });
+
+    // Off again pauses it; a mode setup doesn't offer (read, off) is ignored, never applied.
+    await request(app)
+      .put(`/api/tethr/${companyId}/setup/autonomy`)
+      .send({ newAgents: "ask", actOnReports: false, dailyReview: { enabled: false }, learner: false, defaultMode: "off" })
+      .expect(200);
+    expect(getIntegrations(companyId).defaultMode).toBe("auto");
+    expect(getIntegrations(companyId).team.newAgents).toBe("ask");
+    expect((await teamService(db).get(companyId, "@sage"))?.paused).toBe(true);
+    await updateIntegrations(companyId, { defaultMode: "ask" });
+
+    const agent = await appFor({ type: "agent", agentId: "a1", companyId });
+    await request(agent).put(`/api/tethr/${companyId}/setup/autonomy`).send({ newAgents: "auto" }).expect(403);
+    expect(getIntegrations(companyId).team.newAgents).toBe("ask");
+  });
+
+  it("links the admin's Slack member ID by itself, and clears the claim it answers", async () => {
+    const app = await appFor(mark);
+    await updateSetup(companyId, (st) => ({ ...st, slackClaim: { slackUserId: "U0CLAIM01", name: "Mark", at: new Date().toISOString() } }));
+    await request(app).put(`/api/tethr/${companyId}/setup/admin-slack`).send({ slackUserId: "not an id" }).expect(400);
+    const linked = await request(app).put(`/api/tethr/${companyId}/setup/admin-slack`).send({ slackUserId: "u0claim01" }).expect(200);
+    expect(linked.body.profile.admin.slackUserId).toBe("U0CLAIM01");
+    expect(linked.body.state.slackClaim).toBeNull();
+    const view = await request(app).get(`/api/tethr/${companyId}/setup`).expect(200);
+    expect(view.body.checks.find((c: { key: string }) => c.key === "approver")).toMatchObject({ ok: true, detail: "Linked" });
+    const agent = await appFor({ type: "agent", agentId: "a1", companyId });
+    await request(agent).put(`/api/tethr/${companyId}/setup/admin-slack`).send({ slackUserId: "U0OTHER02" }).expect(403);
   });
 
   it("never folds a side chat into a main chat that already has turns", async () => {

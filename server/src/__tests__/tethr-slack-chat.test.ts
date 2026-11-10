@@ -6,20 +6,24 @@ import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
-import { createDb, tethrMembers, tethrOutputs, tethrRouteRuns } from "@paperclipai/db";
+import { createDb, tethrMembers, tethrNotifications, tethrOutputs, tethrRouteRuns } from "@paperclipai/db";
 import { seedTethrCore } from "../tethr/seed/tethr-core.ts";
 import { assistantRunner, resetAssistantRunnerForTests, setAssistantRunnerForTests } from "../tethr/assistant/runner.ts";
 import { resolveHookToken } from "../tethr/assistant/gate.ts";
 import { handlePreToolUse } from "../tethr/assistant/hook-handler.ts";
 import * as chats from "../tethr/chats.ts";
+import { updateIntegrations } from "../tethr/integrations.ts";
+import { tethrRoutes } from "../routes/tethr.ts";
+import { getSetup } from "../tethr/setup.ts";
 import { interpretSlackEvent, routeInboundKickoff } from "../tethr/slack.ts";
 import { saveSlackFiles, setSlackChatPosterForTests, slackReplyTargetOf } from "../tethr/slack-chat.ts";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 
 // Phase 26.1: one brain behind every door. An admin in Slack reaches the chat
 // brain (a DM is the main chat, a channel thread its own side chat) and the
-// answer comes back where it was asked; anyone else keeps the classic engine.
-// The terminal client and the bell reach the chat brain too.
+// answer comes back where it was asked. The terminal client and the bell reach
+// the chat brain too. Phase 27: someone tethr doesn't recognise is told so and
+// never reaches the old engine while the chat brain is the company's engine.
 
 const support = await getEmbeddedPostgresTestSupport();
 const describePg = support.supported ? describe : describe.skip;
@@ -86,6 +90,18 @@ describePg("Slack and the terminal reach the chat brain", () => {
     throw new Error("turn never finished");
   }
 
+  const PERSON = { type: "board", source: "local_implicit", userId: "mark", isInstanceAdmin: true };
+  const appFor = (actor: Record<string, unknown>) => {
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      (req as unknown as { actor: unknown }).actor = actor;
+      next();
+    });
+    app.use("/api", tethrRoutes(db));
+    return app;
+  };
+
   const dm = (text: string, user = ADMIN, extra: Record<string, unknown> = {}) => ({
     requestText: text,
     channel: "D1",
@@ -103,6 +119,7 @@ describePg("Slack and the terminal reach the chat brain", () => {
     process.env.TETHR_ASSISTANT_HOME = path.join(dir, "home");
     process.env.TETHR_WORKSPACE_DIR = path.join(dir, "workspace");
     process.env.TETHR_MEMORY_FILE = path.join(dir, "memory.json");
+    process.env.TETHR_SETUP_FILE = path.join(dir, "setup.json");
     // The classic engine (for non-admins) must use the offline mock, never a key in the shell.
     savedAnthropicKey = process.env.ANTHROPIC_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
@@ -122,7 +139,7 @@ describePg("Slack and the terminal reach the chat brain", () => {
     resetAssistantRunnerForTests();
     await tempDb?.cleanup();
     fs.rmSync(dir, { recursive: true, force: true });
-    for (const k of ["TETHR_CHATS_FILE", "TETHR_INTEGRATIONS_FILE", "TETHR_PAUSED_FILE", "TETHR_ASSISTANT_HOME", "TETHR_WORKSPACE_DIR", "TETHR_MEMORY_FILE"]) delete process.env[k];
+    for (const k of ["TETHR_CHATS_FILE", "TETHR_INTEGRATIONS_FILE", "TETHR_PAUSED_FILE", "TETHR_ASSISTANT_HOME", "TETHR_WORKSPACE_DIR", "TETHR_MEMORY_FILE", "TETHR_SETUP_FILE"]) delete process.env[k];
   });
 
   beforeEach(() => {
@@ -142,17 +159,65 @@ describePg("Slack and the terminal reach the chat brain", () => {
     expect(posts).toEqual([{ channel: "D1", threadTs: msg.threadTs, text: "Partner payouts go out on the 15th." }]);
   });
 
-  it("anyone else in Slack keeps the classic engine", async () => {
+  const runCount = async () => (await db.select({ id: tethrRouteRuns.id }).from(tethrRouteRuns)).length;
+
+  it("someone tethr doesn't know never reaches the old engine; they're told who can ask", async () => {
+    const before = await runCount();
     const ids = await routeInboundKickoff(db, dm("When do partner payouts go out?", OTHER, { channel: "D2" }));
-    let row: typeof tethrRouteRuns.$inferSelect | undefined;
-    for (let i = 0; i < 200; i++) {
-      [row] = await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.id, ids!.routeRunId));
-      if (row && !["queued", "routing", "working", "running"].includes(row.status)) break;
-      await new Promise((r) => setTimeout(r, 25));
+    expect(ids).toBeNull();
+    expect(await runCount()).toBe(before); // no run, of either engine
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({ channel: "D2" });
+    expect(posts[0]!.text).toMatch(/requests in Slack from Mark only/);
+    // An admin is already linked, so this sender isn't offered as "That's me".
+    expect(getSetup(companyId).slackClaim).toBeNull();
+  });
+
+  it("before the admin links a Slack ID, the sender is kept as a claim and linking it reaches the chat brain", async () => {
+    await db.update(tethrMembers).set({ slackUserId: null }).where(eq(tethrMembers.companyId, companyId));
+    try {
+      const before = await runCount();
+      expect(await routeInboundKickoff(db, dm("can you see this message", OTHER, { channel: "D2" }))).toBeNull();
+      expect(await runCount()).toBe(before);
+      expect(posts[0]!.text).toContain(`your Slack member ID is ${OTHER}`);
+      expect(posts[0]!.text).toContain("Setup → Connections");
+      expect(getSetup(companyId).slackClaim).toMatchObject({ slackUserId: OTHER });
+      const bells = await db.select().from(tethrNotifications).where(eq(tethrNotifications.companyId, companyId));
+      expect(bells.filter((b) => b.title === "Someone wrote to tethr in Slack")).toHaveLength(1);
+      // A second message within the hour answers again but doesn't ring the bell again.
+      await routeInboundKickoff(db, dm("hello?", OTHER, { channel: "D2" }));
+      expect(posts).toHaveLength(2);
+      const again = await db.select().from(tethrNotifications).where(eq(tethrNotifications.companyId, companyId));
+      expect(again.filter((b) => b.title === "Someone wrote to tethr in Slack")).toHaveLength(1);
+
+      // "That's me" in Setup → Connections.
+      await request(appFor(PERSON)).put(`/api/tethr/${companyId}/setup/admin-slack`).send({ slackUserId: OTHER }).expect(200);
+      expect(getSetup(companyId).slackClaim).toBeNull();
+      posts.length = 0;
+      const linked = await routeInboundKickoff(db, dm("When do partner payouts go out?", OTHER, { channel: "D2" }));
+      expect(linked?.threadId).toBe(companyId);
+      expect((await settle(linked!.routeRunId)).invocationSource).toBe("chat");
+      expect(posts.at(-1)!.text).toBe("Partner payouts go out on the 15th.");
+    } finally {
+      await db.update(tethrMembers).set({ slackUserId: ADMIN }).where(eq(tethrMembers.companyId, companyId));
     }
-    expect(row!.invocationSource).toBe("api");
-    expect(row!.llmProvider ?? "mock").not.toMatch(/^claude/); // offline: the mock answered
-    expect(posts).toEqual([]);
+  });
+
+  it("with the classic engine switched on, Slack still uses it", async () => {
+    await updateIntegrations(companyId, { assistant: { engine: "routing" } as never });
+    try {
+      const ids = await routeInboundKickoff(db, dm("When do partner payouts go out?", OTHER, { channel: "D2" }));
+      let row: typeof tethrRouteRuns.$inferSelect | undefined;
+      for (let i = 0; i < 200; i++) {
+        [row] = await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.id, ids!.routeRunId));
+        if (row && !["queued", "routing", "working", "running"].includes(row.status)) break;
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      expect(row!.invocationSource).toBe("api");
+      expect(row!.llmProvider ?? "mock").not.toMatch(/^claude/); // offline: the mock answered
+    } finally {
+      await updateIntegrations(companyId, { assistant: { engine: "session" } as never });
+    }
   });
 
   it("a channel thread gets its own side chat, the same one for every reply in it", async () => {
@@ -230,18 +295,7 @@ describePg("Slack and the terminal reach the chat brain", () => {
   });
 
   it("the terminal client and the bell reach the chat brain; an agent's key keeps the classic engine", async () => {
-    const { tethrRoutes } = await import("../routes/tethr.ts");
-    const appFor = (actor: Record<string, unknown>) => {
-      const app = express();
-      app.use(express.json());
-      app.use((req, _res, next) => {
-        (req as unknown as { actor: unknown }).actor = actor;
-        next();
-      });
-      app.use("/api", tethrRoutes(db));
-      return app;
-    };
-    const person = appFor({ type: "board", source: "local_implicit", userId: "mark", isInstanceAdmin: true });
+    const person = appFor(PERSON);
     const fresh = await request(person).post(`/api/tethr/${companyId}/route`).send({ request: "What's on this week?" }).expect(200);
     const row = await settle(fresh.body.routeRunId);
     expect(row.invocationSource).toBe("chat");

@@ -23,7 +23,7 @@ export const STEP_GUIDE: Record<StepKey, StepGuide> = {
       "Counts email on your own domain as inside the company; anything else asks first.",
     ],
     need: ["Your company's name and one line on what it sells", "Your Slack member ID: in Slack, your profile, then ⋯, then Copy member ID"],
-    tip: "Teammate invites are coming. For now you're the admin, and approvals from Slack only count from your member ID.",
+    tip: "Add your Slack member ID. With it, a message to tethr in Slack reaches the same tethr as this app; without it, tethr won't act on Slack messages. Teammate invites are coming.",
     minutes: 2,
   },
   focus: {
@@ -51,19 +51,8 @@ export const STEP_GUIDE: Record<StepKey, StepGuide> = {
     tip: "A green row means tethr may use it. Grey rows are optional. The goals interview is the real test: it tells you if a connection doesn't answer.",
     minutes: 3,
   },
-  interview: {
-    lede: "Real numbers in, realistic targets out.",
-    why: "This is where tethr earns its keep. It pulls a starting point from your tools, shows you the trend, and proposes a target you can stand behind. Nothing is saved until you say yes.",
-    does: [
-      "Starts in your chat with tethr, the one ongoing conversation you keep using after setup, and asks about one goal at a time.",
-      "Proposes one to three measures per goal, each with a start, a target, a date, and exactly how it will be measured.",
-      "Fills in its memory with your products, customers and channels as you talk.",
-    ],
-    tip: "Push back on any target you don't believe. It saves your number, not its first suggestion. You can leave and come back; this page picks up where you left off.",
-    minutes: 10,
-  },
   rhythm: {
-    lede: "What tethr does on its own, and how often it speaks up.",
+    lede: "The routines tethr runs, and how often it speaks up.",
     why: "Choose the routines that keep the team pointed at the numbers. Each one is a short write-up in tethr's Operations chat; Slack only gets a heads-up, never the write-up.",
     does: [
       "Monday plan, Friday scorecard and a daily brief, each at the day and time you pick.",
@@ -73,13 +62,30 @@ export const STEP_GUIDE: Record<StepKey, StepGuide> = {
     tip: "Start with the Friday scorecard. Add the others once you've seen one.",
     minutes: 2,
   },
-  finish: {
-    lede: "Check it over, take the first measurement, and you're live.",
-    why: "A last look at everything you've set, and the first scorecard so the goals have numbers from day one.",
-    does: ["Measures every goal the way you agreed and writes the first scorecard into tethr's files.", "Takes you to Growth, where the goals live from now on."],
-    tip: "Everything here can be changed later from Set up tethr in the sidebar.",
-    minutes: 1,
+  autonomy: {
+    lede: "How much tethr does without being asked.",
+    why: "Left alone, tethr answers when you write to it and waits. These switches decide whether it comes to you: checking on the goals each morning, acting when its agents report, adding agents, and studying how other companies grow.",
+    does: [
+      "Daily review: each morning it checks the goals and the team and decides the day's moves.",
+      "Check-ins: when an agent reports, it reads the report and acts on it instead of waiting for you.",
+      "The learner studies one area a week and brings back lessons; you choose which to apply.",
+      "Whatever you pick, money, anything public and anything medical still ask you first.",
+    ],
+    tip: "Daily review and check-ins are what make tethr feel proactive. You can change any of these later in Integrations.",
+    minutes: 2,
+  },
+  interview: {
+    lede: "Real numbers in, realistic targets out.",
+    why: "This is where tethr earns its keep. It pulls a starting point from your tools, shows you the trend, and proposes a target you can stand behind. Nothing is saved until you say yes.",
+    does: [
+      "Opens your chat with tethr, the one ongoing conversation you keep using from here on, and asks about one goal at a time.",
+      "Proposes one to three measures per goal, each with a start, a target, a date, and exactly how it will be measured.",
+      "Fills in its memory with your products, customers and channels as you talk.",
+    ],
+    tip: "Push back on any target you don't believe. It saves your number, not its first suggestion. Setup is done once the interview starts; you can come back here to change anything.",
+    minutes: 10,
   },
 };
 
-export const SETUP_MINUTES = Object.values(STEP_GUIDE).reduce((sum, g) => sum + g.minutes, 0);
+/** The forms, without the conversation at the end. */
+export const FORM_MINUTES = Object.entries(STEP_GUIDE).reduce((sum, [key, g]) => (key === "interview" ? sum : sum + g.minutes), 0);

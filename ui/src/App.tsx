@@ -68,6 +68,7 @@ import { TethrEnv } from "./pages/tethr/TethrEnv";
 import { TethrSetup } from "./pages/tethr/TethrSetup";
 import { TethrMemory } from "./pages/tethr/TethrMemory";
 import { TethrStartupIntro } from "./components/tethr/StartupIntro";
+import { TethrFirstRunToSetup } from "./components/tethr/SetupNavItem";
 import { useCompany } from "./context/CompanyContext";
 import { useDialogActions } from "./context/DialogContext";
 import { shouldRedirectCompanylessRouteToOnboarding } from "./lib/onboarding-route";
@@ -75,7 +76,8 @@ import { shouldRedirectCompanylessRouteToOnboarding } from "./lib/onboarding-rou
 function boardRoutes() {
   return (
     <>
-      <Route index element={<Navigate to="dashboard" replace />} />
+      {/* Tethr: the app opens on the chat (DECISIONS.md "Core changes"). */}
+      <Route index element={<Navigate to="chat" replace />} />
       <Route path="dashboard" element={<Dashboard />} />
       <Route path="dashboard/live" element={<DashboardLive />} />
       {/* Tethr operate screens (see DECISIONS.md "Core changes") */}
@@ -236,7 +238,7 @@ function CompanyRootRedirect() {
     return <NoCompaniesStartPage />;
   }
 
-  return <Navigate to={`/${targetCompany.issuePrefix}/dashboard`} replace />;
+  return <Navigate to={`/${targetCompany.issuePrefix}/chat`} replace />;
 }
 
 function UnprefixedBoardRedirect() {
@@ -353,6 +355,7 @@ export function App() {
       </Routes>
       <OnboardingWizard />
       <TethrStartupIntro />
+      <TethrFirstRunToSetup />
     </>
   );
 }

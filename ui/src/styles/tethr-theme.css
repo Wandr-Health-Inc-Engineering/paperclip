@@ -1739,10 +1739,14 @@ html.tethr-intro-hold [data-slot="card"] {
    follows). The guided steps: a rail on desktop, a segmented bar on phones,
    the form beside its guidance. */
 @layer components {
+  /* One calm screen: the hero sits a little above the middle of what's visible. */
   .tethr-welcome {
     max-width: 1120px;
     margin: 0 auto;
-    padding: clamp(16px, 5vh, 64px) 0 64px;
+    min-height: calc(100dvh - 11rem);
+    display: grid;
+    align-content: center;
+    padding: clamp(8px, 3vh, 32px) 0 clamp(32px, 10vh, 112px);
   }
   .tethr-welcome-hero {
     max-width: 880px;
@@ -1757,12 +1761,10 @@ html.tethr-intro-hold [data-slot="card"] {
     font-size: clamp(76px, 9vw, 116px);
   }
   .tethr-welcome-title {
-    margin-top: 14px;
     font-weight: 200;
-    font-size: clamp(44px, 7.6vw, 108px);
-    line-height: 0.94;
-    letter-spacing: -0.048em;
-    text-wrap: balance;
+    font-size: clamp(64px, 12vw, 168px);
+    line-height: 0.9;
+    letter-spacing: -0.055em;
   }
   .tethr-welcome-word {
     display: inline-block;
@@ -1770,8 +1772,13 @@ html.tethr-intro-hold [data-slot="card"] {
     animation: tethr-welcome-word 950ms var(--tethr-ease) both;
     animation-delay: calc(220ms + var(--i, 0) * 80ms);
   }
-  .tethr-welcome-word:first-child {
-    color: var(--muted-foreground);
+  .tethr-welcome-note {
+    margin-top: clamp(28px, 5vh, 48px);
+    max-width: 52ch;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--tethr-text-3);
+    text-wrap: pretty;
   }
   .tethr-welcome-lede {
     margin-top: clamp(18px, 3vh, 28px);
@@ -1791,15 +1798,6 @@ html.tethr-intro-hold [data-slot="card"] {
     animation: tethr-welcome-rise 900ms var(--tethr-ease) both;
     animation-delay: var(--d, 0ms);
   }
-  .tethr-welcome-grid {
-    margin-top: clamp(48px, 9vh, 104px);
-    padding: 32px 0 0 clamp(0px, 4vw, 56px);
-    border-top: 1px solid var(--tethr-rim);
-    display: grid;
-    gap: 40px 64px;
-    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
-  }
-
   .tethr-onboard {
     display: grid;
     grid-template-columns: 220px minmax(0, 1fr);
@@ -1892,9 +1890,6 @@ html.tethr-intro-hold [data-slot="card"] {
   }
 }
 @media (max-width: 900px) {
-  .tethr-welcome-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .tethr-onboard {
     grid-template-columns: minmax(0, 1fr);
     gap: 0;

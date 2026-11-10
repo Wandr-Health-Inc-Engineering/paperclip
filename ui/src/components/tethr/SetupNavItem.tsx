@@ -3,12 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 import { Compass } from "lucide-react";
 import { SidebarNavItem } from "../SidebarNavItem";
 import { useCompany } from "../../context/CompanyContext";
-import { Link, useNavigate } from "../../lib/router";
+import { Link, useLocation, useNavigate } from "../../lib/router";
 import { tethrApi, tethrKeys } from "@/api/tethr";
 import { sessionStorageOrNull } from "@/lib/tethr-intro";
 
 // Phase 20: point at the setup until it's done (sidebar item + a chat nudge).
 // 2026-11-08: a first launch lands on the setup welcome instead of the chat.
+// Phase 27: from any page, not only the chat.
 
 /** Set once this window has shown you the setup, so the chat stays reachable after. */
 const FIRST_RUN_KEY = "tethr.setup.landed";
@@ -52,16 +53,28 @@ export function rememberSetupSeen(): void {
   }
 }
 
-/** On the first chat of a session, before setup is done, go to the setup
- * welcome instead. Once per window, so "Look around first" and the goals
- * interview's chat link still land in the chat. */
-export function useFirstRunToSetup(enabled: boolean): void {
+/** Whether a page is one the first-run redirect leaves alone: the setup itself,
+ * and a link to one particular chat (a side chat, an agent's chat). */
+export function staysPutOnFirstRun(pathname: string, search: string): boolean {
+  if (/\/setup(\/|$)/.test(pathname)) return true;
+  return /\/chat(\/|$)/.test(pathname) && new URLSearchParams(search).has("chat");
+}
+
+/** The first page of a window, before setup is done, becomes the setup welcome,
+ * whatever page it was (2026-11-10: the app opened on a page that never checked).
+ * Once per window, so "Look around first" and every later click stay where they go.
+ * Mounted once by App.tsx, beside the startup intro. */
+export function TethrFirstRunToSetup(): null {
   const incomplete = useSetupIncomplete();
   const navigate = useNavigate();
+  const { pathname, search } = useLocation();
   useEffect(() => {
-    if (!enabled || !incomplete) return;
+    if (!incomplete) return;
     if (sessionStorageOrNull()?.getItem(FIRST_RUN_KEY)) return;
     rememberSetupSeen();
+    if (staysPutOnFirstRun(pathname, search)) return;
     navigate("/setup", { replace: true });
-  }, [enabled, incomplete, navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- decided once, when the setup state arrives
+  }, [incomplete, navigate]);
+  return null;
 }

@@ -24,9 +24,11 @@ export interface RhythmChoice {
 }
 
 /** Phase 21: "company" (you and the company) and "focus" (areas + growth pace)
- * replace the old "basics" step (which asked for a typed mission). */
-export type SetupStep = "company" | "focus" | "connect" | "interview" | "rhythm";
-export const SETUP_STEPS: SetupStep[] = ["company", "focus", "connect", "interview", "rhythm"];
+ * replace the old "basics" step (which asked for a typed mission). Phase 27: the
+ * forms come first and the chat last: "autonomy" (what tethr does on its own) is
+ * new, and starting the interview finishes setup. */
+export type SetupStep = "company" | "focus" | "connect" | "rhythm" | "autonomy" | "interview";
+export const SETUP_STEPS: SetupStep[] = ["company", "focus", "connect", "rhythm", "autonomy", "interview"];
 
 export interface IdeasSettings {
   /** Where the adaptive pace starts and stays within. */
@@ -35,6 +37,14 @@ export interface IdeasSettings {
   adaptive: boolean;
   /** Listen to Slack conversations tethr is invited into and chime in with ideas. */
   slackListen: boolean;
+}
+
+/** Phase 27: someone tethr doesn't know wrote to it in Slack before the admin linked
+ * their Slack member ID. Setup → Connections offers it back as "That's me". */
+export interface SlackClaim {
+  slackUserId: string;
+  name: string | null;
+  at: string;
 }
 
 export interface SetupState {
@@ -51,6 +61,7 @@ export interface SetupState {
   /** Let tethr move targets on its own to keep them realistic. */
   autoAdjust: boolean;
   ideas: IdeasSettings;
+  slackClaim: SlackClaim | null;
 }
 
 export const DEFAULT_AREAS = ["New customers", "Revenue", "Partnerships & distribution"];
@@ -72,6 +83,7 @@ export function defaultSetup(): SetupState {
     growthPace: "balanced",
     autoAdjust: true,
     ideas: { level: "normal", adaptive: true, slackListen: true },
+    slackClaim: null,
   };
 }
 

@@ -1,21 +1,24 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { tethrKeys, type TethrSetup as SetupData } from "@/api/tethr";
+import { tethrKeys, type TethrSetup as SetupData, type TethrSetupStepKey } from "@/api/tethr";
 
 // What the setup steps share: the steps themselves, when each counts as done,
 // and refreshing the page's data after a save.
 
 export type { SetupData };
 
-export type StepKey = "company" | "focus" | "connect" | "interview" | "rhythm" | "finish";
+/** The forms come first; the goals interview is last and opens the chat. */
+export type StepKey = TethrSetupStepKey;
 
 export const STEPS: Array<{ key: StepKey; title: string; blurb: string }> = [
   { key: "company", title: "Your company", blurb: "The company, and you as its admin." },
   { key: "focus", title: "Focus and pace", blurb: "What to work on first, and how hard to push." },
   { key: "connect", title: "Connections", blurb: "What tethr can read to measure the goals." },
-  { key: "interview", title: "Goals interview", blurb: "tethr pulls real numbers and sets targets with you." },
-  { key: "rhythm", title: "Rhythm and ideas", blurb: "What tethr does on its own, and how often it chimes in." },
-  { key: "finish", title: "Finish", blurb: "Check it over and start." },
+  { key: "rhythm", title: "Rhythm and ideas", blurb: "The routines tethr runs, and how often it chimes in." },
+  { key: "autonomy", title: "On its own", blurb: "How much tethr does without being asked." },
+  { key: "interview", title: "Goals interview", blurb: "tethr pulls real numbers and sets targets with you, in the chat." },
 ];
+
+export const LAST_STEP: StepKey = "interview";
 
 export interface StepProps {
   companyId: string;
@@ -52,9 +55,10 @@ export function stepDone(data: SetupData): Record<StepKey, boolean> {
     company: !!data.state.steps.company && !!data.profile?.admin,
     focus: !!data.state.steps.focus && activeGoals(data).length > 0,
     connect: !!data.state.steps.connect,
-    interview: !!data.state.steps.interview || interviewComplete(data),
     rhythm: !!data.state.steps.rhythm,
-    finish: !!data.state.completedAt,
+    autonomy: !!data.state.steps.autonomy,
+    // Starting the interview (or finishing without it) completes setup.
+    interview: !!data.state.completedAt,
   };
 }
 

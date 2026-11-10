@@ -18,6 +18,7 @@ export type CheckFix =
   | { kind: "env"; how: string; fields: EnvField[]; restart?: boolean }
   | { kind: "connector"; connector: string; how: string }
   | { kind: "step"; step: StepKey; how: string }
+  | { kind: "slack-id"; how: string }
   | { kind: "info"; how: string };
 
 const CONNECTOR_HOW =
@@ -60,7 +61,10 @@ export const CHECK_FIX: Record<string, CheckFix> = {
     how: "Optional. Jev (from TypeSafe AI) makes fast, cheap decisions and scores long lists. Without it, tethr does that itself, just slower. Paste either a Vercel AI Gateway key (starts with vck_; billed through Vercel) or a TypeSafe key from console.typesafe.ai. tethr tells them apart on its own. If you have neither, leave this and continue.",
     fields: [{ key: "TYPESAFE_API_KEY", label: "Jev key (Vercel AI Gateway or TypeSafe)", placeholder: "vck_… or your TypeSafe key", secret: true }],
   },
-  approver: { kind: "step", step: "company", how: "Your Slack member ID is part of step 1. In Slack: your profile, then ⋯, then Copy member ID." },
+  approver: {
+    kind: "slack-id",
+    how: "With your Slack member ID, a message to tethr in Slack reaches the same tethr as this app, and you can approve from Slack. Without it, tethr won't act on Slack messages. In Slack: your profile, then ⋯, then Copy member ID.",
+  },
   drive: {
     kind: "env",
     how: "The 00 Tethr folder inside Google Drive for Desktop, where tethr files its work. Make sure Drive for Desktop is running and signed in, then paste the folder's full path (in Finder: right-click the folder, hold Option, Copy as Pathname).",

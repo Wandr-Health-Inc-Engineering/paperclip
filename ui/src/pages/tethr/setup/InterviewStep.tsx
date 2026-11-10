@@ -1,65 +1,75 @@
 import { useMutation } from "@tanstack/react-query";
+import { ArrowRight } from "lucide-react";
 import { StatusDot } from "@/components/tethr/primitives";
 import { formatMetric } from "@/components/tethr/Scorecard";
-import { tethrApi, type TethrGoal } from "@/api/tethr";
+import { tethrApi, type TethrGoal, type TethrRhythmKey } from "@/api/tethr";
 import { useNavigate } from "../../../lib/router";
-import { ErrorLine, GLASS_BUTTON, PRIMARY_BUTTON, StepActions } from "./controls";
-import { activeGoals, interviewComplete, useRefreshSetup, type StepProps } from "./shared";
+import { ErrorLine, PRIMARY_BUTTON, StepActions } from "./controls";
+import { activeGoals, useRefreshSetup, type SetupData, type StepProps } from "./shared";
 
-// Step 4: tethr interviews you in the main chat (the one ongoing conversation,
-// which carries on after setup) and saves goals with numbers; they appear here
-// as they're saved.
+// The last step: a look at what's set, then the goals interview, which happens
+// in the main chat (the one ongoing conversation). Starting it finishes setup,
+// so the chat never asks you to "finish setting up".
 
-export function InterviewStep({ companyId, data, onDone }: StepProps) {
+export function InterviewStep({ companyId, data }: StepProps) {
   const navigate = useNavigate();
   const refresh = useRefreshSetup(companyId);
+  const openChat = (threadId: string) => navigate(threadId === companyId ? "/chat" : `/chat?chat=${threadId}`);
   const start = useMutation({
     mutationFn: () => tethrApi.startInterview(companyId),
     // Starting is idempotent: it opens the interview that's already going.
     onSuccess: (r) => {
       refresh();
-      navigate(r.threadId === companyId ? "/chat" : `/chat?chat=${r.threadId}`);
+      openChat(r.threadId);
     },
   });
-  const markDone = useMutation({
-    mutationFn: () => tethrApi.setupStep(companyId, "interview"),
+  const finishWithout = useMutation({
+    mutationFn: () => tethrApi.completeSetup(companyId),
     onSuccess: () => {
       refresh();
-      onDone();
+      navigate("/chat");
     },
   });
   const goals = activeGoals(data);
+  const started = !!data.state.interviewThreadId;
+  const missing = firstMissingStep(data);
 
   return (
     <div className="space-y-4">
+      <SetupSummary data={data} />
       <p className="text-[12.5px] text-muted-foreground">
-        tethr talks it through with you in your chat, the one ongoing conversation you'll keep using after setup, one goal at a time. It pulls a baseline from your tools (aggregate numbers only), proposes a
-        realistic target from the trend and your growth pace, and saves each goal once you agree. It also fills in its memory with your products,
-        customers and channels. Goals appear here as they're saved.
+        tethr talks the goals through with you in your chat, one at a time. It pulls a starting number from your tools (totals only), proposes a
+        realistic target from the trend and your growth pace, and saves each goal once you agree. Goals appear here as they're saved.
       </p>
-      {!goals.length ? <p className="text-[12.5px] text-[var(--tethr-bad)]">Pick what to work on first (step 2).</p> : null}
+      {missing ? (
+        <p className="flex items-center gap-1.5 text-[12px]">
+          <StatusDot tone="warn" /> {missing}
+        </p>
+      ) : null}
       <div className="tethr-inset divide-y divide-[var(--tethr-rim)]">
         {goals.length ? goals.map((goal) => <GoalProgress key={goal.id} goal={goal} />) : <p className="px-3 py-3 text-[12.5px] tethr-text-3">No goals yet.</p>}
       </div>
-      <ErrorLine error={start.error ?? markDone.error} />
+      <ErrorLine error={start.error ?? finishWithout.error} />
       <StepActions>
-        {data.state.interviewThreadId ? (
-          <button type="button" onClick={() => start.mutate()} disabled={start.isPending} className={GLASS_BUTTON}>
-            Continue in your chat
-          </button>
-        ) : (
-          <button type="button" onClick={() => start.mutate()} disabled={!goals.length || start.isPending} className={PRIMARY_BUTTON}>
-            Start the interview
-          </button>
-        )}
-        {interviewComplete(data) || data.state.steps.interview ? (
-          <button type="button" onClick={() => markDone.mutate()} disabled={markDone.isPending} className={PRIMARY_BUTTON}>
-            Goals look right, continue
+        {!started && !data.state.completedAt ? (
+          <button type="button" onClick={() => finishWithout.mutate()} disabled={finishWithout.isPending} className="tethr-btn tethr-btn-ghost h-9 px-3.5 text-[12.5px]">
+            Finish without it
           </button>
         ) : null}
+        <button type="button" onClick={() => start.mutate()} disabled={(!started && !goals.length) || start.isPending} className={PRIMARY_BUTTON}>
+          {started ? "Continue in your chat" : "Start the goals interview"}
+          <ArrowRight className="h-3.5 w-3.5" />
+        </button>
       </StepActions>
     </div>
   );
+}
+
+/** What should be done before the interview, as an instruction, or null. */
+function firstMissingStep(data: SetupData): string | null {
+  if (!data.profile?.admin) return "Save your company first (step 1), so tethr knows who it's talking to.";
+  if (!activeGoals(data).length) return "Pick what to work on first (step 2).";
+  return null;
 }
 
 function GoalProgress({ goal }: { goal: TethrGoal }) {
@@ -81,5 +91,39 @@ function GoalProgress({ goal }: { goal: TethrGoal }) {
         <p className="pl-4 text-[12px] tethr-text-3">waiting for the interview</p>
       )}
     </div>
+  );
+}
+
+function SetupSummary({ data }: { data: SetupData }) {
+  const { profile, state, autonomy } = data;
+  const rhythmsOn = (Object.keys(state.rhythm) as TethrRhythmKey[]).filter((key) => state.rhythm[key].enabled);
+  const missing = data.checks.filter((c) => !c.ok && !c.optional);
+  const onItsOwn = [autonomy.dailyReview.enabled ? `daily review at ${autonomy.dailyReview.time}` : null, autonomy.actOnReports ? "check-ins" : null, autonomy.learner ? "the learner" : null].filter(Boolean);
+  const rows: Array<[string, string]> = [
+    ["Company", profile?.admin ? `${profile.name}${profile.sells ? `: ${profile.sells}` : ""}` : "not set"],
+    ["You", profile?.admin ? `${profile.admin.name}, ${profile.admin.title} (admin)` : "not set"],
+    ["Connections", missing.length ? `${missing.length} still to connect: ${missing.map((m) => m.label.split(" (")[0]).join(", ")}` : "all set"],
+    [
+      "Growth pace",
+      `${data.growthPaces.find((p) => p.key === state.growthPace)?.label ?? ""}${state.autoAdjust ? ", targets adjust on their own" : ", targets stay as set"}`,
+    ],
+    ["Rhythm", rhythmsOn.length ? rhythmsOn.map((key) => data.rhythms[key].label).join(" · ") : "no routines yet"],
+    ["On its own", `${onItsOwn.length ? onItsOwn.join(", ") : "waits to be asked"}; new agents ${autonomy.newAgents === "auto" ? "automatic" : "ask you"}`],
+  ];
+  return (
+    <dl className="tethr-inset grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 px-3.5 py-3 text-[12.5px]">
+      {rows.map(([term, value]) => (
+        <SummaryRow key={term} term={term} value={value} />
+      ))}
+    </dl>
+  );
+}
+
+function SummaryRow({ term, value }: { term: string; value: string }) {
+  return (
+    <>
+      <dt className="tethr-text-3">{term}</dt>
+      <dd>{value}</dd>
+    </>
   );
 }

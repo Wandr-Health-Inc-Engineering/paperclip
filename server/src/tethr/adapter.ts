@@ -12,6 +12,8 @@ import { orgService } from "./org.js";
 import { routingService } from "./routing.js";
 import { isAgentsPaused } from "./throttle.js";
 import { getIntegrations } from "./integrations.js";
+import { getSetup } from "./setup.js";
+import { scheduleWords } from "./team-spec.js";
 
 // The tethr_llm server adapter. Registering through the adapter seam means
 // heartbeats, cron routines, "run now", run logs, and cost events all flow
@@ -26,6 +28,14 @@ let adapterDb: Db | null = null;
  * delegated sub-task, a roll-up after children finish, a routine's task) is
  * worked as that task; everything else is the standing heartbeat.
  */
+/** What a run with no task did, for the run page: an agent on tethr's team works tasks only. */
+export function idleRunSummary(name: string, companyId: string, config: Record<string, unknown>): string {
+  const schedule = config.schedule as { cron?: unknown } | null | undefined;
+  const cron = typeof schedule?.cron === "string" ? schedule.cron : null;
+  const next = cron ? ` Its scheduled runs are ${scheduleWords(cron, getSetup(companyId).timezone)}.` : " It has no schedule; give it a task from tethr's chat.";
+  return `${name} had no task for this run, so nothing ran and nothing was spent. It works in its own chat in tethr; the workspace folder named above isn't used.${next}`;
+}
+
 async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const taskIssueId =
     typeof ctx.context?.issueId === "string" && ctx.context.issueId.trim() ? ctx.context.issueId.trim() : null;
@@ -33,15 +43,19 @@ async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionRe
   // Phase 23: an agent on tethr's team only works tasks (its schedule is a
   // routine, which opens a task); it has no standing heartbeat.
   if (!taskIssueId && config.engine === "session") {
+    // The run page shows only Paperclip's own "no workspace" line otherwise, which
+    // reads like an error. Say what happened: nothing ran, nothing was spent.
+    const summary = idleRunSummary(ctx.agent.name, ctx.agent.companyId, config);
+    await ctx.onLog("stdout", `[tethr] ${summary}\n`);
     return {
       exitCode: 0,
       signal: null,
       timedOut: false,
       provider: "claude-code",
-      model: "",
+      model: getIntegrations(ctx.agent.companyId).assistant.model,
       billingType: "fixed",
       usage: { inputTokens: 0, outputTokens: 0 },
-      summary: "Team agents only work tasks; nothing to do.",
+      summary,
     };
   }
   if (!taskIssueId) return executeHeartbeat(ctx);

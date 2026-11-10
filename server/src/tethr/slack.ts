@@ -25,6 +25,7 @@ import { mirrorDir } from "./mirror.js";
 import { getRoster, normalizeOverseerRole, type OverseerRoster } from "./overseers.js";
 import { contentPreview, wordCountLabel } from "./preview.js";
 import { setThrottle } from "./throttle.js";
+import { getIntegrations } from "./integrations.js";
 
 const SLACK_API = "https://slack.com/api";
 
@@ -56,6 +57,44 @@ export function slackConfigured(): boolean {
 
 export function slackChannel(): string {
   return process.env.SLACK_SCOUT_CHANNEL?.trim() || DEFAULT_TETHR_CHANNEL;
+}
+
+/** A read call to Slack's Web API with the bot token. Null without a token, under
+ * tests, or when Slack refuses (a missing permission, an unknown id). */
+async function slackRead<T>(method: string, params: Record<string, string>): Promise<T | null> {
+  if (underTest()) return null;
+  const token = slackBotToken();
+  if (!token) return null;
+  try {
+    const res = await fetch(`${SLACK_API}/${method}?${new URLSearchParams(params)}`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(8_000),
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean } & T;
+    return data.ok ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+interface SlackUser {
+  id?: string;
+  real_name?: string;
+  profile?: { display_name?: string; real_name?: string };
+}
+const slackUserLabel = (u: SlackUser | undefined): string | null =>
+  u?.profile?.display_name?.trim() || u?.real_name?.trim() || u?.profile?.real_name?.trim() || null;
+
+/** A Slack member's name (needs the users:read permission), or null. */
+export async function slackUserName(userId: string): Promise<string | null> {
+  const data = await slackRead<{ user?: SlackUser }>("users.info", { user: userId });
+  return slackUserLabel(data?.user);
+}
+
+/** The Slack member with this email (needs users:read.email), or null. */
+export async function slackUserByEmail(email: string): Promise<{ slackUserId: string; name: string | null } | null> {
+  const data = await slackRead<{ user?: SlackUser }>("users.lookupByEmail", { email });
+  return data?.user?.id ? { slackUserId: data.user.id, name: slackUserLabel(data.user) } : null;
 }
 
 export interface PostMessageInput {
@@ -946,12 +985,17 @@ export async function routeInboundKickoff(
     );
   }
 
+  // Phase 27: while the chat brain is the company's engine, nobody reaches the old
+  // engine from Slack. A sender tethr doesn't recognise used to fall through to it,
+  // which answered from the archived specialists' wording and filed a brief to the Drive.
+  const classicOff = getIntegrations(companyId).assistant.engine === "session";
+
   // Wipes are confirmed, not immediate. A reset command asks first and parks
   // any carried question; the next message confirms (wipe) or cancels (route
   // it normally). Requires a sourceKey to correlate the two turns.
   let requestText = interp.requestText;
   let forceFresh = false;
-  if (sourceKey) {
+  if (sourceKey && !classicOff) {
     if (isResetPhrase(bareCommand)) {
       // New/repeat reset command → confirm before wiping. Don't route yet.
       pendingResets.set(sourceKey, {
@@ -1052,6 +1096,12 @@ export async function routeInboundKickoff(
       }
       // No pending item in this thread → fall through and route it normally.
     }
+  }
+
+  if (classicOff) {
+    const { answerUnknownSlackSender } = await import("./slack-chat.js");
+    await answerUnknownSlackSender(db, companyId, { channel: interp.channel, threadTs: interp.threadTs, userId: interp.userId });
+    return null;
   }
 
   // Continuity: reuse the live thread for this Slack origin unless we just reset.

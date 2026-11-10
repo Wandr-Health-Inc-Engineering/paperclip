@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, Check, ExternalLink, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -181,7 +182,7 @@ export function TethrBell() {
   );
 }
 
-function NotificationDetail({
+export function NotificationDetail({
   notification: n,
   companyId,
   onClose,
@@ -233,9 +234,13 @@ function NotificationDetail({
     navigate(to);
   };
 
-  return (
+  // On the page, not inside the top bar: the bar has a backdrop blur, which makes it the
+  // box a fixed child is laid out in (48px tall) and stops the card's own blur. Drawn
+  // there, the card was cut off above the screen and see-through on phones.
+  return createPortal(
     <div
       className="tethr-scrim fixed inset-0 z-[60] flex items-center justify-center p-4"
+      data-testid="notification-detail"
       onClick={onClose}
     >
       <div
@@ -344,6 +349,7 @@ function NotificationDetail({
         </div>
         ) : null}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

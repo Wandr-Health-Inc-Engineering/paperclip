@@ -14,7 +14,6 @@ import { jevHealth, jevHealthText, type JevHealth } from "../tethr/jev.js";
 import { foldInterviewIntoMainChat } from "../tethr/main-chat.js";
 import { mirrorDir } from "../tethr/mirror.js";
 import { TETHR_MISSION } from "../tethr/mission.js";
-import { getRoster } from "../tethr/overseers.js";
 import { describeAllowance, getPace, IDEAS_LEVELS, IDEAS_LEVELS_ORDER, type IdeasLevel } from "../tethr/pace.js";
 import { POSITIONS } from "../tethr/positions.js";
 import { applyRhythm, operationsThreadId, RHYTHMS, runRhythmNow } from "../tethr/rhythm.js";
@@ -29,7 +28,7 @@ import {
   validCron,
   validTimezone,
 } from "../tethr/setup.js";
-import { slackConfigured } from "../tethr/slack.js";
+import { slackConfigured, slackUserByEmail } from "../tethr/slack.js";
 import { googleAdsConfigured } from "../tethr/tools/google-ads.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { requirePerson } from "./tethr-people.js";
@@ -81,8 +80,6 @@ export function tethrSetupRoutes(db: Db): Router {
   const setupChecks = (companyId: string, adminSlackId: string | null, jev: JevHealth) => {
     const cfg = getIntegrations(companyId);
     const mode = (label: string) => modeFor(cfg, label);
-    const growth = getRoster(companyId).growth;
-    const approverId = adminSlackId ?? growth?.slackId ?? null;
     const listening = slackConfigured() && !!process.env.SLACK_APP_TOKEN?.trim();
     return [
       { key: "stripe", label: "Stripe (revenue and new customers)", ok: mode("Stripe") !== "off", detail: `Mode: ${mode("Stripe")}`, href: "/tethr-settings" },
@@ -91,7 +88,13 @@ export function tethrSetupRoutes(db: Db): Router {
       { key: "gmail", label: "Gmail", ok: mode("Gmail") !== "off", detail: `Mode: ${mode("Gmail")}`, href: "/tethr-settings" },
       { key: "slack_connector", label: "Slack (reading)", ok: mode("Slack") !== "off", detail: `Mode: ${mode("Slack")}`, href: "/tethr-settings" },
       { key: "slack_bot", label: "Slack bot for #tethr posts and approvals", ok: slackConfigured(), detail: slackConfigured() ? "Token set" : "Add SLACK_BOT_TOKEN", href: "/environment" },
-      { key: "approver", label: "Your Slack member ID (approve from Slack, ideas by DM)", ok: !!approverId, detail: approverId ? "Set" : "Add it in step 1", href: "/setup" },
+      {
+        key: "approver",
+        label: "Your Slack member ID (so Slack reaches tethr as you)",
+        ok: !!adminSlackId,
+        detail: adminSlackId ? "Linked" : "Not linked: tethr won't act on your Slack messages",
+        href: "/setup",
+      },
       {
         key: "slack_listen",
         label: "tethr hears Slack conversations",
@@ -106,6 +109,19 @@ export function tethrSetupRoutes(db: Db): Router {
       { key: "jev", label: "Jev (fast decisions and list scoring)", ok: jev === "ok", detail: jevHealthText(jev), href: "/environment", optional: true },
       { key: "drive", label: "Google Drive folder (00 Tethr)", ok: !!mirrorDir(), detail: mirrorDir() ?? "Not found", href: "/drive" },
     ];
+  };
+
+  /** What the "On its own" step shows: where each switch stands now. */
+  const autonomyNow = async (companyId: string) => {
+    const cfg = getIntegrations(companyId);
+    const { learningStore } = await import("../tethr/learn/store.js");
+    return {
+      newAgents: cfg.team.newAgents,
+      actOnReports: cfg.team.autonomy.actOnReports,
+      dailyReview: cfg.team.autonomy.dailyReview,
+      learner: learningStore.get(companyId).enabled === true,
+      defaultMode: cfg.defaultMode,
+    };
   };
 
   router.get("/tethr/:companyId/setup", async (req, res) => {
@@ -125,8 +141,39 @@ export function tethrSetupRoutes(db: Db): Router {
       growthPaces: GROWTH_PACES.map((key) => ({ key, label: PACE_LABEL[key], uplift: PACE_UPLIFT[key] })),
       ideasLevels: IDEAS_LEVELS_ORDER.map((key) => ({ key, label: IDEAS_LEVELS[key].label, blurb: IDEAS_LEVELS[key].blurb })),
       ideasPace: { allowance: pace.allowance, now: describeAllowance(pace.allowance), recent: pace.recent.slice(-10) },
+      autonomy: await autonomyNow(companyId),
     });
   });
+
+  // Phase 27: link the admin's Slack member ID by itself (Connections → "That's me"),
+  // so Slack reaches the same tethr as the app. Clears the claim it answers.
+  router.put("/tethr/:companyId/setup/admin-slack", goalRoute(async (req, res, companyId) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const profile = await companyProfileService(db).setAdminSlackId(companyId, body.slackUserId);
+    const state = await updateSetup(companyId, (s) => ({ ...s, slackClaim: null }));
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: getActorInfo(req).actorId,
+      action: "tethr_admin_slack_linked",
+      entityType: "company",
+      entityId: companyId,
+      details: { slackUserId: profile.admin?.slackUserId ?? null },
+    }).catch(logFailure("activity log"));
+    res.json({ state, profile });
+  }));
+
+  // "Find me in Slack": look the admin up by the email they gave in step 1. Only on
+  // a person's click, and only inside the company's own Slack workspace.
+  router.post("/tethr/:companyId/setup/slack-lookup", goalRoute(async (_req, res, companyId) => {
+    const email = (await companyProfileService(db).get(companyId))?.admin?.email ?? null;
+    if (!email) {
+      res.json({ found: null, reason: "Add your email in Setup → Your company first." });
+      return;
+    }
+    const found = await slackUserByEmail(email);
+    res.json({ found, reason: found ? null : "Slack didn't find that email (the Slack app may lack the users:read.email permission). Paste your member ID instead." });
+  }));
 
   // Step 1 (phase 21): the company and you, its admin. The mission is built
   // in; the root goal follows the company's name.
@@ -210,8 +257,54 @@ export function tethrSetupRoutes(db: Db): Router {
       kind: "system",
       requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
     });
-    await updateSetup(companyId, (s) => ({ ...s, interviewThreadId: ids.threadId }));
+    // The interview is the last step and it's a conversation: once it starts, the
+    // setup's forms are done, so the chat doesn't ask the person to "finish setup".
+    await updateSetup(companyId, (s) => ({ ...s, interviewThreadId: ids.threadId, completedAt: s.completedAt ?? new Date().toISOString() }));
     res.json({ threadId: ids.threadId, started: true });
+  });
+
+  // Phase 27, "On its own": the switches that decide how much tethr does without
+  // being asked, in one save. Each goes through the same code as its own page
+  // (Integrations → Team, Integrations → Learning).
+  router.put("/tethr/:companyId/setup/autonomy", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const review = (body.dailyReview && typeof body.dailyReview === "object" ? body.dailyReview : {}) as Record<string, unknown>;
+    const patch = sanitizeIntegrationsPatch({
+      ...(body.defaultMode === "ask" || body.defaultMode === "auto" ? { defaultMode: body.defaultMode } : {}),
+      team: {
+        newAgents: body.newAgents,
+        autonomy: { actOnReports: body.actOnReports, dailyReview: { enabled: review.enabled, time: review.time, weekdaysOnly: review.weekdaysOnly } },
+      },
+    });
+    await updateIntegrations(companyId, patch);
+    const actor = getActorInfo(req);
+    if (typeof body.learner === "boolean") {
+      const { enableLearner, disableLearner, LearnerError } = await import("../tethr/learn/learner.js");
+      const who = { userId: actor.actorType === "user" ? actor.actorId : null };
+      try {
+        if (body.learner) await enableLearner(db, companyId, who);
+        else await disableLearner(db, companyId, who);
+      } catch (err) {
+        if (err instanceof LearnerError) {
+          res.status(409).json({ error: err.message });
+          return;
+        }
+        throw err;
+      }
+    }
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: actor.actorId,
+      action: "tethr_setup_autonomy_saved",
+      entityType: "company",
+      entityId: companyId,
+      details: { newAgents: patch.team?.newAgents ?? null, learner: typeof body.learner === "boolean" ? body.learner : null },
+    }).catch(logFailure("activity log"));
+    res.json(await updateSetup(companyId, (s) => ({ ...s, steps: { ...s.steps, autonomy: new Date().toISOString() } })));
   });
 
   router.put("/tethr/:companyId/setup/rhythm", async (req, res) => {
