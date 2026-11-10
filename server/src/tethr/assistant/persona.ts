@@ -33,11 +33,10 @@ description: Conventions for working in Tethr's workspace (files, memory, approv
 ---
 
 - Deliverables go in ./files/ (Markdown by default); mention the path.
-- Long-term memory is the Memory section of CLAUDE.md; save to it with the memory tool. recall searches older conversations.
+- Long-term memory is the Memory section of CLAUDE.md; save to it with the memory tool. When memory is in Hermes, recall searches older conversations.
 - "Tethr approval gate:" tool results are real statuses; report them, don't work around them.
 `;
 
-/** Write the persona + the one-skill bundle to the assistant home. Returns their paths. */
 /**
  * Changes whenever the persona or the skill does. Core's adapter quietly starts a fresh
  * Claude session when they change, so the runner keeps this with each chat's session and
@@ -47,6 +46,7 @@ export function instructionsFingerprint(): string {
   return crypto.createHash("sha256").update(PERSONA).update("\0").update(SKILL_MD).digest("hex").slice(0, 16);
 }
 
+/** Write the persona + the one-skill bundle to the assistant home. Returns their paths. */
 export async function ensurePersona(): Promise<{ personaPath: string; skillDir: string }> {
   const home = assistantHome();
   const personaPath = path.join(home, "persona.md");

@@ -26,7 +26,7 @@ const RHYTHM: Record<RhythmKey, { name: string; does: string }> = {
 };
 
 const WHERE = {
-  rhythm: "Set up tethr → Rhythm and ideas",
+  rhythm: "Setup → Rhythm and ideas",
   autonomy: "Integrations → Team",
   learner: "Integrations → Learning",
   inbox: "Integrations → Jev decisions",
@@ -42,8 +42,9 @@ function rhythmLine(key: RhythmKey, s: SwitchesState): string {
 
 function ideasLine(s: SwitchesState): string {
   const chosen = !!s.setup.steps.rhythm || !!s.setup.completedAt;
-  if (!chosen) return `- Ideas from the team's Slack conversations: off until the team saves ${WHERE.rhythm}.`;
-  return `- Ideas from the team's Slack conversations: on (${s.setup.ideas.level} pace${s.setup.ideas.slackListen ? "" : ", not listening to Slack"}).`;
+  if (!chosen) return `- Ideas (from the team's Slack conversations, goals and quiet stretches): off until the team saves ${WHERE.rhythm}.`;
+  const from = s.setup.ideas.slackListen ? "the team's Slack conversations, goals and quiet stretches" : "goals and quiet stretches only, not listening to Slack";
+  return `- Ideas: on, at a ${s.setup.ideas.level} pace, from ${from}.`;
 }
 
 function autonomyLines(a: TeamAutonomy): string[] {
@@ -65,15 +66,20 @@ function learnerLine(s: SwitchesState): string {
 }
 
 function inboxLine(mode: DecisionMode): string {
-  const filing = mode === "off" ? "filing suggestions off" : mode === "auto" ? "filed automatically when sure" : "a filing suggestion for each";
-  return `- Inbox: files dropped in the "00 Inbox" folder of 00 Tethr come to you, ${filing} (${WHERE.inbox}).`;
+  const filing =
+    mode === "off"
+      ? "with no filing suggestion"
+      : mode === "auto"
+        ? "filed by Jev when it's sure, otherwise with its suggestion"
+        : "with Jev's filing suggestion when Jev is working";
+  return `- Inbox: a file dropped in the "00 Inbox" folder of 00 Tethr becomes a card for a person in the main chat and the Drive's Inbox view, ${filing} (${WHERE.inbox}). It isn't sent to you to read.`;
 }
 
 /** The "What's switched on" section of the chat's CLAUDE.md (company-level). */
 export function switchesContextText(s: SwitchesState): string {
   return [
     "## What's switched on",
-    "tethr's built-in features, whether each is on, and where a person switches it on. You can't switch these yourself.",
+    "tethr's built-in features, whether each is on, and where a person switches it on. You can't switch these yourself. Setup is \"Set up tethr\" in the sidebar, or Growth → Edit goals once setup is done.",
     ...(["plan", "scorecard", "brief"] as RhythmKey[]).map((k) => rhythmLine(k, s)),
     ideasLine(s),
     ...autonomyLines(s.autonomy),

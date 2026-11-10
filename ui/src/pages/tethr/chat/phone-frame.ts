@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 // The chat on a phone. Core's phone layout scrolls the whole page, so the iPhone
 // keyboard (which scrolls the page to show the text box) left the composer floating
 // mid-screen with the top bar gone. On phones the chat is a fixed frame instead: from
-// under the top bar to the bottom of the screen (above the tabs, if a layout has them),
-// or, while the keyboard is up, the whole visible area above it. Only the messages scroll.
+// under the top bar to the bottom of the screen, or, while the keyboard is up, the whole
+// visible area above it. Only the messages scroll.
 
 export interface PhoneFrame {
   top: number;
@@ -21,8 +21,6 @@ export interface PhoneViewport {
   viewportHeight: number;
   /** Where the chat starts when nothing is covering the page (under the top bar). */
   anchorTop: number;
-  /** The tabs' top edge, or null when there are none. */
-  navTop: number | null;
 }
 
 /** More than this much of the screen hidden means the keyboard is up. */
@@ -34,11 +32,9 @@ export function phoneFrame(v: PhoneViewport): PhoneFrame {
     return { top: Math.round(v.viewportTop), height: Math.round(v.viewportHeight), keyboard: true };
   }
   const top = Math.max(0, v.anchorTop);
-  const bottom = Math.min(v.navTop ?? Infinity, v.viewportTop + v.viewportHeight);
+  const bottom = v.viewportTop + v.viewportHeight;
   return { top: Math.round(top), height: Math.round(Math.max(MIN_FRAME_PX, bottom - top)), keyboard: false };
 }
-
-const NAV_SELECTOR = 'nav[aria-label="Mobile navigation"]';
 
 /**
  * The chat's frame on a phone, or null on a wider screen (the chat then sits in the page).
@@ -58,13 +54,11 @@ export function usePhoneFrame(enabled: boolean, anchor: HTMLElement | null): Pho
     let raf = 0;
     const measure = () => {
       raf = 0;
-      const nav = document.querySelector<HTMLElement>(NAV_SELECTOR);
       const next = phoneFrame({
         innerHeight: window.innerHeight,
         viewportTop: vv?.offsetTop ?? 0,
         viewportHeight: vv?.height ?? window.innerHeight,
         anchorTop: anchor.getBoundingClientRect().top,
-        navTop: nav ? nav.getBoundingClientRect().top : null,
       });
       setFrame((prev) => (prev && prev.top === next.top && prev.height === next.height && prev.keyboard === next.keyboard ? prev : next));
     };
@@ -76,11 +70,16 @@ export function usePhoneFrame(enabled: boolean, anchor: HTMLElement | null): Pho
     vv?.addEventListener("scroll", schedule);
     window.addEventListener("resize", schedule);
     window.addEventListener("scroll", schedule, { passive: true });
-    // The tabs slide in and out with a transition; measure again once it ends.
-    document.addEventListener("transitionend", schedule);
+    // The page rises into place (tethr-rise, held during the startup intro), so the
+    // first measurement can be a few pixels low; measure again once it lands.
+    // (Only that one: every streamed word ends a fade of its own.)
+    const onAnimationEnd = (e: AnimationEvent) => {
+      if (e.animationName === "tethr-rise") schedule();
+    };
+    document.addEventListener("animationend", onAnimationEnd);
     return () => {
       if (raf) cancelAnimationFrame(raf);
-      document.removeEventListener("transitionend", schedule);
+      document.removeEventListener("animationend", onAnimationEnd);
       vv?.removeEventListener("resize", schedule);
       vv?.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);

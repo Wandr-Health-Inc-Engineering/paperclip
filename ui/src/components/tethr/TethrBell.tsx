@@ -13,9 +13,10 @@ import { MonoTag, StatusDot, formatRelative } from "./primitives";
 // a notification opens a detail popup with the actions that fit it — approve or
 // reject a staged item inline, jump to the right page, or dismiss.
 
-/** What a notification lets you do, derived from its kind + href. */
+/** Queue statuses that still wait on a person. */
 const PENDING_STATUSES = new Set(["gated", "changes_requested"]);
 
+/** What a notification lets you do, derived from its kind + href. */
 export function actionsFor(n: TethrNotification): { pendingOutputId?: string; viewLabel?: string; viewTo?: string } {
   // A staged item awaiting review carries /queue/<outputId> and a "for review" title.
   // It asks for a decision only while the item is still open (the server says its status

@@ -194,6 +194,34 @@ describePg("tethr assistant runner", () => {
     expect(prompt).not.toContain("And Monday?");
   });
 
+  it("still recaps the conversation when the newest rows are cards", async () => {
+    const runner = assistantRunner(db, { execute: fakeExecute });
+    const first = await runner.send({ companyId, threadId: null, text: "Partners bring one order a month" });
+    await waitDone(first.routeRunId);
+    const thread = first.threadId;
+    // Agent reports landing in the chat after it: more of them than the recap holds.
+    const [tethr] = await db.select({ agentId: tethrRouteRuns.agentId }).from(tethrRouteRuns).where(eq(tethrRouteRuns.id, first.routeRunId));
+    for (let i = 0; i < 10; i++) {
+      await db.insert(tethrRouteRuns).values({
+        companyId,
+        agentId: tethr!.agentId,
+        threadId: thread,
+        invocationSource: "chat",
+        sourceKey: "tethr-agent-report",
+        requestText: `@seo report ${i}`,
+        resultText: "Report body from a web page",
+        status: "done",
+        createdAt: new Date(Date.now() + (i + 1) * 1000),
+      } as never);
+    }
+    await setSession(companyId, thread, { ...getSession(companyId, thread)!, instructions: "older-persona" });
+    const next = await runner.send({ companyId, threadId: thread, text: "So?" });
+    await waitDone(next.routeRunId);
+    const prompt = calls[1].context.tethrPrompt as string;
+    expect(prompt).toContain("Them: Partners bring one order a month");
+    expect(prompt).not.toContain("Report body from a web page");
+  });
+
   it("never replays the Ideas chat's private turns into a person's session there", async () => {
     const ideas = stableThreadId("ideas", companyId);
     const runner = assistantRunner(db, { execute: fakeExecute });

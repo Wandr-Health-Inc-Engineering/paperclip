@@ -1,4 +1,5 @@
-import { and, count, desc, eq, gt, inArray, isNull, ne } from "drizzle-orm";
+import path from "node:path";
+import { and, count, desc, eq, gt, inArray, isNotNull, isNull, ne, notInArray, or } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { tethrRouteRuns } from "@paperclipai/db";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
@@ -68,6 +69,9 @@ const MEMORY_NUDGE =
 /** A fresh session in a chat with history, while memory holds nothing yet. */
 const MEMORY_CATCHUP =
   "Your memory is empty, but this chat has history. Before you answer, recall what the team told you earlier in this chat (the business, its numbers, what they've tried and how it went, what they ruled out, their preferences) and save the durable facts with the memory tool. Then answer with that in mind.";
+/** The same, where recall isn't available (memory isn't in Hermes): the recap below is what there is. */
+const MEMORY_CATCHUP_NO_RECALL =
+  "Your memory is empty, but this chat has history. Before you answer, save the durable facts from the earlier conversation below (the business, its numbers, what they've tried and how it went, what they ruled out, their preferences) with the memory tool. Then answer with that in mind.";
 /** How much of the conversation a fresh session gets back. */
 const RECAP_TURNS = 8;
 const RECAP_ASK_CHARS = 600;
@@ -269,14 +273,18 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
           ne(tethrRouteRuns.id, excludeRunId),
           ...(since ? [gt(tethrRouteRuns.createdAt, since)] : []),
           ...(ideas ? [isNull(tethrRouteRuns.sourceKey)] : []),
+          // Cards tethr posted on its own (agent reports, lessons, Inbox files, ideas)
+          // aren't conversation: their text can come from outside (a web page the
+          // learner read), so they're never replayed as what tethr said. Filtered
+          // here, before the limit, so a run of cards can't leave the recap empty.
+          or(isNull(tethrRouteRuns.sourceKey), notInArray(tethrRouteRuns.sourceKey, [...CARD_SOURCES])),
+          isNotNull(tethrRouteRuns.resultText),
+          ne(tethrRouteRuns.resultText, ""),
         ),
       )
       .orderBy(desc(tethrRouteRuns.createdAt))
       .limit(RECAP_TURNS);
-    // Cards tethr posted on its own (agent reports, lessons, Inbox files, ideas)
-    // aren't conversation: their text can come from outside (a web page the
-    // learner read), so they're never replayed as what tethr said.
-    const turns = previous.filter((p) => p.resultText && !CARD_SOURCES.has(p.sourceKey ?? "")).reverse();
+    const turns = previous.reverse();
     if (!turns.length) return "";
     return [
       "Earlier in this conversation (for context):",
@@ -366,6 +374,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     let bridgeScript: string | null = null;
     let tethrTools = false;
     let memoryEmpty = false;
+    let hermesMemory = false;
     const sandboxed = member?.sandbox === true;
     try {
       cfg = getIntegrations(companyId);
@@ -395,6 +404,8 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       await migrateFreeformMemory(companyId).catch(() => undefined);
       const snapshot = memorySnapshot(companyId);
       memoryEmpty = !snapshot.stores.company.entries.length && !snapshot.stores.people.entries.length;
+      // recall (past conversations) is Hermes only.
+      hermesMemory = snapshot.backend === "hermes";
       // Company-level only: CLAUDE.md is one file for every thread (see renderMemoryBlock).
       const memory = renderMemoryBlock(snapshot, { tools: modeFor(cfg, TETHR_TOOLS_LABEL) !== "off" });
       // Phase 26.9: the growth map, one line per area (company-level, like the rest).
@@ -459,29 +470,33 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       session = null;
       rotated = true;
     }
-    // Saved before sessions recorded their instructions: core may or may not resume it.
-    const maybeFresh = !session || session.instructions === undefined;
+    // Core also starts over when the folder changed (Drive away: the workspace falls
+    // back to the instance folder). Saved before sessions recorded their
+    // instructions: core may or may not resume it.
+    const savedCwd = typeof session?.sessionParams?.cwd === "string" ? session.sessionParams.cwd : null;
+    const maybeFresh = !session || session.instructions === undefined || (savedCwd !== null && path.resolve(savedCwd) !== path.resolve(ws.dir));
     if (state.stopped.delete(runId)) {
       await finish(runId, { status: "stopped", resultText: "Stopped before it started." });
       return;
     }
     const notes = style.carriesContext ? await chats.takeNotes(companyId, threadId) : [];
     // Like Hermes: every 10 messages from a person, a reminder to save what's durable.
-    const hasMemoryTool = modeFor(cfg, TETHR_TOOLS_LABEL) !== "off" && (!member || member.connectors.includes(TETHR_TOOLS_LABEL));
+    const hasMemoryTool = !sandboxed && modeFor(cfg, TETHR_TOOLS_LABEL) !== "off" && (!member || member.connectors.includes(TETHR_TOOLS_LABEL));
+    const canRecall = hasMemoryTool && hermesMemory;
     if (style.carriesContext && hasMemoryTool && row.sourceKey === null && (await personTurns(threadId)) % MEMORY_NUDGE_EVERY === 0) {
       notes.push(MEMORY_NUDGE);
     }
     const context = maybeFresh && style.carriesContext ? await legacyContext(companyId, threadId, runId) : "";
     if (context && memoryEmpty && hasMemoryTool && row.sourceKey === null && (await personTurns(threadId)) >= CATCHUP_MIN_TURNS) {
-      notes.push(MEMORY_CATCHUP);
+      notes.push(canRecall ? MEMORY_CATCHUP : MEMORY_CATCHUP_NO_RECALL);
     }
     const ask = privatePrompt ?? row.requestText;
     // An agent's fresh session learns who it is (a task turn carries that itself).
-    const identity = member && !session && row.sourceKey !== "chat-system" ? agentIdentityText(member) : "";
+    const identity = member && maybeFresh && row.sourceKey !== "chat-system" ? agentIdentityText(member) : "";
     const prompt = [
       identity,
       notes.length ? `Notes from Tethr:\n${notes.map((n) => `- ${n}`).join("\n")}` : "",
-      rotated ? "(This conversation continues from an earlier session. Older messages are searchable with recall.)" : "",
+      rotated ? `(This conversation continues from an earlier session.${canRecall ? " Older messages are searchable with recall." : ""})` : "",
       context,
       row.sourceKey === "chat-system" ? `[From Tethr, not the user] ${ask}` : ask,
     ]

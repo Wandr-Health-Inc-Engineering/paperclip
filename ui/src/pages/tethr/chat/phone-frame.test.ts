@@ -1,16 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { phoneFrame } from "./phone-frame";
 
-// An iPhone-sized screen: 812 tall, the top bar ends at 64, no bottom tabs.
-const closed = { innerHeight: 812, viewportTop: 0, viewportHeight: 812, anchorTop: 64, navTop: null };
+// An iPhone-sized screen: 812 tall, the top bar ends at 64.
+const closed = { innerHeight: 812, viewportTop: 0, viewportHeight: 812, anchorTop: 64 };
 
 describe("phoneFrame", () => {
   it("runs from under the top bar to the bottom of the screen", () => {
     expect(phoneFrame(closed)).toEqual({ top: 64, height: 748, keyboard: false });
-  });
-
-  it("stops above bottom tabs when a layout has them", () => {
-    expect(phoneFrame({ ...closed, navTop: 747 })).toEqual({ top: 64, height: 683, keyboard: false });
   });
 
   it("fills the visible area above the keyboard, wherever Safari has panned it", () => {

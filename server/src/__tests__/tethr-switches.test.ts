@@ -24,9 +24,11 @@ describe("what's switched on", () => {
   it("says every feature is off and where each one is switched on", () => {
     const text = switchesContextText(allOff);
     expect(text).toMatch(/^## What's switched on/);
-    expect(text).toContain("- Monday plan: off (Set up tethr → Rhythm and ideas)");
-    expect(text).toContain("- Friday scorecard: off (Set up tethr → Rhythm and ideas). When on, you measure every goal's number");
-    expect(text).toContain("off until the team saves Set up tethr → Rhythm and ideas");
+    expect(text).toContain("- Monday plan: off (Setup → Rhythm and ideas)");
+    expect(text).toContain("- Friday scorecard: off (Setup → Rhythm and ideas). When on, you measure every goal's number");
+    expect(text).toContain("Growth → Edit goals once setup is done");
+    expect(text).toContain("off until the team saves Setup → Rhythm and ideas");
+    expect(text).toContain("It isn't sent to you to read.");
     expect(text).toContain("- Daily review: off (Integrations → Team → Daily review)");
     expect(text).toContain("- Learner: off (Integrations → Learning)");
     expect(text).toContain("You can't switch these yourself");
@@ -46,11 +48,19 @@ describe("what's switched on", () => {
       inboxFiling: "off",
     });
     expect(text).toMatch(/- Friday scorecard: on, .*Friday/);
-    expect(text).toContain("Ideas from the team's Slack conversations: on (normal pace)");
+    expect(text).toContain("- Ideas: on, at a normal pace, from the team's Slack conversations, goals and quiet stretches.");
     expect(text).toContain("- Daily review: on, at 08:30 on weekdays");
     expect(text).toContain("- Check-ins: on.");
     expect(text).toMatch(/- Learner @sage: on, .*Wednesday/);
-    expect(text).toContain("filing suggestions off");
+    expect(text).toContain("with no filing suggestion");
+  });
+
+  it("says where ideas come from when tethr isn't listening to Slack", () => {
+    const text = switchesContextText({
+      ...allOff,
+      setup: { ...allOff.setup, completedAt: "2026-11-10T00:00:00.000Z", ideas: { level: "light", adaptive: true, slackListen: false } },
+    });
+    expect(text).toContain("- Ideas: on, at a light pace, from goals and quiet stretches only, not listening to Slack.");
   });
 });
 
