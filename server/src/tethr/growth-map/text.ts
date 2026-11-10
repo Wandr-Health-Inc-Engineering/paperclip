@@ -24,6 +24,7 @@ export function growthMapContextText(view: GrowthMapView, opts: { tools: boolean
   const lines = [
     "## Growth map",
     `Every area that builds the company, with a level from 0 to 6 that Tethr works out from evidence: Mapped (audited with a score), Equipped (its data connected), Informed (3 or more notes or skills about it), Aimed (a goal number), Staffed (an agent or schedule owns it), Proven (its number on track, or its audit score up 10). Nobody sets a level, you included.`,
+    "A level says how much tethr has set up and knows in an area, not how much the area matters. Never pick an area to work on because its level is high or low; pick by impact on the goals.",
     `- Company level ${view.company.level} of ${view.company.max}.${view.focus ? ` Focus this week: ${view.focus.name} (set ${shortDate(view.focus.at, view.company.timezone)}).` : " No focus set this week."}`,
     "- Before you work on an area, load its playbooks with the Skill tool.",
     ...(opts.tools

@@ -22,7 +22,7 @@ import { applyStreamLine, newTurnState } from "./events.js";
 import { buildSettings, ensureHookScript, issueHookToken, revokeHookToken, writeSettingsFile, type SlackReplyTarget } from "./gate.js";
 import { selfApiUrl } from "../self-url.js";
 import { logFailure } from "../best-effort.js";
-import { ensurePersona } from "./persona.js";
+import { ensurePersona, instructionsFingerprint } from "./persona.js";
 import { TETHR_TOOL_DEFS, TETHR_TOOLS_LABEL } from "./tethr-tools.js";
 
 /** Tethr tools other than the team tools (a lead without "Tethr tools" gets only the team ones). */
@@ -62,6 +62,15 @@ const ROTATE_CONTEXT_TOKENS = 150_000;
 const MEMORY_NUDGE_EVERY = 10;
 const MEMORY_NUDGE =
   "Memory check: if the last few messages settled something durable (a decision, how something works, someone's preference), save it with the memory tool before you finish. Skip this if nothing did.";
+/** A fresh session in a chat with history, while memory holds nothing yet. */
+const MEMORY_CATCHUP =
+  "Your memory is empty, but this chat has history. Before you answer, recall what the team told you earlier in this chat (the business, its numbers, what they've tried and how it went, what they ruled out, their preferences) and save the durable facts with the memory tool. Then answer with that in mind.";
+/** How much of the conversation a fresh session gets back. */
+const RECAP_TURNS = 8;
+const RECAP_ASK_CHARS = 600;
+const RECAP_ANSWER_CHARS = 1500;
+/** Below this many messages from a person, there's nothing to catch up on. */
+const CATCHUP_MIN_TURNS = 3;
 const TERMINAL = new Set(["done", "failed", "stopped", "gated"]);
 
 export interface SendInput {
@@ -252,7 +261,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
         ),
       )
       .orderBy(desc(tethrRouteRuns.createdAt))
-      .limit(5);
+      .limit(RECAP_TURNS);
     // Cards tethr posted on its own (agent reports, lessons, Inbox files, ideas)
     // aren't conversation: their text can come from outside (a web page the
     // learner read), so they're never replayed as what tethr said.
@@ -260,7 +269,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     if (!turns.length) return "";
     return [
       "Earlier in this conversation (for context):",
-      ...turns.map((p) => `Them: ${p.requestText.slice(0, 400)}\nYou: ${(p.resultText ?? "").slice(0, 800)}`),
+      ...turns.map((p) => `Them: ${p.requestText.slice(0, RECAP_ASK_CHARS)}\nYou: ${(p.resultText ?? "").slice(0, RECAP_ANSWER_CHARS)}`),
     ].join("\n\n");
   }
 
@@ -345,6 +354,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     let settingsPath: string;
     let bridgeScript: string | null = null;
     let tethrTools = false;
+    let memoryEmpty = false;
     const sandboxed = member?.sandbox === true;
     try {
       cfg = getIntegrations(companyId);
@@ -364,6 +374,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       // Phase 25: the Memory block, from Hermes (or the built-in store), every turn.
       await migrateFreeformMemory(companyId).catch(() => undefined);
       const snapshot = memorySnapshot(companyId);
+      memoryEmpty = !snapshot.stores.company.entries.length && !snapshot.stores.people.entries.length;
       // Company-level only: CLAUDE.md is one file for every thread (see renderMemoryBlock).
       const memory = renderMemoryBlock(snapshot, { tools: modeFor(cfg, TETHR_TOOLS_LABEL) !== "off" });
       // Phase 26.9: the growth map, one line per area (company-level, like the rest).
@@ -420,6 +431,16 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       session = null;
       rotated = true;
     }
+    // Core won't resume a session made under other instructions; it starts a fresh one
+    // without saying so. Treat it as fresh here too, so the turn carries the recap.
+    const instructions = instructionsFingerprint();
+    if (session?.instructions !== undefined && session.instructions !== instructions) {
+      await chats.clearSession(companyId, threadId);
+      session = null;
+      rotated = true;
+    }
+    // Saved before sessions recorded their instructions: core may or may not resume it.
+    const maybeFresh = !session || session.instructions === undefined;
     if (state.stopped.delete(runId)) {
       await finish(runId, { status: "stopped", resultText: "Stopped before it started." });
       return;
@@ -430,14 +451,17 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     if (style.carriesContext && hasMemoryTool && row.sourceKey === null && (await personTurns(threadId)) % MEMORY_NUDGE_EVERY === 0) {
       notes.push(MEMORY_NUDGE);
     }
-    const context = !session && style.carriesContext ? await legacyContext(companyId, threadId, runId) : "";
+    const context = maybeFresh && style.carriesContext ? await legacyContext(companyId, threadId, runId) : "";
+    if (context && memoryEmpty && hasMemoryTool && row.sourceKey === null && (await personTurns(threadId)) >= CATCHUP_MIN_TURNS) {
+      notes.push(MEMORY_CATCHUP);
+    }
     const ask = privatePrompt ?? row.requestText;
     // An agent's fresh session learns who it is (a task turn carries that itself).
     const identity = member && !session && row.sourceKey !== "chat-system" ? agentIdentityText(member) : "";
     const prompt = [
       identity,
       notes.length ? `Notes from Tethr:\n${notes.map((n) => `- ${n}`).join("\n")}` : "",
-      rotated ? "(This conversation continues from an earlier session that got long.)" : "",
+      rotated ? "(This conversation continues from an earlier session. Older messages are searchable with recall.)" : "",
       context,
       row.sourceKey === "chat-system" ? `[From Tethr, not the user] ${ask}` : ask,
     ]
@@ -611,6 +635,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
           sessionParams: result.sessionParams ?? null,
           lastTurnAt: new Date().toISOString(),
           contextTokens: turn.contextTokens ?? session?.contextTokens ?? 0,
+          instructions,
         });
       }
     }

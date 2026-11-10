@@ -31,6 +31,8 @@ export interface ChatSession {
   lastTurnAt: string;
   /** Rough size of the conversation context after the last turn (input + cached tokens). */
   contextTokens: number;
+  /** The persona + skill it was made with (persona.ts instructionsFingerprint). */
+  instructions?: string;
 }
 
 interface CompanyChats {

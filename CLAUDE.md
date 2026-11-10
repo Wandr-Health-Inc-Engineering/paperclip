@@ -1448,6 +1448,21 @@ utilize it but stick with the subscription style not API for now." Plan: `tasks/
     the hook gate and the memory tools never fall back to tethr's own rights).
   - Every 10th message from a person, a note reminds tethr to save what's durable (only in chats
     that have the memory tool).
+  - **A fresh session never starts blank (2026-11-09).** Core's claude-local adapter silently starts a
+    new Claude session when the prompt bundle (persona + skill) changes; the runner thought it had
+    resumed, so it sent no recap, and every chat lost its history at once after a build. Each saved
+    session now records `instructions` (`persona.ts instructionsFingerprint`); a mismatch is treated
+    as fresh, and a session saved before the field existed also gets the recap. The recap is the last
+    8 turns (600/1,500 chars). A fresh session in a chat with 3+ messages from a person while memory
+    is empty also gets `MEMORY_CATCHUP`: recall the earlier conversation and save the durable facts
+    before answering (Mark's Nov 9 interview and follow-ups had saved nothing).
+  - **How tethr decides** is a CLAUDE.md section (`DECIDING` in workspace.ts, not the persona, so
+    editing it never resets sessions): start from the goals' biggest gap and its drivers, pull the
+    numbers, rank by impact for the team's time and money with the expected size, use what the team
+    said (memory, recall) before recommending, one clear recommendation plus a runner-up, never "I
+    can't do anything". The growth map block says a level is how much tethr knows about an area, not
+    how much it matters. Before this, a fresh chat with no memory recommended Partnerships for having
+    the highest level, after Mark had said partners bring about one order a month.
 - **UI:**
   - The Memory page (`TethrMemory.tsx`) has entries with who saved them, edit, remove, add, usage
     bars, the "Not moved" list, a past-conversation search and skills.

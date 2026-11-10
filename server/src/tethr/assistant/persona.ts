@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { assistantHome } from "./workspace.js";
@@ -37,6 +38,15 @@ description: Conventions for working in Tethr's workspace (files, memory, approv
 `;
 
 /** Write the persona + the one-skill bundle to the assistant home. Returns their paths. */
+/**
+ * Changes whenever the persona or the skill does. Core's adapter quietly starts a fresh
+ * Claude session when they change, so the runner keeps this with each chat's session and
+ * treats a session saved under other instructions as fresh (it then sends the recap).
+ */
+export function instructionsFingerprint(): string {
+  return crypto.createHash("sha256").update(PERSONA).update("\0").update(SKILL_MD).digest("hex").slice(0, 16);
+}
+
 export async function ensurePersona(): Promise<{ personaPath: string; skillDir: string }> {
   const home = assistantHome();
   const personaPath = path.join(home, "persona.md");

@@ -7,7 +7,8 @@ import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclip
 import { costEvents, createDb, tethrRouteRuns } from "@paperclipai/db";
 import { seedTethrCore } from "../tethr/seed/tethr-core.ts";
 import { assistantRunner, resetAssistantRunnerForTests } from "../tethr/assistant/runner.ts";
-import { getSession, isTainted } from "../tethr/chats.ts";
+import { getSession, isTainted, setSession } from "../tethr/chats.ts";
+import { instructionsFingerprint } from "../tethr/assistant/persona.ts";
 import { setThrottle } from "../tethr/throttle.ts";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 
@@ -140,6 +141,35 @@ describePg("tethr assistant runner", () => {
     await waitDone(routeRunId);
     expect(calls[0].runtime.sessionId).toBe("sess-1");
     expect(calls[0].context.tethrPrompt).toBe("And Monday?");
+  });
+
+  it("starts fresh with a recap when tethr's instructions changed, and catches memory up", async () => {
+    // Core won't resume a session made under other instructions; the runner must know.
+    await setSession(companyId, companyId, { ...getSession(companyId, companyId)!, instructions: "older-persona" });
+    const runner = assistantRunner(db, { execute: fakeExecute });
+    const { routeRunId } = await runner.send({ companyId, threadId: companyId, text: "So what should we do?" });
+    await waitDone(routeRunId);
+    expect(calls[0].runtime.sessionId ?? null).toBeNull();
+    const prompt = calls[0].context.tethrPrompt as string;
+    expect(prompt).toContain("continues from an earlier session");
+    expect(prompt).toContain("Earlier in this conversation (for context):");
+    expect(prompt).toContain("Them: And Monday?");
+    // Three messages from a person and nothing in memory: recall and save first.
+    expect(prompt).toContain("Your memory is empty, but this chat has history.");
+    expect(prompt.endsWith("So what should we do?")).toBe(true);
+    expect(getSession(companyId, companyId)?.instructions).toBe(instructionsFingerprint());
+  });
+
+  it("sends the recap with a session saved before sessions recorded their instructions", async () => {
+    const { instructions: _drop, ...legacy } = getSession(companyId, companyId)!;
+    await setSession(companyId, companyId, legacy);
+    const runner = assistantRunner(db, { execute: fakeExecute });
+    const { routeRunId } = await runner.send({ companyId, threadId: companyId, text: "And after that?" });
+    await waitDone(routeRunId);
+    const prompt = calls[0].context.tethrPrompt as string;
+    expect(calls[0].runtime.sessionId).toBeTruthy();
+    expect(prompt).toContain("Earlier in this conversation (for context):");
+    expect(prompt).not.toContain("continues from an earlier session");
   });
 
   it("gives a new thread the first run's id", async () => {
