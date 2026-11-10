@@ -21,6 +21,8 @@ import {
   type TeamAgentSpec,
   type TeamSchedule,
   type TeamTask,
+  iconFor,
+  LEARNER_ICON,
   validateConnectors,
   validateNeeds,
   validateOwner,
@@ -439,7 +441,7 @@ export function teamService(db: Db) {
         name: spec.name,
         role: "general",
         title: spec.title,
-        icon: "bot",
+        icon: opts.sandbox ? LEARNER_ICON : spec.icon,
         status: "idle",
         reportsTo: lead?.agentId ?? router.agent.id,
         capabilities: spec.mission,
@@ -797,4 +799,25 @@ export function teamContextText(
     "- Only you and team leads create agents or hand out work; a lead does it only for its own sub-team.",
     ...(self.length ? [`- ${self.join(" ")}`] : []),
   ].join("\n");
+}
+
+/**
+ * Phase 27: agents made before icons followed the job all carry the robot. Give
+ * each team agent still on it the icon its job would get now (the learner its
+ * own). Idempotent; an icon a person picked on the agent's page is left alone.
+ */
+export async function healTeamIcons(db: Db): Promise<number> {
+  const rows = await db
+    .select({ id: agents.id, name: agents.name, title: agents.title, capabilities: agents.capabilities, adapterConfig: agents.adapterConfig })
+    .from(agents)
+    .where(and(eq(agents.adapterType, TETHR_ADAPTER_TYPE), eq(agents.icon, "bot")));
+  let healed = 0;
+  for (const row of rows) {
+    if (!isTeamConfig(row.adapterConfig)) continue;
+    const sandbox = (row.adapterConfig as Record<string, unknown>).sandbox === true;
+    const icon = sandbox ? LEARNER_ICON : iconFor({ name: row.name, title: row.title ?? "", mission: row.capabilities ?? "" });
+    await db.update(agents).set({ icon, updatedAt: new Date() }).where(eq(agents.id, row.id));
+    healed += 1;
+  }
+  return healed;
 }

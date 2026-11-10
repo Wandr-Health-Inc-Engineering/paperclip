@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ChevronRight,
   MoreHorizontal,
   PauseCircle,
   Pencil,
@@ -28,6 +29,7 @@ import {
   type AgentSidebarSortMode,
   writeAgentSortMode,
 } from "../lib/agent-order";
+import { agentTree, descendantCount, nodeHolds, readClosed, writeClosed, type AgentNode } from "../lib/tethr-agent-tree";
 import { AgentIcon } from "./AgentIconPicker";
 import { BudgetSidebarMarker } from "./BudgetSidebarMarker";
 import { SidebarSection, type SidebarSectionRadioChoice } from "./SidebarSection";
@@ -80,7 +82,9 @@ function SidebarAgentItem({
   activeAgentId,
   activeTab,
   agent,
+  depth = 0,
   disabled,
+  fold = null,
   isMobile,
   onPauseResume,
   runCount,
@@ -89,6 +93,10 @@ function SidebarAgentItem({
   activeAgentId: string | null;
   activeTab: string | null;
   agent: Agent;
+  /** Tethr: how deep under a lead it sits (0 = top). */
+  depth?: number;
+  /** Tethr: set for a lead with a sub-team, which folds under it. */
+  fold?: { open: boolean; count: number; onToggle: () => void } | null;
   disabled: boolean;
   isMobile: boolean;
   onPauseResume: (agent: Agent, action: "pause" | "resume") => void;
@@ -117,8 +125,10 @@ function SidebarAgentItem({
         onClick={() => {
           if (isMobile) setSidebarOpen(false);
         }}
+        style={depth ? { paddingLeft: `${0.75 + depth * 0.9}rem` } : undefined}
         className={cn(
-          "flex min-w-0 flex-1 items-center gap-2.5 px-3 py-1.5 pr-8 text-[13px] font-medium transition-colors",
+          "flex min-w-0 flex-1 items-center gap-2.5 px-3 py-1.5 text-[13px] font-medium transition-colors",
+          fold ? "pr-[3.75rem]" : "pr-8",
           isActive
             ? "bg-accent text-foreground"
             : "text-foreground/80 hover:bg-accent/50 hover:text-foreground"
@@ -145,6 +155,20 @@ function SidebarAgentItem({
           </span>
         )}
       </NavLink>
+
+      {fold ? (
+        <button
+          type="button"
+          onClick={fold.onToggle}
+          aria-expanded={fold.open}
+          aria-label={`${fold.open ? "Hide" : "Show"} ${agent.name}'s team (${fold.count})`}
+          title={`${fold.open ? "Hide" : "Show"} its team`}
+          className="tethr-touch-sized absolute right-7 top-1/2 flex h-6 -translate-y-1/2 items-center gap-0.5 rounded px-1 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {fold.open ? null : <span className="font-mono">{fold.count}</span>}
+          <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", fold.open && "rotate-90")} />
+        </button>
+      ) : null}
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -257,6 +281,25 @@ export function SidebarAgents() {
   const activeAgentId = agentMatch?.[1] ?? null;
   const activeTab = agentMatch?.[2] ?? null;
 
+  // Tethr: a lead's sub-team nests under it and folds away (remembered per company).
+  const [closedLeads, setClosedLeads] = useState<Set<string>>(() => (selectedCompanyId ? readClosed(selectedCompanyId) : new Set()));
+  useEffect(() => {
+    setClosedLeads(selectedCompanyId ? readClosed(selectedCompanyId) : new Set());
+  }, [selectedCompanyId]);
+  const toggleLead = useCallback(
+    (agentId: string) => {
+      setClosedLeads((current) => {
+        const next = new Set(current);
+        if (next.has(agentId)) next.delete(agentId);
+        else next.add(agentId);
+        if (selectedCompanyId) writeClosed(selectedCompanyId, next);
+        return next;
+      });
+    },
+    [selectedCompanyId],
+  );
+  const tree = useMemo(() => agentTree(sortedAgents), [sortedAgents]);
+
   useEffect(() => {
     if (!sortModeStorageKey) {
       setSortMode("top");
@@ -344,6 +387,29 @@ export function SidebarAgents() {
     },
   });
 
+  const renderNode = (node: AgentNode<Agent>, depth: number): ReactNode => {
+    const { agent, children } = node;
+    // A folded team opens by itself while one of its agents is the page you're on.
+    const open = !closedLeads.has(agent.id) || nodeHolds(node, (a) => agentRouteRef(a) === activeAgentId);
+    return (
+      <div key={agent.id}>
+        <SidebarAgentItem
+          activeAgentId={activeAgentId}
+          activeTab={activeTab}
+          agent={agent}
+          depth={depth}
+          disabled={pendingAgentIds.has(agent.id)}
+          fold={children.length ? { open, count: descendantCount(node), onToggle: () => toggleLead(agent.id) } : null}
+          isMobile={isMobile}
+          onPauseResume={(targetAgent, action) => pauseResumeAgent.mutate({ agent: targetAgent, action })}
+          runCount={liveCountByAgent.get(agent.id) ?? 0}
+          setSidebarOpen={setSidebarOpen}
+        />
+        {children.length && open ? <div role="group">{children.map((child) => renderNode(child, depth + 1))}</div> : null}
+      </div>
+    );
+  };
+
   return (
     <SidebarSection
       label="Agents"
@@ -365,22 +431,7 @@ export function SidebarAgents() {
         onRadioValueChange: persistSortMode,
       }}
     >
-      {sortedAgents.map((agent: Agent) => {
-        const runCount = liveCountByAgent.get(agent.id) ?? 0;
-        return (
-          <SidebarAgentItem
-            key={agent.id}
-            activeAgentId={activeAgentId}
-            activeTab={activeTab}
-            agent={agent}
-            disabled={pendingAgentIds.has(agent.id)}
-            isMobile={isMobile}
-            onPauseResume={(targetAgent, action) => pauseResumeAgent.mutate({ agent: targetAgent, action })}
-            runCount={runCount}
-            setSidebarOpen={setSidebarOpen}
-          />
-        );
-      })}
+      {tree.map((node) => renderNode(node, 0))}
     </SidebarSection>
   );
 }

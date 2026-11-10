@@ -1,3 +1,4 @@
+import { AGENT_ICON_NAMES } from "@paperclipai/shared";
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { tethrOutputs } from "@paperclipai/db";
@@ -62,6 +63,9 @@ const GOAL_PROPS = {
   },
 } as const;
 
+/** The icons a team agent can be given: core's agent icons, minus the robot every agent used to get. */
+const TEAM_ICON_CHOICES = AGENT_ICON_NAMES.filter((name) => name !== "bot");
+
 export const TEAM_TOOL_DEFS: McpToolDef[] = [
   {
     name: "team_list",
@@ -113,6 +117,7 @@ export const TEAM_TOOL_DEFS: McpToolDef[] = [
           properties: { title: { type: "string" }, brief: { type: "string" } },
           required: ["title", "brief"],
         },
+        icon: { type: "string", enum: TEAM_ICON_CHOICES, description: "Optional: the icon that stands for its job. Left out, one is picked from its name and title." },
         needs: {
           type: "array",
           items: { type: "string" },

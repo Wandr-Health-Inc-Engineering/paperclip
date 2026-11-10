@@ -312,6 +312,7 @@ export function TethrChat() {
         isMain={isMain}
         sideChats={chats?.sideChats ?? []}
         team={team?.agents ?? []}
+        companyId={c}
         proposing={proposeTeam.isPending}
         onProposeTeam={() => proposeTeam.mutate()}
         activeThreadId={threadId}
@@ -495,6 +496,7 @@ function SideChats({
   isMain,
   sideChats,
   team,
+  companyId,
   proposing,
   onProposeTeam,
   activeThreadId,
@@ -506,6 +508,7 @@ function SideChats({
   isMain: boolean;
   sideChats: TethrSideChat[];
   team: TethrTeamAgent[];
+  companyId: string;
   proposing: boolean;
   onProposeTeam: () => void;
   activeThreadId: string | null;
@@ -599,6 +602,7 @@ function SideChats({
         </button>
         <TeamSection
           agents={team}
+          companyId={companyId}
           activeThreadId={activeThreadId}
           onOpen={(id) => pick(() => onOpenSide(id))}
           onPropose={() => pick(onProposeTeam)}

@@ -6,7 +6,7 @@ import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
-import { createDb, issues, tethrNotifications, tethrRouteRuns } from "@paperclipai/db";
+import { agents, createDb, issues, tethrNotifications, tethrRouteRuns } from "@paperclipai/db";
 import { seedTethrCore } from "../tethr/seed/tethr-core.ts";
 import { assistantRunner, resetAssistantRunnerForTests, setAssistantRunnerForTests } from "../tethr/assistant/runner.ts";
 import { runTethrTool, TETHR_TOOL_DEFS } from "../tethr/assistant/tethr-tools.ts";
@@ -16,7 +16,7 @@ import { answerText, getQuestion, openQuestions, parseAsk, QUESTION_LIMITS, Ques
 import { questionDmText } from "../tethr/assistant/person-tools.ts";
 import { agentDenyRules, agentToolRefusal, TEAM_TOOL_NAMES, validateTeamSpec } from "../tethr/team-spec.ts";
 import { executeTeamTask } from "../tethr/team-run.ts";
-import { teamConnectorLabels, teamService } from "../tethr/team.ts";
+import { healTeamIcons, teamConnectorLabels, teamService } from "../tethr/team.ts";
 import { connectionsContextText, findConnection, needResolver } from "../tethr/connections.ts";
 import { updateIntegrations } from "../tethr/integrations.ts";
 import { taskService } from "../tethr/tasks.ts";
@@ -485,6 +485,18 @@ describePg("an agent waits on a missing connection, and spends nothing until it'
     expect(after.approvals.find((o: { id: string }) => o.id === card.id)).toBeUndefined();
     expect(after.connections.map((q: { question: string }) => q.question)).toContain("@email-scout needs Mercury");
     expect((await teamService(db).get(companyId, "@email-scout"))!.needs.map((n) => n.key)).toEqual(["Mercury", "Gmail"]);
+  });
+
+  it("gives a new agent the icon for its job, and heals ones made before icons followed the job", async () => {
+    const agent = await makeAgent("Lifecycle Email");
+    const iconOf = async () => (await db.select({ icon: agents.icon }).from(agents).where(eq(agents.id, agent.agentId)))[0]!.icon;
+    expect(await iconOf()).toBe("mail");
+    expect((await teamService(db).get(companyId, agent.tag))!.icon).toBe("mail");
+    await db.update(agents).set({ icon: "bot" }).where(eq(agents.id, agent.agentId));
+    expect(await healTeamIcons(db)).toBeGreaterThanOrEqual(1);
+    expect(await iconOf()).toBe("mail");
+    // A second pass finds nothing to do; tethr itself (not a team agent) keeps its own icon.
+    expect(await healTeamIcons(db)).toBe(0);
   });
 
   it("reads Google Ads only when it's set up, and points at the card when it isn't", async () => {

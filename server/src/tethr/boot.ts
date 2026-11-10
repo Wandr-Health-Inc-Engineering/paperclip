@@ -20,6 +20,9 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
   const { healTethrRoutingCopy, healSystemAgentParents } = await import("./seed/tethr-core.js");
   await healTethrRoutingCopy(db);
   await healSystemAgentParents(db);
+  // Phase 27: team agents made before icons followed the job.
+  const { healTeamIcons } = await import("./team.js");
+  await healTeamIcons(db).catch(() => 0);
   // The goals interview now runs in the main chat; fold an older side-chat one in.
   const { foldInterviewsIntoMainChats } = await import("./main-chat.js");
   await foldInterviewsIntoMainChats(db).catch(() => {});

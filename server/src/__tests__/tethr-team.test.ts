@@ -401,3 +401,24 @@ describe("phase 27: tags and the run page", () => {
     expect(idleRunSummary("Scout", "no-such-company", { engine: "session" })).toContain("It has no schedule; give it a task from tethr's chat.");
   });
 });
+
+describe("phase 27: an icon for the job", () => {
+  it("picks the icon from what the agent does, the more telling word first", async () => {
+    const { iconFor } = await import("../tethr/team-spec.ts");
+    expect(iconFor({ name: "Paid Ads", title: "Paid acquisition lead" })).toBe("target");
+    expect(iconFor({ name: "Paid Ads Keyword Research", title: "Paid search keyword and query research" })).toBe("search");
+    expect(iconFor({ name: "Paid Ads Reporting", title: "Paid ads results reconciler" })).toBe("radar");
+    expect(iconFor({ name: "Price Scout", title: "Competitor pricing watch" })).toBe("telescope");
+    expect(iconFor({ name: "Welcome Series", title: "Lifecycle email" })).toBe("mail");
+    expect(iconFor({ name: "Northstar", title: "Helper", mission: "Keeps partner pages current." })).toBe("globe");
+    expect(iconFor({ name: "Northstar", title: "Helper" })).toBe("sparkles");
+  });
+
+  it("keeps an icon it was given when it's one core knows, and never the robot", () => {
+    const base = { ...SPEC, tag: "icon-test" };
+    expect(validateTeamSpec(base, { takenTags: [], connectors: LABELS }).icon).toBe("telescope");
+    expect(validateTeamSpec({ ...base, icon: "gem" }, { takenTags: [], connectors: LABELS }).icon).toBe("gem");
+    expect(validateTeamSpec({ ...base, icon: "bot" }, { takenTags: [], connectors: LABELS }).icon).toBe("telescope");
+    expect(validateTeamSpec({ ...base, icon: "not-an-icon" }, { takenTags: [], connectors: LABELS }).icon).toBe("telescope");
+  });
+});

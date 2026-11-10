@@ -161,9 +161,22 @@ export function TethrCompany() {
         <div>
           <MonoTag className="mb-3 block text-center">tethr&apos;s team</MonoTag>
           <div className="mx-auto grid max-w-4xl grid-cols-1 gap-3 md:grid-cols-2">
-            {teamAgents.map((entry) => (
-              <AgentRow key={entry.agent.id} entry={entry} reportsToTag={reportsToTag(entry)} />
-            ))}
+            {teamAgents.map((entry) => {
+              // A lead's sub-team (the agents that report to it) sits under it.
+              const subTeam = agentsLive.filter((a) => a.agent.reportsTo === entry.agent.id);
+              return (
+                <div key={entry.agent.id} className="space-y-2">
+                  <AgentRow entry={entry} reportsToTag={reportsToTag(entry)} />
+                  {subTeam.length ? (
+                    <div className="ml-4 space-y-2 border-l border-[var(--tethr-rim)] pl-3">
+                      {subTeam.map((sub) => (
+                        <AgentRow key={sub.agent.id} entry={sub} reportsToTag={reportsToTag(sub)} />
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : null}

@@ -1,3 +1,4 @@
+import { AGENT_ICON_NAMES } from "@paperclipai/shared";
 import { METRIC_SOURCES, METRIC_UNITS } from "./goals.js";
 import { inferOverseerRole, OVERSEER_ROLES, type OverseerRole } from "./overseers.js";
 import { validCron } from "./setup.js";
@@ -79,6 +80,40 @@ export interface TeamAgentSpec {
   goal: TeamGoal | null;
   /** Phase 27: connections its job can't be done without (connections.ts names). While one is missing it doesn't run. */
   needs: string[];
+  /** Phase 27: the icon that stands for its job (one of core's agent icons). */
+  icon: string;
+}
+
+/** The learner's icon. */
+export const LEARNER_ICON = "microscope";
+const DEFAULT_ICON = "sparkles";
+
+// An icon for a job, from the words that describe it. The more telling word wins:
+// "Paid Ads Keyword Research" is keywords before it is ads. Names are core's
+// AGENT_ICON_NAMES, so the same icon shows in the sidebar and on tethr's pages.
+const ICON_RULES: Array<[RegExp, string]> = [
+  [/\b(report|reconcil|analytic|metric|measur|scorecard|dashboard)/i, "radar"],
+  [/\b(keyword|seo|organic|search rank)/i, "search"],
+  [/\b(email|newsletter|lifecycle)/i, "mail"],
+  [/\b(content|blog|writ|copy|social|editor)/i, "message-square"],
+  [/\b(competitor|research|market|scout|intel|watch)/i, "telescope"],
+  [/\b(partner|affiliate|distribution)/i, "globe"],
+  [/\b(pric|offer|revenue|billing|financ)/i, "gem"],
+  [/\b(retention|churn|customer|support|review)/i, "heart"],
+  [/\b(conversion|cro|funnel|landing|experiment)/i, "zap"],
+  [/\b(ads?|paid|ppc|campaign|sem)\b/i, "target"],
+  [/\b(data|crm|sheet)/i, "database"],
+  [/\b(strateg|position|plan)/i, "brain"],
+  [/\b(launch|growth)/i, "rocket"],
+];
+
+/** The icon for an agent's job: its name and title say most, its mission is the fallback. */
+export function iconFor(agent: { name: string; title: string; mission?: string }): string {
+  for (const text of [`${agent.name} ${agent.title}`, agent.mission ?? ""]) {
+    const rule = ICON_RULES.find(([pattern]) => pattern.test(text));
+    if (rule) return rule[1];
+  }
+  return DEFAULT_ICON;
 }
 
 export class TeamInputError extends Error {}
@@ -287,6 +322,8 @@ export function validateTeamSpec(raw: unknown, ctx: SpecContext): TeamAgentSpec 
     lead,
     goal: validateGoal(r, ctx.goals ?? new Map()),
     needs: validateNeeds(r.needs, ctx),
+    // An icon it was given is kept if it's one core knows; otherwise its job picks one.
+    icon: typeof r.icon === "string" && (AGENT_ICON_NAMES as readonly string[]).includes(r.icon) && r.icon !== "bot" ? r.icon : iconFor({ name, title, mission }),
   };
 }
 
