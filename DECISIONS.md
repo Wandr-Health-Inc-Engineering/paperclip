@@ -277,6 +277,30 @@ Branch: `mark-sandbox` (local only). Date started: 2026-06-11.
     confidence bar only after the week to undo it has passed, and a held report stays an open
     question until a person answers it on the card (independent review, 2026-11-09).
 
+## Phase 27 decisions (first-run fixes — 2026-11-10)
+
+57. **Setup ends in the chat.** The forms come first (company, focus, connections, rhythm, on its
+    own); the goals interview is last and starting it completes setup. A setup that's "done" no longer
+    waits on a Finish button, so the chat never says "finish setting up" to someone who came from it.
+58. **A question is a card, and it grants nothing.** `ask` puts a yes/no or a choice in front of the
+    person with buttons. The answer goes into the chat as their own message and the next turn acts on
+    it; anything outward still gets its own approval card. Text on the card is plain text.
+59. **A missing connection stops the agent, not the conversation.** An agent's `needs` are checked
+    before any turn. Missing and not waived: no turn, nothing spent, one card with the fix. "Connected"
+    is checked, not believed; a need the agent raised against something tethr thought was on is cleared
+    only by a person. A lead's missing need holds its sub-team. tethr's own chat gets the card with no hold.
+60. **One list of what waits on a person.** Approvals, questions and missing connections are "Needs
+    you": the chat's pill, the page (the Queue, renamed, same address) and the sidebar count read the
+    same route.
+61. **Slack never reaches the old engine while the chat engine is on.** An unrecognised sender is told
+    so. Linking a Slack account to the admin is one tap only when Slack says the account has the admin's
+    email; a display name is never treated as proof (whoever is linked drives tethr as the admin).
+62. **A queued message is the person's until it starts.** It can be edited (its files stay) or removed
+    (the row is deleted: it never ran). Turns tethr started aren't editable.
+63. **Icons follow the job** and use only core's agent icon names, so the sidebar and tethr's pages agree.
+64. **No core edit to hide Paperclip's "no workspace" line.** It's in a busy upstream file; tethr's own
+    line on the run page explains it.
+
 ## Core changes (keep merge-safe)
 
 Every core file touched, with reason. Everything else Tethr lives in new files.
@@ -314,6 +338,9 @@ Every core file touched, with reason. Everything else Tethr lives in new files.
 | `ui/src/App.tsx`, `ui/src/components/Sidebar.tsx`, `ui/src/components/CommandPalette.tsx`, `ui/src/lib/company-routes.ts` | Phase 26.5 (2026-11-09): + `learning` route (→ `TethrLearning`), a "Learning" nav item under Growth map, palette entry, + `learning` in `BOARD_ROUTE_ROOTS` (one line each) | the Learning page; same registration points as the other Tethr pages |
 | `ui/src/App.tsx`, `ui/src/components/Sidebar.tsx`, `ui/src/components/CommandPalette.tsx`, `ui/src/lib/company-routes.ts` | Phase 26.9 (2026-11-09): + `growth-map` route (→ `TethrGrowthMap`), a "Growth map" nav item under Growth, palette entry, + `growth-map` in `BOARD_ROUTE_ROOTS` (one line each) | Mark asked for the growth map as its own screen; same registration points as the other Tethr pages |
 | `ui/src/components/SidebarAgents.tsx` | Phase 18.1 follow-up (2026-11-07): the sidebar agent list also hides agents whose `pauseReason` starts with "archived" (the fresh-start archive), not just terminated ones (one line) | Mark still saw the 9 archived specialists in the sidebar; the Company page's Archived group is where they live now and where Restore is |
+| `ui/src/App.tsx` | Phase 27 (2026-11-10): the two root redirects go to `chat` instead of `dashboard` (one word each), and `<TethrFirstRunToSetup />` sits beside `<TethrStartupIntro />` (one line + import) | the app opens on tethr's chat; a first run reaches setup from any page |
+| `ui/src/components/SidebarAgents.tsx` | Phase 27: the list renders through `lib/tethr-agent-tree.ts` (a lead's sub-team nests under it and folds); `SidebarAgentItem` takes `depth` and `fold` | the only place the sidebar's agents are drawn; flat as before when nobody has a sub-team |
+| `ui/src/components/Sidebar.tsx`, `ui/src/components/CommandPalette.tsx`, `ui/src/components/MobileBottomNav.tsx` | Phase 27: "Queue" → "Needs you" (the sidebar item is `<TethrNeedsYouNavItem />`, which carries the count) | one name for what waits on a person |
 | `ui/src/components/SidebarAccountMenu.tsx` | 2026-11-09: + `<DesktopTerminalButton />` beside the account button (the row becomes a flex row; the account button keeps the remaining width). The icon renders only inside the Tethr desktop app and only asks the app to show or hide its terminal panel | Mark asked for "a small icon at the bottom" to open a terminal inside the desktop app; the account row is the sidebar's bottom edge |
 | `.gitignore` | + `.tethr-data/` | local data dir |
 | `.env.example` | + Tethr vars (commented, blank) | 12-factor |

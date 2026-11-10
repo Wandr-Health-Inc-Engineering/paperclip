@@ -890,8 +890,8 @@ Slack, it suggests an idea). Plan: `tasks/phase-21.md`.
     setup's "Rhythm and ideas" step is saved.**
   - **Routes:** `GET /tethr/:companyId/ideas`, `POST /ideas/:id/feedback {useful|not_now}`. Chat
     runs carry `idea` for the card.
-- **Setup page (21.5):** six steps: Your company, Focus and pace, Connections, Goals interview,
-  Rhythm and ideas, Finish. Routes `PUT /setup/company` and `PUT /setup/focus` replace
+- **Setup page (21.5):** six steps. **Phase 27 reordered them** (Your company, Focus and pace,
+  Connections, Rhythm and ideas, On its own, Goals interview; no Finish step): see that section. Routes `PUT /setup/company` and `PUT /setup/focus` replace
   `/setup/basics`; `PUT /setup/rhythm` also takes `ideas`. Slack scopes for listening are
   MANUAL-STEPS C6e.
   - **Guided onboarding (2026-11-08, Mark: "land me fresh… put me through a detailed
@@ -1161,6 +1161,71 @@ anything on Mark's instance (DECISIONS 31–34; plan `tasks/phase-24.md`).
   agent → the lead reported to tethr → tethr's own check-ins summarized and flagged what needed Mark
   (connect Google Ads).
 
+## First-run fixes: setup ends in the chat, cards with buttons, agents that wait (phase 27, 2026-11-10)
+
+Mark reset tethr, ran the first run on his phone and sent 15 notes. Plan and table: `tasks/phase-27.md`;
+DECISIONS 57-64. No migration. One new store: `tethr-questions.json` (in the reset list).
+- **Setup order:** Your company, Focus and pace, Connections, Rhythm and ideas, **On its own**
+  (`setup/AutonomyStep.tsx`, `PUT /setup/autonomy`: daily review, check-ins, new agents ask/automatic,
+  the learner, tool actions ask/automatic, Hermes memory), **Goals interview** last. Starting the
+  interview sets `completedAt`, so the chat never shows "Finish setting up tethr" to someone who
+  came from setup. `?step=<key>` opens one step. The welcome is one screen.
+- **First run:** `TethrFirstRunToSetup` (mounted once in App.tsx) sends the first page of a window to
+  setup while setup isn't done, from any page. The app's root opens on Chat.
+- **Chat header:** `chat/avatar.tsx`: tethr's mark top centre, still (`Nebula still`), animated while a
+  turn runs; an agent's chat shows its icon and opens `AgentAbout`. On phones the header is a
+  three-column grid, **not** a positioned box: the chats drawer inside it is laid out against the
+  whole chat (making that row `relative` collapses the drawer).
+- **Queued messages:** a message sent while tethr works waits in `chat/queue.tsx` `QueuedTray`
+  (`waitingBehind`), not in the transcript. `runner.editQueued` / `cancelQueued` act only while the
+  run is still in its thread's queue; `PATCH|DELETE /chat-turns/:runId` (people, their own messages,
+  409 once started). An edit keeps the attached files and strips typed marker lines.
+- **Questions as cards:** tool `ask` (`assistant/person-tools.ts`, store `assistant/questions.ts`).
+  Approve / Reject / Comment, or 2-4 choices + Comment. `POST /questions/:id/answer` sends the answer
+  into that chat as the person's message; **it grants nothing** (outward actions keep their own
+  approval card). A typed message closes the chat's open questions. At most 3 open per chat.
+  An agent's question rings the bell and DMs its owner (the question's words go to Slack only from a
+  chat that hasn't read connector data, and never with health details) and holds its scheduled runs.
+- **Tools every agent has:** `AGENT_ALWAYS_TOOLS` = `ask`, `need_connection`, whatever its connectors
+  (so every agent gets the tethr MCP server; `agentDenyRules` denies the other tethr tools one by
+  one, and the whole server if it isn't given the list). Private turns and the sealed learner get neither.
+- **Connections an agent needs:** `connections.ts` is the one list of what tethr can reach (the setup
+  checks live there; CLAUDE.md gets a "## Connections" section each turn). An agent's `needs`
+  (create_agent / update_agent) and anything it raises with `need_connection` are checked in
+  `team-run.ts` **before any turn**: unmet and not waived → no turn (a scheduled run is skipped, a
+  handed-over task waits in `heldIssues` and starts by itself later), one connection card
+  (a question with `connection`), one "is waiting on a connection" report card. A lead's missing
+  need holds its sub-team. "I've connected it" is refused while tethr still can't use it; a need
+  raised against something tethr thought was on (`confirmFirst`) is cleared only by a person.
+  "Carry on without it" is written into the agent's standing text. Saving a key or a connector mode
+  runs `recheckConnections`.
+- **Google Ads in the chat:** `google_ads_report` (read-only) is a tethr tool. Under tests
+  `googleAdsConfigured()` is always false.
+- **Needs you:** `needs-you.ts` / `GET /needs-you` = approvals + questions + connections. The chat's
+  pill (`chat/needs-you.tsx`), the page (`TethrQueue.tsx`, still `/queue`, labelled "Needs you") and
+  the sidebar item (`NeedsYouNavItem.tsx`) read it; `refreshAfterDecision` refreshes it. An agent's
+  newest report card in the main chat carries its (and its sub-team's) pending items; the turn that
+  created an agent carries its connection card until it has a report card.
+- **Cards:** `chat/decision-cards.tsx` (`ApprovalCard` with Details in place, `QuestionCard`,
+  `ConnectionCard`, `DecidedLine`); wording in `lib/tethr-cards.ts` (`cardHeading`). tethr says "the
+  card below", never "check Slack / the Queue".
+- **Slack:** while the chat engine is on, `routeInboundKickoff` never calls the old engine
+  (`classicOff`); `answerUnknownSlackSender` replies and, when no admin is linked, keeps the sender as
+  `setup.slackClaim`. `PUT /setup/admin-slack` links an ID. **A display name is never proof:** the
+  one-tap "That's me" is only for the account Slack says has the admin's email; a claim is shown with
+  its ID and a warning. Suites that test the classic engine's Slack path set engine `routing`.
+- **Icons and the sidebar:** `iconFor` (team-spec.ts) picks an icon from the job; `healTeamIcons` at
+  boot fixes team agents still on the robot. Core `SidebarAgents.tsx` renders
+  `lib/tethr-agent-tree.ts`: a lead's sub-team nests and folds (remembered per company).
+- **Bell:** `NotificationDetail` is portaled to the page (inside the blurred top bar it was laid out in
+  a 48px box and couldn't blur what's behind it). Anything fixed-position opened from the top bar
+  needs the same.
+- **Agent run page:** a run with no task logs `idleRunSummary` and names the model. Paperclip's own
+  "No project or prior session workspace" line is normal for every team agent run.
+- Tests: `tethr-questions.test.ts` (16), `tethr-setup` (+4), `tethr-slack-chat` (+3),
+  `tethr-assistant-runner` (+1), `tethr-team` (+4); UI `tethr-cards`, `tethr-agent-tree`,
+  `chat/queue`, `NotificationDetail`, `SetupNavItem`.
+
 ## Wiring review (2026-11-09): what's true, and two known gaps
 
 Mark asked for a check that the systems are wired the way the design says. Verified on his live
@@ -1187,7 +1252,7 @@ recall, connectors, goals, team), not the classic engine. Plan: `tasks/phase-26.
 DECISIONS 42-43.
 - **Who:** a Slack sender whose member ID is a company admin's (`tethr_members`, setup step 1),
   and only while the chat engine is "Claude session" (`slack-chat.ts chatBrainAsker`). Everyone
-  else gets the classic engine as before. The chat brain carries the admin's own connectors
+  else is told so and reaches nothing (phase 27; they used to fall through to the classic engine). The chat brain carries the admin's own connectors
   (reads need no approval), so nobody else may drive it.
 - **Where:**
   - A DM is the main chat.
