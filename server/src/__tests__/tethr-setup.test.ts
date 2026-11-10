@@ -408,6 +408,13 @@ describePg("tethr setup — routes, rhythm, operations chat, wipe", () => {
     const transcripts = transcriptDirFor(ws);
     fs.mkdirSync(transcripts, { recursive: true });
     fs.writeFileSync(path.join(transcripts, "abc.jsonl"), "{}");
+    // The learner's sealed room isn't per company: a new learner mustn't inherit it.
+    const room = path.join(process.env.TETHR_ASSISTANT_HOME!, "sandbox", "sage");
+    fs.mkdirSync(room, { recursive: true });
+    fs.writeFileSync(path.join(room, "notes.md"), "old study");
+    const roomTranscripts = transcriptDirFor(room);
+    fs.mkdirSync(roomTranscripts, { recursive: true });
+    fs.writeFileSync(path.join(roomTranscripts, "s.jsonl"), "{}");
     try {
       const [co] = await db.select().from(companies).where(eq(companies.id, companyId));
       // Like core's onboarding wizard: a project linked to the mission goal.
@@ -433,7 +440,12 @@ describePg("tethr setup — routes, rhythm, operations chat, wipe", () => {
       expect(fs.existsSync(path.join(mirror, "Open Tethr Command Center.command"))).toBe(true);
       expect(fs.existsSync(path.join(ws, "CLAUDE.md"))).toBe(true);
       expect(fs.existsSync(transcripts)).toBe(false);
-      expect(result.transcriptsDeleted).toBe(1);
+      expect(fs.existsSync(roomTranscripts)).toBe(false);
+      expect(result.transcriptsDeleted).toBe(2);
+      expect(fs.existsSync(room)).toBe(false);
+      const movedRoom = path.join(process.env.TETHR_ASSISTANT_HOME!, "archive", "2026-11 before fresh start", "sandbox", "sage");
+      expect(fs.readFileSync(path.join(movedRoom, "notes.md"), "utf8")).toBe("old study");
+      expect(result.moved).toContain(movedRoom);
       // A fresh company seeds cleanly afterwards.
       const fresh = await seedTethrCore(db);
       expect(fresh.companyId).not.toBe(companyId);

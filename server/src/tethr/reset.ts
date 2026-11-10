@@ -8,7 +8,7 @@ import { agents, companies, goals, issues, projectGoals, projects, routines, tet
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
 import { companyService } from "../services/companies.js";
 import { serialize, writeAtomic } from "./atomic.js";
-import { workspaceDir } from "./assistant/workspace.js";
+import { assistantHome, workspaceDir } from "./assistant/workspace.js";
 import { mirrorDir } from "./mirror.js";
 
 // The fresh-start wipe (phase 20.0, Mark's call: "wipe it completely").
@@ -41,8 +41,12 @@ export interface ResetPlan {
   /** Drive moves, as paths relative to 00 Tethr. */
   driveMoves: Array<{ from: string; to: string }>;
   archiveDir: string | null;
-  /** Claude Code transcript folders of the chat workspace, deleted. */
+  /** Claude Code transcript folders of the chat workspace and the learner's room, deleted. */
   transcriptDirs: string[];
+  /** The learner's sealed rooms (assistant home, never Drive): not per company, so
+   * a learner made after the reset would start with the old one's notes. Moved
+   * aside under the assistant home's archive, never deleted. */
+  sandboxMoves: Array<{ from: string; to: string }>;
   /** Companies that stay. The Drive folder, the chat workspace (Memory.md,
    * files/) and its transcripts are shared by every company on this instance,
    * so they're only archived when no company stays. */
@@ -74,6 +78,8 @@ function storeFiles(): string[] {
     pick("TETHR_DECISIONS_FILE", "tethr-decisions.json"),
     pick("TETHR_INBOX_FILE", "tethr-inbox.json"),
     pick("TETHR_LEARNING_FILE", "tethr-learning.json"),
+    // Phase 24: tethr's own check-ins and daily review (pending reports, turns today).
+    pick("TETHR_BRAIN_FILE", "tethr-brain.json"),
   ];
 }
 
@@ -135,8 +141,16 @@ export async function planReset(db: Db, prefixes: string[], now = new Date()): P
     }
   }
 
-  const transcriptDirs = touchShared ? [transcriptDirFor(workspaceDir().dir)].filter((d) => fs.existsSync(d)) : [];
-  return { companies: out, stores: storeFiles().filter((f) => fs.existsSync(f)), driveMoves, archiveDir, transcriptDirs, keptCompanies: kept };
+  const sandboxRoot = path.join(assistantHome(), "sandbox");
+  const sandboxes = touchShared && fs.existsSync(sandboxRoot) ? (await fsp.readdir(sandboxRoot)).filter((n) => !n.startsWith(".")).sort() : [];
+  const sandboxMoves = sandboxes.map((n) => ({
+    from: path.join(sandboxRoot, n),
+    to: path.join(assistantHome(), "archive", archiveFolderName(now), "sandbox", n),
+  }));
+  const transcriptDirs = touchShared
+    ? [workspaceDir().dir, ...sandboxMoves.map((m) => m.from)].map((cwd) => transcriptDirFor(cwd)).filter((d) => fs.existsSync(d))
+    : [];
+  return { companies: out, stores: storeFiles().filter((f) => fs.existsSync(f)), driveMoves, archiveDir, transcriptDirs, sandboxMoves, keptCompanies: kept };
 }
 
 async function dropKeys(file: string, ids: string[]): Promise<boolean> {
@@ -210,6 +224,13 @@ export async function runReset(db: Db, prefixes: string[], now = new Date()): Pr
       } catch (err) {
         result.errors.push(`couldn't move ${m.from}: ${err instanceof Error ? err.message : String(err)}`);
       }
+    }
+  }
+  for (const m of plan.sandboxMoves) {
+    try {
+      result.moved.push(await moveInto(m.from, m.to));
+    } catch (err) {
+      result.errors.push(`couldn't move the learner's folder ${path.basename(m.from)}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
   for (const dir of plan.transcriptDirs) {
