@@ -310,6 +310,16 @@ Branch: `mark-sandbox` (local only). Date started: 2026-06-11.
     (a small budget or first test = one channel, one campaign, highest-intent targets, grow on results).
     An agent's identity names the playbooks for its job's area (`playbooksForJob`, the growth map's
     keyword rules). The sealed learner gets neither.
+67. **Every connector can be autonomous or ask, per kind** (Mark, 2026-11-10). Under Automatic, spending,
+    reaching outside people and deleting each have "Ask an admin" (the default, today's behavior) or
+    "Automatic". Automatic spending needs a monthly cap that tethr checks before every call: against
+    the account where it can read it (Google Ads), else against what its own calls committed this month,
+    and a call with no readable amount asks. Medical always asks; ad accounts never delete. This replaces
+    the fixed always-ask list for money, public and destructive, and Mercury's Auto cap.
+68. **Google Ads can make changes, through the same gate.** tethr's own `ads_*` tools are the connector
+    "Google Ads" (Read only by default). New campaigns start paused; turning one on or raising a budget
+    is spending. A person's edit in Google Ads within 14 days makes a card instead of being undone.
+    Mark's instance: Google Ads set to Automatic with spending on "Ask an admin" and no cap, his call.
 
 ## Core changes (keep merge-safe)
 

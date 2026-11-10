@@ -1270,6 +1270,49 @@ its folder with approval, it's just gonna end up getting clogged."
   `[data-run-id]`, opens a focused report in full, marks it briefly (`.tethr-focus`) and drops the
   param. Kinds read as words ("report", not "run").
 
+## Autonomy for every connector, and Google Ads that makes changes (2026-11-10)
+
+Mark: "if I have to approve every single thing it defeats the purpose", "any connector needs to have
+ability to be autonomous or manual with approval", budgets "approved by admin or set to auto in
+settings", everything configured inside tethr. Plan: `~/.claude/plans/keen-moseying-micali.md`;
+DECISIONS 67-68.
+- **Per connector** (`integrations.ts` `ConnectorSetting.autonomy`, `autonomyFor`): under Automatic,
+  `spend` (`ask`/`auto` + `monthlyCapUsd`), `outside`, `deletes`, each "Ask an admin" by default (what
+  tethr always did). Automatic spending needs a cap (`sanitizeIntegrationsPatch` keeps it on ask
+  otherwise). Medical always asks. Mercury is no longer capped at Ask; moving money is its Spending.
+- **The gate** (`policy.ts` `decide(c, { mode, autonomy, withinCap, spendNote })`, `runsOnItsOwn`):
+  money runs on its own only with spend auto + a cap + `withinCap`; an ad platform's deletes always
+  ask (`isAdPlatform`, by name). A connector with no rules (Meta Ads, anything added later) is sorted
+  by name and input (`spendsMoney`: budget/bid/enable/charge… names, amount/budget fields, a status
+  set to ENABLED/ACTIVE). Ad copy is screened with `medicalClaimReason`, not the patient regex
+  ("prescribed online" is the product). `kindsForConnector` = which settings the page shows.
+- **Spending** (`server/src/tethr/spend/`): `guard.ts` `checkSpend` runs before deciding, in the hook
+  handler and the tools endpoint. A connector with an adapter (`adapters.ts`; Google Ads today) is
+  checked against the account: a cut isn't spending, a raise or turning something on is, against
+  planned spend (live daily budgets × 30.4, a shared budget once), and a person's edit in the last 14
+  days makes a card ("your own changes win"). Without an adapter: what tethr's own calls committed
+  this month (`log.ts`, `tethr-connector-changes.json`, in the reset list) plus the call's amount
+  (`amount.ts`); no readable amount = asks. Every automatic or approved action is logged there.
+- **tethr's own tools on the same gate:** a tethr-server tool can be its own connector
+  (`native-connectors.ts`: Google Ads' `ads_*`). The tools endpoint decides by that connector, and
+  runs a call the gate let through on an approval once (`grants.ts` `claimApprovedCall`, `servedAt`).
+  `delete_files` follows Tethr tools' Deleting setting (still a move to the archive).
+- **Google Ads** (connector "Google Ads", Read only by default): `ads_create_campaign` (one atomic
+  batch, created PAUSED, Search on Google only, US + English, Maximize clicks with an optional CPC
+  ceiling), `ads_change` (pause/enable, keywords, negatives, ads, ad groups, bids, rename; never
+  remove), `ads_set_budget`. Builders `tools/google-ads-ops.ts` (pure, limits, landing page on the
+  company's domains); client + adapter `tools/google-ads-write.ts` (`adsBackend`, a fake in tests).
+  `google_ads_report` gained `structure` (ids). **The REST API answers in camelCase**: read rows with
+  `field(row, "cost_micros")`; the old reports read snake_case and showed $0 spend and value.
+  **change_event can't be filtered by `change_resource_name`** (PROHIBITED_FIELD_IN_WHERE_CLAUSE):
+  read by type and match in code. Every request shape passed Google's `validateOnly` on Mark's
+  account (2026-11-10); nothing was created.
+- **UI:** `settings/ConnectorAutonomy.tsx` under every connector on Integrations (Ask or Automatic):
+  the three settings, the cap, planned or spent vs cap, the last 20 changes
+  (`GET /tethr/:c/integrations/:label/activity`). Wording in `lib/tethr-autonomy.ts`.
+- Tests: `tethr-autonomy.test.ts` (15, incl. the full card → approve → run-once flow against a fake
+  account), `ui/src/lib/tethr-autonomy.test.ts`.
+
 ## Wiring review (2026-11-09): what's true, and two known gaps
 
 Mark asked for a check that the systems are wired the way the design says. Verified on his live
@@ -2042,7 +2085,7 @@ Frosted panels floating over warm ink: the Aina glass card + Oura's calm and big
 ## Hard boundaries (never cross)
 
 - **Never touch PHI / clinical systems / the website's medical-content correctness.** Tethr is marketing/distribution only. Medical *content* decisions are a licensed-human domain — structural/technical findings only.
-- **Outward actions follow the Integrations modes** (Mark's decision, 2026-11-07 — replaces "internal-only output"). An outward connector action runs according to that connector's mode on the Integrations page: **Auto** or **Approval required**. **Always ask, regardless of Auto:** money (every Stripe write, all of Mercury), anything public-facing (including email to external recipients), and anything medical. **Never PHI.** Nothing auto-merges; no medical content decisions ever. The compliance gate (`server/src/tethr/gating.ts`) still hard-blocks `medical`/`public`/`spend`/`pr` outputs behind a core `approvals` row — there is no advisory bypass. Keep it hard in every phase.
+- **Outward actions follow the Integrations modes** (Mark's decision, 2026-11-07 — replaces "internal-only output"; widened 2026-11-10). An outward connector action runs according to that connector's mode on the Integrations page: **Auto** or **Approval required**. Under Auto, **money, outside people and deletes ask by default; each can be made automatic per connector** (its autonomy settings), spending only under a monthly cap tethr checks before every call. **Anything medical always asks. Never PHI.** Ad accounts never delete (pause instead), and ads only point at the company's own domains. Nothing auto-merges; no medical content decisions ever. The compliance gate (`server/src/tethr/gating.ts`) still hard-blocks `medical`/`public`/`spend`/`pr` outputs behind a core `approvals` row — there is no advisory bypass. Keep it hard in every phase.
 - **Never modify the live Drive engine** at `05 Marketing /Claude Marketing/` — it's the current production system, retired workflow-by-workflow in Phase 5, **read as reference only, never edited**. Same for `05 Marketing /Command Center/` originals (copy, never move).
 - **Never modify `terraform/`** — the preserved Azure path (hosting is Railway-first now; Azure stays in-repo as the future migration).
 - **Every autonomous agent keeps its stated budget cap.** Any phase adding autonomous runs states a per-agent cap. Caps are enforced by core `budget_policies` + `cost_events` hard-stops.

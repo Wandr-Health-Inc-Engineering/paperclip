@@ -9,8 +9,7 @@ import {
   modeFor,
   recordDiscoveredTools,
   sanitizeIntegrationsPatch,
-  updateIntegrations,
-} from "../tethr/integrations.js";
+  updateIntegrations, autonomyFor } from "../tethr/integrations.js";
 
 // Phase 18.4: the Integrations config behind the chat's approval gate.
 
@@ -43,7 +42,7 @@ describe("tethr integrations config", () => {
     );
   });
 
-  it("sanitizes updates: unknown modes dropped, Mercury never Auto, addresses tidied", () => {
+  it("sanitizes updates: unknown modes dropped, addresses tidied (Mercury's money follows its Spending setting)", () => {
     const patch = sanitizeIntegrationsPatch({
       defaultMode: "yolo",
       connectors: { Gmail: { mode: "auto", scope: "Only Wandr/* labels" }, Mercury: { mode: "auto" }, Slack: { mode: "nope" } },
@@ -52,17 +51,18 @@ describe("tethr integrations config", () => {
       assistant: { engine: "routing", model: "opus; rm -rf" },
     });
     expect(patch.defaultMode).toBeUndefined();
-    expect(patch.connectors).toEqual({ Gmail: { mode: "auto", scope: "Only Wandr/* labels" }, Mercury: { mode: "ask" } });
+    expect(patch.connectors).toEqual({ Gmail: { mode: "auto", scope: "Only Wandr/* labels" }, Mercury: { mode: "auto" } });
     expect(patch.internalAddresses).toEqual(["mark@travelwithwandr.com"]);
     expect(patch.shell).toBeUndefined();
     expect(patch.assistant).toEqual({ engine: "routing" });
   });
 
-  it("persists per company and caps Mercury at ask even if stored as auto", async () => {
+  it("persists per company; Mercury on Automatic still asks before moving money (its spending isn't automatic)", async () => {
     await updateIntegrations(C, { connectors: { Gmail: { mode: "auto" }, Mercury: { mode: "auto" } } });
     const cfg = getIntegrations(C);
     expect(modeFor(cfg, "Gmail")).toBe("auto");
-    expect(modeFor(cfg, "Mercury")).toBe("ask");
+    expect(modeFor(cfg, "Mercury")).toBe("auto");
+    expect(autonomyFor(cfg, "Mercury").spend).toEqual({ mode: "ask", monthlyCapUsd: null });
     expect(modeFor(cfg, "Canva")).toBe("off");
     expect(getIntegrations("00000000-0000-4000-8000-000000000000").connectors.Gmail).toBeUndefined();
   });

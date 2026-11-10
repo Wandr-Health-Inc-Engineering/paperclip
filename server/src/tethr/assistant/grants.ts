@@ -66,6 +66,58 @@ const asList = (v: unknown): string =>
  * reviewed properly on a card, so it's refused instead of shown truncated. */
 export const MAX_APPROVAL_INPUT_CHARS = 30_000;
 
+/** Keywords as a person reads them: "malaria pills (exact), travel malaria (phrase)". */
+function keywordsText(list: unknown[]): string {
+  return list
+    .map((k) => (k && typeof k === "object" ? `${String((k as Record<string, unknown>).text ?? "")} (${String((k as Record<string, unknown>).match ?? "phrase")})` : String(k)))
+    .join(", ");
+}
+
+/** One Google Ads change in words, every field it carries included. */
+function adsChangeText(raw: unknown): string {
+  const c = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const s = (k: string) => String(c[k] ?? "");
+  const target = s("target").replace("_", " ");
+  let text: string;
+  let used: string[];
+  switch (c.action) {
+    case "pause":
+    case "enable":
+      text = `${c.action === "enable" ? "Turn on" : "Pause"} ${target} ${s("id")}`;
+      used = ["action", "target", "id"];
+      break;
+    case "add_keywords":
+      text = `Add keywords to ad group ${s("ad_group_id")}: ${keywordsText(Array.isArray(c.keywords) ? c.keywords : [])}`;
+      used = ["action", "ad_group_id", "keywords"];
+      break;
+    case "add_negatives":
+      text = `Add negative keywords to campaign ${s("campaign_id")}: ${keywordsText(Array.isArray(c.keywords) ? c.keywords : [])}`;
+      used = ["action", "campaign_id", "keywords"];
+      break;
+    case "add_ad":
+      text = `Add an ad to ad group ${s("ad_group_id")} pointing at ${s("final_url")}. Headlines: ${asList(c.headlines)}. Descriptions: ${asList(c.descriptions)}`;
+      used = ["action", "ad_group_id", "final_url", "headlines", "descriptions"];
+      break;
+    case "add_ad_group":
+      text = `Add ad group "${s("name")}" to campaign ${s("campaign_id")}${Array.isArray(c.keywords) && c.keywords.length ? ` with keywords: ${keywordsText(c.keywords)}` : ""}`;
+      used = ["action", "campaign_id", "name", "keywords"];
+      break;
+    case "set_keyword_bid":
+      text = `Set keyword ${s("keyword_id")}'s ceiling per click to ${s("max_cpc")}`;
+      used = ["action", "keyword_id", "max_cpc"];
+      break;
+    case "rename":
+      text = `Rename ${target} ${s("id")} to "${s("name")}"`;
+      used = ["action", "target", "id", "name"];
+      break;
+    default:
+      return JSON.stringify(c);
+  }
+  // Anything else the change carries is shown too: what's approved is what runs.
+  const rest = Object.fromEntries(Object.entries(c).filter(([k, v]) => !used.includes(k) && v !== undefined && v !== null && v !== ""));
+  return Object.keys(rest).length ? `${text} (also: ${JSON.stringify(rest)})` : text;
+}
+
 /** A plain-text preview of EXACTLY what will happen, for the approval card.
  * Every field of the call is shown, nothing is truncated, and the UI renders it
  * as plain text (never Markdown), so what Mark approves is what gets sent. */
@@ -85,7 +137,24 @@ export function describeAction(c: Classified, input: Record<string, unknown>): s
     const key = keys.find((k) => typeof input[k] === "string" && (input[k] as string).trim());
     body = key ? (input[key] as string) : null;
   };
-  if (c.connector === "Gmail") {
+  if (c.connector === "Google Ads") {
+    add("Campaign", "campaign_id");
+    add("New daily budget", "daily_budget");
+    add("Name", "name");
+    add("Landing page", "final_url");
+    for (const [label, key] of [["Keywords", "keywords"], ["Negative keywords", "negatives"]] as const) {
+      shown.add(key);
+      if (Array.isArray(input[key]) && (input[key] as unknown[]).length) lines.push(`${label}: ${keywordsText(input[key] as unknown[])}`);
+    }
+    add("Headlines", "headlines");
+    add("Descriptions", "descriptions");
+    add("Ceiling per click", "max_cpc");
+    add("Countries", "countries");
+    if (Array.isArray(input.changes)) {
+      shown.add("changes");
+      lines.push(...(input.changes as unknown[]).map((change) => `- ${adsChangeText(change)}`));
+    }
+  } else if (c.connector === "Gmail") {
     add("To", "to");
     add("Cc", "cc");
     add("Bcc", "bcc");
@@ -124,6 +193,15 @@ export interface PendingActionInput {
   actor?: { agentId: string; tag: string };
   /** Phase 26.1: the turn came from Slack; the card is asked in that Slack conversation. */
   slack?: SlackReplyTarget;
+  /** A line under the details (where spending would stand against the cap). */
+  note?: string | null;
+}
+
+/** Where spending would stand goes right under the card's first line, before the details. */
+function withSpendingNote(described: string, note: string | null | undefined): string {
+  if (!note) return described;
+  const [head, ...rest] = described.split("\n");
+  return [head, "", `Spending: ${note}.`, ...rest].join("\n");
 }
 
 /** Hold an outward action for Mark: a gated external_action output. */
@@ -137,7 +215,7 @@ export async function createPendingAction(db: Db, input: PendingActionInput) {
     routeRunId: input.runId,
     kind: "external_action",
     title: input.classified.summary.slice(0, 160),
-    body: describeAction(input.classified, input.toolInput),
+    body: withSpendingNote(describeAction(input.classified, input.toolInput), input.note),
     sensitivity: sensitivityFor(input.classified),
     meta: {
       threadId: input.threadId,
@@ -190,6 +268,38 @@ export async function consumeGrant(db: Db, companyId: string, threadId: string, 
     )
     update tethr_outputs o
        set meta = jsonb_set(o.meta, '{grant,status}', '"used"'::jsonb),
+           updated_at = now()
+      from pick
+     where o.id = pick.id
+    returning o.id
+  `);
+  const rows = Array.from(result as Iterable<{ id: string }>);
+  return rows[0]?.id ?? null;
+}
+
+/**
+ * tethr's own tools run in the tools endpoint after the gate allowed them. A
+ * call the gate let through on an approval (its grant just used) is claimed
+ * here once, so the endpoint runs it too. Returns the card's id.
+ */
+export async function claimApprovedCall(db: Db, companyId: string, threadId: string, hash: string): Promise<string | null> {
+  const result = await db.execute(sql`
+    with pick as (
+      select id from tethr_outputs
+      where company_id = ${companyId}
+        and kind = 'external_action'
+        and status = 'approved'
+        and meta->>'inputHash' = ${hash}
+        and meta->>'threadId' = ${threadId}
+        and meta->'grant'->>'status' = 'used'
+        and meta->'grant'->>'servedAt' is null
+        and updated_at > now() - interval '10 minutes'
+      order by updated_at desc
+      limit 1
+      for update skip locked
+    )
+    update tethr_outputs o
+       set meta = jsonb_set(o.meta, '{grant,servedAt}', to_jsonb(now()::text)),
            updated_at = now()
       from pick
      where o.id = pick.id

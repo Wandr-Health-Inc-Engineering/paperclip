@@ -1,7 +1,10 @@
 import type { Db } from "@paperclipai/db";
 import { logActivity } from "../../services/activity-log.js";
 import { isTainted, markTainted } from "../chats.js";
-import { getIntegrations, modeFor } from "../integrations.js";
+import { autonomyFor, getIntegrations, modeFor } from "../integrations.js";
+import { spendAdapterFor } from "../spend/adapters.js";
+import { checkSpend, type SpendCheck } from "../spend/guard.js";
+import { recordChange, recordChangeOutcome } from "../spend/log.js";
 import type { HookTokenContext } from "./gate.js";
 import { canonicalJson, consumeGrant, createPendingAction, findPending, inputHash, MAX_APPROVAL_INPUT_CHARS, recordFailure, recordOutcome, shortId } from "./grants.js";
 import { classify, decide, resolvesToPrivateHost } from "./policy.js";
@@ -54,7 +57,7 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
     const refusal = sandboxRefusal(member.tag, toolName);
     if (refusal) return preDecision("deny", refusal);
   }
-  const c = classify(toolName, toolInput, {
+  let c = classify(toolName, toolInput, {
     workspaceDir: sealed ?? workspaceDir().dir,
     readableRoots: sealed ? [sealed] : readableRoots(),
     internalAddresses: cfg.internalAddresses,
@@ -77,7 +80,18 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
       return preDecision("deny", "Tethr approval gate: blocked — the chat can't open pages on this computer or its local network.");
     }
   }
-  const d = decide(c, { mode: modeFor(cfg, c.connector), shell: cfg.shell, tainted: isTainted(ctx.companyId, ctx.threadId) });
+  // Spending: whether this call spends more (an account tethr can read knows a
+  // budget cut isn't), and whether it stays under the connector's monthly cap.
+  const mode = modeFor(cfg, c.connector);
+  const autonomy = autonomyFor(cfg, c.connector);
+  let spend: SpendCheck | null = null;
+  if (c.connector && (mode === "auto" || mode === "ask") && (c.cls === "money" || (c.cls === "write" && spendAdapterFor(c.connector)))) {
+    spend = await checkSpend(ctx.companyId, c, toolInput, autonomy);
+    c = spend.classified;
+  }
+  const d = decide(c, { mode, shell: cfg.shell, tainted: isTainted(ctx.companyId, ctx.threadId), autonomy, withinCap: spend?.withinCap, spendNote: spend?.spendNote });
+  // What a connector did is logged here; tethr's own tools are logged where they run (the tools endpoint).
+  const logsHere = !!c.connector && c.server !== "tethr" && c.cls !== "read" && c.cls !== "draft";
 
   if (d.action === "allow") {
     // Once a thread's session has seen connector data, web pages outside Wandr
@@ -88,6 +102,19 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
       await markTainted(ctx.companyId, ctx.threadId).catch(() => {});
     }
     if (d.note === "auto") {
+      if (logsHere) {
+        await recordChange(ctx.companyId, {
+          connector: c.connector!,
+          tool: toolName,
+          summary: c.summary,
+          cls: c.cls,
+          how: "auto",
+          by: member?.tag ?? "@tethr",
+          amount: spend?.amount ?? null,
+          hash: inputHash(toolName, toolInput),
+          ok: null,
+        }).catch(() => {});
+      }
       await logActivity(db, {
         companyId: ctx.companyId,
         actorType: "agent",
@@ -112,6 +139,19 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
   const hash = inputHash(toolName, toolInput);
   const granted = await consumeGrant(db, ctx.companyId, ctx.threadId, hash);
   if (granted) {
+    if (logsHere) {
+      await recordChange(ctx.companyId, {
+        connector: c.connector!,
+        tool: toolName,
+        summary: c.summary,
+        cls: c.cls,
+        how: "approved",
+        by: member?.tag ?? "@tethr",
+        amount: spend?.amount ?? null,
+        hash,
+        ok: null,
+      }).catch(() => {});
+    }
     await logActivity(db, {
       companyId: ctx.companyId,
       actorType: "agent",
@@ -137,6 +177,7 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
       toolName,
       toolInput,
       hash,
+      note: spend?.spendNote ?? null,
       ...(member ? { actor: { agentId: member.agentId, tag: member.tag } } : {}),
     });
     return preDecision(
@@ -153,8 +194,10 @@ export async function handlePostToolUse(db: Db, ctx: HookTokenContext, payload: 
   if (toolName.startsWith("mcp__") || toolName === "Bash" || toolName === "WebFetch") {
     const hash = inputHash(toolName, payload.tool_input ?? {});
     // An approved call that came back with an error is NOT marked sent.
-    const record = responseFailed(payload.tool_response) ? recordFailure : recordOutcome;
+    const failed = responseFailed(payload.tool_response);
+    const record = failed ? recordFailure : recordOutcome;
     await record(db, ctx.companyId, ctx.threadId, hash).catch(() => {});
+    await recordChangeOutcome(ctx.companyId, hash, !failed).catch(() => {});
   }
   return { exitCode: 0 };
 }

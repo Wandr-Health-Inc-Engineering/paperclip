@@ -12,11 +12,13 @@ import { Link } from "../../lib/router";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
 import { cn } from "@/lib/utils";
+import { ConnectorAutonomy } from "./settings/ConnectorAutonomy";
 import {
   tethrApi,
   tethrKeys,
   type TethrConnectorMode,
   type TethrIntegrationConnector,
+  type TethrConnectorAutonomy,
   type TethrIntegrations,
   type TethrIntegrationsPatch,
   type TethrTeamSettings,
@@ -37,7 +39,7 @@ const MODE_HELP: Record<TethrConnectorMode, string> = {
   off: "Tethr can't use it.",
   read: "Tethr can look, but can't change anything.",
   ask: "Changes wait for your OK in the chat.",
-  auto: "Changes just happen. Money, outsiders and anything medical still ask.",
+  auto: "Changes just happen. Spending, outside people and deletes follow the settings below; anything medical asks.",
 };
 const MODE_TONE: Record<TethrConnectorMode, "paused" | "idle" | "warn" | "ok"> = {
   off: "paused",
@@ -85,6 +87,13 @@ export function TethrSettings() {
   if (isLoading || !integrations) return <PageSkeleton variant="detail" />;
   if (!data) return null;
 
+  const setAutonomy = (label: string, autonomy: TethrConnectorAutonomy) => {
+    queryClient.setQueryData<TethrIntegrations>(tethrKeys.integrations(selectedCompanyId), (prev) =>
+      prev ? { ...prev, connectors: prev.connectors.map((c) => (c.label === label ? { ...c, autonomy } : c)) } : prev,
+    );
+    update.mutate({ connectors: { [label]: { autonomy } } });
+  };
+
   const setConnector = (label: string, mode: TethrConnectorMode, scope?: string) => {
     queryClient.setQueryData<TethrIntegrations>(tethrKeys.integrations(selectedCompanyId), (prev) =>
       prev
@@ -107,9 +116,11 @@ export function TethrSettings() {
           {integrations.connectors.map((c) => (
             <ConnectorRow
               key={c.label}
+              companyId={selectedCompanyId}
               connector={c}
               onMode={(mode) => setConnector(c.label, mode)}
               onScope={(scope) => setConnector(c.label, c.mode, scope)}
+              onAutonomy={(autonomy) => setAutonomy(c.label, autonomy)}
             />
           ))}
         </div>
@@ -125,7 +136,7 @@ export function TethrSettings() {
           </SettingRow>
           <SettingRow
             title="Inside your company"
-            help="Email addresses or domains that count as inside the company. Sending to anyone else always asks."
+            help="Email addresses or domains that count as inside the company. Sending to anyone else asks, unless that connector lets outside people run on their own. Ads only point at these domains."
           >
             <AddressesField
               value={integrations.internalAddresses}
@@ -268,13 +279,17 @@ export function TethrSettings() {
 }
 
 function ConnectorRow({
+  companyId,
   connector,
   onMode,
   onScope,
+  onAutonomy,
 }: {
+  companyId: string;
   connector: TethrIntegrationConnector;
   onMode: (mode: TethrConnectorMode) => void;
   onScope: (scope: string) => void;
+  onAutonomy: (autonomy: TethrConnectorAutonomy) => void;
 }) {
   const [scope, setScope] = useState(connector.scope);
   useEffect(() => setScope(connector.scope), [connector.scope]);
@@ -289,12 +304,14 @@ function ConnectorRow({
             {!connector.explicit ? <span className="tethr-eyebrow text-[10px]">default</span> : null}
           </div>
           <p className="mt-0.5 text-[12.5px] text-muted-foreground">{connector.blurb}</p>
-          <p className="mt-0.5 text-[11.5px] tethr-text-3">
-            {connector.moneyOnly && connector.mode !== "off" ? "Money always needs you." : MODE_HELP[connector.mode]}
-          </p>
+          <p className="mt-0.5 text-[11.5px] tethr-text-3">{MODE_HELP[connector.mode]}</p>
         </div>
-        <ModeControl value={connector.mode} onChange={onMode} noAuto={connector.moneyOnly} />
+        <ModeControl value={connector.mode} onChange={onMode} />
       </div>
+      {/* What it may do on its own, and what it did lately. tethr's own tools only have deletes to set, on Automatic. */}
+      {(connector.mode === "auto" || connector.mode === "ask") && (connector.label !== "Tethr tools" || connector.mode === "auto") ? (
+        <ConnectorAutonomy companyId={companyId} connector={connector} onSave={onAutonomy} />
+      ) : null}
       {showScope ? (
         <Input
           value={scope}

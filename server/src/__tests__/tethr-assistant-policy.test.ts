@@ -151,7 +151,9 @@ describe("tethr assistant policy — classify", () => {
   it("classifies money, calendar, PostHog and unknown connectors", () => {
     expect(classify("mcp__claude_ai_Stripe__stripe_api_read", {}, ctx).cls).toBe("read");
     expect(classify("mcp__claude_ai_Stripe__stripe_api_write", {}, ctx).cls).toBe("money");
-    expect(classify("mcp__claude_ai_Mercury__getAccounts", {}, ctx).cls).toBe("money");
+    // Mercury: reading the account is a read; moving money is money (its own Spending setting).
+    expect(classify("mcp__claude_ai_Mercury__getAccounts", {}, ctx).cls).toBe("read");
+    expect(classify("mcp__claude_ai_Mercury__requestSendMoney", { amount: 50 }, ctx).cls).toBe("money");
     expect(classify("mcp__claude_ai_Google_Calendar__list_events", {}, ctx).cls).toBe("read");
     expect(
       classify("mcp__claude_ai_Google_Calendar__create_event", { summary: "Sync", attendees: [{ email: "x@partner.com" }] }, ctx).cls,

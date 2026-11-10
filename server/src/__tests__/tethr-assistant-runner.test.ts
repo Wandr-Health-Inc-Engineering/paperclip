@@ -132,7 +132,9 @@ describePg("tethr assistant runner", () => {
     expect(settings.hooks.PreToolUse[0].hooks[0].command).toContain("pre");
 
     // Context = the last call's prompt (3,012), not the turn's summed usage (180k),
-    // so the session isn't rotated after one busy turn.
+    // so the session isn't rotated after one busy turn. (The session is saved just
+    // after the row is marked done; the thread's next turn starts only after both.)
+    for (let i = 0; i < 100 && !getSession(companyId, companyId); i++) await new Promise((r) => setTimeout(r, 20));
     expect(getSession(companyId, companyId)).toMatchObject({ sessionId: "sess-1", contextTokens: 3012 });
   });
 

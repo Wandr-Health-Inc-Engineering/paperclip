@@ -9,7 +9,7 @@
 const OAUTH_URL = "https://oauth2.googleapis.com/token";
 const API_VERSIONS = ["v23", "v22", "v21"];
 
-interface AdsConfig {
+export interface AdsConfig {
   developerToken: string;
   clientId: string;
   clientSecret: string;
@@ -18,7 +18,7 @@ interface AdsConfig {
   loginCustomerId?: string;
 }
 
-function getConfig(): AdsConfig | null {
+export function getConfig(): AdsConfig | null {
   const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN?.trim();
   const clientId = process.env.GOOGLE_ADS_CLIENT_ID?.trim();
   const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET?.trim();
@@ -60,8 +60,22 @@ async function getAccessToken(cfg: AdsConfig): Promise<string> {
   return cachedToken.token;
 }
 
+/** The headers every Google Ads request carries. */
+export async function adsHeaders(cfg: AdsConfig): Promise<Record<string, string>> {
+  const token = await getAccessToken(cfg);
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    "developer-token": cfg.developerToken,
+    "Content-Type": "application/json",
+  };
+  if (cfg.loginCustomerId) headers["login-customer-id"] = cfg.loginCustomerId;
+  return headers;
+}
+
+export { API_VERSIONS };
+
 /** Run a GAQL SELECT. Tries API versions until one isn't a 404. READ-ONLY. */
-async function query(cfg: AdsConfig, gaql: string): Promise<Array<Record<string, unknown>>> {
+export async function query(cfg: AdsConfig, gaql: string): Promise<Array<Record<string, unknown>>> {
   const token = await getAccessToken(cfg);
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
@@ -84,6 +98,15 @@ async function query(cfg: AdsConfig, gaql: string): Promise<Array<Record<string,
     return data.results ?? [];
   }
   throw new Error(`google ads query failed: no supported API version (${lastErr})`);
+}
+
+const camel = (name: string) => name.replace(/_([a-z])/g, (_m, c: string) => c.toUpperCase());
+
+/** A field of a REST row by its GAQL name (snake_case). The API answers in camelCase (costMicros), so both are tried. */
+export function field(row: unknown, name: string): unknown {
+  if (!row || typeof row !== "object") return undefined;
+  const r = row as Record<string, unknown>;
+  return r[name] ?? r[camel(name)];
 }
 
 export function microsToAmount(micros: number | string | undefined): number {
@@ -131,9 +154,9 @@ async function accountOverview(cfg: AdsConfig, days: number): Promise<string> {
     const m = (r.metrics ?? {}) as Record<string, unknown>;
     imp += Number(m.impressions) || 0;
     clicks += Number(m.clicks) || 0;
-    cost += microsToAmount(m.cost_micros as number);
+    cost += microsToAmount(field(m, "cost_micros") as number);
     conv += Number(m.conversions) || 0;
-    val += Number(m.conversions_value) || 0;
+    val += Number(field(m, "conversions_value")) || 0;
   }
   const cpa = conv > 0 ? cost / conv : 0;
   const roas = cost > 0 ? val / cost : 0;
@@ -160,7 +183,7 @@ async function campaignMetrics(cfg: AdsConfig, days: number): Promise<string> {
     const m = (r.metrics ?? {}) as Record<string, unknown>;
     const name = String(c.name ?? "?");
     const prev = byName.get(name) ?? { cost: 0, clicks: 0, conv: 0, imp: 0 };
-    prev.cost += microsToAmount(m.cost_micros as number);
+    prev.cost += microsToAmount(field(m, "cost_micros") as number);
     prev.clicks += Number(m.clicks) || 0;
     prev.conv += Number(m.conversions) || 0;
     prev.imp += Number(m.impressions) || 0;
@@ -186,11 +209,11 @@ async function keywordMetrics(cfg: AdsConfig, days: number): Promise<string> {
      ORDER BY metrics.cost_micros DESC LIMIT 500`,
   );
   const lines = rows.slice(0, 25).map((r) => {
-    const k = ((r.ad_group_criterion ?? {}) as Record<string, unknown>).keyword as Record<string, unknown> | undefined;
+    const k = field(field(r, "ad_group_criterion"), "keyword") as Record<string, unknown> | undefined;
     const m = (r.metrics ?? {}) as Record<string, unknown>;
-    const cost = microsToAmount(m.cost_micros as number);
+    const cost = microsToAmount(field(m, "cost_micros") as number);
     const conv = Number(m.conversions) || 0;
-    return `- "${k?.text ?? "?"}" [${k?.match_type ?? "?"}]: spend ${money(cost)}, clicks ${m.clicks ?? 0}, conv ${conv.toFixed(1)}, CPA ${money(conv > 0 ? cost / conv : 0)}`;
+    return `- "${k?.text ?? "?"}" [${field(k, "match_type") ?? "?"}]: spend ${money(cost)}, clicks ${m.clicks ?? 0}, conv ${conv.toFixed(1)}, CPA ${money(conv > 0 ? cost / conv : 0)}`;
   });
   return `Keywords (last ${days}d, top 25 by spend):\n${lines.join("\n") || "(none)"}`;
 }
@@ -206,14 +229,60 @@ async function searchTerms(cfg: AdsConfig, days: number): Promise<string> {
      ORDER BY metrics.cost_micros DESC LIMIT 100`,
   );
   const lines = rows.slice(0, 25).map((r) => {
-    const t = ((r.search_term_view ?? {}) as Record<string, unknown>).search_term;
+    const t = field(field(r, "search_term_view"), "search_term");
     const m = (r.metrics ?? {}) as Record<string, unknown>;
-    return `- "${t ?? "?"}": spend ${money(microsToAmount(m.cost_micros as number))}, clicks ${m.clicks ?? 0}, conv ${Number(m.conversions).toFixed(1)}`;
+    return `- "${t ?? "?"}": spend ${money(microsToAmount(field(m, "cost_micros") as number))}, clicks ${m.clicks ?? 0}, conv ${Number(m.conversions).toFixed(1)}`;
   });
   return `Search terms (last ${days}d, top 25 by spend):\n${lines.join("\n") || "(none)"}`;
 }
 
-const REPORTS: Record<string, (cfg: AdsConfig, days: number) => Promise<string>> = {
+/** Campaigns with their ids, status and daily budget; for one campaign also its ad groups, keywords and ads. What a change needs to name. */
+async function accountStructure(cfg: AdsConfig, _days: number, campaignId?: string): Promise<string> {
+  const campaigns = await query(
+    cfg,
+    `SELECT campaign.id, campaign.name, campaign.status, campaign_budget.amount_micros, campaign_budget.explicitly_shared
+     FROM campaign WHERE campaign.status != 'REMOVED' ORDER BY campaign.name LIMIT 200`,
+  );
+  const lines = campaigns.map((r) => {
+    const c = r.campaign as Record<string, unknown>;
+    const b = field(r, "campaign_budget");
+    return `- campaign ${c.id}: ${c.name} [${c.status}] budget ${money(microsToAmount(field(b, "amount_micros") as number))}/day${field(b, "explicitly_shared") ? " (shared)" : ""}`;
+  });
+  const out = [`Campaigns (${campaigns.length}):`, ...(lines.length ? lines : ["(none)"])];
+  if (campaignId && /^\d+$/.test(campaignId)) {
+    const groups = await query(cfg, `SELECT ad_group.id, ad_group.name, ad_group.status FROM ad_group WHERE campaign.id = ${campaignId} AND ad_group.status != 'REMOVED' LIMIT 100`);
+    out.push("", `Ad groups in campaign ${campaignId}:`);
+    for (const g of groups) {
+      const ag = field(g, "ad_group") as Record<string, unknown>;
+      out.push(`- ad group ${ag.id}: ${ag.name} [${ag.status}]`);
+    }
+    const keywords = await query(
+      cfg,
+      `SELECT ad_group.id, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.status, ad_group_criterion.cpc_bid_micros
+       FROM keyword_view WHERE campaign.id = ${campaignId} AND ad_group_criterion.status != 'REMOVED' LIMIT 300`,
+    );
+    out.push("", "Keywords (id = adGroupId~criterionId):");
+    for (const k of keywords) {
+      const ag = field(k, "ad_group") as Record<string, unknown>;
+      const crit = field(k, "ad_group_criterion") as Record<string, unknown>;
+      const kw = field(crit, "keyword") as Record<string, unknown> | undefined;
+      const bid = field(crit, "cpc_bid_micros");
+      out.push(`- ${ag.id}~${field(crit, "criterion_id")}: "${kw?.text ?? "?"}" [${field(kw, "match_type") ?? "?"}] ${crit.status}${bid ? ` bid ${money(microsToAmount(bid as number))}` : ""}`);
+    }
+    const ads = await query(cfg, `SELECT ad_group.id, ad_group_ad.ad.id, ad_group_ad.status, ad_group_ad.policy_summary.approval_status FROM ad_group_ad WHERE campaign.id = ${campaignId} AND ad_group_ad.status != 'REMOVED' LIMIT 100`);
+    out.push("", "Ads (id = adGroupId~adId):");
+    for (const a of ads) {
+      const ag = field(a, "ad_group") as Record<string, unknown>;
+      const aga = field(a, "ad_group_ad") as Record<string, unknown>;
+      const policy = field(aga, "policy_summary");
+      out.push(`- ${ag.id}~${(aga.ad as Record<string, unknown>)?.id}: ${aga.status}${field(policy, "approval_status") ? `, Google review: ${field(policy, "approval_status")}` : ""}`);
+    }
+  }
+  return out.join("\n");
+}
+
+const REPORTS: Record<string, (cfg: AdsConfig, days: number, campaignId?: string) => Promise<string>> = {
+  structure: accountStructure,
   overview: accountOverview,
   campaigns: campaignMetrics,
   keywords: keywordMetrics,
@@ -230,6 +299,7 @@ export const googleAdsReportTool: TethrTool = {
     type: "object",
     properties: {
       report: { type: "string", enum: Object.keys(REPORTS), description: "which report" },
+      campaign_id: { type: "string", description: "structure only: one campaign's ad groups, keywords and ads" },
       days: { type: "number", description: "lookback window in days (default 30)" },
     },
     required: ["report"],
@@ -242,7 +312,7 @@ export const googleAdsReportTool: TethrTool = {
     const days = Math.max(1, Math.min(365, Number(input.days) || 30));
     const fn = REPORTS[report] ?? accountOverview;
     try {
-      const output = await fn(cfg, days);
+      const output = await fn(cfg, days, input.campaign_id ? String(input.campaign_id) : undefined);
       return { output, summary: `google_ads: ${report} (${days}d)` };
     } catch (err) {
       return { output: `Google Ads query failed: ${err instanceof Error ? err.message : String(err)}`, summary: "google_ads: error" };

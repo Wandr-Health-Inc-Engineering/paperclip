@@ -1,6 +1,8 @@
 import path from "node:path";
 import { isPrivateHost } from "../net.js";
 import { areaById, isAreaId } from "../growth-map/areas.js";
+import { nativeConnectorOf } from "../native-connectors.js";
+import { medicalClaimReason } from "../screen.js";
 
 export { isPrivateHost, resolvesToPrivateHost } from "../net.js";
 
@@ -14,11 +16,14 @@ export { isPrivateHost, resolvesToPrivateHost } from "../net.js";
 // (Claude's own safe tools) · workspace (file write inside Tethr's workspace) ·
 // shell · blocked (anything else).
 //
-// Modes per connector: off · read · ask (approval required) · auto. Money,
-// public, medical and destructive always ask, even in auto (Mark's always-ask
-// list). Web pages are free until the thread has read connector data (a
-// "tainted" thread); after that a page outside Wandr's own domains asks, since
-// a URL can carry private data out.
+// Modes per connector: off · read · ask (approval required) · auto. Under auto,
+// money, public (outside people) and destructive ask unless that connector's
+// autonomy says otherwise (Mark, 2026-11-10: "any connector needs to have
+// ability to be autonomous or manual with approval"); money runs on its own
+// only under a monthly cap. Medical always asks, on every connector. Web pages
+// are free until the thread has read connector data (a "tainted" thread);
+// after that a page outside Wandr's own domains asks, since a URL can carry
+// private data out.
 
 export type ToolClass =
   | "read"
@@ -49,6 +54,15 @@ export interface Classified {
   blockedReason?: string;
   /** web: the page is on one of Wandr's own domains. */
   internalHost?: boolean;
+  /** An ad platform: its deletes always ask, and its ad text is screened for medical claims, not words like "prescription". */
+  adPlatform?: boolean;
+}
+
+/** The autonomy decide() needs for one connector (integrations.ts ConnectorAutonomy). */
+export interface KindAutonomy {
+  spend: { mode: "ask" | "auto"; monthlyCapUsd: number | null };
+  outside: "ask" | "auto";
+  deletes: "ask" | "auto";
 }
 
 export interface PolicyContext {
@@ -118,7 +132,20 @@ const CONNECTOR_RULES: Record<string, Rule[]> = {
     [/^(stripe_api_write|manage_stripe_accounts|atlas_company_formation)$/, "money"],
     [/.*/, "write"],
   ],
-  Mercury: [[/.*/, "money"]],
+  Mercury: [
+    [/^(get|list)/i, "read"],
+    [/^request(Send|Transfer)Money$/, "money"],
+    [/^archive/i, "destructive"],
+    [/.*/, "write"], // budgets, categories, receipts: bookkeeping
+  ],
+  // tethr's own Google Ads tools. What a change does to spending is worked out
+  // against the account before deciding (spend/guard.ts): a budget raise or a
+  // campaign turned on is money, lowering or pausing is a plain change.
+  "Google Ads": [
+    [/^ads_set_budget$/, "money"],
+    [/^(ads_create_campaign|ads_change)$/, "write"],
+    [/.*/, "blocked"],
+  ],
   Clay: [
     [/^(get-|get_|list_|search-|query-objects$|ask-question-about-accounts$|load-more-search-results$|render-search-results$)/, "read"],
     [/.*/, "write"], // add-*, run_subroutine* spend Clay credits
@@ -181,7 +208,8 @@ export function parseMcpTool(tool: string): { server: string; connector: string;
   if (sep <= 0) return null;
   const server = rest.slice(0, sep);
   const name = rest.slice(sep + 2);
-  const connector = server === "tethr" ? "Tethr tools" : server.startsWith("claude_ai_") ? server.slice(10).replace(/_/g, " ") : server;
+  const connector =
+    server === "tethr" ? (nativeConnectorOf(name) ?? "Tethr tools") : server.startsWith("claude_ai_") ? server.slice(10).replace(/_/g, " ") : server;
   return { server, connector, name };
 }
 
@@ -288,6 +316,17 @@ function summarize(connector: string, name: string, input: Record<string, unknow
   }
   if (connector === "Tethr tools" && name === "need_connection") return `Asking for a connection${typeof input.connector === "string" ? `: ${input.connector.slice(0, 40)}` : ""}`;
   if (connector === "Tethr tools" && name === "google_ads_report") return `Reading Google Ads (${typeof input.report === "string" ? input.report : "overview"})`;
+  if (connector === "Google Ads" && name === "ads_create_campaign") {
+    return `Building a Google Ads campaign${typeof input.name === "string" ? ` “${input.name.slice(0, 60)}”` : ""}${input.daily_budget ? ` (${String(input.daily_budget)}/day, paused)` : ""}`;
+  }
+  if (connector === "Google Ads" && name === "ads_set_budget") {
+    return `Setting a Google Ads budget${input.campaign_id ? `: campaign ${String(input.campaign_id)}` : ""}${input.daily_budget ? ` to ${String(input.daily_budget)}/day` : ""}`;
+  }
+  if (connector === "Google Ads" && name === "ads_change") {
+    const changes = Array.isArray(input.changes) ? (input.changes as Array<Record<string, unknown>>) : [];
+    const what = changes.slice(0, 3).map((c) => `${String(c.action ?? "change").replace(/_/g, " ")}${c.target ? ` ${String(c.target).replace("_", " ")}` : ""}${c.id ? ` ${String(c.id)}` : ""}`);
+    return `Changing Google Ads: ${what.join(", ")}${changes.length > 3 ? ` and ${changes.length - 3} more` : ""}`;
+  }
   if (connector === "Tethr tools" && name === "ask") return `Asking you${typeof input.question === "string" ? `: “${input.question.slice(0, 80)}”` : ""}`;
   if (connector === "Tethr tools" && name === "propose_lesson") return `Proposing a lesson${typeof input.lesson === "string" ? `: “${input.lesson.slice(0, 60)}”` : ""}`;
   if (connector === "Tethr tools" && name === "study") return `Queueing a topic to study${typeof input.topic === "string" ? `: “${input.topic.slice(0, 60)}”` : ""}`;
@@ -436,6 +475,10 @@ export function classify(tool: string, input: Record<string, unknown> | undefine
   if (connector === "PostHog" && name === "exec") {
     cls = POSTHOG_READ_VERB.test(String(args.command ?? "")) ? "read" : "write";
   }
+  // A connector tethr has no rules for (Meta Ads, LinkedIn, anything added
+  // later): a change that spends money is money, by its name or what it sets.
+  if (!rules && cls === "write" && spendsMoney(name, args)) cls = "money";
+  const adPlatform = isAdPlatform(connector);
   // Gmail sends a saved draft as it is and ignores every other field, so an
   // approval card could show recipients and text that never go out. The chat
   // sends with the recipients and text written out instead.
@@ -452,7 +495,11 @@ export function classify(tool: string, input: Record<string, unknown> | undefine
 
   // Tethr's own tools keep everything inside Tethr (a metric named "new patients
   // per month" isn't medical content going anywhere), so the outward checks skip them.
-  if (cls !== "read" && cls !== "money" && connector !== "Tethr tools") {
+  if (cls !== "read" && cls !== "money" && connector !== "Tethr tools" && adPlatform) {
+    // Ads are marketing copy for travel medicine: "prescribed online" is the
+    // product, a claim that it cures or prevents something is a licensed person's call.
+    if (medicalClaimReason(JSON.stringify(args))) cls = "medical";
+  } else if (cls !== "read" && cls !== "money" && connector !== "Tethr tools") {
     const outward = [...recipients(args), ...calendarOwner(connector, args)];
     if ((cls === "write" || cls === "draft") && outward.some((a) => !isInternal(a, ctx.internalAddresses))) {
       // A draft to an outsider is still only a draft; sending/inviting them is public.
@@ -463,7 +510,41 @@ export function classify(tool: string, input: Record<string, unknown> | undefine
     if (cls === "write" && leavesForUnnamedPeople(connector, name, args, outward)) cls = "public";
     if (MEDICAL.test(JSON.stringify(args))) cls = "medical";
   }
-  return { tool, connector, server, cls, summary: summarize(connector, name, args) };
+  return { tool, connector, server, cls, summary: summarize(connector, name, args), ...(adPlatform ? { adPlatform } : {}) };
+}
+
+/** An advertising platform, by its name (Google Ads, Meta Ads, LinkedIn Ads, Microsoft Advertising…). */
+export function isAdPlatform(connector: string | null): boolean {
+  return !!connector && /\b(ads?|advertising)\b/i.test(connector);
+}
+
+const SPEND_NAME = /(^|[-_]|[a-z](?=[A-Z]))(budget|budgets|bid|bids|spend|enable|activate|resume|launch|boost|purchase|buy|charge|pay|payment|payout|transfer|refund|send[-_]?money)([-_]|[A-Z]|$)/i;
+const SPEND_FIELD = /^(budget|daily_?budget|lifetime_?budget|amount|amount_?micros|bid|bid_?amount|max_?cpc|spend_?cap|price|unit_?amount)$/i;
+const LIVE_STATUS = /^(enabled|active|live|running|on)$/i;
+
+/** A change that spends money, by its name or by what it sets (a budget, an amount, or switching something on). */
+function spendsMoney(name: string, args: Record<string, unknown>): boolean {
+  if (SPEND_NAME.test(name)) return true;
+  for (const [key, value] of Object.entries(args)) {
+    if (SPEND_FIELD.test(key) && value !== null && value !== undefined && value !== "") return true;
+    if (/^(status|effective_?status|state)$/i.test(key) && typeof value === "string" && LIVE_STATUS.test(value)) return true;
+  }
+  return false;
+}
+
+/** Which sensitive kinds a connector can do, for its settings (unknown connectors: all three). */
+export function kindsForConnector(connector: string): Array<"spend" | "outside" | "deletes"> {
+  if (connector === "Google Ads") return ["spend"];
+  const rules = CONNECTOR_RULES[connector];
+  // An ad account's deletes always ask (runsOnItsOwn), so there's nothing to set for them.
+  if (!rules) return isAdPlatform(connector) ? ["spend", "outside"] : ["spend", "outside", "deletes"];
+  const classes = new Set(rules.map(([, c]) => c));
+  const kinds: Array<"spend" | "outside" | "deletes"> = [];
+  if (classes.has("money")) kinds.push("spend");
+  // Mail and calendars reach whoever they're addressed to.
+  if (classes.has("public") || connector === "Gmail" || connector === "Google Calendar") kinds.push("outside");
+  if (classes.has("destructive")) kinds.push("deletes");
+  return kinds;
 }
 
 /** Is a web host one of Wandr's own (a domain from internalAddresses, or a subdomain)? */
@@ -477,7 +558,20 @@ export function isInternalHost(host: string, internal: string[]): boolean {
 
 /** Decide what the gate does with a classified call, given the connector's mode.
  * `tainted`: this thread's session has read connector data. */
-export function decide(c: Classified, opts: { mode: ConnectorMode; shell: "off" | "ask"; tainted?: boolean }): Decision {
+export function decide(
+  c: Classified,
+  opts: {
+    mode: ConnectorMode;
+    shell: "off" | "ask";
+    tainted?: boolean;
+    /** The connector's autonomy (integrations.ts autonomyFor). Missing: every sensitive kind asks. */
+    autonomy?: KindAutonomy;
+    /** money: the call keeps this connector's spending under its monthly cap (spend/guard.ts). */
+    withinCap?: boolean;
+    /** money: a line for the card when it asks ("Planned $410 a month after this; the cap is $500"). */
+    spendNote?: string | null;
+  },
+): Decision {
   switch (c.cls) {
     case "builtin":
     case "workspace":
@@ -496,16 +590,15 @@ export function decide(c: Classified, opts: { mode: ConnectorMode; shell: "off" 
       break;
   }
   const label = c.connector ?? "This connector";
-  // Mercury and anything money: never more than "ask".
-  const mode: ConnectorMode = c.cls === "money" && opts.mode === "auto" ? "ask" : opts.mode;
+  const mode = opts.mode;
   if (mode === "off") return { action: "deny", reason: `Tethr approval gate: ${label} is turned off in Tethr's Integrations.` };
   if (c.cls === "read") return { action: "allow" };
   if (mode === "read") return { action: "deny", reason: `Tethr approval gate: ${label} is read-only in Tethr, so this was not done — ${c.summary}.` };
   if (c.cls === "draft") return { action: "allow" };
-  if (mode === "auto" && c.cls === "write") return { action: "allow", note: "auto" };
+  if (mode === "auto" && runsOnItsOwn(c, opts.autonomy, opts.withinCap === true)) return { action: "allow", note: "auto" };
   const why =
     c.cls === "money"
-      ? " (moves money)"
+      ? ` (spends money${opts.spendNote ? `; ${opts.spendNote}` : ""})`
       : c.cls === "public"
         ? " (goes outside the company)"
         : c.cls === "medical"
@@ -514,6 +607,17 @@ export function decide(c: Classified, opts: { mode: ConnectorMode; shell: "off" 
             ? " (deletes or overwrites)"
             : "";
   return { action: "ask", reason: `Tethr approval gate: waiting for approval in tethr${why} — ${c.summary}.` };
+}
+
+/** Under Automatic: does this kind of call run without asking? Medical never does. */
+function runsOnItsOwn(c: Classified, autonomy: KindAutonomy | undefined, withinCap: boolean): boolean {
+  if (c.cls === "write") return true;
+  if (!autonomy) return false;
+  if (c.cls === "public") return autonomy.outside === "auto";
+  // Nothing in an ad account is deleted without a person's yes.
+  if (c.cls === "destructive") return autonomy.deletes === "auto" && !c.adPlatform;
+  if (c.cls === "money") return autonomy.spend.mode === "auto" && autonomy.spend.monthlyCapUsd !== null && withinCap;
+  return false;
 }
 
 function builtinSummary(tool: string, args: Record<string, unknown>): string {

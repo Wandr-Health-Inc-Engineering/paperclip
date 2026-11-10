@@ -90,7 +90,8 @@ export interface Connection {
 /** Everything a job can depend on, with where each stands now. */
 export function connections(companyId: string): Connection[] {
   const cfg = getIntegrations(companyId);
-  const labels = [...new Set([...KNOWN_CONNECTORS.map((c) => c.label), ...Object.keys(cfg.connectors)])].filter((label) => label !== TETHR_TOOLS);
+  // Google Ads is listed once, below: it works when its settings are in place, whatever its mode.
+  const labels = [...new Set([...KNOWN_CONNECTORS.map((c) => c.label), ...Object.keys(cfg.connectors)])].filter((label) => label !== TETHR_TOOLS && label !== GOOGLE_ADS);
   const connectors = labels.map((label): Connection => {
     const mode = modeFor(cfg, label);
     const seen = (cfg.discovered?.connectors[label]?.length ?? 0) > 0;
@@ -108,13 +109,18 @@ export function connections(companyId: string): Connection[] {
     };
   });
   const ads = googleAdsConfigured();
+  const adsMode = modeFor(cfg, GOOGLE_ADS);
+  const changes =
+    adsMode === "auto" || adsMode === "ask"
+      ? `tethr can change campaigns with the ads_ tools (${adsMode === "auto" ? "on its own; spending follows its Spending setting" : "each change asks first"})`
+      : "tethr can't change campaigns (Google Ads is Read only in Integrations); a person makes changes";
   return [
     ...connectors,
     {
       key: GOOGLE_ADS,
       ok: ads,
       detail: ads
-        ? "connected: account reports (google_ads_report) and keyword volumes (keyword_ideas), read-only. tethr can't change campaigns; a person launches them"
+        ? `connected: account reports (google_ads_report) and keyword volumes (keyword_ideas). ${changes}`
         : "not set up: the GOOGLE_ADS_* settings are missing, so there are no account reports or keyword volumes",
       fixKey: FIX_KEYS[GOOGLE_ADS]!,
       seen: ads,

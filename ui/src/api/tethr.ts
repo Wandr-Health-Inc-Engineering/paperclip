@@ -507,8 +507,42 @@ export interface TethrIntegrationConnector {
   scopeHint: string | null;
   toolsKnown: number;
   toolsSeen: number;
-  /** Mercury: never Auto. */
-  moneyOnly: boolean;
+  /** Under Automatic: which sensitive kinds run on their own. */
+  autonomy: TethrConnectorAutonomy;
+  /** The sensitive kinds this connector can do at all (only these are shown). */
+  kinds: Array<"spend" | "outside" | "deletes">;
+  /** tethr reads this account's planned spend, so the cap is checked against the account itself. */
+  readsAccount: boolean;
+}
+
+export type TethrKindMode = "ask" | "auto";
+export interface TethrConnectorAutonomy {
+  spend: { mode: TethrKindMode; monthlyCapUsd: number | null };
+  outside: TethrKindMode;
+  deletes: TethrKindMode;
+}
+
+/** One thing tethr did in a connector, on its own or with an approval. */
+export interface TethrConnectorChange {
+  id: string;
+  at: string;
+  connector: string;
+  tool: string;
+  summary: string;
+  cls: string;
+  how: "auto" | "approved";
+  by: string;
+  amount: number | null;
+  ok: boolean | null;
+}
+
+export interface TethrConnectorActivity {
+  label: string;
+  cap: number | null;
+  planned: { amount: number; currency: string } | null;
+  plannedError: string | null;
+  spentThisMonth: number;
+  recent: TethrConnectorChange[];
 }
 
 /** Phase 23: how tethr may grow its team. */
@@ -539,7 +573,7 @@ export interface TethrIntegrations {
 
 export interface TethrIntegrationsPatch {
   defaultMode?: TethrConnectorMode;
-  connectors?: Record<string, { mode: TethrConnectorMode; scope?: string }>;
+  connectors?: Record<string, { mode?: TethrConnectorMode; scope?: string; autonomy?: TethrConnectorAutonomy }>;
   internalAddresses?: string[];
   shell?: "off" | "ask";
   assistant?: { engine?: "session" | "routing"; model?: string };
@@ -975,6 +1009,7 @@ export const tethrKeys = {
   team: (c: string) => ["tethr", c, "team"] as const,
   needsYou: (c: string) => ["tethr", c, "needs-you"] as const,
   integrations: (c: string) => ["tethr", c, "integrations"] as const,
+  connectorActivity: (c: string, label: string) => ["tethr", c, "integrations", "activity", label] as const,
   env: (c: string) => ["tethr", c, "env"] as const,
   goals: (c: string) => ["tethr", c, "goals"] as const,
   setup: (c: string) => ["tethr", c, "setup"] as const,
@@ -1117,6 +1152,7 @@ export const tethrApi = {
   sendChatMessage: (c: string, threadId: string, text: string, attachments: string[] = []) =>
     api.post<{ routeRunId: string; threadId: string }>(`/tethr/${c}/chats/${threadId}/messages`, { text, attachments }),
   integrations: (c: string) => api.get<TethrIntegrations>(`/tethr/${c}/integrations`),
+  connectorActivity: (c: string, label: string) => api.get<TethrConnectorActivity>(`/tethr/${c}/integrations/${encodeURIComponent(label)}/activity`),
   /** Phase 20: goals with numbers, and tethr's setup (onboarding). */
   goals: (c: string) => api.get<TethrGoalsView>(`/tethr/${c}/goals`),
   saveGoal: (c: string, body: Record<string, unknown>) => api.post<TethrGoal>(`/tethr/${c}/goals`, body),

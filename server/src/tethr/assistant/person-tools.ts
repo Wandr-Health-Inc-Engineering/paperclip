@@ -5,7 +5,12 @@ import { logFailure } from "../best-effort.js";
 import { chatHref, isTainted } from "../chats.js";
 import { connections, findConnection } from "../connections.js";
 import { orgService } from "../org.js";
-import { checkCleanup, cleanupCardBody, cleanupDestination, CLEANUP_LIMITS } from "./cleanup.js";
+import { applyCleanup, checkCleanup, cleanupCardBody, cleanupDestination, CLEANUP_LIMITS } from "./cleanup.js";
+import { autonomyFor, getIntegrations, modeFor } from "../integrations.js";
+import { recordChange } from "../spend/log.js";
+
+/** The Integrations label of tethr's own tools (tethr-tools.ts TETHR_TOOLS_LABEL; not imported, which would be a cycle). */
+const TETHR_TOOLS = "Tethr tools";
 import { ChecklistInputError, createChecklist, parseChecklist } from "./checklists.js";
 import { personalHealthReason } from "../screen.js";
 import { teamService } from "../team.js";
@@ -205,8 +210,29 @@ async function deleteFiles(args: Record<string, unknown>, ctx: TethrToolContext 
   const router = member ? null : await orgService(ctx.db).getRouterProfile(ctx.companyId);
   const agentId = member?.agentId ?? router?.agent.id;
   if (!agentId) return { text: "delete_files isn't available here.", isError: true };
-  const { gatingService } = await import("../gating.js");
   const files = ok.map((f) => f.rel);
+  // Tethr tools on Automatic with deletes set to run on their own: move them now
+  // (still to the archive, never erased) instead of asking.
+  const cfg = getIntegrations(ctx.companyId);
+  if (modeFor(cfg, TETHR_TOOLS) === "auto" && autonomyFor(cfg, TETHR_TOOLS).deletes === "auto") {
+    const { moved, missing } = await applyCleanup({ files, why }, ctx.workspaceDir);
+    await recordChange(ctx.companyId, {
+      connector: TETHR_TOOLS,
+      tool: "delete_files",
+      summary: `Moved ${moved.length} file${moved.length === 1 ? "" : "s"} to the archive: ${why}`,
+      cls: "destructive",
+      how: "auto",
+      by: member?.tag ?? "@tethr",
+      amount: null,
+      hash: null,
+      ok: moved.length > 0,
+    }).catch(() => {});
+    return {
+      text: `Moved ${moved.length} file${moved.length === 1 ? "" : "s"} to the archive (${cleanupDestination(ctx.workspaceDir)}); nothing was erased.${missing.length || problems.length ? ` Left out: ${[...problems, ...missing].join(" ")}` : ""}`,
+      meta: { moved: moved.length },
+    };
+  }
+  const { gatingService } = await import("../gating.js");
   const output = await gatingService(ctx.db).createOutput({
     companyId: ctx.companyId,
     agentId,
@@ -215,7 +241,7 @@ async function deleteFiles(args: Record<string, unknown>, ctx: TethrToolContext 
     kind: "drive_change",
     title: `Delete ${files.length === 1 ? files[0]!.split("/").pop() : `${files.length} files`} from tethr's folder`,
     body: cleanupCardBody(ok, why, cleanupDestination(ctx.workspaceDir)),
-    // Destructive: always a person's yes, never automatic.
+    // Destructive: a person's yes (Tethr tools' Deleting setting can make it automatic, above).
     sensitivity: "destructive",
     meta: { cleanup: { files, why }, threadId: ctx.threadId },
   });

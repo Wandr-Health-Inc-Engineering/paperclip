@@ -2,6 +2,7 @@ import { AGENT_ICON_NAMES } from "@paperclipai/shared";
 import { METRIC_SOURCES, METRIC_UNITS } from "./goals.js";
 import { inferOverseerRole, OVERSEER_ROLES, type OverseerRole } from "./overseers.js";
 import { validCron } from "./setup.js";
+import { GOOGLE_ADS_WRITE_TOOLS, nativeConnectorOf } from "./native-connectors.js";
 
 // Phase 23-24: the spec of an agent on tethr's team, and the words around it.
 // No DB here: validation, the schedule in plain words, the approval card's
@@ -591,10 +592,17 @@ export function connectorServer(label: string): string {
  */
 export function agentDenyRules(allowed: string[], labels: string[], opts: { lead?: boolean; otherTethrTools?: string[] } = {}): string[] {
   const hasTethrTools = allowed.includes("Tethr tools");
-  const rules = labels.filter((label) => label !== "Tethr tools" && !allowed.includes(label)).map((label) => `mcp__${connectorServer(label)}`);
+  // A connector whose tools tethr runs itself (Google Ads) is denied by its tool names, not a server.
+  const rules = labels
+    .filter((label) => label !== "Tethr tools" && !allowed.includes(label))
+    .flatMap((label) => (label === "Google Ads" ? GOOGLE_ADS_WRITE_TOOLS.map((t) => `mcp__tethr__${t}`) : [`mcp__${connectorServer(label)}`]));
   if (!hasTethrTools) {
     // Without the list of the other tools there's no way to deny them one by one: deny the whole server.
-    if (opts.otherTethrTools) rules.push(...opts.otherTethrTools.filter((name) => !isAlwaysTool(name)).map((name) => `mcp__tethr__${name}`));
+    const ownConnector = (name: string) => {
+      const connector = nativeConnectorOf(name);
+      return !!connector && allowed.includes(connector);
+    };
+    if (opts.otherTethrTools) rules.push(...opts.otherTethrTools.filter((name) => !isAlwaysTool(name) && !ownConnector(name)).map((name) => `mcp__tethr__${name}`));
     else rules.push("mcp__tethr");
   }
   if (!opts.lead) rules.push(...TEAM_TOOL_NAMES.map((name) => `mcp__tethr__${name}`));

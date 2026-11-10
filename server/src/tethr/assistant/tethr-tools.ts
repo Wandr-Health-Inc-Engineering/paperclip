@@ -14,6 +14,7 @@ import { MEMORY_TOOL_DEFS, MEMORY_TOOL_SET, runMemoryTool } from "./memory-tools
 import { MAP_TOOL_DEFS, MAP_TOOL_SET, runMapTool } from "./map-tools.js";
 import { LEARN_TOOL_DEFS, LEARN_TOOL_SET, runLearnTool } from "./learn-tools.js";
 import { PERSON_TOOL_DEFS, PERSON_TOOL_SET, runPersonTool } from "./person-tools.js";
+import { ADS_TOOL_DEFS, ADS_TOOL_SET, runAdsTool } from "./ads-tools.js";
 
 export { parseCsv, toCsv };
 
@@ -121,12 +122,13 @@ export const TETHR_TOOL_DEFS: McpToolDef[] = [
   {
     name: "google_ads_report",
     description:
-      "Read-only numbers from the company's Google Ads account: report is overview (spend, clicks, conversions, cost per conversion), campaigns, keywords or search_terms; days is the lookback (default 30). Use it for what the ads actually did; keyword_ideas is for search volumes before spending. It can't change campaigns, budgets or bids: a person makes changes, so hand them a checklist (the checklist tool) with the exact settings to enter.",
+      "Read-only numbers from the company's Google Ads account: report is overview (spend, clicks, conversions, cost per conversion), campaigns, keywords, search_terms, or structure (every campaign's id, status and daily budget; with campaign_id, its ad groups, keywords and ads with their ids). days is the lookback (default 30). Use it for what the ads actually did, and before any change; keyword_ideas is for search volumes before spending. To change the account use the ads_ tools when you have them; without them a person makes changes, so hand them a checklist (the checklist tool) with the exact settings to enter.",
     inputSchema: {
       type: "object",
       properties: {
-        report: { type: "string", enum: ["overview", "campaigns", "keywords", "search_terms"] },
+        report: { type: "string", enum: ["overview", "campaigns", "keywords", "search_terms", "structure"] },
         days: { type: "number", description: "Lookback in days, 1 to 365 (default 30)." },
+        campaign_id: { type: "string", description: "structure only: show one campaign's ad groups, keywords and ads." },
       },
       required: ["report"],
     },
@@ -208,6 +210,8 @@ export const TETHR_TOOL_DEFS: McpToolDef[] = [
   ...MAP_TOOL_DEFS,
   ...LEARN_TOOL_DEFS,
   ...PERSON_TOOL_DEFS,
+  // Google Ads' own connector: listed only while Google Ads can change things (routes/tethr.ts).
+  ...ADS_TOOL_DEFS,
 ];
 
 // ---- criteria --------------------------------------------------------------
@@ -701,6 +705,7 @@ export async function runTethrTool(name: string, args: unknown, ctx: TethrToolCo
     if (MAP_TOOL_SET.has(name)) return await runMapTool(name, a, ctx);
     if (LEARN_TOOL_SET.has(name)) return await runLearnTool(name, a, ctx);
     if (PERSON_TOOL_SET.has(name)) return await runPersonTool(name, a, ctx);
+    if (ADS_TOOL_SET.has(name)) return await runAdsTool(name, a, ctx);
     return { text: `There's no Tethr tool called ${name}.`, isError: true };
   } catch (err) {
     if (err instanceof GoalInputError) return { text: `${name}: ${err.message}`, isError: true };

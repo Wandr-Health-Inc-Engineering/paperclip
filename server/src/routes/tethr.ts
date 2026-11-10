@@ -46,7 +46,7 @@ import { memoryToolRefusal } from "../tethr/assistant/memory-tools.js";
 import { memoryBackend } from "../tethr/hermes/memory-layer.js";
 import { handlePostToolUse, handlePreToolUse } from "../tethr/assistant/hook-handler.js";
 import { runTethrTool, TETHR_TOOL_DEFS, TETHR_TOOLS_LABEL, TETHR_TOOLS_SERVER } from "../tethr/assistant/tethr-tools.js";
-import { classify, decide } from "../tethr/assistant/policy.js";
+import { classify, decide, kindsForConnector } from "../tethr/assistant/policy.js";
 import { AGENT_ALWAYS_TOOLS, agentToolRefusal, TEAM_TOOL_NAMES, TeamInputError } from "../tethr/team-spec.js";
 import { answerQuestion, answerText, closeQuestionsAnsweredInChat, getQuestion, QuestionInputError, questionsByRun } from "../tethr/assistant/questions.js";
 import { checklistDismissedNote, checklistDoneText, ChecklistInputError, checklistsByRun, dismissChecklist, getChecklist, setChecklistStep } from "../tethr/assistant/checklists.js";
@@ -69,7 +69,13 @@ import { seedTethrCore } from "../tethr/seed/tethr-core.js";
 import { logFailure } from "../tethr/best-effort.js";
 import { mirrorDir } from "../tethr/mirror.js";
 import multer from "multer";
-import { getIntegrations, KNOWN_CONNECTORS, modeFor, sanitizeIntegrationsPatch, updateIntegrations } from "../tethr/integrations.js";
+import { autonomyFor, getIntegrations, KNOWN_CONNECTORS, modeFor, sanitizeIntegrationsPatch, updateIntegrations } from "../tethr/integrations.js";
+import { nativeConnectorOf } from "../tethr/native-connectors.js";
+import { checkSpend } from "../tethr/spend/guard.js";
+import { recentChanges, recordChange, spentThisMonth } from "../tethr/spend/log.js";
+import { spendAdapterFor } from "../tethr/spend/adapters.js";
+import { claimApprovedCall, inputHash } from "../tethr/assistant/grants.js";
+import { adsBackend } from "../tethr/tools/google-ads-write.js";
 import {
   interpretSlackEvent,
   routeInboundKickoff,
@@ -179,15 +185,29 @@ export function tethrRoutes(db: Db) {
       // tethr: everything. A lead: its team tools, plus the rest if it has "Tethr tools". Any other agent: no team tools.
       // Memory tools only where they work (phase 25: Hermes-only ones, never in a private turn).
       const backend = memoryBackend(ctx.companyId);
+      const listCfg = getIntegrations(ctx.companyId);
+      // A tool that is its own connector (Google Ads' changes) is listed only while
+      // that connector can change things, and only to an agent given it.
+      const nativeOk = (name: string) => {
+        const connector = nativeConnectorOf(name);
+        if (!connector) return true;
+        const mode = modeFor(listCfg, connector);
+        return (mode === "ask" || mode === "auto") && (connector !== "Google Ads" || adsBackend().configured()) && (!member || member.connectors.includes(connector));
+      };
       const tools = (
         !member
           ? TETHR_TOOL_DEFS
           : member.sandbox
             ? TETHR_TOOL_DEFS.filter((d) => SANDBOX_TOOLS.has(d.name))
             : TETHR_TOOL_DEFS.filter((d) =>
-                isTeamTool(d.name) ? member.lead : (AGENT_ALWAYS_TOOLS as readonly string[]).includes(d.name) || member.connectors.includes(TETHR_TOOLS_LABEL),
+                isTeamTool(d.name)
+                  ? member.lead
+                  : nativeConnectorOf(d.name)
+                    ? true
+                    : (AGENT_ALWAYS_TOOLS as readonly string[]).includes(d.name) || member.connectors.includes(TETHR_TOOLS_LABEL),
               )
       )
+        .filter((d) => nativeOk(d.name))
         .filter((d) => !memoryToolRefusal(d.name, { private: ctx.privateTurn === true, member }, backend))
         .filter((d) => ctx.privateTurn !== true || readOnly(d.name));
       res.json({ tools });
@@ -204,17 +224,27 @@ export function tethrRoutes(db: Db) {
     // happens, whoever holds the turn's token.
     const cfg = getIntegrations(ctx.companyId);
     const args = body.arguments && typeof body.arguments === "object" && !Array.isArray(body.arguments) ? (body.arguments as Record<string, unknown>) : {};
-    const classified = classify(`mcp__${TETHR_TOOLS_SERVER}__${name}`, args, {
+    const fullName = `mcp__${TETHR_TOOLS_SERVER}__${name}`;
+    let classified = classify(fullName, args, {
       workspaceDir: workspaceDir().dir,
       readableRoots: readableRoots(),
       internalAddresses: cfg.internalAddresses,
     });
-    const decision = decide(classified, { mode: modeFor(cfg, TETHR_TOOLS_LABEL), shell: cfg.shell });
+    // A tool that is its own connector (Google Ads) follows that connector's mode,
+    // autonomy and spending cap, exactly as the PreToolUse gate decided.
+    const connector = classified.connector ?? TETHR_TOOLS_LABEL;
+    const autonomy = autonomyFor(cfg, connector);
+    const spend = connector !== TETHR_TOOLS_LABEL && (classified.cls === "money" || classified.cls === "write") ? await checkSpend(ctx.companyId, classified, args, autonomy) : null;
+    if (spend) classified = spend.classified;
+    const decision = decide(classified, { mode: modeFor(cfg, connector), shell: cfg.shell, autonomy, withinCap: spend?.withinCap, spendNote: spend?.spendNote });
+    const hash = inputHash(fullName, args);
+    // The gate held it for a person and they approved it: the grant it just used lets it run here, once.
+    const approved = decision.action === "ask" && connector !== TETHR_TOOLS_LABEL ? !!(await claimApprovedCall(db, ctx.companyId, ctx.threadId, hash)) : false;
     const refusal =
-      (member?.sandbox ? sandboxRefusal(member.tag, `mcp__${TETHR_TOOLS_SERVER}__${name}`) : null) ??
-      (member ? agentToolRefusal(member, `mcp__${TETHR_TOOLS_SERVER}__${name}`, TETHR_TOOLS_LABEL) : null) ??
+      (member?.sandbox ? sandboxRefusal(member.tag, fullName) : null) ??
+      (member ? agentToolRefusal(member, fullName, connector) : null) ??
       (ctx.privateTurn === true && classified.cls !== "read" ? `Tethr approval gate: blocked. ${name} isn't available in this one-off check.` : null);
-    if (decision.action !== "allow" || refusal) {
+    if ((decision.action !== "allow" && !approved) || refusal) {
       const text = refusal ?? (decision.action === "deny" ? decision.reason : `Tethr approval gate: ${name} can't run from here.`);
       res.json({ content: [{ type: "text", text }], isError: true });
       return;
@@ -236,6 +266,19 @@ export function tethrRoutes(db: Db) {
       entityId: ctx.runId,
       details: { tool: name, ok: result.isError !== true, file: result.file ?? null, ...(result.meta ?? {}) },
     }).catch(() => {});
+    if (connector !== TETHR_TOOLS_LABEL && classified.cls !== "read") {
+      await recordChange(ctx.companyId, {
+        connector,
+        tool: name,
+        summary: classified.summary,
+        cls: classified.cls,
+        how: approved ? "approved" : "auto",
+        by: member?.tag ?? "@tethr",
+        amount: spend?.amount ?? null,
+        hash,
+        ok: result.isError !== true,
+      }).catch(() => {});
+    }
     res.json({ content: [{ type: "text", text: result.text }], isError: result.isError === true });
   });
 
@@ -945,10 +988,40 @@ export function tethrRoutes(db: Db) {
           scopeHint: known?.scopeHint ?? null,
           toolsKnown: known?.tools ?? 0,
           toolsSeen: seen[label]?.length ?? 0,
-          moneyOnly: label === "Mercury",
+          // What it may do on its own once it's on Automatic, and which of those kinds it can do at all.
+          autonomy: autonomyFor(cfg, label),
+          kinds: kindsForConnector(label),
+          // tethr can read this account's planned spend (the cap is checked against the account).
+          readsAccount: !!spendAdapterFor(label),
         };
       }),
       discoveredAt: cfg.discovered?.at ?? null,
+    });
+  });
+
+  // One connector's spending against its cap, and what tethr did there lately.
+  router.get("/tethr/:companyId/integrations/:label/activity", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const label = String(req.params.label ?? "").slice(0, 80);
+    const cfg = getIntegrations(companyId);
+    const adapter = spendAdapterFor(label);
+    let planned: { amount: number; currency: string } | null = null;
+    let plannedError: string | null = null;
+    if (adapter) {
+      try {
+        planned = await adapter.plannedMonthly();
+      } catch (err) {
+        plannedError = err instanceof Error ? err.message.slice(0, 200) : "couldn't read the account";
+      }
+    }
+    res.json({
+      label,
+      cap: autonomyFor(cfg, label).spend.monthlyCapUsd,
+      planned,
+      plannedError,
+      spentThisMonth: spentThisMonth(companyId, label),
+      recent: recentChanges(companyId, label, 20),
     });
   });
 
@@ -1085,7 +1158,10 @@ export function tethrRoutes(db: Db) {
     }
     const patch = sanitizeIntegrationsPatch((req.body ?? {}) as Record<string, unknown>);
     const current = getIntegrations(companyId);
-    if (patch.connectors) patch.connectors = { ...current.connectors, ...patch.connectors };
+    // Each connector's patch fills in from what it has now (a default included), so changing only its autonomy keeps its mode.
+    if (patch.connectors) {
+      patch.connectors = Object.fromEntries(Object.entries(patch.connectors).map(([label, p]) => [label, { ...current.connectors[label], ...p }])) as typeof patch.connectors;
+    }
     if (patch.assistant) patch.assistant = { ...current.assistant, ...patch.assistant };
     const cfg = await updateIntegrations(companyId, patch);
     await logActivity(db, {
