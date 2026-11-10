@@ -194,14 +194,15 @@ export async function answerQuestion(
   return answered!;
 }
 
-/** The person wrote in the chat instead of using a card: that's their answer to what was open there. */
+/** The person wrote in the chat instead of using a card: that's their answer to what was open there.
+ * A connection card stays: it's a fact to fix, and typing doesn't connect anything. */
 export async function closeQuestionsAnsweredInChat(companyId: string, threadId: string, by: string, now = new Date()): Promise<number> {
-  if (!openQuestions(companyId, { threadId }).length) return 0;
+  if (!openQuestions(companyId, { threadId }).some((q) => !q.connection)) return 0;
   let closed = 0;
   await questionStore.update(companyId, (s) => ({
     ...s,
     questions: (s.questions ?? []).map((q) => {
-      if (q.status !== "open" || q.threadId !== threadId) return q;
+      if (q.status !== "open" || q.threadId !== threadId || q.connection) return q;
       closed += 1;
       return { ...q, status: "answered" as const, answer: { choice: null, comment: null, by, at: now.toISOString(), via: "chat" as const } };
     }),

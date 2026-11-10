@@ -444,6 +444,8 @@ describePg("an agent waits on a missing connection, and spends nothing until it'
     // A saved setting doesn't clear it: only a person's word does.
     expect((await request(appFor(PERSON)).post(`/api/tethr/${companyId}/team/recheck`).send({}).expect(200)).body).toEqual({ closed: 0, startedTasks: 0 });
 
+    // Writing to the agent doesn't make the connection card go away: typing connects nothing.
+    await request(appFor(PERSON)).post(`/api/tethr/${companyId}/chats/${agent.threadId}/messages`).send({ text: "How's it going?" }).expect(200);
     const [card] = openQuestions(companyId, { agentTag: agent.tag });
     expect(card).toMatchObject({ connection: { key: "PostHog" }, detail: expect.stringContaining("It asks for authorization") });
     const done = await answer(card!.id, { choice: "without" }).expect(200);
