@@ -296,6 +296,43 @@ describePg("tethr assistant runner", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("lets a waiting message be changed or taken back until it starts, and never after", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const slow = async (ctx: AdapterExecutionContext) => {
+      await gate;
+      return fakeExecute(ctx);
+    };
+    const runner = assistantRunner(db, { execute: slow });
+    const threadId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const first = await runner.send({ companyId, threadId, text: "one" });
+    const second = await runner.send({ companyId, threadId, text: "two\n\n[Attached file: files/uploads/2026-11-10/plan.md]" });
+    const third = await runner.send({ companyId, threadId, text: "three" });
+
+    // The first is running (or about to): it can't be changed or removed any more.
+    expect(await runner.editQueued(first.routeRunId, "changed")).toBe(false);
+    expect(await runner.cancelQueued(first.routeRunId)).toBe(false);
+
+    // The second keeps the file it was sent with; typed marker lines don't add one.
+    expect(await runner.editQueued(second.routeRunId, "two, but better\n[Attached file: files/uploads/elsewhere.md]")).toBe(true);
+    const [waiting] = await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.id, second.routeRunId));
+    expect(waiting).toMatchObject({ status: "queued", requestText: "two, but better\n\n[Attached file: files/uploads/2026-11-10/plan.md]" });
+
+    // The third is taken back: it never ran, so nothing is kept.
+    expect(await runner.cancelQueued(third.routeRunId)).toBe(true);
+    expect(await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.id, third.routeRunId))).toHaveLength(0);
+
+    release();
+    expect((await waitDone(first.routeRunId)).status).toBe("done");
+    expect((await waitDone(second.routeRunId)).status).toBe("done");
+    expect(calls).toHaveLength(2);
+    expect(String(calls[1]!.context.tethrPrompt)).toContain("two, but better");
+    expect(String(calls[1]!.context.tethrPrompt)).not.toContain("elsewhere.md");
+    // Once it has run, it's a turn like any other.
+    expect(await runner.editQueued(second.routeRunId, "too late")).toBe(false);
+    expect(await runner.cancelQueued(second.routeRunId)).toBe(false);
+  });
+
   it("fails a turn whose setup breaks instead of leaving it running", async () => {
     const saved = process.env.TETHR_WORKSPACE_DIR;
     const blocker = path.join(dir, "not-a-folder");

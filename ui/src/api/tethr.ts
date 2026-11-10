@@ -506,6 +506,8 @@ export interface TethrTeamAgent {
   name: string;
   title: string;
   mission: string;
+  /** The icon that stands for its job. */
+  icon: string | null;
   paused: boolean;
   /** Its own chat (open with ?chat=<threadId>). */
   threadId: string;
@@ -1167,6 +1169,9 @@ export const tethrApi = {
     api.put<{ ok: boolean }>(`/tethr/${c}/integrations`, patch),
   stopChatTurn: (c: string, runId: string) =>
     api.post<{ stopped: boolean }>(`/tethr/${c}/chat-turns/${runId}/stop`, {}),
+  /** A message still waiting behind another turn: change its words, or take it back. 409 once it has started. */
+  editQueuedTurn: (c: string, runId: string, text: string) => api.patch<{ ok: true }>(`/tethr/${c}/chat-turns/${runId}`, { text }),
+  removeQueuedTurn: (c: string, runId: string) => api.delete<{ ok: true }>(`/tethr/${c}/chat-turns/${runId}`),
   resetChatSession: (c: string, threadId: string) =>
     api.post<{ reset: boolean }>(`/tethr/${c}/chats/${threadId}/reset`, {}),
   outputs: (c: string, status?: string) =>

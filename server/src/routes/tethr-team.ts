@@ -59,6 +59,7 @@ export function tethrTeamRoutes(db: Db): Router {
           name: a.name,
           title: a.title,
           mission: a.mission,
+          icon: a.icon,
           paused: a.paused,
           threadId: a.threadId,
           lead: a.lead,

@@ -6,9 +6,9 @@ import { cn } from "@/lib/utils";
  * Monochrome (currentColor), so it reads in Day and Night. Styles:
  * `.tethr-nebula*` in tethr-theme.css; reduced motion shows it still.
  */
-export function Nebula({ className }: { className?: string }) {
+export function Nebula({ className, still = false }: { className?: string; /** Hold it still: the mark at rest (the chat's avatar when tethr isn't working). */ still?: boolean }) {
   return (
-    <span className={cn("tethr-nebula", className)} aria-hidden="true">
+    <span className={cn("tethr-nebula", still && "tethr-nebula-still", className)} aria-hidden="true">
       <span className="tethr-nebula-cloud" />
       <span className="tethr-nebula-cloud tethr-nebula-cloud-inner" />
       <span className="tethr-nebula-core" />

@@ -67,6 +67,8 @@ export interface TeamAgent {
   goalTitle: string | null;
   /** Phase 26.6: works in a sealed room (the learner): its own folder, no memory, no connectors. */
   sandbox: boolean;
+  /** The icon that stands for its job (a core agent icon name). */
+  icon: string | null;
 }
 
 /** The fields of a team agent's adapterConfig. */
@@ -204,6 +206,7 @@ export function teamService(db: Db) {
       goalId: config.goalId ?? null,
       goalTitle: config.goalId ? (goalTitles.get(config.goalId) ?? null) : null,
       sandbox: config.sandbox === true,
+      icon: row.agent.icon ?? null,
     };
   }
 

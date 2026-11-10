@@ -718,6 +718,57 @@ export function tethrRoutes(db: Db) {
     res.json(await getAssistantRunner(db).send({ companyId, threadId, text, requestedByUserId }));
   });
 
+  // Phase 27: a message sent while tethr is still working waits its turn. Until it
+  // starts, the person who sent it can change its words or take it back.
+  const waitingMessage = async (req: Request, res: Response): Promise<{ companyId: string; runId: string } | null> => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return null;
+    const runId = req.params.runId as string;
+    const [run] = await db.select().from(tethrRouteRuns).where(and(eq(tethrRouteRuns.id, runId), eq(tethrRouteRuns.companyId, companyId)));
+    if (!run) {
+      res.status(404).json({ error: "Message not found" });
+      return null;
+    }
+    // Only a person's own message: a turn tethr started (a task, a check-in) isn't theirs to rewrite.
+    if (run.invocationSource !== "chat" || run.sourceKey !== null) {
+      res.status(409).json({ error: "Only a message you sent can be changed." });
+      return null;
+    }
+    return { companyId, runId };
+  };
+  const ALREADY_STARTED = "tethr has already started on this one.";
+  const MAX_CHAT_MESSAGE_CHARS = 40_000;
+
+  router.patch("/tethr/:companyId/chat-turns/:runId", async (req, res) => {
+    const target = await waitingMessage(req, res);
+    if (!target) return;
+    const text = String(req.body?.text ?? "").trim();
+    if (!text) {
+      res.status(400).json({ error: "text is required" });
+      return;
+    }
+    if (text.length > MAX_CHAT_MESSAGE_CHARS) {
+      res.status(400).json({ error: "That message is too long." });
+      return;
+    }
+    if (!(await getAssistantRunner(db).editQueued(target.runId, text))) {
+      res.status(409).json({ error: ALREADY_STARTED });
+      return;
+    }
+    res.json({ ok: true });
+  });
+
+  router.delete("/tethr/:companyId/chat-turns/:runId", async (req, res) => {
+    const target = await waitingMessage(req, res);
+    if (!target) return;
+    if (!(await getAssistantRunner(db).cancelQueued(target.runId))) {
+      res.status(409).json({ error: ALREADY_STARTED });
+      return;
+    }
+    res.json({ ok: true });
+  });
+
   router.post("/tethr/:companyId/chat-turns/:runId/stop", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);

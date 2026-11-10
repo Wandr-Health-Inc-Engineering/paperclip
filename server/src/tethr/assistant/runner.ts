@@ -19,6 +19,7 @@ import { agentDenyRules, agentIdentityText, hasReportHeading, TEAM_TOOL_NAMES } 
 import { teamConnectorLabels, teamContextText, teamService, type TeamAgent } from "../team.js";
 import { getRoster } from "../overseers.js";
 import { getSetup } from "../setup.js";
+import { splitAttachments, withAttachments } from "./attachments.js";
 import { applyStreamLine, newTurnState } from "./events.js";
 import { buildSettings, ensureHookScript, issueHookToken, revokeHookToken, writeSettingsFile, type SlackReplyTarget } from "./gate.js";
 import { selfApiUrl } from "../self-url.js";
@@ -110,6 +111,8 @@ export interface PrivateTurnInput {
 const privatePrompts = new Map<string, string>();
 /** Where turns that came from Slack answer (memory only, by run id). */
 const slackTargets = new Map<string, SlackReplyTarget>();
+/** A waiting message's new text (phase 27), until its turn starts or its save lands. */
+const queuedEdits = new Map<string, string>();
 
 /** How a turn uses its thread's Claude session. */
 interface TurnStyle {
@@ -304,6 +307,13 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
   async function runTurn(runId: string): Promise<void> {
     const [row] = await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.id, runId));
     if (!row || TERMINAL.has(row.status)) return;
+    // An edit made while it waited is what runs, even if its own save hasn't landed yet.
+    const edited = queuedEdits.get(runId);
+    if (edited !== undefined) {
+      queuedEdits.delete(runId);
+      row.requestText = edited;
+      await finish(runId, { requestText: edited });
+    }
     const companyId = row.companyId;
     const started = Date.now();
 
@@ -734,6 +744,45 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     }
   }
 
+  /** Where a turn sits while it still waits (not started, not being prepared), or null. */
+  function waitingPlace(runId: string): { queue: string[]; index: number } | null {
+    for (const queue of state.threads.values()) {
+      const index = queue.indexOf(runId);
+      if (index >= 0) return { queue, index };
+    }
+    return null;
+  }
+
+  /**
+   * Phase 27: change a person's message while it still waits behind another turn.
+   * False once it has started. The files it was sent with stay attached. The new
+   * text is kept in memory first (no await between the check and the record), so a
+   * turn that starts a moment later still runs the edit.
+   */
+  async function editQueued(runId: string, text: string): Promise<boolean> {
+    if (!waitingPlace(runId)) return false;
+    const [row] = await db.select({ requestText: tethrRouteRuns.requestText }).from(tethrRouteRuns).where(eq(tethrRouteRuns.id, runId));
+    if (!row || !waitingPlace(runId)) return false;
+    const next = withAttachments(splitAttachments(text).text, splitAttachments(row.requestText).files);
+    queuedEdits.set(runId, next);
+    await db
+      .update(tethrRouteRuns)
+      .set({ requestText: next, updatedAt: new Date() })
+      .where(and(eq(tethrRouteRuns.id, runId), eq(tethrRouteRuns.status, "queued")));
+    return true;
+  }
+
+  /** Phase 27: take a waiting message back. It never ran, so nothing is kept. False once it has started. */
+  async function cancelQueued(runId: string): Promise<boolean> {
+    const place = waitingPlace(runId);
+    if (!place) return false;
+    place.queue.splice(place.index, 1);
+    queuedEdits.delete(runId);
+    slackTargets.delete(runId);
+    await db.delete(tethrRouteRuns).where(and(eq(tethrRouteRuns.id, runId), eq(tethrRouteRuns.status, "queued")));
+    return true;
+  }
+
   /** Stop a queued, starting or running turn. */
   async function stop(runId: string): Promise<boolean> {
     for (const [key, queue] of state.threads) {
@@ -764,7 +813,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     return true;
   }
 
-  return { send, sendPrivate, stop };
+  return { send, sendPrivate, stop, editQueued, cancelQueued };
 }
 
 let singleton: ReturnType<typeof assistantRunner> | null = null;
@@ -788,4 +837,5 @@ export function resetAssistantRunnerForTests() {
   state.running = 0;
   state.stopped.clear();
   state.preparing.clear();
+  queuedEdits.clear();
 }

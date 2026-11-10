@@ -8,7 +8,7 @@ import { and, eq } from "drizzle-orm";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
 import { createDb, tethrMembers, tethrNotifications, tethrOutputs, tethrRouteRuns } from "@paperclipai/db";
 import { seedTethrCore } from "../tethr/seed/tethr-core.ts";
-import { assistantRunner, resetAssistantRunnerForTests, setAssistantRunnerForTests } from "../tethr/assistant/runner.ts";
+import { assistantRunner, getAssistantRunner, resetAssistantRunnerForTests, setAssistantRunnerForTests } from "../tethr/assistant/runner.ts";
 import { resolveHookToken } from "../tethr/assistant/gate.ts";
 import { handlePreToolUse } from "../tethr/assistant/hook-handler.ts";
 import * as chats from "../tethr/chats.ts";
@@ -292,6 +292,40 @@ describePg("Slack and the terminal reach the chat brain", () => {
     expect(saved.paths).toEqual([expect.stringMatching(/^files\/uploads\/\d{4}-\d{2}-\d{2}\/plan\.md$/)]);
     expect(saved.skipped).toEqual([{ name: "setup.exe", why: expect.stringMatching(/reads images, PDFs/) }]);
     expect(fs.readFileSync(path.join(dir, "workspace", saved.paths[0]!), "utf8")).toContain("grow partners");
+  });
+
+  it("a waiting message can be changed or removed in the app: by a person, only their own, only while it waits", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    during = async () => {
+      await gate;
+    };
+    const app = appFor(PERSON);
+    const thread = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const sendText = async (text: string) =>
+      (await request(app).post(`/api/tethr/${companyId}/chats/${thread}/messages`).send({ text }).expect(200)).body.routeRunId as string;
+    const turn = (id: string, company = companyId) => `/api/tethr/${company}/chat-turns/${id}`;
+    const one = await sendText("one");
+    const two = await sendText("two");
+    const three = await sendText("three");
+    const system = (await getAssistantRunner(db).send({ companyId, threadId: thread, text: "Check-in: one report", kind: "system" })).routeRunId;
+
+    await request(appFor({ type: "agent", agentId: "a1", companyId })).patch(turn(two)).send({ text: "x" }).expect(403);
+    await request(app).patch(turn(two)).send({ text: "  " }).expect(400);
+    await request(app).patch(turn(two, "0b0a0c0d-0000-4000-8000-00000000beef")).send({ text: "x" }).expect(404);
+    await request(app).patch(turn(two)).send({ text: "two, edited" }).expect(200);
+    await request(app).delete(turn(three)).expect(200);
+    // The one that's running, and a turn tethr started, aren't theirs to change.
+    await request(app).patch(turn(one)).send({ text: "late" }).expect(409);
+    await request(app).delete(turn(one)).expect(409);
+    await request(app).patch(turn(system)).send({ text: "x" }).expect(409);
+    await request(app).delete(turn(system)).expect(409);
+
+    release();
+    await settle(one);
+    expect((await settle(two)).requestText).toBe("two, edited");
+    await settle(system);
+    expect(await db.select().from(tethrRouteRuns).where(eq(tethrRouteRuns.id, three))).toHaveLength(0);
   });
 
   it("the terminal client and the bell reach the chat brain; an agent's key keeps the classic engine", async () => {

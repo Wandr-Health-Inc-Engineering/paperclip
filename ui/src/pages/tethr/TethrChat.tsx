@@ -53,7 +53,9 @@ import {
   type TethrTeamAgent,
 } from "@/api/tethr";
 import { agentForThread } from "@/lib/tethr-team";
-import { AgentChip, TeamSection } from "./chat/team";
+import { TeamSection } from "./chat/team";
+import { ChatAvatar } from "./chat/avatar";
+import { QueuedTray, waitingBehind } from "./chat/queue";
 import { FileThisButton, InboxCard, LessonCard, UrgencyRow } from "./chat/cards";
 
 // Chat (phase 17, formerly the Console; Mark's model): one ONGOING chat with
@@ -277,9 +279,19 @@ export function TethrChat() {
     return <EmptyState icon={Send} message="Select a company to open the chat." />;
   }
 
-  const visibleRuns = runs ?? [];
-  const showPending = pending && (pending.threadId === threadId || (isDraft && !pending.threadId));
-  const empty = !isLoading && !visibleRuns.length && !showPending;
+  const allRuns = runs ?? [];
+  // A message sent while tethr is still working waits in the tray above the composer,
+  // not in the transcript: one conversation, one progress pill.
+  const queued = waitingBehind(allRuns, TERMINAL);
+  const queuedIds = new Set(queued.map((r) => r.id));
+  const visibleRuns = allRuns.filter((r) => !queuedIds.has(r.id));
+  const threadBusy = allRuns.some((r) => !TERMINAL.has(r.status));
+  const pendingHere = pending && (pending.threadId === threadId || (isDraft && !pending.threadId)) && !allRuns.some((r) => r.id === pending.runId) ? pending : null;
+  // On its way to the server: a bubble when it will start at once, a tray row when it will wait.
+  const showPending = threadBusy ? null : pendingHere;
+  const sendingToQueue = pendingHere && threadBusy ? pendingHere.text : null;
+  const working = threadBusy || !!pendingHere || !!teamAgent?.running;
+  const empty = !isLoading && !allRuns.length && !pendingHere;
 
   const chat = (
     <div
@@ -294,15 +306,11 @@ export function TethrChat() {
     >
       {/* Phones: the chat's controls are a row above the messages, never over them.
           Wider screens: \`contents\`, so they float over the conversation as before. */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 pb-1 pt-1 md:contents">
+      <div className={cn("relative flex shrink-0 flex-wrap items-start gap-2 px-3 pb-1 pt-1 md:contents", isMain ? "min-h-[48px]" : "min-h-[64px]")}>
       <SideChats
         isMain={isMain}
-        isDraft={isDraft}
-        sideTitle={sideChat?.title ?? "Side chat"}
         sideChats={chats?.sideChats ?? []}
         team={team?.agents ?? []}
-        teamAgent={teamAgent}
-        companyId={c}
         proposing={proposeTeam.isPending}
         onProposeTeam={() => proposeTeam.mutate()}
         activeThreadId={threadId}
@@ -312,7 +320,12 @@ export function TethrChat() {
         onRemoveSide={(id) => removeChat.mutate(id)}
       />
 
-      {threadId && !isDraft && visibleRuns.length ? (
+      {/* Who you're talking to: centred over the conversation, on phones and wider screens alike. */}
+      <div className="pointer-events-none absolute inset-x-0 top-1 z-20 flex justify-center">
+        <ChatAvatar working={working} agent={teamAgent} caption={isMain || teamAgent ? null : isDraft ? "New side chat" : (sideChat?.title ?? "Side chat")} companyId={c} />
+      </div>
+
+      {threadId && !isDraft && allRuns.length ? (
         <div className="ml-auto flex shrink-0 items-center gap-2 md:absolute md:right-0 md:top-1 md:z-20">
           {resetNote ? (
             <span className="tethr-glass rounded-full px-3 py-1.5 text-[12px]">
@@ -342,8 +355,9 @@ export function TethrChat() {
       ) : null}
 
       {isMain ? (
-        // Phones: its own line under the controls. Wider screens: centered in the bar.
-        <div className="order-last flex w-full justify-center empty:hidden md:absolute md:left-1/2 md:top-1 md:z-20 md:w-auto md:-translate-x-1/2">
+        // Shown only while setup isn't done. Phones: its own line under the controls.
+        // Wider screens: beside the start-over button.
+        <div className={cn("order-last flex w-full justify-center empty:hidden md:absolute md:top-1 md:z-20 md:w-auto", allRuns.length ? "md:right-11" : "md:right-0")}>
           <TethrSetupNudge />
         </div>
       ) : null}
@@ -395,20 +409,22 @@ export function TethrChat() {
                   onOpenChat={openChat}
                 />
               ) : run.invocationSource === "chat" ? (
-                <SessionTurn key={run.id} run={run} companyId={c} onOpenFile={setPanelPath} />
+                <SessionTurn key={run.id} run={run} companyId={c} onOpenFile={setPanelPath} waitsBehind={run.status === "queued" && allRuns.some((r) => r.id !== run.id && r.status === "running")} />
               ) : (
                 <Turn key={run.id} run={run} companyId={c} />
               )
             ))}
-            {showPending && !visibleRuns.some((r) => r.id === pending?.runId) ? (
+            {showPending ? (
               <div className="flex flex-col gap-4">
-                <UserBubble text={pending!.text} attachments={pending!.attachments} />
+                <UserBubble text={showPending.text} attachments={showPending.attachments} />
                 <Working label="sending…" />
               </div>
             ) : null}
           </div>
         )}
       </div>
+
+      {threadId ? <QueuedTray runs={queued} sending={sendingToQueue} companyId={c} threadId={threadId} /> : null}
 
       <Composer
         key={threadId ?? "draft"}
@@ -465,17 +481,13 @@ const isMemoryFile = (p: string) => /(^|\/)Memory\.md$/i.test(p);
 // ---- side chats drawer ---------------------------------------------------------
 
 /** A sidebar icon at the chat's top-left that slides out your chats: the
- * ongoing chat with tethr pinned on top (it can't be closed), then side chats.
- * Beside the icon, a chip names where you are: "tethr · ongoing", or a side
- * chat's title with a way back. */
+ * ongoing chat with tethr pinned on top (it can't be closed), your team, then
+ * side chats. Away from the main chat, a second button leads back to it. Who
+ * you're talking to is the avatar in the middle (chat/avatar.tsx). */
 function SideChats({
   isMain,
-  isDraft,
-  sideTitle,
   sideChats,
   team,
-  teamAgent,
-  companyId,
   proposing,
   onProposeTeam,
   activeThreadId,
@@ -485,12 +497,8 @@ function SideChats({
   onRemoveSide,
 }: {
   isMain: boolean;
-  isDraft: boolean;
-  sideTitle: string;
   sideChats: TethrSideChat[];
   team: TethrTeamAgent[];
-  teamAgent: TethrTeamAgent | undefined;
-  companyId: string;
   proposing: boolean;
   onProposeTeam: () => void;
   activeThreadId: string | null;
@@ -527,7 +535,7 @@ function SideChats({
 
   return (
     <>
-      <div className="flex min-w-0 flex-1 items-center gap-2 md:absolute md:left-0 md:top-1 md:z-20 md:max-w-[calc(100%-3rem)]">
+      <div className="flex shrink-0 items-center gap-2 md:absolute md:left-0 md:top-1 md:z-20">
         <button
           ref={toggleRef}
           type="button"
@@ -544,29 +552,16 @@ function SideChats({
             </span>
           ) : null}
         </button>
-        {isMain ? (
-          <span
-            className="tethr-glass flex h-9 min-w-0 items-center gap-2 rounded-full px-3.5 text-[13px]"
-            title="Your one ongoing chat with tethr. It's always here and can't be closed; open a side chat for a focused task."
+        {isMain ? null : (
+          <button
+            type="button"
+            onClick={onOpenMain}
+            title="Back to tethr"
+            aria-label="Back to tethr"
+            className="tethr-glass tethr-touch-sized grid h-9 w-9 shrink-0 place-items-center rounded-full text-foreground/80 transition-colors hover:text-foreground"
           >
-            <span className="truncate">tethr</span>
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] tethr-text-3">ongoing</span>
-          </span>
-        ) : teamAgent ? (
-          <AgentChip agent={teamAgent} companyId={companyId} onBack={onOpenMain} />
-        ) : (
-          <span className="tethr-glass flex h-9 min-w-0 items-center gap-1 rounded-full pl-3.5 pr-1 text-[13px]">
-            <span className="min-w-0 truncate">{isDraft ? "New side chat" : sideTitle}</span>
-            <button
-              type="button"
-              onClick={onOpenMain}
-              title="Back to tethr"
-              aria-label="Back to tethr"
-              className="tethr-touch-sized grid h-7 w-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-[var(--tethr-select-blur)] hover:text-foreground pointer-coarse:h-8 pointer-coarse:w-8"
-            >
-              <CornerUpLeft className="h-3.5 w-3.5" />
-            </button>
-          </span>
+            <CornerUpLeft className="h-4 w-4" />
+          </button>
         )}
       </div>
 
@@ -861,7 +856,7 @@ function useElapsed(since: string | undefined): string | null {
 
 /** What a running turn is doing right now, in a few words. */
 function turnActivity(run: TethrChatRun, tools: TethrRouteHop[], waitingOnYou: boolean): string {
-  if (run.status === "queued") return "waiting for the previous message…";
+  if (run.status === "queued") return "waiting to start…";
   if (waitingOnYou) return "waiting for your approval…";
   const step = [...tools].reverse().find((h) => h.status === "running");
   if (step) return `${step.decision}…`;
@@ -876,10 +871,13 @@ function SessionTurn({
   run,
   companyId,
   onOpenFile,
+  waitsBehind = false,
 }: {
   run: TethrChatRun;
   companyId: string;
   onOpenFile: (path: string) => void;
+  /** Queued behind a turn that's running in this chat: no progress pill of its own. */
+  waitsBehind?: boolean;
 }) {
   const queryClient = useQueryClient();
   const running = ACTIVE.has(run.status);
@@ -920,7 +918,8 @@ function SessionTurn({
         .map((o) => (
           <ActionStatus key={o.id} output={o} />
         ))}
-      {running ? (
+      {waitsBehind ? <p className="font-mono text-[10.5px] uppercase tracking-[0.12em] tethr-text-3">queued · runs when tethr finishes</p> : null}
+      {running && !waitsBehind ? (
         <Working
           label={turnActivity(run, tools, gated.length > 0)}
           since={run.createdAt}
