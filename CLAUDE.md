@@ -1221,7 +1221,7 @@ DECISIONS 42-43.
 
 ## Jev decides, tethr files and learns (phase 26.2-26.6, 2026-11-09)
 
-Mark: "build all the way to 26.6". Plan: `tasks/phase-26.md`; DECISIONS 49-55. Migrations **0097**
+Mark: "build all the way to 26.6". Plan: `tasks/phase-26.md`; DECISIONS 49-56. Migrations **0097**
 (`tethr_decisions`, `tethr_inbox_items`, `tethr_lessons`) and **0098** (`tethr_lessons.verdict`).
 New instance-dir stores (all through `company-store.ts` `companyStore`, in the reset list):
 `tethr-decisions.json`, `tethr-inbox.json`, `tethr-learning.json`.
