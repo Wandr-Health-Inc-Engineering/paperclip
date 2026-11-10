@@ -1217,6 +1217,14 @@ DECISIONS 57-64. No migration. One new store: `tethr-questions.json` (in the res
     decision record draws the same check. `refreshAfterDecision` invalidates **every** chat's runs:
     a card can sit in a chat other than the one open, and before this the main chat kept showing a
     decided card until a reload, so a second tap said it was already decided.
+  - **A turn's cards come last** (Mark, 2026-11-10: the approval card popped out "before all the
+    text is done"). A card is made mid-turn (the gate denies the call, makes the card, and the
+    model keeps writing), so `SessionTurn` holds its cards (approvals, questions, checklists,
+    decided lines, action statuses) until the turn is done AND `StreamingMarkdown`'s `onShown`
+    says the whole answer is on screen (`chat/cards-last.ts` `useCardsLast`); then they rise in
+    (`.tethr-cards-in`, fill backwards: the cards are glass). A turn already done on load shows
+    them at once. While a turn runs, the pill no longer says "waiting for your approval" (the
+    card isn't on screen yet). A hidden tab pauses the reveal, so the card waits until you're back.
 - **Slack:** while the chat engine is on, `routeInboundKickoff` never calls the old engine
   (`classicOff`); `answerUnknownSlackSender` replies and, when no admin is linked, keeps the sender as
   `setup.slackClaim`. `PUT /setup/admin-slack` links an ID. **A display name is never proof:** the

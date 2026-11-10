@@ -18,9 +18,26 @@ import { closeOpenMarkdown, MIN_CHARS_PER_SECOND, rehypeStreamWords, revealEnd, 
 /** At most this often (ms) the revealed text re-renders (~30 fps is plenty for words). */
 const RENDER_EVERY_MS = 32;
 
-export function StreamingMarkdown({ text, live, className }: { text: string; live: boolean; className?: string }) {
+export function StreamingMarkdown({
+  text,
+  live,
+  className,
+  onShown,
+}: {
+  text: string;
+  live: boolean;
+  className?: string;
+  /** Called once the whole answer is on screen (the turn is done and the reveal has caught up). */
+  onShown?: () => void;
+}) {
   const end = useSmoothReveal(text, live);
-  if (!live && end >= text.length) return <MarkdownBody linkIssueReferences={false} className={className}>{text}</MarkdownBody>;
+  const shown = !live && end >= text.length;
+  const onShownRef = useRef(onShown);
+  onShownRef.current = onShown;
+  useEffect(() => {
+    if (shown) onShownRef.current?.();
+  }, [shown]);
+  if (shown) return <MarkdownBody linkIssueReferences={false} className={className}>{text}</MarkdownBody>;
   return <StreamFrame text={text.slice(0, end)} className={className} />;
 }
 

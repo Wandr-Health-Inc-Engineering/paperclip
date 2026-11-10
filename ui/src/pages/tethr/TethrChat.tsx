@@ -58,6 +58,7 @@ import { NeedsYouPill, useNeedsYou } from "./chat/needs-you";
 import { FileThisButton, InboxCard, LessonCard, UrgencyRow } from "./chat/cards";
 import { ApprovalCard, DecidedLine, QuestionCard } from "./chat/decision-cards";
 import { ChecklistCard } from "./chat/checklist-card";
+import { useCardsLast } from "./chat/cards-last";
 import { FileChip, FileChips } from "./chat/file-chip";
 import { TeamUpdates } from "./chat/team-updates";
 import { groupReports, kindLabel } from "@/lib/tethr-cards";
@@ -899,9 +900,8 @@ function useElapsed(since: string | undefined): string | null {
 }
 
 /** What a running turn is doing right now, in a few words. */
-function turnActivity(run: TethrChatRun, tools: TethrRouteHop[], waitingOnYou: boolean): string {
+function turnActivity(run: TethrChatRun, tools: TethrRouteHop[]): string {
   if (run.status === "queued") return "waiting to start…";
-  if (waitingOnYou) return "waiting for your approval…";
   const step = [...tools].reverse().find((h) => h.status === "running");
   if (step) return `${step.decision}…`;
   if (run.resultText) return "writing…";
@@ -929,6 +929,14 @@ function SessionTurn({
   const tools = run.hops.filter((h) => h.layer === "tool");
   const files = [...new Set(tools.filter((h) => h.file && h.status === "ok").map((h) => h.file as string))];
   const gated = run.outputs.filter((o) => DECIDABLE.has(o.status));
+  const decided = run.outputs.filter(
+    (o) => (o.kind === "team_agent" || o.kind === "team_change" || (o.kind === "drive_change" && !!o.meta?.cleanup)) && !DECIDABLE.has(o.status),
+  );
+  const actions = run.outputs.filter((o) => o.kind === "external_action" && !DECIDABLE.has(o.status));
+  const questions = run.questions ?? [];
+  const checklists = run.checklists ?? [];
+  const hasCards = gated.length + decided.length + actions.length + questions.length + checklists.length > 0;
+  const { cardsShown, onTextShown, riseIn } = useCardsLast(running, !!run.resultText);
   const stop = useMutation({
     mutationFn: () => tethrApi.stopChatTurn(companyId, run.id),
     onSettled: () => queryClient.invalidateQueries({ queryKey: tethrKeys.chatRuns(companyId, run.threadId ?? "") }),
@@ -941,36 +949,38 @@ function SessionTurn({
       ) : (
         <UserBubble text={run.requestText} at={run.createdAt} attachments={run.attachments} onOpenFile={onOpenFile} companyId={companyId} />
       )}
-      {run.resultText ? <StreamingMarkdown text={run.resultText} live={running} className="tethr-chat-md" /> : null}
+      {run.resultText ? (
+        <StreamingMarkdown text={run.resultText} live={running} className="tethr-chat-md" onShown={onTextShown} />
+      ) : null}
       {tools.length && !running ? <StepsSummary hops={tools} /> : null}
       {run.status === "failed" ? (
         <p className="text-[13.5px] text-[var(--tethr-bad)]">{run.error || "Something went wrong."}</p>
       ) : null}
       {run.status === "stopped" ? <p className="text-[12.5px] tethr-text-3">Stopped.</p> : null}
       <FileChips files={files} onOpen={onOpenFile} />
-      {gated.map((o) => (
-        <ApprovalCard key={o.id} output={o} companyId={companyId} threadId={run.threadId ?? ""} />
-      ))}
-      {(run.questions ?? []).map((q) => (
-        <QuestionCard key={q.id} question={q} companyId={companyId} />
-      ))}
-      {(run.checklists ?? []).map((l) => (
-        <ChecklistCard key={l.id} checklist={l} companyId={companyId} />
-      ))}
-      {run.outputs
-        .filter((o) => (o.kind === "team_agent" || o.kind === "team_change" || (o.kind === "drive_change" && !!o.meta?.cleanup)) && !DECIDABLE.has(o.status))
-        .map((o) => (
-          <DecidedLine key={o.id} output={o} />
-        ))}
-      {run.outputs
-        .filter((o) => o.kind === "external_action" && !DECIDABLE.has(o.status))
-        .map((o) => (
-          <ActionStatus key={o.id} output={o} />
-        ))}
+      {hasCards && cardsShown ? (
+        <div className={cn("flex flex-col gap-3", riseIn && "tethr-cards-in")}>
+          {gated.map((o) => (
+            <ApprovalCard key={o.id} output={o} companyId={companyId} threadId={run.threadId ?? ""} />
+          ))}
+          {questions.map((q) => (
+            <QuestionCard key={q.id} question={q} companyId={companyId} />
+          ))}
+          {checklists.map((l) => (
+            <ChecklistCard key={l.id} checklist={l} companyId={companyId} />
+          ))}
+          {decided.map((o) => (
+            <DecidedLine key={o.id} output={o} />
+          ))}
+          {actions.map((o) => (
+            <ActionStatus key={o.id} output={o} />
+          ))}
+        </div>
+      ) : null}
       {waitsBehind ? <p className="font-mono text-[10.5px] uppercase tracking-[0.12em] tethr-text-3">queued · runs when tethr finishes</p> : null}
       {running && !waitsBehind ? (
         <Working
-          label={turnActivity(run, tools, gated.length > 0)}
+          label={turnActivity(run, tools)}
           since={run.createdAt}
           onStop={() => stop.mutate()}
           stopping={stop.isPending}

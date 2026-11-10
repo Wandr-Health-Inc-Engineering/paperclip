@@ -2473,3 +2473,15 @@ html.tethr-intro-hold .tethr-welcome * {
     animation: none;
   }
 }
+
+/* A turn's cards arrive last, once its answer is all on screen, and rise in.
+ * Fill backwards (never both): the cards are glass, and a held animation would
+ * keep this wrapper a backdrop root. */
+.tethr-cards-in {
+  animation: tethr-card-in 420ms cubic-bezier(0.16, 1, 0.3, 1) 120ms backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tethr-cards-in {
+    animation: none;
+  }
+}
