@@ -273,6 +273,9 @@ Branch: `mark-sandbox` (local only). Date started: 2026-06-11.
     pages only; the runner's deny rules, the hook gate and the tools endpoint each enforce it.
 55. **Agent reports are held only when earned.** report.urgency starts Off; on Automatic a "can wait"
     above the bar holds only the Slack DM (the card, the bell and the daily review still have it).
+56. **tethr's own actions don't prove themselves.** An automatic decision counts toward its kind's
+    confidence bar only after the week to undo it has passed, and a held report stays an open
+    question until a person answers it on the card (independent review, 2026-11-09).
 
 ## Core changes (keep merge-safe)
 

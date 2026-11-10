@@ -33,7 +33,7 @@ import { indexTurnSoon } from "../hermes/indexer.js";
 import { memorySnapshot, migrateFreeformMemory } from "../hermes/memory-layer.js";
 import { growthMap } from "../growth-map/evidence.js";
 import { growthMapContextText } from "../growth-map/text.js";
-import { ensureSandboxWorkspace, sandboxClaudeMd } from "../learn/learner.js";
+import { ensureSandboxWorkspace, sandboxClaudeMd, sealedThreadTag } from "../learn/learner.js";
 import { SANDBOX_TOOLS } from "./learn-tools.js";
 import { SANDBOX_BUILTINS } from "./sandbox.js";
 
@@ -131,6 +131,9 @@ const state: QueueState = {
 };
 
 /** Lines of builtin tools the chat session may use (Bash only when the shell is on). */
+/** Cards in a chat that aren't turns of the conversation. */
+const CARD_SOURCES = new Set(["tethr-agent-report", "tethr-lesson", "tethr-inbox", "tethr-idea"]);
+
 function builtinTools(shell: "off" | "ask"): string {
   const tools = ["Read", "Glob", "Grep", "Write", "Edit", "MultiEdit", "ToolSearch", "TodoWrite", "WebSearch", "WebFetch", "Skill"];
   if (shell !== "off") tools.push("Bash");
@@ -249,7 +252,10 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       )
       .orderBy(desc(tethrRouteRuns.createdAt))
       .limit(5);
-    const turns = previous.filter((p) => p.resultText).reverse();
+    // Cards tethr posted on its own (agent reports, lessons, Inbox files, ideas)
+    // aren't conversation: their text can come from outside (a web page the
+    // learner read), so they're never replayed as what tethr said.
+    const turns = previous.filter((p) => p.resultText && !CARD_SOURCES.has(p.sourceKey ?? "")).reverse();
     if (!turns.length) return "";
     return [
       "Earlier in this conversation (for context):",
@@ -287,6 +293,12 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       return;
     }
     const member = row.threadId ? await team.byThread(companyId, row.threadId) : null;
+    // Phase 26.6: the learner's chat never runs with anyone else's rights. If
+    // its agent is gone (deleted on the core agent page), nothing runs there.
+    if (!member && row.threadId && sealedThreadTag(companyId, row.threadId)) {
+      await finish(runId, { status: "failed", error: "The learner isn't on the team any more, so its sealed chat can't run." });
+      return;
+    }
     // A paused agent does no work tethr starts; a person can still talk to it.
     if (member?.paused && row.sourceKey === "chat-system") {
       await finish(runId, { status: "done", resultText: `${member.tag} is paused, so this didn't run.`, llmProvider: "throttle" });

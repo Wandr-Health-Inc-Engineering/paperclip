@@ -1,14 +1,13 @@
 import { and, desc, eq, inArray, lte, ne } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { tethrDecisions, tethrLessons, tethrRouteRuns, type LessonSource } from "@paperclipai/db";
-import { logFailure } from "../best-effort.js";
 import * as chats from "../chats.js";
 import { companyProfileService } from "../company.js";
 import { resolveDecision, scoreWithJev, type DecideDeps } from "../decide/decide.js";
 import { oneLine } from "../goals.js";
 import { areaById, isAreaId } from "../growth-map/areas.js";
 import { setSkillArea } from "../growth-map/store.js";
-import { changeMemory, deleteSkill, memoryBackend, saveSkill, SKILL_DESCRIPTION_MAX } from "../hermes/memory-layer.js";
+import { changeMemory, deleteSkill, memoryBackend, memorySnapshot, saveSkill, SKILL_DESCRIPTION_MAX } from "../hermes/memory-layer.js";
 import { canSpend, getPace, spend, updatePace } from "../pace.js";
 import { injectionReason, medicalClaimReason, needsPersonReason } from "../screen.js";
 import { getSetup } from "../setup.js";
@@ -234,7 +233,7 @@ export function lessonsService(db: Db, deps: DecideDeps = {}) {
     if (!["candidate", "proposed"].includes(l.status)) throw new LessonError(`It's already ${l.status}.`);
     const area = isAreaId(l.area) ? { area: l.area } : {};
     const reviewAt = new Date(now().getTime() + REVIEW_DAYS * DAY);
-    let applied: { as: string; ref: string };
+    let applied: { as: string; ref: string; existed?: boolean };
     if (l.applyAs === "procedure" && memoryBackend(companyId) === "hermes") {
       const name = `lesson-${l.lesson.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48)}`;
       const description = l.lesson.length > SKILL_DESCRIPTION_MAX ? `${l.lesson.slice(0, SKILL_DESCRIPTION_MAX - 1)}…` : l.lesson;
@@ -251,8 +250,10 @@ export function lessonsService(db: Db, deps: DecideDeps = {}) {
             : l.applyAs === "procedure"
               ? `How we do it: ${l.lesson}${l.howToApply ? ` ${l.howToApply.slice(0, 200)}` : ""}`
               : l.lesson;
-      await changeMemory(companyId, "company", [{ action: "add", content: text }], { by: actor, ...area });
-      applied = { as: l.applyAs === "experiment" ? "experiment" : l.applyAs === "rule" ? "rule" : "memory", ref: text };
+      // A note that's already there (someone saved it) isn't added again, and retiring the lesson leaves it.
+      const existed = memorySnapshot(companyId).stores.company.entries.some((e) => e.text === text);
+      if (!existed) await changeMemory(companyId, "company", [{ action: "add", content: text }], { by: actor, ...area });
+      applied = { as: l.applyAs === "experiment" ? "experiment" : l.applyAs === "rule" ? "rule" : "memory", ref: text, ...(existed ? { existed: true } : {}) };
     }
     await scoreSources(companyId, l.sources.map((s) => s.url), "approved");
     const decision = await scoreDecision(companyId, l.id);
@@ -288,9 +289,19 @@ export function lessonsService(db: Db, deps: DecideDeps = {}) {
   async function settle(companyId: string, id: string, keep: boolean, actor: string): Promise<Lesson> {
     const l = await get(companyId, id);
     if (l.status !== "applied") throw new LessonError("Only an applied lesson can be kept or retired.");
-    if (!keep && l.applied) {
-      if (l.applied.as === "skill") await deleteSkill(companyId, l.applied.ref).catch(logFailure("retiring a lesson's skill"));
-      else await changeMemory(companyId, "company", [{ action: "remove", old_text: l.applied.ref }], { by: actor }).catch(logFailure("retiring a lesson's note"));
+    // Retiring takes out exactly what applying put in; if that can't be done, nothing is marked retired.
+    if (!keep && l.applied && !l.applied.existed) {
+      if (l.applied.as === "skill") await deleteSkill(companyId, l.applied.ref);
+      else {
+        const entries = memorySnapshot(companyId).stores.company.entries;
+        if (!entries.some((e) => e.text === l.applied!.ref)) {
+          throw new LessonError("Its note was changed or removed since it was applied. Edit it on the Memory page, then retire the lesson.");
+        }
+        if (entries.filter((e) => e.text.includes(l.applied!.ref)).length > 1) {
+          throw new LessonError("Its note is part of another note now. Remove it on the Memory page, then retire the lesson.");
+        }
+        await changeMemory(companyId, "company", [{ action: "remove", old_text: l.applied.ref }], { by: actor });
+      }
     }
     await scoreSources(companyId, l.sources.map((s) => s.url), keep ? "kept" : "retired");
     return update(l.id, { status: keep ? "kept" : "retired", verdict: null, outcome: l.outcome ?? (keep ? "Kept." : "Retired.") });

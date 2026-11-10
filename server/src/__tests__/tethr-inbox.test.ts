@@ -280,6 +280,62 @@ describePg("decisions and the Inbox", () => {
     expect(off).toMatchObject({ ok: false, reason: "off" });
   });
 
+  it("after the independent review: Leave it keeps an undo, Off sends nothing, renamed files return, double taps don't fail a filing", async () => {
+    // Earlier undone automatic filings were very sure and wrong: Automatic is out of reach now.
+    const destStats = (await kindStats(db, companyId)).find((k) => k.key === "inbox.destination")!;
+    expect(destStats.bar).toBeNull();
+    // A filing tethr did on its own, undone, then left: the undo stands (it counts toward demotion).
+    const item = await svc(fakeJev(PICKS, 0.99)).create(companyId, { source: "drive", relPath: `${INBOX_DIR}/review-1.txt`, name: "review-1.txt", size: 1 });
+    fs.writeFileSync(path.join(drive, INBOX_DIR, "review-1.txt"), "Invoice");
+    const suggested = await svc(fakeJev(PICKS, 0.99)).process(companyId, item.id);
+    await svc(fakeJev(PICKS)).fileTo(companyId, item.id, suggested.suggestion!.destination, { by: "tethr (automatic)", automatic: true });
+    await svc(fakeJev(PICKS)).putBack(companyId, item.id);
+    await svc(fakeJev(PICKS)).leave(companyId, item.id);
+    const [dest] = await db.select().from(tethrDecisions).where(eq(tethrDecisions.id, suggested.suggestion!.decisions["inbox.destination"]));
+    expect(dest.outcome).toBe("undone");
+
+    // Filing suggestions off: nothing about the file goes to Jev.
+    await decisionStore.update(companyId, (s) => ({ ...s, modes: { ...(s.modes ?? {}), "inbox.destination": "off" } }));
+    let asked = 0;
+    const off = await svc(async (...a) => (asked++, fakeJev(PICKS)(...a))).create(companyId, { source: "chat", relPath: `${INBOX_DIR}/off.txt`, name: "off.txt", size: 1 });
+    fs.writeFileSync(path.join(drive, INBOX_DIR, "off.txt"), "Invoice");
+    expect((await svc(async (...a) => (asked++, fakeJev(PICKS)(...a))).process(companyId, off.id)).status).toBe("needs_person");
+    expect(asked).toBe(0);
+    await decisionStore.update(companyId, (s) => ({ ...s, modes: { ...(s.modes ?? {}), "inbox.destination": "suggest" } }));
+
+    // Only names tethr filed (and checked) describe a folder; a file sitting in a folder is never named to Jev.
+    fs.writeFileSync(path.join(drive, "01 Briefs", "Jane Doe malaria diagnosis.txt"), "x");
+    const seen: Array<{ state: unknown; questions: Record<string, JevQuestion> }> = [];
+    const named = await svc(fakeJev(PICKS, 0.8, seen)).create(companyId, { source: "chat", relPath: `${INBOX_DIR}/brief-2.txt`, name: "brief-2.txt", size: 1 });
+    fs.writeFileSync(path.join(drive, INBOX_DIR, "brief-2.txt"), "A brief");
+    await svc(fakeJev(PICKS, 0.8, seen)).process(companyId, named.id);
+    expect(JSON.stringify(seen[0].questions)).not.toContain("Jane Doe");
+
+    // Two taps at once: one files it, the other is told; the item stays filed.
+    const results = await Promise.allSettled([
+      svc(fakeJev(PICKS)).fileTo(companyId, named.id, "Partners", { by: "a person" }),
+      svc(fakeJev(PICKS)).fileTo(companyId, named.id, "Partners", { by: "a person" }),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect((await svc(fakeJev(PICKS)).get(companyId, named.id)).status).toBe("filed");
+
+    // A file that was left keeps its name only while it's the same file.
+    later(31_000);
+    drop("scan.txt", "first");
+    await svc(fakeJev(PICKS)).scan(companyId);
+    later(31_000);
+    const [first] = await svc(fakeJev(PICKS)).scan(companyId);
+    await svc(fakeJev(PICKS)).leave(companyId, first.id);
+    later(31_000);
+    expect(await svc(fakeJev(PICKS)).scan(companyId)).toEqual([]); // the same file, left: not taken again
+    drop("scan.txt", "a different, longer file with the same name");
+    await svc(fakeJev(PICKS)).scan(companyId);
+    later(31_000);
+    const [second] = await svc(fakeJev(PICKS)).scan(companyId);
+    expect(second?.name).toBe("scan.txt");
+    expect(second?.id).not.toBe(first.id);
+  });
+
   it("serves the Inbox to people, files only into real folders, and copies a chat upload in", async () => {
     const { tethrRoutes } = await import("../routes/tethr.ts");
     const appFor = (actor: Record<string, unknown>) => {

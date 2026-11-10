@@ -9,7 +9,7 @@ import { writeNewFile } from "../atomic.js";
 import { logFailure } from "../best-effort.js";
 import * as chats from "../chats.js";
 import { companyProfileService } from "../company.js";
-import { decideWithJev, resolveDecision, type ChoiceAsk, type ChoiceOption, type DecideDeps } from "../decide/decide.js";
+import { decideWithJev, decisionMode, resolveDecision, type ChoiceAsk, type ChoiceOption, type DecideDeps } from "../decide/decide.js";
 import { existingFsPath, fsMove } from "../fsdrive.js";
 import { mirrorDir } from "../mirror.js";
 import { positionOf } from "../positions.js";
@@ -81,22 +81,12 @@ export async function destinationFolders(root: string): Promise<string[]> {
   return out.slice(0, MAX_FOLDERS);
 }
 
-function folderOptions(companyId: string, folders: string[], root: string): ChoiceOption[] {
+function folderOptions(companyId: string, folders: string[]): ChoiceOption[] {
   const profiles = inboxStore.get(companyId).folders ?? {};
   return folders.map((rel, i) => {
     const p = profiles[rel];
-    let samples = p?.samples ?? [];
-    if (!samples.length) {
-      try {
-        samples = fs
-          .readdirSync(path.join(root, rel), { withFileTypes: true })
-          .filter((e) => e.isFile() && !e.name.startsWith("."))
-          .slice(0, 4)
-          .map((e) => e.name);
-      } catch {
-        samples = [];
-      }
-    }
+    // Only names of files tethr filed there (each was checked then), checked again.
+    const samples = (p?.samples ?? []).filter((name) => !needsPersonReason(name));
     const bits = [p?.description, samples.length ? `holds files like ${samples.slice(-4).join(", ")}` : null].filter(Boolean);
     return { key: `f${i + 1}`, label: folderLabel(rel), description: bits.length ? `${folderLabel(rel)}: ${bits.join("; ")}` : folderLabel(rel) };
   });
@@ -205,6 +195,8 @@ export function inboxService(db: Db, deps: InboxDeps = {}) {
     if (reason) return needsPerson(item, `A person needs to look at this first: ${reason}. Nothing was sent to Jev.`);
     const folders = await destinationFolders(root);
     if (!folders.length) return needsPerson(item, "There are no folders in 00 Tethr to file into yet.");
+    // Filing suggestions off: nothing about the file goes to Jev at all.
+    if (decisionMode(companyId, "inbox.destination") === "off") return needsPerson(item, "Jev filing suggestions are off. Choose where it goes.");
 
     const profile = await companyProfileService(db).get(companyId);
     const recent = await db
@@ -218,7 +210,7 @@ export function inboxService(db: Db, deps: InboxDeps = {}) {
       {
         kind: "inbox.destination",
         instructions: "Which folder should this file be filed in? Follow the filing rules first, then where similar files went.",
-        options: folderOptions(companyId, folders, root),
+        options: folderOptions(companyId, folders),
       },
       {
         kind: "inbox.notify",
@@ -277,11 +269,24 @@ export function inboxService(db: Db, deps: InboxDeps = {}) {
     if (item.status === "filed") throw new InboxError(`It's already filed in ${folderLabel(path.posix.dirname(item.filedTo ?? ""))}.`);
     const root = rootOrThrow();
     const rel = await resolveDestination(destination);
+    // Claim it, so two taps (or a tap and tethr) can't both move it.
+    const [claimed] = await db
+      .update(tethrInboxItems)
+      .set({ status: "filing", updatedAt: now() })
+      .where(and(eq(tethrInboxItems.id, item.id), inArray(tethrInboxItems.status, ["new", "needs_person", "suggested", "left"])))
+      .returning({ id: tethrInboxItems.id });
+    if (!claimed) throw new InboxError("It's already being filed.");
     if (!(await existingFsPath(root, item.relPath))) {
       await update(item.id, { status: "failed", note: "The file isn't there any more." });
       throw new InboxError("The file isn't there any more.");
     }
-    const filedTo = await fsMove(root, item.relPath, rel);
+    let filedTo: string;
+    try {
+      filedTo = await fsMove(root, item.relPath, rel);
+    } catch (err) {
+      await update(item.id, { status: item.status });
+      throw err;
+    }
     const row = await update(item.id, { status: "filed", filedTo, filedFrom: item.relPath, filedBy: how.by, filedAt: now(), relPath: filedTo });
     await inboxStore.update(companyId, (s) => {
       const folders = { ...(s.folders ?? {}) };
@@ -292,19 +297,19 @@ export function inboxService(db: Db, deps: InboxDeps = {}) {
     const label = folderLabel(rel);
     const decisions = item.suggestion?.decisions ?? {};
     const destDecision = decisions["inbox.destination"];
+    // Only an open answer is settled here: after Put it back, the "undone" stands.
+    const once = { now: now(), onlyPending: true };
     if (destDecision) {
-      if (how.automatic) await resolveDecision(db, companyId, destDecision, "automatic", { now: now() });
-      else if (item.suggestion?.destination === label) await resolveDecision(db, companyId, destDecision, "accepted", { now: now() });
-      else {
-        await resolveDecision(db, companyId, destDecision, "corrected", { correctedTo: label, now: now() });
-        await learnFromCorrection(companyId, item.suggestion?.type ?? "other", label);
-      }
+      if (how.automatic) await resolveDecision(db, companyId, destDecision, "automatic", once);
+      else if (item.suggestion?.destination === label) await resolveDecision(db, companyId, destDecision, "accepted", once);
+      else await resolveDecision(db, companyId, destDecision, "corrected", { ...once, correctedTo: label });
     }
+    if (!how.automatic && item.suggestion && item.suggestion.destination !== label) await learnFromCorrection(companyId, item.suggestion.type, label);
     for (const kind of ["inbox.type", "inbox.urgency"]) {
-      if (decisions[kind]) await resolveDecision(db, companyId, decisions[kind], "dropped", { now: now() }).catch(() => {});
+      if (decisions[kind]) await resolveDecision(db, companyId, decisions[kind], "dropped", once).catch(() => {});
     }
     if (decisions["inbox.notify"] && item.suggestion?.notify === NOBODY) {
-      await resolveDecision(db, companyId, decisions["inbox.notify"], "accepted", { now: now() }).catch(() => {});
+      await resolveDecision(db, companyId, decisions["inbox.notify"], "accepted", once).catch(() => {});
     }
     return card(row, `Filed in ${label} by ${how.by}.`);
   }
@@ -356,15 +361,16 @@ export function inboxService(db: Db, deps: InboxDeps = {}) {
     }
     if (decision) {
       const outcome = how.automatic ? "automatic" : item.suggestion?.notify === who ? "accepted" : "corrected";
-      await resolveDecision(db, companyId, decision, outcome, { correctedTo: who, now: now() }).catch(() => {});
+      await resolveDecision(db, companyId, decision, outcome, { correctedTo: who, now: now(), onlyPending: true }).catch(() => {});
     }
     return update(item.id, { note: who === NOBODY ? item.note : `${who.startsWith("@") ? "Handed to" : "Told"} ${who}.` });
   }
 
   async function leave(companyId: string, id: string): Promise<InboxItem> {
     const item = await get(companyId, id);
+    // Only answers still open are dropped; an undo or a correction already given stands.
     for (const decision of Object.values(item.suggestion?.decisions ?? {})) {
-      await resolveDecision(db, companyId, decision, "dropped", { now: now() }).catch(() => {});
+      await resolveDecision(db, companyId, decision, "dropped", { now: now(), onlyPending: true }).catch(() => {});
     }
     return card(await update(item.id, { status: "left" }), "Left where it is.");
   }
@@ -412,23 +418,27 @@ export function inboxService(db: Db, deps: InboxDeps = {}) {
     await fsp.mkdir(dir, { recursive: true });
     const entries = (await fsp.readdir(dir, { withFileTypes: true })).filter((e) => e.isFile() && !e.name.startsWith(".") && !e.name.startsWith("~$"));
     const open = await db
-      .select({ relPath: tethrInboxItems.relPath })
+      .select({ relPath: tethrInboxItems.relPath, status: tethrInboxItems.status, size: tethrInboxItems.size })
       .from(tethrInboxItems)
-      .where(and(eq(tethrInboxItems.companyId, companyId), inArray(tethrInboxItems.status, ["new", "needs_person", "suggested", "left", "failed"])));
-    const taken = new Set(open.map((o) => o.relPath));
+      .where(and(eq(tethrInboxItems.companyId, companyId), inArray(tethrInboxItems.status, ["new", "filing", "needs_person", "suggested", "left", "failed"])));
+    // A file still being worked holds its name; one that was left or failed holds
+    // it only while the same file (same size) is there, so a new file with an old name is taken.
+    const working = new Set(open.filter((o) => !["left", "failed"].includes(o.status)).map((o) => o.relPath));
+    const parked = open.filter((o) => ["left", "failed"].includes(o.status));
+    const isTaken = (rel: string, size: number) => working.has(rel) || parked.some((o) => o.relPath === rel && o.size === size);
     const t = now().getTime();
     const ready: Array<{ rel: string; size: number }> = [];
     await inboxStore.update(companyId, (s) => {
       const watching: NonNullable<typeof s.watching> = {};
       for (const e of entries) {
         const rel = `${INBOX_DIR}/${e.name}`;
-        if (taken.has(rel)) continue;
         let stat: fs.Stats;
         try {
           stat = fs.statSync(path.join(dir, e.name));
         } catch {
           continue;
         }
+        if (isTaken(rel, stat.size)) continue;
         const was = s.watching?.[rel];
         const same = was && was.size === stat.size && was.mtimeMs === stat.mtimeMs;
         const since = same ? was.since : t;
@@ -450,7 +460,7 @@ export function inboxService(db: Db, deps: InboxDeps = {}) {
     const open = await db
       .select()
       .from(tethrInboxItems)
-      .where(and(eq(tethrInboxItems.companyId, companyId), inArray(tethrInboxItems.status, ["new", "needs_person", "suggested"])))
+      .where(and(eq(tethrInboxItems.companyId, companyId), inArray(tethrInboxItems.status, ["new", "filing", "needs_person", "suggested"])))
       .orderBy(desc(tethrInboxItems.createdAt))
       .limit(100);
     const filed = await db

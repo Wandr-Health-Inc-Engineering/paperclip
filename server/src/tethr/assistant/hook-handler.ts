@@ -6,7 +6,7 @@ import type { HookTokenContext } from "./gate.js";
 import { canonicalJson, consumeGrant, createPendingAction, findPending, inputHash, MAX_APPROVAL_INPUT_CHARS, recordFailure, recordOutcome, shortId } from "./grants.js";
 import { classify, decide, resolvesToPrivateHost } from "./policy.js";
 import { agentToolRefusal } from "../team-spec.js";
-import { sandboxDir } from "../learn/learner.js";
+import { sandboxDir, sealedThreadTag } from "../learn/learner.js";
 import { sandboxRefusal } from "./sandbox.js";
 import { teamService } from "../team.js";
 import { readableRoots, workspaceDir } from "./workspace.js";
@@ -45,6 +45,10 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
     return preDecision("deny", "Tethr approval gate: couldn't check whose chat this is, so this was not done. Try again.");
   }
   // Phase 26.6: a sandboxed agent reads and writes only its own sealed folder.
+  // The learner's chat with no agent behind it (deleted) gets nothing at all.
+  if (!member && sealedThreadTag(ctx.companyId, ctx.threadId)) {
+    return preDecision("deny", "Tethr approval gate: blocked. The learner isn't on the team any more, so nothing runs in its chat.");
+  }
   const sealed = member?.sandbox ? sandboxDir(member.tag) : null;
   if (member && sealed) {
     const refusal = sandboxRefusal(member.tag, toolName);

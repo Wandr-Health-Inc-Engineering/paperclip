@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import type { Db } from "@paperclipai/db";
 import { kindStats } from "../tethr/decide/decide.js";
+import { MemoryChangeError } from "../tethr/hermes/memory-layer.js";
 import { oneLine } from "../tethr/goals.js";
 import { activeRules } from "../tethr/inbox/store.js";
 import { disableLearner, enableLearner, LearnerError } from "../tethr/learn/learner.js";
@@ -55,7 +56,7 @@ export function tethrLearningRoutes(db: Db): Router {
         const out = await handler(companyId, String(req.params.id ?? ""), (req.body ?? {}) as Record<string, unknown>, { userId, name: "Learning page" });
         res.json(out ?? { ok: true });
       } catch (err) {
-        if (err instanceof LessonError || err instanceof LearnerError || err instanceof TeamInputError) {
+        if (err instanceof LessonError || err instanceof LearnerError || err instanceof TeamInputError || err instanceof MemoryChangeError) {
           res.status(409).json({ error: err.message });
           return;
         }

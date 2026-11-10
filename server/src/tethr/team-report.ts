@@ -84,7 +84,9 @@ export function reportSlackText(r: AgentReport, summary: string | null): string 
 export async function deliverAgentReport(db: Db, r: AgentReport, deps: { post?: SlackPoster } = {}): Promise<{ cardRunId: string }> {
   const split = splitSlackSummary(r.text);
   const body = reportBody(split.body);
-  const summary = split.summary;
+  // Phase 26.6: a sandboxed agent read the open web, so its own summary never
+  // goes into tethr's notes or a Slack DM; the headline does, the report stays on its card.
+  const summary = r.agent.sandbox ? null : split.summary;
   const headline = reportHeadline(r);
   // Phase 24: a sub-agent reports to its lead (a card and a note in the lead's
   // chat), not to the main chat, the bell or Slack; the lead reports for its team.

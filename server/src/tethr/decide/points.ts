@@ -1,7 +1,7 @@
 import type { Db } from "@paperclipai/db";
 import { companyProfileService } from "../company.js";
 import { needsPersonReason } from "../screen.js";
-import { decideWithJev, decisionMode, resolveDecision, type ChoiceOption, type DecideDeps } from "./decide.js";
+import { decideWithJev, decisionMode, markActedAlone, resolveDecision, type ChoiceOption, type DecideDeps } from "./decide.js";
 
 // Phase 26.4: Jev at tethr's other decision points. Each is a kind in the
 // decision record, Off until a person turns it on, and falls back to what tethr
@@ -51,7 +51,8 @@ export async function reportUrgency(
   const r = res.results["report.urgency"];
   if (!r) return null;
   const hold = r.pick.label === URGENCY_WAIT && r.mode === "auto" && r.confident;
-  if (hold) await resolveDecision(db, companyId, r.decisionId, "automatic");
+  // Holding the DM is tethr acting alone, but it isn't "right" until a person says so on the card.
+  if (hold) await markActedAlone(db, companyId, r.decisionId);
   return { decisionId: r.decisionId, pick: r.pick.label, hold };
 }
 

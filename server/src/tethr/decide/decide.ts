@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, ne, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { tethrDecisions } from "@paperclipai/db";
 import { companyStore } from "../company-store.js";
@@ -141,6 +141,7 @@ export async function decideWithJev(
   }
   const cost = response.costUsd ?? jevCostUsd(response.usage.input_tokens);
   const results: Record<string, DecisionResult> = {};
+  let recorded = false;
   for (const ask of asks) {
     const ranked = rankedKeys(response.answers[questionId(ask.kind)]);
     const byKey = new Map(ask.options.map((o) => [o.key, o]));
@@ -163,6 +164,7 @@ export async function decideWithJev(
         createdAt: now,
       })
       .returning({ id: tethrDecisions.id });
+    recorded = true;
     results[ask.kind] = {
       kind: ask.kind,
       decisionId: row.id,
@@ -173,6 +175,22 @@ export async function decideWithJev(
       confident: ranked.confidence >= bar,
       mode: decisionMode(companyId, ask.kind),
     };
+  }
+  // Jev was paid even when its answer couldn't be read: the cap counts it.
+  if (!recorded) {
+    await db.insert(tethrDecisions).values({
+      companyId,
+      kind: asks[0].kind,
+      label: input.label.slice(0, 200),
+      options: [],
+      pick: "",
+      confidence: 0,
+      costUsd: cost,
+      mode: "suggest",
+      outcome: "dropped",
+      subjectId: input.subjectId ?? null,
+      createdAt: now,
+    });
   }
   return { ok: true, results, costUsd: cost };
 }
@@ -238,7 +256,7 @@ export async function resolveDecision(
   companyId: string,
   decisionId: string,
   outcome: DecisionOutcome,
-  opts: { correctedTo?: string; now?: Date; onDemoted?: (kind: string) => Promise<void> | void } = {},
+  opts: { correctedTo?: string; now?: Date; onDemoted?: (kind: string) => Promise<void> | void; onlyPending?: boolean } = {},
 ): Promise<void> {
   const now = opts.now ?? new Date();
   const [row] = await db
@@ -246,12 +264,31 @@ export async function resolveDecision(
     .set({
       outcome,
       ...(outcome === "automatic" ? { mode: "auto" } : {}),
-      correctedTo: outcome === "corrected" ? (opts.correctedTo ?? null) : null,
+      correctedTo: outcome === "corrected" || outcome === "undone" ? (opts.correctedTo ?? null) : null,
       resolvedAt: now,
     })
-    .where(and(eq(tethrDecisions.id, decisionId), eq(tethrDecisions.companyId, companyId)))
+    .where(
+      and(
+        eq(tethrDecisions.id, decisionId),
+        eq(tethrDecisions.companyId, companyId),
+        // An answer already given (accepted, corrected, undone) is never overwritten.
+        ...(opts.onlyPending ? [eq(tethrDecisions.outcome, "pending")] : []),
+      ),
+    )
     .returning();
   if (!row || row.mode !== "auto" || (outcome !== "corrected" && outcome !== "undone")) return;
+  await demoteIfUndone(db, companyId, row.kind, now, opts.onDemoted);
+}
+
+/** tethr acted on its own but leaves the answer open: a person's later word settles it. */
+export async function markActedAlone(db: Db, companyId: string, decisionId: string): Promise<void> {
+  await db
+    .update(tethrDecisions)
+    .set({ mode: "auto" })
+    .where(and(eq(tethrDecisions.id, decisionId), eq(tethrDecisions.companyId, companyId)));
+}
+
+async function demoteIfUndone(db: Db, companyId: string, kind: string, now: Date, onDemoted?: (kind: string) => Promise<void> | void): Promise<void> {
   const since = new Date(now.getTime() - DEMOTION_DAYS * DAY);
   const [{ n }] = await db
     .select({ n: sql<number>`count(*)` })
@@ -259,19 +296,19 @@ export async function resolveDecision(
     .where(
       and(
         eq(tethrDecisions.companyId, companyId),
-        eq(tethrDecisions.kind, row.kind),
+        eq(tethrDecisions.kind, kind),
         eq(tethrDecisions.mode, "auto"),
         inArray(tethrDecisions.outcome, ["corrected", "undone"]),
         gte(tethrDecisions.resolvedAt, since),
       ),
     );
-  if (Number(n) >= 2 && decisionMode(companyId, row.kind) === "auto") {
+  if (Number(n) >= 2 && decisionMode(companyId, kind) === "auto") {
     await decisionStore.update(companyId, (s) => ({
       ...s,
-      modes: { ...(s.modes ?? {}), [row.kind]: "suggest" },
-      demoted: [...(s.demoted ?? []), { kind: row.kind, at: now.toISOString() }].slice(-20),
+      modes: { ...(s.modes ?? {}), [kind]: "suggest" },
+      demoted: [...(s.demoted ?? []), { kind, at: now.toISOString() }].slice(-20),
     }));
-    await opts.onDemoted?.(row.kind);
+    await onDemoted?.(kind);
   }
 }
 
@@ -302,11 +339,24 @@ export function calibrate(rows: CalibrationRow[]): number {
 
 const ANSWERED = ["accepted", "corrected", "automatic", "undone"];
 
-async function answeredRows(db: Db, companyId: string, kind: string) {
+/**
+ * Decisions with an answer. Something tethr did on its own counts only once
+ * the week to undo it has passed without anyone undoing it (otherwise its own
+ * actions would prove themselves right).
+ */
+async function answeredRows(db: Db, companyId: string, kind: string, now = new Date()) {
+  const settled = new Date(now.getTime() - DEMOTION_DAYS * DAY);
   return db
     .select({ confidence: tethrDecisions.confidence, outcome: tethrDecisions.outcome })
     .from(tethrDecisions)
-    .where(and(eq(tethrDecisions.companyId, companyId), eq(tethrDecisions.kind, kind), inArray(tethrDecisions.outcome, ANSWERED)))
+    .where(
+      and(
+        eq(tethrDecisions.companyId, companyId),
+        eq(tethrDecisions.kind, kind),
+        inArray(tethrDecisions.outcome, ANSWERED),
+        or(ne(tethrDecisions.outcome, "automatic"), lte(tethrDecisions.resolvedAt, settled)),
+      ),
+    )
     .orderBy(desc(tethrDecisions.createdAt))
     .limit(CALIBRATION_WINDOW);
 }

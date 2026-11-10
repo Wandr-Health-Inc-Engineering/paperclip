@@ -85,7 +85,7 @@ import { tethrInboxRoutes } from "./tethr-inbox.js";
 import { tethrLearningRoutes } from "./tethr-learning.js";
 import { SANDBOX_TOOLS } from "../tethr/assistant/learn-tools.js";
 import { sandboxRefusal } from "../tethr/assistant/sandbox.js";
-import { sandboxDir } from "../tethr/learn/learner.js";
+import { sandboxDir, sealedThreadTag } from "../tethr/learn/learner.js";
 
 const execFileAsync = promisify(execFile);
 let cachedSha: string | null = null;
@@ -159,6 +159,11 @@ export function tethrRoutes(db: Db) {
       member = await teamService(db).byThread(ctx.companyId, ctx.threadId);
     } catch {
       res.status(503).json({ error: "Tethr couldn't check whose chat this is. Try again." });
+      return;
+    }
+    // Phase 26.6: the learner's chat with no agent behind it gets no tools.
+    if (!member && sealedThreadTag(ctx.companyId, ctx.threadId)) {
+      res.status(403).json({ error: "The learner isn't on the team any more." });
       return;
     }
     // A one-off private turn (the idea check) reads other people's Slack words, so
@@ -640,7 +645,7 @@ export function tethrRoutes(db: Db) {
     const { tethrDecisions } = await import("@paperclipai/db");
     const urgencies = reportIds.length
       ? await db
-          .select({ id: tethrDecisions.id, subjectId: tethrDecisions.subjectId, pick: tethrDecisions.pick, outcome: tethrDecisions.outcome, correctedTo: tethrDecisions.correctedTo, options: tethrDecisions.options })
+          .select({ id: tethrDecisions.id, subjectId: tethrDecisions.subjectId, pick: tethrDecisions.pick, mode: tethrDecisions.mode, outcome: tethrDecisions.outcome, correctedTo: tethrDecisions.correctedTo, options: tethrDecisions.options })
           .from(tethrDecisions)
           .where(and(eq(tethrDecisions.companyId, companyId), eq(tethrDecisions.kind, "report.urgency"), inArray(tethrDecisions.subjectId, reportIds)))
       : [];

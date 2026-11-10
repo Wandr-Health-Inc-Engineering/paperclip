@@ -173,7 +173,7 @@ export interface TethrChatRun extends TethrRouteRun {
   /** Phase 26.3: an Inbox card's item. */
   inbox?: TethrInboxItem | null;
   /** Phase 26.4: Jev's "needs you now / can wait" on an agent's report card. */
-  urgency?: { id: string; pick: string; outcome: string; correctedTo: string | null; options: string[] } | null;
+  urgency?: { id: string; pick: string; mode: string; outcome: string; correctedTo: string | null; options: string[] } | null;
   /** Phase 26.5: a lesson card's lesson. */
   lesson?: TethrLesson | null;
 }

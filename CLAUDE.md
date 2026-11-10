@@ -1279,8 +1279,26 @@ New instance-dir stores (all through `company-store.ts` `companyStore`, in the r
   built fresh in team-run.ts (`planStudy` + `studyBrief`): the study area (goals behind pace weigh
   more, turned-down areas less, least recently studied breaks ties), a queued topic first, what's
   already known, trusted and distrusted sources.
-- Tests: `tethr-inbox.test.ts` (12), `tethr-learning.test.ts` (7, incl. the sealed room through a faked
+- Tests: `tethr-inbox.test.ts` (13), `tethr-learning.test.ts` (8, incl. the sealed room through a faked
   turn, the gate and the tools endpoint).
+- **Independent review (2026-11-09): 10 findings, all fixed** — keep these:
+  - A sandboxed agent's own "Slack summary" never goes into tethr's notes or a Slack DM (headline only);
+    cards (agent reports, lessons, Inbox, ideas) are never replayed as conversation (`CARD_SOURCES` in
+    runner.ts legacyContext).
+  - The learner's chat with its agent deleted runs with NOBODY's rights (`sealedThreadTag`: the runner
+    fails the turn, the gate denies, the tools endpoint 403s).
+  - A Glob pattern's fixed folder must be readable too (policy.ts), so "/Users/**" can't list outside.
+  - Decisions: `resolveDecision(..., { onlyPending })` wherever an answer may already exist (Leave it,
+    re-filing after Put it back), so an undo stands; tethr's own automatic actions count toward the bar
+    only after 7 days un-undone; a held report is `mode: auto, outcome: pending` until a person answers
+    on the card (a "wrong" is an undo, and demotion is announced); a paid but unreadable Jev answer is
+    still recorded for the cap.
+  - Inbox: filing suggestions Off sends nothing to Jev; folder descriptions use only names tethr filed
+    (checked again), never a folder's raw listing; a left or failed file holds its name only while the
+    same file (size) is there; filing claims the item (`status: filing`) so two taps can't both move it.
+  - Lessons: retiring removes exactly the note applying added (refuses if it was changed or merged into
+    another note) and fails loudly; a note that already existed is marked `existed` and never removed;
+    memory errors are 409s.
 
 ## The growth map: a galaxy of growth areas (phase 26.9, 2026-11-09)
 

@@ -74,11 +74,19 @@ export function tethrDecisionRoutes(db: Db): Router {
       res.status(404).json({ error: "There's no such decision, or that isn't one of its options." });
       return;
     }
-    if (row.outcome === "automatic" && answer !== row.pick) {
-      await resolveDecision(db, companyId, row.id, "undone");
-    } else {
-      await resolveDecision(db, companyId, row.id, answer === row.pick ? "accepted" : "corrected", { correctedTo: answer });
-    }
+    // Where tethr acted alone (mode auto), a "wrong" undoes it and counts toward
+    // putting the kind back to Suggest; a "right" confirms it.
+    const actedAlone = row.mode === "auto";
+    const outcome = answer === row.pick ? (actedAlone ? "automatic" : "accepted") : actedAlone ? "undone" : "corrected";
+    await resolveDecision(db, companyId, row.id, outcome, {
+      correctedTo: answer,
+      onDemoted: async (kind) => {
+        const { notificationService } = await import("../tethr/notify.js");
+        await notificationService(db)
+          .send({ companyId, kind: "decision", title: `Back to suggestions: two of tethr's own decisions (${kind}) were wrong this week.`, href: "/tethr-settings" })
+          .catch(() => {});
+      },
+    });
     res.json({ ok: true });
   });
 

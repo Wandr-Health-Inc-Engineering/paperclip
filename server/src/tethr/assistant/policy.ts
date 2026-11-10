@@ -387,6 +387,12 @@ export function classify(tool: string, input: Record<string, unknown> | undefine
     if (SAFE_BUILTINS.has(tool)) return { tool, connector: null, server: null, cls: "builtin", summary: builtinSummary(tool, args) };
     if (READ_BUILTINS.has(tool)) {
       const target = String(args.file_path ?? args.path ?? "");
+      // A Glob pattern can name its own folder ("/Users/x/**", "../**"): its fixed part counts too.
+      const pattern = typeof args.pattern === "string" ? args.pattern : "";
+      const patternRoot = tool === "Glob" && (/^[/~]/.test(pattern) || pattern.split("/").includes("..")) ? pattern.split(/[*?[{]/)[0] || "/" : "";
+      if (patternRoot && !within(absPath(patternRoot, ctx), ctx.readableRoots)) {
+        return { tool, connector: null, server: null, cls: "blocked", summary: builtinSummary(tool, args), blockedReason: "it's outside Tethr's folders (00 Tethr)" };
+      }
       if (target && !within(absPath(target, ctx), ctx.readableRoots)) {
         return { tool, connector: null, server: null, cls: "blocked", summary: builtinSummary(tool, args), blockedReason: "it's outside Tethr's folders (00 Tethr)" };
       }

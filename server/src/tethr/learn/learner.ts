@@ -8,7 +8,7 @@ import { assistantHome, FILES_DIR, quarantineClaudeConfig } from "../assistant/w
 import { companyProfileService } from "../company.js";
 import { goalsService, oneLine } from "../goals.js";
 import { metricState } from "../growth-map/map.js";
-import { teamService, type TeamAgent } from "../team.js";
+import { agentThreadId, teamService, type TeamAgent } from "../team.js";
 import { teamConnectorLabels } from "../team.js";
 import { validateTeamSpec } from "../team-spec.js";
 import { distrustedSources, learningStore, STUDY_AREAS, trustedSources, type StudyArea } from "./store.js";
@@ -42,6 +42,16 @@ const LEARNER_INSTRUCTIONS = `You are the learner on this company's team. Each r
 - End with "Report:" and two or three sentences on what you studied and what you brought back.`;
 
 export class LearnerError extends Error {}
+
+/**
+ * The learner's tag when `threadId` is its chat, whether or not its agent still
+ * exists. The gate, the runner and the tools endpoint use it so a learner
+ * whose agent was deleted can't run with tethr's rights.
+ */
+export function sealedThreadTag(companyId: string, threadId: string): string | null {
+  const tag = learningStore.get(companyId).agentTag;
+  return tag && agentThreadId(companyId, tag) === threadId ? tag : null;
+}
 
 /** The learner's sealed folder (instance dir, never the shared Drive). */
 export function sandboxDir(tag: string): string {

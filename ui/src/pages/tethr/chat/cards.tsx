@@ -118,13 +118,13 @@ export function UrgencyRow({ run, companyId }: { run: TethrChatRun; companyId: s
     onSettled: () => refreshChat(queryClient, companyId, run.threadId),
   });
   if (!u) return null;
-  const answered = u.outcome !== "pending" && u.outcome !== "automatic";
+  const answered = u.outcome !== "pending";
   const final = u.outcome === "corrected" || u.outcome === "undone" ? (u.correctedTo ?? u.pick) : u.pick;
   return (
     <div className="flex flex-wrap items-center gap-2 text-[12px] tethr-text-3">
       <span>
         Jev: {u.pick}
-        {u.outcome === "automatic" ? " (the Slack message was held for the daily review)" : ""}
+        {u.mode === "auto" ? " (no Slack message was sent; it's here and in the bell)" : ""}
       </span>
       {answered ? (
         <span>· you said {final}</span>

@@ -25,6 +25,8 @@ export interface LessonApplied {
   /** What it became: the memory text, the skill name, the rule text, the task id. */
   ref: string;
   at: string;
+  /** The note was already in memory (a person's own): retiring the lesson leaves it. */
+  existed?: boolean;
 }
 
 export const tethrLessons = pgTable(
