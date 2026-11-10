@@ -62,6 +62,7 @@ import { useCardsLast } from "./chat/cards-last";
 import { FileChip, FileChips } from "./chat/file-chip";
 import { TeamUpdates } from "./chat/team-updates";
 import { groupReports, kindLabel } from "@/lib/tethr-cards";
+import { enterSends, isTouchOnly } from "@/lib/tethr-composer";
 
 // Chat (phase 17, formerly the Console; Mark's model): one ONGOING chat with
 // @tethr that everything goes into by default, plus SIDE chats he opens on
@@ -1388,7 +1389,7 @@ function Composer({
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                if (enterSends(e)) {
                   e.preventDefault();
                   submit();
                 }
@@ -1433,7 +1434,7 @@ function Composer({
             {status ? <span className={cn((error || failed) && "text-[var(--tethr-bad)]")}>{status}</span> : hint}
           </span>
           <span className="hidden shrink-0 font-mono text-[10.5px] tethr-text-3 sm:inline">
-            enter to send · shift+enter for a new line
+            {isTouchOnly() ? "return for a new line · tap the arrow to send" : "enter to send · shift+enter for a new line"}
           </span>
         </div>
       </div>

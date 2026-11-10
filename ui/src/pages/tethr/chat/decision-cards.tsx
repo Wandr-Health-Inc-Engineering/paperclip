@@ -9,6 +9,7 @@ import { DoneCheck } from "@/components/tethr/DoneCheck";
 import { Link } from "../../../lib/router";
 import { fixForConnection } from "../setup/fixes";
 import { FixPanel } from "../setup/FixPanel";
+import { enterSends } from "@/lib/tethr-composer";
 
 // The cards that wait on a person, in one look (Mark, 2026-11-10: "the agent
 // approval card is beautiful so stick with that design"): an approval (a new
@@ -249,7 +250,7 @@ export function CommentBox({
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+          if (enterSends(e)) {
             e.preventDefault();
             submit();
           }

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Paperclip, Pencil, X } from "lucide-react";
 import { tethrApi, tethrKeys, type TethrChatRun } from "@/api/tethr";
+import { enterSends } from "@/lib/tethr-composer";
 
 // Messages sent while tethr is still working on the one before (Mark,
 // 2026-11-10: "it should be held in a queue state where I can still edit it,
@@ -85,7 +86,7 @@ function QueuedRow({ run, companyId, threadId }: { run: TethrChatRun; companyId:
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape") setDraft(null);
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              if (enterSends(e)) {
                 e.preventDefault();
                 if (draft.trim()) save.mutate(draft.trim());
               }
