@@ -30,7 +30,7 @@ import { RouteFlow } from "@/components/tethr/RouteFlow";
 import { CHIP_HOVER, CHIP_SURFACE } from "@/components/tethr/Chip";
 import { OutputPanel, type PanelFile } from "@/components/tethr/OutputPanel";
 import { TethrSetupNudge } from "@/components/tethr/SetupNavItem";
-import { Nebula } from "@/components/tethr/Nebula";
+import { Orbit } from "@/components/tethr/Orbit";
 import { StreamingMarkdown } from "@/components/tethr/StreamingMarkdown";
 import { OutputStatusBadge, StatusDot, formatRelative } from "@/components/tethr/primitives";
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
@@ -852,7 +852,7 @@ function Working({
   return (
     <div className="flex min-w-0 flex-col items-start gap-2">
       <div className="tethr-task-pill">
-        <Nebula className="text-[22px] text-foreground" />
+        <Orbit className="text-foreground" />
         <span role="status" className="shimmer-text min-w-0 truncate font-medium">
           {label}
         </span>

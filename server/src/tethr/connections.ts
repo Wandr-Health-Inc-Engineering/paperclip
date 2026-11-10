@@ -1,4 +1,5 @@
-import { getIntegrations, KNOWN_CONNECTORS, modeFor } from "./integrations.js";
+import { autonomyFor, getIntegrations, KNOWN_CONNECTORS, modeFor } from "./integrations.js";
+import { kindsForConnector } from "./assistant/policy.js";
 import { jevHealthText, type JevHealth } from "./jev.js";
 import { mirrorDir } from "./mirror.js";
 import { slackConfigured } from "./slack.js";
@@ -95,15 +96,16 @@ export function connections(companyId: string): Connection[] {
   const connectors = labels.map((label): Connection => {
     const mode = modeFor(cfg, label);
     const seen = (cfg.discovered?.connectors[label]?.length ?? 0) > 0;
+    // What it can do, so tethr uses all of it, and how far it may go on its own.
+    const can = KNOWN_CONNECTORS.find((k) => k.label === label)?.blurb.replace(/\.$/, "");
+    const reach = mode === "read" ? "read only: look, don't change" : mode === "ask" ? "every change asks the person first" : autonomyWords(cfg, label);
     return {
       key: label,
       ok: mode !== "off",
       detail:
         mode === "off"
           ? "switched off in tethr's Integrations"
-          : seen
-            ? `on (${mode})`
-            : `on (${mode}), but tethr hasn't seen it answer yet: it may need connecting in the Claude account (claude.ai → Settings → Connectors)`,
+          : `${reach}${can ? `. It can: ${can}` : ""}${seen ? "" : ". tethr hasn't seen it answer yet: it may need connecting in the Claude account (claude.ai → Settings → Connectors)"}`,
       fixKey: FIX_KEYS[label] ?? null,
       seen,
     };
@@ -126,6 +128,17 @@ export function connections(companyId: string): Connection[] {
       seen: ads,
     },
   ];
+}
+
+/** A connector on Automatic, in words: what runs on its own and what still asks. */
+function autonomyWords(cfg: ReturnType<typeof getIntegrations>, label: string): string {
+  const a = autonomyFor(cfg, label);
+  const kinds = kindsForConnector(label);
+  const parts = ["changes run on their own"];
+  if (kinds.includes("spend")) parts.push(a.spend.mode === "auto" && a.spend.monthlyCapUsd !== null ? `spending on its own up to ${a.spend.monthlyCapUsd} a month` : "spending asks");
+  if (kinds.includes("outside")) parts.push(a.outside === "auto" ? "outside people on their own" : "outside people ask");
+  if (kinds.includes("deletes")) parts.push(a.deletes === "auto" ? "deletes on their own" : "deletes ask");
+  return `Automatic: ${parts.join(", ")}`;
 }
 
 /** A connection by any of its names, or null. */

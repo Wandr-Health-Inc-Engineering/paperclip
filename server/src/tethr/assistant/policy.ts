@@ -52,6 +52,8 @@ export interface Classified {
   summary: string;
   /** Why it's blocked, for blocked built-ins. */
   blockedReason?: string;
+  /** What it would do can't be shown on a card (a saved draft sent as it is): it runs only on its own, never by approval. */
+  opaque?: string;
   /** web: the page is on one of Wandr's own domains. */
   internalHost?: boolean;
   /** An ad platform: its deletes always ask, and its ad text is screened for medical claims, not words like "prescription". */
@@ -473,7 +475,8 @@ export function classify(tool: string, input: Record<string, unknown> | undefine
     }
   }
   if (connector === "PostHog" && name === "exec") {
-    cls = POSTHOG_READ_VERB.test(String(args.command ?? "")) ? "read" : "write";
+    const command = String(args.command ?? "");
+    cls = POSTHOG_READ_VERB.test(command) ? "read" : /^\s*(delete|remove|archive)\b/i.test(command) ? "destructive" : "write";
   }
   // A connector tethr has no rules for (Meta Ads, LinkedIn, anything added
   // later): a change that spends money is money, by its name or what it sets.
@@ -482,14 +485,15 @@ export function classify(tool: string, input: Record<string, unknown> | undefine
   // Gmail sends a saved draft as it is and ignores every other field, so an
   // approval card could show recipients and text that never go out. The chat
   // sends with the recipients and text written out instead.
+  // With Gmail's outside people on Automatic it simply runs; otherwise it's refused, never a card.
   if (connector === "Gmail" && name === "send_message" && hasText(args.draftId)) {
     return {
       tool,
       connector,
       server,
-      cls: "blocked",
+      cls: "public",
       summary: "Send a saved Gmail draft as it is",
-      blockedReason: "sending a saved draft hides who it goes to and what it says; send it with to, subject and body written out so the approval shows them",
+      opaque: "sending a saved draft hides who it goes to and what it says; send it with to, subject and body written out so the approval shows them",
     };
   }
 
@@ -535,6 +539,8 @@ function spendsMoney(name: string, args: Record<string, unknown>): boolean {
 /** Which sensitive kinds a connector can do, for its settings (unknown connectors: all three). */
 export function kindsForConnector(connector: string): Array<"spend" | "outside" | "deletes"> {
   if (connector === "Google Ads") return ["spend"];
+  // tethr's own tools: only delete_files (still a move to the archive). PostHog: its delete commands.
+  if (connector === "Tethr tools" || connector === "PostHog") return ["deletes"];
   const rules = CONNECTOR_RULES[connector];
   // An ad account's deletes always ask (runsOnItsOwn), so there's nothing to set for them.
   if (!rules) return isAdPlatform(connector) ? ["spend", "outside"] : ["spend", "outside", "deletes"];
@@ -596,6 +602,7 @@ export function decide(
   if (mode === "read") return { action: "deny", reason: `Tethr approval gate: ${label} is read-only in Tethr, so this was not done — ${c.summary}.` };
   if (c.cls === "draft") return { action: "allow" };
   if (mode === "auto" && runsOnItsOwn(c, opts.autonomy, opts.withinCap === true)) return { action: "allow", note: "auto" };
+  if (c.opaque) return { action: "deny", reason: `Tethr approval gate: blocked — ${c.opaque}.` };
   const why =
     c.cls === "money"
       ? ` (spends money${opts.spendNote ? `; ${opts.spendNote}` : ""})`

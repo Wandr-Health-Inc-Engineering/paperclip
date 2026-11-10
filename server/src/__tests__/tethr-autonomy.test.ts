@@ -16,6 +16,7 @@ import { setSpendAdapterForTests, type SpendAdapter } from "../tethr/spend/adapt
 import { changeStore, recentChanges, recordChange, spentThisMonth } from "../tethr/spend/log.ts";
 import { AdsInputError, buildCreateCampaign, parseCampaign, parseChanges, plannedFromBudgets } from "../tethr/tools/google-ads-ops.ts";
 import { setAdsBackendForTests, type AdsBackend } from "../tethr/tools/google-ads-write.ts";
+import { connectionsContextText } from "../tethr/connections.ts";
 import type { MutateOperation } from "../tethr/tools/google-ads-ops.ts";
 import { agentDenyRules, agentToolRefusal } from "../tethr/team-spec.ts";
 import { issueHookToken } from "../tethr/assistant/gate.ts";
@@ -358,7 +359,13 @@ describePg("Google Ads on its own, through the gate", () => {
     expect(await names()).not.toContain("ads_change");
     expect(integrationRulesText(getIntegrations(companyId))).toContain("Google Ads: reports only");
     await setAds();
-    expect(integrationRulesText(getIntegrations(companyId))).toContain("Google Ads is on Automatic: changes run on their own; spending asks an admin");
+    expect(integrationRulesText(getIntegrations(companyId))).toContain("Google Ads: change it with the ads_ tools");
+    // Each connector says what it can do and how far it goes on its own (the Connections section).
+    await updateIntegrations(companyId, { connectors: { Gmail: { mode: "auto" } } });
+    const gmail = connectionsContextText(companyId).split("\n").find((l) => l.startsWith("- Gmail:"))!;
+    expect(gmail).toContain("Automatic: changes run on their own, outside people ask, deletes ask. It can: Search and read mail");
+    expect(gmail).not.toContain("..");
+    expect(connectionsContextText(companyId)).toContain("- Google Ads: ");
   });
 
   it("builds a campaign on its own (paused), and logs it", async () => {

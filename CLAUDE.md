@@ -1312,6 +1312,15 @@ DECISIONS 67-68.
   (`GET /tethr/:c/integrations/:label/activity`). Wording in `lib/tethr-autonomy.ts`.
 - Tests: `tethr-autonomy.test.ts` (15, incl. the full card → approve → run-once flow against a fake
   account), `ui/src/lib/tethr-autonomy.test.ts`.
+- **Every connector says what it can do** (Mark: "all these connections need to be able to do what they
+  can"): `KNOWN_CONNECTORS` blurbs list each one's full abilities, and the Connections section of
+  CLAUDE.md gives each connector its reach ("Automatic: changes run on their own, outside people ask…")
+  plus "It can: …", so tethr uses all of it. (Per-connector autonomy lives only there, not repeated in
+  Integration rules.) A saved Gmail draft sent as it is (`draftId`) runs when Gmail's outside people
+  are Automatic and is refused otherwise, never a card (`Classified.opaque`). Tethr tools and PostHog
+  get a Deleting setting. Mark's instance: every connector on Automatic, the three kinds on Ask.
+- **The working pill's loop is the "tethered orbit"** (`components/tethr/Orbit.tsx`, `.tethr-orbit*`): a
+  body circling a centre point on a hairline tether with a fading trail. The nebula stays the avatar's.
 
 ## Wiring review (2026-11-09): what's true, and two known gaps
 

@@ -191,18 +191,18 @@ export function autonomyFor(cfg: IntegrationsConfig, connector: string | null): 
 
 /** The claude.ai connectors Mark has connected (from the phase 18 spike), with a plain blurb. */
 export const KNOWN_CONNECTORS: Array<{ label: string; blurb: string; tools: number; scopeHint?: string }> = [
-  { label: "Gmail", blurb: "Read and search mail; draft and send email.", tools: 30, scopeHint: "e.g. Only read the Marketing and Partners labels; skip support threads." },
-  { label: "Slack", blurb: "Read channels and threads; post messages.", tools: 19, scopeHint: "e.g. Only read #growth, #marketing and #tethr." },
-  { label: "Google Calendar", blurb: "See your calendar; create or change events.", tools: 9 },
-  { label: "Google Drive", blurb: "Search and read files; create, edit or share them.", tools: 16, scopeHint: "e.g. Never touch the Finance folder." },
-  { label: "Google Sheets", blurb: "Read spreadsheets; write values.", tools: 9 },
-  { label: "Stripe", blurb: "Revenue, customers and churn data; any change is money.", tools: 12 },
-  { label: "PostHog", blurb: "Product analytics and funnels.", tools: 1 },
-  { label: "Clay", blurb: "Find and enrich companies and contacts (uses Clay credits).", tools: 19 },
-  { label: "Claude Docs", blurb: "Read and write Claude Docs.", tools: 5 },
-  { label: "Canva", blurb: "Designs (large tool set, off by default).", tools: 47 },
-  { label: "Figma", blurb: "Design files (large tool set, off by default).", tools: 40 },
-  { label: "Mercury", blurb: "Bank account. Moving money follows its Spending setting (asks unless set otherwise).", tools: 0 },
+  { label: "Gmail", blurb: "Search and read mail and threads; draft, send, reply and forward; labels, spam and trash.", tools: 30, scopeHint: "e.g. Only read the Marketing and Partners labels; skip support threads." },
+  { label: "Slack", blurb: "Read and search channels, threads, people and files; post, schedule and draft messages; canvases and reactions.", tools: 19, scopeHint: "e.g. Only read #growth, #marketing and #tethr." },
+  { label: "Google Calendar", blurb: "See calendars and free time; create, change and delete events; answer invites; suggest times.", tools: 9 },
+  { label: "Google Drive", blurb: "Search, read and download files; create, copy and update them; share; move to trash.", tools: 16, scopeHint: "e.g. Never touch the Finance folder." },
+  { label: "Google Sheets", blurb: "Read spreadsheets; write values and formulas, add rows, sheets and columns, copy sheets, clear ranges.", tools: 9 },
+  { label: "Stripe", blurb: "Revenue, customers, subscriptions, invoices, analytics and reports; create and change products, prices, coupons and payment links (writes follow Spending).", tools: 12 },
+  { label: "PostHog", blurb: "Product analytics: trends, funnels, retention, SQL, insights and dashboards, feature flags and experiments.", tools: 1 },
+  { label: "Clay", blurb: "Find and enrich companies and contacts, ask about accounts, run Clay subroutines (uses Clay credits).", tools: 19 },
+  { label: "Claude Docs", blurb: "Create, read, edit, query and export Claude Docs.", tools: 5 },
+  { label: "Canva", blurb: "Search, create, edit, resize and export designs; brand templates and kits; generate images and videos.", tools: 47 },
+  { label: "Figma", blurb: "Read design files, components and variables; create and edit files, diagrams and images.", tools: 40 },
+  { label: "Mercury", blurb: "Bank: accounts, balances, transactions, statements, cards, budgets and categories; moving money follows Spending.", tools: 0 },
   { label: "Google Ads", blurb: "tethr's own Google Ads tools: build and change campaigns, keywords, ads and budgets. Reports work in any mode.", tools: 3 },
   { label: "Tethr tools", blurb: "Tethr's own tools: score long lists with Jev, Google keyword ideas, goals, memory, the growth map, lessons, documents, Google Ads reports, running its team of agents, and asking you with a card (a question, a checklist, a missing connection, files to delete).", tools: 26 },
 ];
@@ -323,29 +323,13 @@ export function integrationRulesText(cfg: IntegrationsConfig): string {
   }
   const off = Object.entries(cfg.connectors).filter(([, s]) => s.mode === "off").map(([l]) => l);
   if (off.length) lines.push(`- Turned off: ${off.join(", ")}. Don't try to use them.`);
-  for (const label of Object.keys(cfg.connectors)) {
-    const line = autonomyLine(cfg, label);
-    if (line) lines.push(line);
-  }
+  // What each connector can do and how far it goes on its own is in the Connections section.
   lines.push(googleAdsLine(cfg));
   for (const [label, s] of Object.entries(cfg.connectors)) {
     if (s.scope && s.scope.trim()) lines.push(`- ${label}: ${s.scope.trim()}`);
   }
   if (cfg.internalAddresses.length) lines.push(`- Inside the company: ${cfg.internalAddresses.join(", ")}. Anyone else counts as outside.`);
   return lines.join("\n");
-}
-
-/** One connector on Automatic, in a line: what runs on its own and what still asks. */
-export function autonomyLine(cfg: IntegrationsConfig, label: string): string | null {
-  if (modeFor(cfg, label) !== "auto" || label === "Tethr tools") return null;
-  const a = autonomyFor(cfg, label);
-  const spend =
-    a.spend.mode === "auto" && a.spend.monthlyCapUsd !== null
-      ? `spending runs on its own up to ${a.spend.monthlyCapUsd.toLocaleString("en-US")} a month (in the account's currency), then asks`
-      : "spending asks an admin";
-  const outside = a.outside === "auto" ? "messages to people outside the company run on their own" : "messages to people outside the company ask";
-  const deletes = a.deletes === "auto" ? "deletes run on their own" : "deletes ask";
-  return `- ${label} is on Automatic: changes run on their own; ${spend}; ${outside}; ${deletes}; anything medical asks.`;
 }
 
 /** What tethr may do in Google Ads, by its mode. */

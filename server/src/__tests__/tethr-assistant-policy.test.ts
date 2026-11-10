@@ -107,11 +107,15 @@ describe("tethr assistant policy — classify", () => {
     expect(classify(gmail("trash_thread"), { thread_id: "1" }, ctx).cls).toBe("destructive");
   });
 
-  it("never sends a saved Gmail draft blind, and treats reply-all as leaving the company", () => {
-    // Gmail ignores to/subject/body when draftId is set, so a card showing them would lie.
+  it("never puts a saved Gmail draft on a card, and treats reply-all as leaving the company", () => {
+    // Gmail ignores to/subject/body when draftId is set, so a card showing them would lie:
+    // it runs only on its own (outside people on Automatic), never by approval.
     const draftSend = classify(gmail("send_message"), { draftId: "r-123", to: ["mark@travelwithwandr.com"], subject: "Weekly notes", body: "benign" }, ctx);
-    expect(draftSend.cls).toBe("blocked");
+    expect(draftSend).toMatchObject({ cls: "public", opaque: expect.stringMatching(/hides who it goes to/) });
     expect(decide(draftSend, { mode: "auto", shell: "off" }).action).toBe("deny");
+    expect(decide(draftSend, { mode: "ask", shell: "off" }).action).toBe("deny");
+    const outsideAuto = { spend: { mode: "ask" as const, monthlyCapUsd: null }, outside: "auto" as const, deletes: "ask" as const };
+    expect(decide(draftSend, { mode: "auto", shell: "off", autonomy: outsideAuto }).action).toBe("allow");
     expect(classify(gmail("send_message"), { draftId: "", to: ["mark@travelwithwandr.com"], subject: "Hi" }, ctx).cls).toBe("write");
 
     expect(classify(gmail("reply"), { messageId: "m1", to: ["mark@travelwithwandr.com"], body: "ok" }, ctx).cls).toBe("write");
