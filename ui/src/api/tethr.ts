@@ -330,6 +330,8 @@ export interface TethrPaceSchedule {
 /** One of the learner's studies: its plan, findings, verdicts and the skills it saved. */
 export interface TethrStudy {
   id: string;
+  /** review: checking tethr's skills hold as the company grows (no research). */
+  kind?: "learn" | "review";
   trigger: "observed" | "asked";
   by: string;
   asked: string | null;
@@ -1362,6 +1364,7 @@ export const tethrApi = {
   learningSettings: (c: string, body: { pace?: TethrLearningPace; applyMode?: "auto" | "ask" }) =>
     api.post<{ pace: TethrLearningPace; schedule: TethrPaceSchedule; applyMode: "auto" | "ask" }>(`/tethr/${c}/learning/settings`, body),
   startStudy: (c: string, topic: string, depth: "quick" | "deep" = "deep") => api.post<{ study: TethrStudy }>(`/tethr/${c}/learning/studies`, { topic, depth }),
+  reviewSkills: (c: string) => api.post<{ study: TethrStudy }>(`/tethr/${c}/learning/studies`, { review: true }),
   stopStudy: (c: string, id: string) => api.post<{ study: TethrStudy | null }>(`/tethr/${c}/learning/studies/${id}/stop`, {}),
   undoStudySkill: (c: string, id: string, name: string) => api.post<{ skill: TethrStudy["skills"][number] }>(`/tethr/${c}/learning/studies/${id}/skills/${encodeURIComponent(name)}/undo`, {}),
   applyLesson: (c: string, id: string) => api.post<TethrLesson>(`/tethr/${c}/lessons/${id}/apply`, {}),

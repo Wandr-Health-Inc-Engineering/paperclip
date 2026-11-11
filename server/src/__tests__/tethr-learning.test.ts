@@ -270,7 +270,7 @@ describePg("Jev's other decisions, lessons and the learner", () => {
     app.use("/api", tethrRoutes(db));
     const bearer = `Bearer ${issueHookToken(token)}`;
     const list = await request(app).post("/api/tethr/assistant/tools/list").set("authorization", bearer).expect(200);
-    expect(list.body.tools.map((t: { name: string }) => t.name).sort()).toEqual(["skill_view", "start_study"]);
+    expect(list.body.tools.map((t: { name: string }) => t.name).sort()).toEqual(["review_skills", "skill_view", "start_study"]);
     const call2 = await request(app).post("/api/tethr/assistant/tools/call").set("authorization", bearer).send({ name: "goals_list", arguments: {} }).expect(200);
     expect(call2.body.isError).toBe(true);
 

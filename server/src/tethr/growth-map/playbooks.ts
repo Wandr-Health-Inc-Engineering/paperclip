@@ -44,7 +44,7 @@ export function playbooksContextText(installed: Set<string>, learned: LearnedSki
     [r.playbooks.join(", "), r.learned.length ? `learned: ${r.learned.join(", ")} (skill_view)` : ""].filter(Boolean).join("; ");
   return [
     "## Playbooks",
-    "Expert playbooks are installed as skills, and the learned skills are what this company learned for itself. They're how you know a channel well; your general knowledge is only the fallback.",
+    "Expert playbooks are installed as skills, and the learned skills are what this company learned for itself. They're how you know a channel well; your general knowledge is only the fallback. They're methods that work at any size: a number in one (a budget, a bid, a count of campaigns) is an example or a range, never this company's setting.",
     "- Before you plan, size, recommend, write or review anything in one of these areas, load its playbook with the Skill tool and its learned skills with skill_view in that turn, and follow them. Once per conversation is enough. Where a learned skill and a playbook differ, the learned skill is about this company: it wins.",
     '- Say in a clause which playbook or skill a recommendation follows ("per the paid-ads playbook, …").',
     "- When the playbook asks for something you don't know (budget, goal, what's been tried), check goals, memory and the connectors first; ask the person only for what's still missing, with the ask tool.",

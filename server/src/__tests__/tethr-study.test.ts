@@ -349,6 +349,39 @@ describePg("a study from plan to skills", () => {
     await learningStore.update(companyId, (s) => ({ ...s, pace: undefined }));
   }, 60_000);
 
+  // Mark, 2026-11-10: "review the skills and see which ones are actually flexible enough to be
+  // foundation. Like what if we made 50K a month, a 1200 a month budget is too small".
+  it("reviews tethr's skills in the apply room alone: rewrites its own narrow ones, and anyone else's is a card", async () => {
+    const { getStudy } = await import("../tethr/learn/studies.ts");
+    const { viewSkill } = await import("../tethr/hermes/memory-layer.ts");
+    const before = calls.length;
+    const tiered = SKILL_BODY.replace(
+      "A first Google Search test on a small budget (under $1,500 a month).",
+      "Any Google Search budget: one campaign under $3,000 a month, a campaign per intent from $3,000 to $30,000, and per product line above that.",
+    );
+    behave.apply = async (call) => {
+      const mine = await call("apply_skill", { name: "small-budget-search", description: "Search campaign structure by budget tier", area: "paid_ads", body: tiered, what_changed: "Tiers by budget instead of one small plan." });
+      expect(mine.isError).toBeFalsy();
+      const theirs = await call("apply_skill", { name: "tethr-own", description: "Rewritten by Sage", area: "paid_ads", body: tiered, what_changed: "Tiers." });
+      expect(theirs.text).toContain("card first");
+      await call("finish_study", { summary: "small-budget-search was written for one budget; it now scales by tier. tethr-own goes to you as a card.", verdicts: [] });
+    };
+    const review = await startStudy(db, companyId, { trigger: "asked", kind: "review", by: "Mark" });
+    await settleStudies(companyId);
+    const done = getStudy(companyId, review.id)!;
+    expect(done).toMatchObject({ kind: "review", status: "done", topic: "Review tethr's skills" });
+    expect(done.skills.map((k) => [k.name, k.change, k.status])).toEqual([
+      ["small-budget-search", "updated", "applied"],
+      ["tethr-own", "updated", "pending"],
+    ]);
+    expect((await viewSkill(companyId, "small-budget-search"))?.content).toContain("per product line above that");
+    // Only the apply room ran, with every skill in front of it and no web.
+    const ran = calls.slice(before);
+    expect(ran.map((c) => c.room)).toEqual(["apply"]);
+    expect(ran[0]!.prompt).toContain("Review tethr's skills");
+    expect(ran[0]!.files).toEqual(expect.arrayContaining([path.join("context", "skills", "small-budget-search.md"), path.join("context", "skills", "tethr-own.md")]));
+  }, 60_000);
+
   it("keeps the study tools to the learner's rooms", async () => {
     const { issueHookToken } = await import("../tethr/assistant/gate.ts");
     const { handlePreToolUse } = await import("../tethr/assistant/hook-handler.ts");
@@ -364,7 +397,7 @@ describePg("a study from plan to skills", () => {
     const call = await request(app).post("/api/tethr/assistant/tools/call").set("authorization", tethrToken).send({ name: "apply_skill", arguments: {} }).expect(200);
     expect(call.body.isError).toBe(true);
     // Each room lists only its own.
-    for (const [room, expected] of [["desk", ["skill_view", "start_study"]], ["plan", ["plan_study", "skip_study"]], ["research", ["submit_findings"]], ["apply", ["apply_skill", "finish_study"]]] as const) {
+    for (const [room, expected] of [["desk", ["review_skills", "skill_view", "start_study"]], ["plan", ["plan_study", "skip_study"]], ["research", ["submit_findings"]], ["apply", ["apply_skill", "finish_study"]]] as const) {
       const token = `Bearer ${issueHookToken({ companyId, threadId: sage.threadId, runId: "00000000-0000-4000-8000-000000000002", room })}`;
       const res = await request(app).post("/api/tethr/assistant/tools/list").set("authorization", token).expect(200);
       expect(res.body.tools.map((t: { name: string }) => t.name).sort()).toEqual([...expected].sort());

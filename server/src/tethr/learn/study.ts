@@ -86,6 +86,8 @@ function deepAllowed(companyId: string, now: Date): boolean {
 
 export interface StartInput {
   trigger: Study["trigger"];
+  /** review: check tethr's skills hold as the company grows (no web, no topic). */
+  kind?: "learn" | "review";
   /** Asked: what to learn. */
   topic?: string;
   depth?: StudyDepth;
@@ -107,8 +109,9 @@ export async function startStudy(db: Db, companyId: string, input: StartInput, d
   const sage = await activeLearner(db, companyId);
   if (!sage) throw new StudyError("Sage is off or paused. Switch it on in Integrations → Learning.");
   if (isAgentsPaused(companyId)) throw new StudyError("Agents are paused (the usage throttle), so Sage can't study now.");
-  const asked = input.trigger === "asked" ? oneLine(input.topic ?? "", 200) : null;
-  if (input.trigger === "asked") {
+  const review = input.kind === "review";
+  const asked = review ? REVIEW_TOPIC : input.trigger === "asked" ? oneLine(input.topic ?? "", 200) : null;
+  if (input.trigger === "asked" && !review) {
     if (!asked || asked.length < 5) throw new StudyError("Say what Sage should learn.");
     const refused = crossingRefusal(asked);
     if (refused) throw new StudyError(`That topic can't go to the web: ${refused}. Say it in general terms.`);
@@ -118,12 +121,13 @@ export async function startStudy(db: Db, companyId: string, input: StartInput, d
 
   const study: Study = {
     id: crypto.randomUUID(),
+    kind: review ? "review" : "learn",
     trigger: input.trigger,
     by: input.by,
     asked,
     status: "queued",
     depth: input.trigger === "asked" ? (input.depth ?? "deep") : "quick",
-    topic: null,
+    topic: review ? REVIEW_TOPIC : null,
     why: null,
     area: null,
     questions: [],
@@ -147,7 +151,7 @@ export async function startStudy(db: Db, companyId: string, input: StartInput, d
       threadId: sage.threadId,
       invocationSource: "chat",
       sourceKey: STUDY_CARD_SOURCE,
-      requestText: asked ? `Learn: ${asked}` : "Looking at what's been happening",
+      requestText: review ? REVIEW_TOPIC : asked ? `Learn: ${asked}` : "Looking at what's been happening",
       status: "running",
       hops: [],
       agentId: sage.agentId,
@@ -192,6 +196,7 @@ async function runStudy(db: Db, companyId: string, id: string, deps: StudyDeps):
   const sage = await activeLearner(db, companyId);
   if (!sage) return void (await finishStudy(db, companyId, id, "stopped", "Sage was switched off before it started."));
   if (isAgentsPaused(companyId)) return void (await finishStudy(db, companyId, id, "stopped", "Agents were paused before it started."));
+  if (study.kind === "review") return void (await runReview(db, companyId, sage, study));
 
   // 1. Plan (the company's own data, no web).
   const digest = await observationDigest(db, companyId, now());
@@ -222,6 +227,34 @@ async function runStudy(db: Db, companyId: string, id: string, deps: StudyDeps):
   if (applied.stopped) return void (await finishStudy(db, companyId, id, "stopped", applied.reason));
   if (applied.reason && !study.skills.length && !study.summary) return void (await finishStudy(db, companyId, id, "failed", applied.reason));
   await finishStudy(db, companyId, id, "done", null);
+}
+
+/**
+ * A review: the apply room alone (no web, nothing from outside) with every skill
+ * tethr has, checking each holds as the company grows; Sage rewrites its own
+ * narrow ones, and a rewrite of anyone else's is a card.
+ */
+async function runReview(db: Db, companyId: string, sage: TeamAgent, study: Study): Promise<void> {
+  const context = await reviewContext(companyId).catch(() => ({}));
+  if (!Object.keys(context).length) return void (await finishStudy(db, companyId, study.id, "nothing", "tethr has no skills of its own to review yet."));
+  await setStatus(companyId, study.id, "applying");
+  const applied = await step(db, companyId, sage, study.id, "apply", study.depth, reviewPrompt(companyId, Object.keys(context).length), STEP_WAIT.apply, context);
+  const after = getStudy(companyId, study.id);
+  if (!after || !ACTIVE_STUDY.has(after.status)) return;
+  if (applied.stopped) return void (await finishStudy(db, companyId, study.id, "stopped", applied.reason));
+  if (applied.reason && !after.skills.length && !after.summary) return void (await finishStudy(db, companyId, study.id, "failed", applied.reason));
+  await finishStudy(db, companyId, study.id, "done", null);
+}
+
+/** Every skill tethr has, in full, for a review (context/skills/<name>.md). */
+async function reviewContext(companyId: string): Promise<Record<string, string>> {
+  const { listSkills } = await import("../hermes/memory-layer.js");
+  const files: Record<string, string> = {};
+  for (const s of listSkills(companyId)) {
+    const skill = await viewSkill(companyId, s.name).catch(() => null);
+    if (skill) files[`skills/${s.name}.md`] = skill.content.slice(0, 20_000);
+  }
+  return files;
 }
 
 /** Run one room's turn and wait for it. */
@@ -277,7 +310,7 @@ async function reportStudy(db: Db, companyId: string, study: Study): Promise<voi
       threadId: main,
       invocationSource: "chat",
       sourceKey: STUDY_CARD_SOURCE,
-      requestText: `Sage learned: ${studyTitle(study)}`,
+      requestText: study.kind === "review" ? "Sage reviewed tethr's skills" : `Sage learned: ${studyTitle(study)}`,
       resultText: study.summary ?? "",
       status: "done",
       hops: [],
@@ -299,7 +332,7 @@ async function reportStudy(db: Db, companyId: string, study: Study): Promise<voi
     .addNote(
       companyId,
       main,
-      `Sage studied "${studyTitle(study)}": ${parts.join("; ")}. A skill is in your skills list; load it with skill_view before doing that kind of work. Mention it only if it's useful.`,
+      `${study.kind === "review" ? "Sage reviewed your skills" : `Sage studied "${studyTitle(study)}"`}: ${parts.join("; ")}. Skills are in your skills list; load the one for a job with skill_view before doing it. Mention it only if it's useful.`,
     )
     .catch(() => {});
   const { notificationService } = await import("../notify.js");
@@ -307,7 +340,7 @@ async function reportStudy(db: Db, companyId: string, study: Study): Promise<voi
     .send({
       companyId,
       kind: "lesson",
-      title: `Sage learned: ${studyTitle(study)}`,
+      title: study.kind === "review" ? "Sage reviewed tethr's skills" : `Sage learned: ${studyTitle(study)}`,
       body: parts.join("; "),
       href: chats.chatHref(companyId, main, card.id),
       ...(sage ? { agentTag: sage.tag } : {}),
@@ -316,6 +349,18 @@ async function reportStudy(db: Db, companyId: string, study: Study): Promise<voi
 }
 
 // ---- the briefs ---------------------------------------------------------------
+
+export const REVIEW_TOPIC = "Review tethr's skills";
+
+function reviewPrompt(companyId: string, count: number): string {
+  const mode = learningStore.get(companyId).applyMode ?? "auto";
+  return [
+    `Review tethr's skills (${count}, in ./context/skills/). For each, decide whether it's a foundation that holds as the company grows (it works from a small test to many times the budget, with steps and numbers in tiers or ratios, and no company figures baked in as facts) or too narrow (written for one budget, one moment or one campaign).`,
+    `Rewrite each narrow one with apply_skill under the same name, as a foundation: keep what's true, put its numbers in tiers by budget or stage, and move company-specific figures out (they belong in memory and goals). Leave the sound ones alone. At most ${REVIEW_SKILLS} rewrites. Links can only be ones the skill already had.`,
+    `A skill you made before is yours to rewrite${mode === "ask" ? " (each rewrite goes to a person as a card first)" : ""}; a rewrite of one tethr or a person saved goes to a person as a card.`,
+    "Then call finish_study with a summary in 2 or 3 short sentences: which skills are foundations, which you rewrote and why. No verdicts are needed (there are no findings).",
+  ].join("\n");
+}
 
 function planPrompt(companyId: string, study: Study, digest: string, now: Date): string {
   const schedule = paceSchedule(learningStore.get(companyId).pace);
@@ -389,11 +434,17 @@ function applyPrompt(companyId: string, study: Study): string {
 // ---- skills from a study ------------------------------------------------------
 
 export const SKILLS_PER_STUDY = 3;
+/** A review may rewrite more (it covers every skill). */
+export const REVIEW_SKILLS = 8;
 export const SKILL_BODY = { min: 200, max: 12_000 } as const;
 
-/** Every link in a skill must be one of the study's sources. */
-export function foreignLinks(body: string, study: Pick<Study, "findings">): string[] {
-  const allowed = new Set(study.findings.flatMap((f) => f.sources.map((s) => s.url.replace(/\/+$/, ""))));
+/** Every link in a skill must be one of the study's sources (or, rewriting a skill, one it already had). */
+export function foreignLinks(body: string, study: Pick<Study, "findings">, previous = ""): string[] {
+  const norm = (l: string) => l.replace(/[.,;:]+$/, "").replace(/\/+$/, "");
+  const allowed = new Set([
+    ...study.findings.flatMap((f) => f.sources.map((s) => norm(s.url))),
+    ...(previous.match(/https?:\/\/[^\s)\]>"']+/g) ?? []).map(norm),
+  ]);
   const links = body.match(/https?:\/\/[^\s)\]>"']+/g) ?? [];
   return links.filter((l) => !allowed.has(l.replace(/[.,;:]+$/, "").replace(/\/+$/, "")));
 }
@@ -452,7 +503,7 @@ export async function approveSkillCard(db: Db, companyId: string, studyId: strin
   if (!study || !k) throw new StudyError("That study or skill is gone.");
   if (k.status !== "pending") throw new StudyError(`It's already ${k.status}.`);
   const { skillRefusal } = await import("../assistant/study-tools.js");
-  const refused = skillRefusal({ name: k.name, description: k.description, area: k.area, body: k.body }, study);
+  const refused = skillRefusal({ name: k.name, description: k.description, area: k.area, body: k.body }, study, k.before?.body ?? "");
   if (refused) throw new StudyError(refused);
   await applySkill(companyId, studyId, k);
   const updated = await updateStudy(companyId, studyId, (s) => ({ ...s, skills: s.skills.map((x) => (x.name === name ? { ...x, status: "applied" as const, at: new Date().toISOString() } : x)) }));

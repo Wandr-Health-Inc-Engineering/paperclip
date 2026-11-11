@@ -52,6 +52,8 @@ export interface SkillChange {
 
 export interface Study {
   id: string;
+  /** learn: plan → research → apply. review: the apply room alone, checking that tethr's skills hold as the company grows. */
+  kind?: "learn" | "review";
   trigger: "observed" | "asked";
   /** Who asked (a person's name, "@tethr"), or "@sage" when it chose on its own. */
   by: string;

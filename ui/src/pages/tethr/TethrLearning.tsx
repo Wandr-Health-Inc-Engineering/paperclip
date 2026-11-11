@@ -205,6 +205,7 @@ export function TethrLearning() {
   const { data, isLoading } = useQuery({ queryKey: tethrKeys.learning(c), queryFn: () => tethrApi.learning(c), enabled: !!selectedCompanyId, refetchInterval: 30_000 });
   const refresh = () => queryClient.invalidateQueries({ queryKey: tethrKeys.learning(c) });
   const teach = useMutation({ mutationFn: () => tethrApi.startStudy(c, topic), onSuccess: () => setTopic(""), onSettled: refresh });
+  const review = useMutation({ mutationFn: () => tethrApi.reviewSkills(c), onSettled: refresh });
   if (isLoading || !data) return <PageSkeleton />;
 
   const by = (statuses: string[]) => data.lessons.filter((l) => statuses.includes(l.status));
@@ -256,6 +257,21 @@ export function TethrLearning() {
         </form>
         {teach.isError ? <p className="text-[12px] text-[var(--tethr-bad)]">{(teach.error as Error).message}</p> : null}
         {teach.isSuccess ? <p className="text-[12px] text-muted-foreground">Started. It shows below and in Sage's chat; a deep study can take most of an hour.</p> : null}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t tethr-rule pt-3">
+          <button
+            type="button"
+            disabled={review.isPending || !data.learner.enabled}
+            onClick={() => review.mutate()}
+            className="tethr-btn tethr-btn-glass h-8 px-3 text-[12.5px]"
+          >
+            {review.isPending ? "Starting…" : "Review the skills"}
+          </button>
+          <span className="min-w-0 flex-1 text-[12px] text-muted-foreground">
+            Sage checks that each skill holds as the company grows, from a small test to many times the budget, and rewrites the narrow ones.
+          </span>
+          {review.isError ? <p className="w-full text-[12px] text-[var(--tethr-bad)]">{(review.error as Error).message}</p> : null}
+          {review.isSuccess ? <p className="w-full text-[12px] text-muted-foreground">Started. It shows below and in Sage's chat.</p> : null}
+        </div>
       </section>
 
       <StudiesSection studies={data.studies} companyId={c} />

@@ -182,7 +182,10 @@ describePg("checklists: handed over, ticked off, put away", () => {
     expect(md).toContain("## Playbooks");
     expect(md).toContain("- Paid ads: paid-ads");
     expect(md.indexOf("## Playbooks")).toBeLessThan(md.indexOf("## Deciding what to do"));
-    expect(md).toContain("A small budget or a first test gets one channel and one campaign");
+    // The budget is a setting: plans name where it came from and scale to it (Mark: "what if we made 50K a month").
+    expect(md).toContain("A budget is a setting the team can change, not a fact about the method");
+    expect(md).toContain("A small test gets one channel and one campaign");
+    expect(md).toContain("what you'd add at the next step up");
     expect(md).toContain("Hand them a checklist with the checklist tool");
     // Without any playbook installed, no empty section.
     await ensureWorkspace({ playbooks: null });

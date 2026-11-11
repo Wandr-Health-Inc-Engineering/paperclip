@@ -111,7 +111,10 @@ export function tethrLearningRoutes(db: Db): Router {
   router.post(
     "/tethr/:companyId/learning/studies",
     person(async (c, _id, b) => {
-      const study = await startStudy(db, c, { trigger: "asked", topic: oneLine(b.topic, 200), depth: b.depth === "quick" ? "quick" : "deep", by: "you" });
+      const study =
+        b.review === true
+          ? await startStudy(db, c, { trigger: "asked", kind: "review", by: "you" })
+          : await startStudy(db, c, { trigger: "asked", topic: oneLine(b.topic, 200), depth: b.depth === "quick" ? "quick" : "deep", by: "you" });
       return { study };
     }),
   );

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Check, ChevronDown, CornerUpLeft, Lock, MessageCircleQuestion, Pause, Plug, Send } from "lucide-react";
 import { StatusDot, formatRelative } from "@/components/tethr/primitives";
@@ -31,6 +31,8 @@ function errorText(error: unknown, fallback: string): string {
 
 /** How long the check shows before the lists refresh and the card leaves (or folds to its record). */
 const DONE_HOLD_MS = 1500;
+/** How long "Sent to tethr" stays on a card after a comment. */
+const COMMENT_NOTE_MS = 6000;
 
 /** The answered card: a check that draws itself and what happened, in a line. */
 function DoneCard({ label }: { label: string }) {
@@ -65,6 +67,13 @@ export function ApprovalCard({ output, companyId, threadId, from }: { output: Te
   const queryClient = useQueryClient();
   const [replying, setReplying] = useState(false);
   const [open, setOpen] = useState(false);
+  // A comment sent: a drawn check for a few seconds (the card stays open for the decision).
+  const [commented, setCommented] = useState(false);
+  useEffect(() => {
+    if (!commented) return;
+    const t = window.setTimeout(() => setCommented(false), COMMENT_NOTE_MS);
+    return () => window.clearTimeout(t);
+  }, [commented]);
   const refresh = () => {
     if (threadId) queryClient.invalidateQueries({ queryKey: tethrKeys.chatRuns(companyId, threadId) });
     refreshAfterDecision(queryClient, companyId);
@@ -140,7 +149,22 @@ export function ApprovalCard({ output, companyId, threadId, from }: { output: Te
       </div>
       {decide.isError ? <p className="text-[12px] text-[var(--tethr-bad)]">{errorText(decide.error, "That didn't go through.")}</p> : null}
       {replying ? (
-        <CardReply title={output.title} companyId={companyId} threadId={threadId} onSent={() => setReplying(false)} onCancel={() => setReplying(false)} />
+        <CardReply
+          title={output.title}
+          companyId={companyId}
+          threadId={threadId}
+          onSent={() => {
+            setReplying(false);
+            setCommented(true);
+          }}
+          onCancel={() => setReplying(false)}
+        />
+      ) : null}
+      {commented ? (
+        <p role="status" className="tethr-done-card flex items-center gap-2.5 text-[12.5px] text-muted-foreground">
+          <DoneCheck className="h-5 w-5 shrink-0 text-foreground" />
+          Sent to tethr. It answers below; this stays open until you approve or reject.
+        </p>
       ) : null}
     </div>
   );

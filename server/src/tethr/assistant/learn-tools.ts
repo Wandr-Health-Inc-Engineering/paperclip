@@ -42,7 +42,14 @@ export const LEARN_TOOL_DEFS: McpToolDef[] = [
   {
     name: "study",
     description: "Ask Sage, the learner, to study a topic now (e.g. \"how small telehealth companies run referral programs\"). It plans, researches deeply on the web (seeing only the topic and its questions, so say it in general terms), compares what it finds with what you already know, and saves what's useful as skills you load before that kind of work. `depth`: deep (default) or quick.",
-    inputSchema: { type: "object", properties: { topic: { type: "string" }, depth: { type: "string", enum: ["deep", "quick"] } }, required: ["topic"] },
+    inputSchema: {
+      type: "object",
+      properties: {
+        topic: { type: "string" },
+        depth: { type: "string", enum: ["deep", "quick"] },
+        review: { type: "boolean", description: "true: instead of a topic, have Sage review your skills and rewrite narrow ones (tied to one budget or moment) as foundations that hold as the company grows." },
+      },
+    },
   },
   {
     name: "lessons_due",
@@ -76,6 +83,16 @@ export async function runLearnTool(name: string, a: Record<string, unknown>, ctx
         text: `Lesson recorded (${areaName(lesson.area)}, ${score}). ${offered ? "It's a card in the main chat for the team to apply or turn down." : "It waits on the Learning page; the best ones become cards as the pace allows."}`,
         meta: { lessonId: lesson.id, offered, composite: lesson.composite },
       };
+    }
+    if (name === "study" && a.review === true) {
+      const { startStudy, StudyError } = await import("../learn/study.js");
+      try {
+        const study = await startStudy(db, companyId, { trigger: "asked", kind: "review", by: "@tethr" });
+        return { text: "Sage started reviewing your skills. If it rewrites any, you get a note and they show in your skills list.", meta: { studyId: study.id } };
+      } catch (err) {
+        if (err instanceof StudyError) return { text: `study: ${err.message}`, isError: true };
+        throw err;
+      }
     }
     if (name === "study") {
       const topic = oneLine(a.topic, 200);

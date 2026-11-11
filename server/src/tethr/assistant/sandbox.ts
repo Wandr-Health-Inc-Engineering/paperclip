@@ -29,7 +29,7 @@ const LOCAL = ["Read", "Glob", "Grep", "ToolSearch"] as const;
 const same = (timeoutSec: number, maxTurns: number) => ({ quick: { timeoutSec, maxTurns }, deep: { timeoutSec, maxTurns } });
 
 export const ROOM_SPECS: Record<SandboxRoom, RoomSpec> = {
-  desk: { builtins: LOCAL, tools: ["start_study", "skill_view"], limits: same(600, 30), privateData: true },
+  desk: { builtins: LOCAL, tools: ["start_study", "review_skills", "skill_view"], limits: same(600, 30), privateData: true },
   plan: { builtins: LOCAL, tools: ["plan_study", "skip_study"], limits: same(300, 20), privateData: true },
   research: {
     builtins: ["WebSearch", "WebFetch", "ToolSearch", "TodoWrite"],
@@ -41,7 +41,7 @@ export const ROOM_SPECS: Record<SandboxRoom, RoomSpec> = {
 };
 
 /** Every tethr tool that exists only for the learner's rooms (nobody else lists or calls them). */
-export const STUDY_TOOL_NAMES = ["start_study", "plan_study", "skip_study", "submit_findings", "apply_skill", "finish_study"] as const;
+export const STUDY_TOOL_NAMES = ["start_study", "review_skills", "plan_study", "skip_study", "submit_findings", "apply_skill", "finish_study"] as const;
 export const STUDY_TOOL_SET = new Set<string>(STUDY_TOOL_NAMES);
 
 /** Claude Code tools no room ever gets (on top of whatever --tools leaves out). */

@@ -1,6 +1,6 @@
 import { oneLine } from "../goals.js";
 import { AREA_IDS, isAreaId } from "../growth-map/areas.js";
-import { SKILL_DESCRIPTION_MAX, SKILL_NAME_RE } from "../hermes/memory-layer.js";
+import { SKILL_DESCRIPTION_MAX, SKILL_NAME_RE, viewSkill } from "../hermes/memory-layer.js";
 import { learningStore } from "../learn/store.js";
 import { FINDING_EVIDENCE, FINDING_STRENGTHS, getStudy, updateStudy, VERDICTS, type Finding, type Study, type Verdict } from "../learn/studies.js";
 import {
@@ -8,6 +8,7 @@ import {
   finishStudy,
   foreignLinks,
   recordSkillChange,
+  REVIEW_SKILLS,
   SKILL_BODY,
   SKILLS_PER_STUDY,
   startStudy,
@@ -32,6 +33,11 @@ export const STUDY_TOOL_DEFS: McpToolDef[] = [
     name: "start_study",
     description: "Start studying a topic someone asked you to learn (it runs in the background: plan, research on the web, then compare with what tethr knows and save skills). `depth`: deep (default, a long thorough study) or quick.",
     inputSchema: { type: "object", properties: { topic: { type: "string" }, depth: { type: "string", enum: ["deep", "quick"] } }, required: ["topic"] },
+  },
+  {
+    name: "review_skills",
+    description: "Review tethr's skills: check each holds as the company grows (from a small test to many times the budget) and rewrite the narrow ones as foundations. Runs in the background; no web.",
+    inputSchema: { type: "object", properties: {} },
   },
   {
     name: "plan_study",
@@ -126,6 +132,7 @@ export const STUDY_TOOL_DEFS: McpToolDef[] = [
 
 const ROOM_OF: Record<string, SandboxRoom> = {
   start_study: "desk",
+  review_skills: "desk",
   plan_study: "plan",
   skip_study: "plan",
   submit_findings: "research",
@@ -160,7 +167,7 @@ const httpsUrl = (v: unknown) => {
 };
 
 /** Why a skill can't be saved, or null. Checked when it's saved and again when a card is approved. */
-export function skillRefusal(k: { name: string; description: string; area: string; body: string }, study: Pick<Study, "findings">): string | null {
+export function skillRefusal(k: { name: string; description: string; area: string; body: string }, study: Pick<Study, "findings">, previousBody = ""): string | null {
   if (!SKILL_NAME_RE.test(k.name)) return "name: lowercase letters, digits, dots, dashes or underscores (up to 64).";
   if (!k.description || k.description.length > SKILL_DESCRIPTION_MAX || /\n/.test(k.description)) return `description: one line of at most ${SKILL_DESCRIPTION_MAX} characters.`;
   if (!isAreaId(k.area)) return `area must be one of ${AREA_IDS.join(", ")}.`;
@@ -170,7 +177,7 @@ export function skillRefusal(k: { name: string; description: string; area: strin
   if (screened) return screened;
   // A skill tells tethr how to work; an address in one is how a web page would try to send data out.
   if (/[\w.+-]+@[\w-]+(\.[\w-]+)+/.test(text)) return "a skill can't hold an email address.";
-  const foreign = foreignLinks(k.body, study);
+  const foreign = foreignLinks(k.body, study, previousBody);
   if (foreign.length) return `links must be the study's own sources; not ${foreign.slice(0, 2).join(", ")}.`;
   return null;
 }
@@ -184,6 +191,10 @@ export async function runStudyTool(name: string, a: Record<string, unknown>, ctx
       const depth = a.depth === "quick" ? "quick" : "deep";
       const study = await startStudy(db, companyId, { trigger: "asked", topic: str(a.topic, 200), depth, by: "you" });
       return { text: `Started a ${depth} study of "${study.asked}". Its card in this chat shows how it goes; what it learns becomes skills tethr uses.`, meta: { studyId: study.id } };
+    }
+    if (name === "review_skills") {
+      const review = await startStudy(db, companyId, { trigger: "asked", kind: "review", by: "you" });
+      return { text: "Started reviewing tethr's skills. Its card in this chat shows how it goes.", meta: { studyId: review.id } };
     }
     const study = ctx.studyId ? getStudy(companyId, ctx.studyId) : null;
     if (!study) return err(name, "this turn isn't part of a study.");
@@ -249,10 +260,13 @@ export async function runStudyTool(name: string, a: Record<string, unknown>, ctx
 
     if (name === "apply_skill") {
       const k = { name: str(a.name, 64), description: oneLine(a.description, 200), area: String(a.area ?? ""), body: str(a.body, SKILL_BODY.max + 1) };
-      const refused = skillRefusal(k, study);
+      // Rewriting a skill may keep the links it already had.
+      const existing = await viewSkill(companyId, k.name).catch(() => null);
+      const refused = skillRefusal(k, study, existing?.content ?? "");
       if (refused) return err(name, refused);
+      const cap = study.kind === "review" ? REVIEW_SKILLS : SKILLS_PER_STUDY;
       const others = study.skills.filter((x) => x.name !== k.name && x.status !== "refused");
-      if (others.length >= SKILLS_PER_STUDY) return err(name, `at most ${SKILLS_PER_STUDY} skills per study.`);
+      if (others.length >= cap) return err(name, `at most ${cap} skills per ${study.kind === "review" ? "review" : "study"}.`);
       const member = ctx.threadId ? await teamService(db).byThread(companyId, ctx.threadId) : null;
       if (!member?.sandbox) return err(name, "only Sage saves skills from a study.");
       const record = await recordSkillChange(db, companyId, study, { ...k, whatChanged: oneLine(a.what_changed, LIMITS.whatChanged) }, {

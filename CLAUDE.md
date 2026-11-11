@@ -1217,6 +1217,12 @@ DECISIONS 57-64. No migration. One new store: `tethr-questions.json` (in the res
     decision record draws the same check. `refreshAfterDecision` invalidates **every** chat's runs:
     a card can sit in a chat other than the one open, and before this the main chat kept showing a
     decided card until a reload, so a second tap said it was already decided.
+  - **A comment on an approval card draws the check too** ("Sent to tethr. It answers below; this stays open
+    until you approve or reject.", ~6s, `COMMENT_NOTE_MS`); the card stays for the decision.
+  - **What's on screen isn't news** (Mark: notifications showed "even though I am in chat right there"):
+    `chat/seen.ts useNotificationsSeenHere` + `lib/tethr-notify-seen.ts seenInChat` mark read, while the page
+    is visible, every notification pointing at the open chat: a card in it (`/queue/<output>`, outputs and
+    report-card approvals), a turn in it (`focus=<run>`), or the chat itself. It shares the bell's query.
   - **A turn's cards come last** (Mark, 2026-11-10: the approval card popped out "before all the
     text is done"). A card is made mid-turn (the gate denies the call, makes the card, and the
     model keeps writing), so `SessionTurn` holds its cards (approvals, questions, checklists,
@@ -1539,7 +1545,18 @@ based on how aggressive learning". Plan: `~/.claude/plans/keen-moseying-micali.m
   Integrations → Learning and Sage's settings sheet: on/off, pace, saves on its own / asks first
   (`settings/LearningPace.tsx`). Store `tethr-studies.json` (in the reset list). Routes in
   `routes/tethr-learning.ts`: `POST learning/settings|studies|studies/:id/stop|studies/:id/skills/:name/undo`.
-- Tests: `tethr-study.test.ts` (9: rooms, crossing screen, pace, skill checks, playbooks; the full study
+- **Skills are foundations, not snapshots** (Mark, 2026-11-10: tethr planned around "the $1,200/mo budget" and
+  credited it to the paid-ads skill; it came from a memory note. "What if we made 50K a month"). tethr's
+  `DECIDING` rule: a budget is a setting (say where the figure came from; never credit a company figure to a
+  playbook or skill), size the structure to it, and say what you'd add at the next step up (e.g. 10x). The
+  Playbooks section says a skill's numbers are examples, never this company's settings. Sage's apply room
+  writes skills in tiers by budget/stage (or ratios), with no company figures baked in, named by job.
+  **Review the skills** (`kind: "review"`, `REVIEW_TOPIC`): the apply room alone (no plan, no web) with every
+  skill tethr has in `context/skills/`; it rewrites its own narrow ones (≤ `REVIEW_SKILLS` 8; a rewrite may
+  keep the links the skill already had, `foreignLinks(body, study, previous)`), anyone else's is a card;
+  nothing to review → "nothing". Started from Sage's chat (`review_skills`), tethr's `study {review: true}`
+  or the Learning page's "Review the skills".
+- Tests: `tethr-study.test.ts` (10: rooms, crossing screen, pace, skill checks, playbooks; the review; the full study
   through a fake Claude that calls the real tools endpoint per room; own-skill updates + Undo, someone
   else's skill = card, Ask first; skip / pace cap / throttle; tools only in rooms), `tethr-learning`
   (desk room), UI `tethr-study.test.ts`, `chat/study-card.test.tsx`.

@@ -65,6 +65,10 @@ describe("a study's words", () => {
     );
     expect(outcomeWords(study({ findings: [] }))).toBe("No skill saved");
     expect(areaLabel("paid_ads")).toBe("Paid ads");
+    // A review of the skills: no research, and rewrites read as such.
+    expect(studyLine(study({ kind: "review", status: "applying", findings: [] }))).toContain("does it hold as the company grows");
+    expect(outcomeWords(study({ kind: "review", findings: [], skills: [skill({ change: "updated" })] }))).toBe("1 rewritten");
+    expect(outcomeWords(study({ kind: "review", findings: [] }))).toBe("Every skill holds up");
     expect(areaLabel(null)).toBe("General");
   });
 });

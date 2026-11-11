@@ -36,7 +36,9 @@ export function studyLine(s: TethrStudy): string {
     case "researching":
       return `Researching ${plural(s.questions.length, "question")} on the web${s.depth === "deep" ? ", in depth" : ""}.`;
     case "applying":
-      return `Comparing ${plural(s.findings.length, "finding")} with what tethr knows, and saving what's worth keeping.`;
+      return s.kind === "review"
+        ? "Checking each of tethr's skills: does it hold as the company grows?"
+        : `Comparing ${plural(s.findings.length, "finding")} with what tethr knows, and saving what's worth keeping.`;
     case "nothing":
       return `Nothing worth studying this time${s.reason ? `: ${s.reason}` : "."}`;
     case "failed":
@@ -56,12 +58,12 @@ export function outcomeWords(s: TethrStudy): string {
   const pending = s.skills.filter((k) => k.status === "pending").length;
   const parts = [
     made ? plural(made, "new skill") : "",
-    updated ? `${updated} updated` : "",
+    updated ? `${updated} ${s.kind === "review" ? "rewritten" : "updated"}` : "",
     pending ? `${pending} waiting for your OK` : "",
   ].filter(Boolean);
   const sources = new Set(s.findings.flatMap((f) => f.sources.map((x) => x.url))).size;
   const found = s.findings.length ? `${plural(s.findings.length, "finding")} from ${plural(sources, "source")}` : "";
-  return [parts.length ? parts.join(", ") : "No skill saved", found].filter(Boolean).join(" · ");
+  return [parts.length ? parts.join(", ") : s.kind === "review" ? "Every skill holds up" : "No skill saved", found].filter(Boolean).join(" · ");
 }
 
 export const VERDICT_WORDS: Record<TethrStudy["verdicts"][number]["verdict"], string> = {

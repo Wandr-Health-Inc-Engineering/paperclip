@@ -60,6 +60,7 @@ import { ApprovalCard, DecidedLine, QuestionCard } from "./chat/decision-cards";
 import { ChecklistCard } from "./chat/checklist-card";
 import { useCardsLast } from "./chat/cards-last";
 import { STUDY_CARD_SOURCE, StudyCard } from "./chat/study-card";
+import { useNotificationsSeenHere } from "./chat/seen";
 import { FileChip, FileChips } from "./chat/file-chip";
 import { TeamUpdates } from "./chat/team-updates";
 import { groupReports, kindLabel } from "@/lib/tethr-cards";
@@ -170,6 +171,9 @@ export function TethrChat() {
   useEffect(() => {
     if (pending?.runId && runs?.some((r) => r.id === pending.runId)) setPending(null);
   }, [runs, pending]);
+
+  // What's on screen here isn't news: its notifications are read while you look at it.
+  useNotificationsSeenHere(c, threadId, mainThreadId, runs);
 
   // When a run lands, refresh the surfaces it may have touched (Queue, list counts).
   // Turns that were already finished when the chat opened didn't "land": only one that

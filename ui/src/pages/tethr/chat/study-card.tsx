@@ -50,9 +50,13 @@ export function StudyCard({ run, companyId, inMainChat }: { run: TethrChatRun; c
   return (
     <div className="space-y-3">
       <div className="tethr-glass space-y-3 rounded-[16px] px-4 py-3.5">
-        <Header when={run.createdAt} label={inMainChat ? "Sage learned" : study.trigger === "asked" ? `Asked by ${study.by}` : "Sage picked this on its own"} depth={study.depth} />
+        <Header
+          when={run.createdAt}
+          label={inMainChat ? (study.kind === "review" ? "Sage reviewed" : "Sage learned") : study.trigger === "asked" ? `Asked by ${study.by}` : "Sage picked this on its own"}
+          depth={study.kind === "review" ? undefined : study.depth}
+        />
         <p className="text-[14px] font-medium leading-snug">{studyTitle(study)}</p>
-        {!inMainChat ? <Steps study={study} /> : null}
+        {!inMainChat && study.kind !== "review" ? <Steps study={study} /> : null}
         <p className={cn("text-[13px] leading-relaxed", study.status === "failed" ? "text-[var(--tethr-bad)]" : "text-muted-foreground")}>
           {active ? (
             <span className="inline-flex items-center gap-2">

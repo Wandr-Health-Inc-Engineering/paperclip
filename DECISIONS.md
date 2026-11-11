@@ -344,6 +344,9 @@ Branch: `mark-sandbox` (local only). Date started: 2026-06-11.
     struggled, goals behind pace and what tethr knows: never tethr's answers, tool results or the Ideas chat.
 73. **Skills work without Hermes.** The built-in memory store has a skills folder, so skill_view, skill_save and
     the learner's skills work on either store; recall still needs Hermes. Every agent can open a skill.
+74. **A budget is a setting; skills are foundations.** tethr says where a figure came from, sizes plans to it and
+    names the next step up; skills put numbers in tiers or ratios and never hold company figures. A "review the
+    skills" job (no web) checks every skill holds as the company grows and rewrites the narrow ones.
 
 ## Core changes (keep merge-safe)
 

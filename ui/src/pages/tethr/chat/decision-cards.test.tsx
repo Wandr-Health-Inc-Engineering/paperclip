@@ -1,18 +1,20 @@
 // @vitest-environment jsdom
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { TethrQuestion } from "@/api/tethr";
+import type { TethrChatOutput, TethrQuestion } from "@/api/tethr";
 
 vi.mock("../../../lib/router", () => ({ Link: ({ children }: { children: unknown }) => children, useNavigate: () => vi.fn() }));
 const answerQuestion = vi.fn(async () => ({ question: {}, routeRunId: null, threadId: "t1" }));
+const sendChatMessage = vi.fn(async () => ({ routeRunId: "r2", threadId: "t1" }));
 vi.mock("@/api/tethr", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/api/tethr")>();
-  return { ...actual, tethrApi: { ...actual.tethrApi, answerQuestion } };
+  return { ...actual, tethrApi: { ...actual.tethrApi, answerQuestion, sendChatMessage } };
 });
 
-const { QuestionCard } = await import("./decision-cards");
+const { ApprovalCard, QuestionCard } = await import("./decision-cards");
 
 const card = (over: Partial<TethrQuestion>): TethrQuestion => ({
   id: "q1",
@@ -77,5 +79,38 @@ describe("a connection card", () => {
     const text = render(card({ access: false }));
     expect(text).toContain("Connect Google Ads");
     expect(text).toContain("I've connected it");
+  });
+});
+
+describe("an approval card's comment", () => {
+  // Mark, 2026-11-10: "Commenting doesn't change like pressing approve or reject… It does work to comment but not clear".
+  it("draws a check and says it went to tethr, and the card stays open for the decision", async () => {
+    const output: TethrChatOutput = { id: "o1", title: "Send the partner email", status: "gated", sensitivity: "public", kind: "document", body: "Hello partners.", meta: {}, createdAt: "" };
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    act(() =>
+      root.render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ApprovalCard output={output} companyId="c1" threadId="t1" />
+        </QueryClientProvider>,
+      ),
+    );
+    const button = (label: string) => [...host.querySelectorAll("button")].find((b) => b.textContent?.trim() === label)!;
+    await act(async () => button("Comment").click());
+    const box = host.querySelector("textarea")!;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+      setter.call(box, "Why this list?");
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    await act(async () => new Promise((r) => setTimeout(r, 0)));
+    expect(sendChatMessage).toHaveBeenCalledWith("c1", "t1", 'About your request "Send the partner email": Why this list?');
+    expect(host.querySelector(".tethr-done-check")).not.toBeNull();
+    expect(host.textContent).toContain("Sent to tethr.");
+    expect(button("Approve")).toBeTruthy();
+    act(() => root.unmount());
+    host.remove();
   });
 });

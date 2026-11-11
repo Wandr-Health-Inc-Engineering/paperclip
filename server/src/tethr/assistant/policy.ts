@@ -185,7 +185,7 @@ const CONNECTOR_RULES: Record<string, Rule[]> = {
     // Phase 26.5-26.6: lessons are proposed, queued and reviewed inside Tethr; only a person applies one.
     [/^(propose_lesson|study|review_lesson)$/, "draft"],
     // The learner's study tools: its plan, findings and skills live in Tethr; only its rooms get them.
-    [/^(start_study|plan_study|skip_study|submit_findings|apply_skill|finish_study)$/, "draft"],
+    [/^(start_study|review_skills|plan_study|skip_study|submit_findings|apply_skill|finish_study)$/, "draft"],
     // Phase 27: a question to the person is a card inside Tethr. It grants nothing:
     // the answer comes back as their own message.
     // delete_files only stages a card (destructive: always a person's yes).
