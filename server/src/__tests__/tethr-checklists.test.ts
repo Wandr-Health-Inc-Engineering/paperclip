@@ -54,7 +54,7 @@ describe("checklists and playbooks: the pure parts", () => {
     expect(classify("mcp__tethr__checklist", { title: "Launch the campaign" }, ctx)).toMatchObject({ cls: "draft", summary: "Making you a checklist: “Launch the campaign”" });
     expect(TETHR_TOOL_DEFS.some((d) => d.name === "checklist")).toBe(true);
     expect(AGENT_ALWAYS_TOOLS).toContain("checklist");
-    expect(sandboxRefusal("@sage", "mcp__tethr__checklist")).toMatch(/blocked/);
+    for (const room of ["desk", "plan", "research", "apply"] as const) expect(sandboxRefusal("@sage", "mcp__tethr__checklist", room)).toMatch(/blocked/);
   });
 
   it("names each area's installed playbooks and says to load them first; nothing when none are installed", () => {

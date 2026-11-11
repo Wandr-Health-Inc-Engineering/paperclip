@@ -23,6 +23,12 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
   // Phase 27: team agents made before icons followed the job.
   const { healTeamIcons } = await import("./team.js");
   await healTeamIcons(db).catch(() => 0);
+  // The learner's rebuild (2026-11-10): an older @sage gets its new mission and
+  // pace; a study a restart cut short is closed.
+  const { healLearner } = await import("./learn/learner.js");
+  await healLearner(db).catch(() => 0);
+  const { healStudies } = await import("./learn/study.js");
+  await healStudies(db).catch(() => 0);
   // The goals interview now runs in the main chat; fold an older side-chat one in.
   const { foldInterviewsIntoMainChats } = await import("./main-chat.js");
   await foldInterviewsIntoMainChats(db).catch(() => {});

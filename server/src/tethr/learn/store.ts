@@ -1,4 +1,5 @@
 import { companyStore } from "../company-store.js";
+import type { LearningPace } from "./learning-pace.js";
 
 // What the learning loops keep besides the lessons (phase 26.5-26.6), per
 // company, in the instance-dir tethr-learning.json: the learner's switch and
@@ -19,6 +20,12 @@ export interface LearningState {
   /** The learner is switched on (Integrations → Learning). */
   enabled?: boolean;
   agentTag?: string;
+  /** How often it watches and how much it studies on its own (learning-pace.ts). */
+  pace?: LearningPace;
+  /** Its skills save on their own (default), or each comes as a card first. */
+  applyMode?: "auto" | "ask";
+  /** When it last looked at what's been happening (the next digest starts there). */
+  watchedAt?: string;
   /** Topics a person or tethr queued for the learner, oldest first. */
   queue?: Array<{ topic: string; by: string; at: string }>;
   /** By web domain. */

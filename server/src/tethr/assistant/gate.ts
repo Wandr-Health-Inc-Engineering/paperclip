@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { writeAtomic } from "../atomic.js";
+import type { SandboxRoom } from "./sandbox.js";
 import { assistantHome } from "./workspace.js";
 
 // Plumbing for the approval gate (phase 18):
@@ -30,6 +31,10 @@ export interface HookTokenContext {
   privateTurn?: boolean;
   /** Phase 26.1: the turn came from Slack (its approval cards are asked there too). */
   slack?: SlackReplyTarget;
+  /** The learner's room this turn runs in (desk, plan, research, apply); see sandbox.ts. */
+  room?: SandboxRoom;
+  /** The study a plan, research or apply turn belongs to. */
+  studyId?: string;
 }
 
 const tokens = new Map<string, HookTokenContext & { expiresAt: number | null }>();
@@ -62,6 +67,8 @@ export function resolveHookToken(token: string | undefined | null): HookTokenCon
     runId: entry.runId,
     ...(entry.privateTurn ? { privateTurn: true } : {}),
     ...(entry.slack ? { slack: entry.slack } : {}),
+    ...(entry.room ? { room: entry.room } : {}),
+    ...(entry.studyId ? { studyId: entry.studyId } : {}),
   };
 }
 

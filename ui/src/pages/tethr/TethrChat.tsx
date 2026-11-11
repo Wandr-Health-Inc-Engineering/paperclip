@@ -59,6 +59,7 @@ import { FileThisButton, InboxCard, LessonCard, UrgencyRow } from "./chat/cards"
 import { ApprovalCard, DecidedLine, QuestionCard } from "./chat/decision-cards";
 import { ChecklistCard } from "./chat/checklist-card";
 import { useCardsLast } from "./chat/cards-last";
+import { STUDY_CARD_SOURCE, StudyCard } from "./chat/study-card";
 import { FileChip, FileChips } from "./chat/file-chip";
 import { TeamUpdates } from "./chat/team-updates";
 import { groupReports, kindLabel } from "@/lib/tethr-cards";
@@ -156,7 +157,13 @@ export function TethrChat() {
     queryKey: tethrKeys.chatRuns(c, threadId ?? "none"),
     queryFn: () => tethrApi.chatRuns(c, threadId!, limit),
     enabled: !!selectedCompanyId && !!threadId,
-    refetchInterval: (q) => (q.state.data?.some((r) => !TERMINAL.has(r.status)) || pending ? 500 : 15_000),
+    // Fast while a turn streams; a study card alone moves slowly (its steps take minutes).
+    refetchInterval: (q) =>
+      q.state.data?.some((r) => !TERMINAL.has(r.status) && r.sourceKey !== STUDY_CARD_SOURCE) || pending
+        ? 500
+        : q.state.data?.some((r) => !TERMINAL.has(r.status))
+          ? 3_000
+          : 15_000,
   });
 
   // Drop the optimistic bubble once its run shows up in the thread.
@@ -333,12 +340,14 @@ export function TethrChat() {
   }
 
   const allRuns = runs ?? [];
+  // Sage's study cards run for a long time beside the conversation; they never hold a message back.
+  const conversation = allRuns.filter((r) => r.sourceKey !== STUDY_CARD_SOURCE);
   // A message sent while tethr is still working waits in the tray above the composer,
   // not in the transcript: one conversation, one progress pill.
-  const queued = waitingBehind(allRuns, TERMINAL);
+  const queued = waitingBehind(conversation, TERMINAL);
   const queuedIds = new Set(queued.map((r) => r.id));
   const visibleRuns = allRuns.filter((r) => !queuedIds.has(r.id));
-  const threadBusy = allRuns.some((r) => !TERMINAL.has(r.status));
+  const threadBusy = conversation.some((r) => !TERMINAL.has(r.status));
   const pendingHere = pending && (pending.threadId === threadId || (isDraft && !pending.threadId)) && !allRuns.some((r) => r.id === pending.runId) ? pending : null;
   // On its way to the server: a bubble when it will start at once, a tray row when it will wait.
   const showPending = threadBusy ? null : pendingHere;
@@ -364,6 +373,8 @@ export function TethrChat() {
       <InboxCard key={run.id} run={run} companyId={c} />
     ) : run.sourceKey === "tethr-lesson" ? (
       <LessonCard key={run.id} run={run} companyId={c} />
+    ) : run.sourceKey === STUDY_CARD_SOURCE ? (
+      <StudyCard key={run.id} run={run} companyId={c} inMainChat={isMain} />
     ) : run.invocationSource === "chat" ? (
       <SessionTurn
         key={run.id}
@@ -521,7 +532,15 @@ export function TethrChat() {
         key={threadId ?? "draft"}
         companyId={c}
         placeholder={
-          isDraft ? "What's this side chat about?" : isMain ? "Message tethr…" : teamAgent ? `Message ${teamAgent.tag}…` : "Message this side chat…"
+          isDraft
+            ? "What's this side chat about?"
+            : isMain
+              ? "Message tethr…"
+              : teamAgent?.sandbox
+                ? `Ask ${teamAgent.name} to learn something…`
+                : teamAgent
+                  ? `Message ${teamAgent.tag}…`
+                  : "Message this side chat…"
         }
         hint={undefined}
         busy={send.isPending}

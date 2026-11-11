@@ -6,6 +6,7 @@ import { AgentGlyph, StatusDot } from "@/components/tethr/primitives";
 import { tethrApi, tethrKeys, type TethrAgentSettingsPatch, type TethrAgentTool } from "@/api/tethr";
 import { cn } from "@/lib/utils";
 import { AutonomyKinds, Pills } from "../settings/AutonomyKinds";
+import { LearningPaceControls } from "../settings/LearningPace";
 
 // An agent's own settings, in its pane (Mark, 2026-11-10: "nesting settings for
 // the agent within the agent panes themselves is better… if there's a paid ad
@@ -136,6 +137,8 @@ export function AgentSettingsSheet({ companyId, tag, onClose }: { companyId: str
     queryKey: tethrKeys.agentSettings(companyId, current),
     queryFn: () => tethrApi.agentSettings(companyId, current),
   });
+  // The learner's sheet also holds its pace and whether its skills save on their own.
+  const { data: learning } = useQuery({ queryKey: tethrKeys.learning(companyId), queryFn: () => tethrApi.learning(companyId) });
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["tethr", companyId, "team"] });
   };
@@ -244,6 +247,12 @@ export function AgentSettingsSheet({ companyId, tag, onClose }: { companyId: str
                 ) : null}
                 <p className="text-[11.5px] tethr-text-3">A new tool starts on Approval needed. Anything medical always asks.</p>
               </Section>
+
+              {learning?.learner.agent?.tag === current ? (
+                <Section title="learning">
+                  <LearningPaceControls companyId={companyId} learner={learning.learner} />
+                </Section>
+              ) : null}
 
               <Section title="limits">
                 <div className="space-y-2">

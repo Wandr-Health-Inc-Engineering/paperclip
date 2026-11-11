@@ -40,10 +40,11 @@ import { indexTurnSoon } from "../hermes/indexer.js";
 import { memorySnapshot, migrateFreeformMemory } from "../hermes/memory-layer.js";
 import { growthMap } from "../growth-map/evidence.js";
 import { growthMapContextText } from "../growth-map/text.js";
-import { installedPlaybooks, playbooksContextText } from "../growth-map/playbooks.js";
-import { ensureSandboxWorkspace, sandboxClaudeMd, sealedThreadTag } from "../learn/learner.js";
-import { SANDBOX_TOOLS } from "./learn-tools.js";
-import { SANDBOX_BUILTINS } from "./sandbox.js";
+import { installedPlaybooks, learnedSkills, playbooksContextText } from "../growth-map/playbooks.js";
+import { getMapState } from "../growth-map/store.js";
+import { sealedThreadTag } from "../learn/learner.js";
+import { prepareRoom } from "../learn/rooms.js";
+import { ROOM_SPECS, roomDenyRules, type SandboxRoom, type StudyDepth } from "./sandbox.js";
 
 // The chat assistant runner (phase 18). Each Chat thread drives ONE Claude Code
 // session (resumed per thread) through Paperclip core's claude-local adapter
@@ -111,6 +112,26 @@ export interface PrivateTurnInput {
 
 /** Prompts of private turns waiting to run (memory only, by run id). */
 const privatePrompts = new Map<string, string>();
+
+/** A turn of the learner's study in one of its rooms (learn/study.ts): fresh,
+ * never saved, its task in `prompt`, reported by the study (not the runner). */
+export interface StudyTurnInput {
+  companyId: string;
+  threadId: string;
+  room: Exclude<SandboxRoom, "desk">;
+  depth: StudyDepth;
+  studyId: string;
+  /** What the run row shows (the turn is hidden from the chat; its study card shows progress). */
+  summary: string;
+  prompt: string;
+  /** The room's context files (apply: skills and playbooks to compare with). */
+  context?: Record<string, string>;
+}
+/** Run rows of study turns. */
+export const STUDY_TURN_SOURCE = "tethr-study";
+const STUDY_QUEUE_SUFFIX = "#study";
+/** Study turns waiting to run (memory only, by run id). */
+const studyTurns = new Map<string, StudyTurnInput>();
 /** Where turns that came from Slack answer (memory only, by run id). */
 const slackTargets = new Map<string, SlackReplyTarget>();
 /** A waiting message's new text (phase 27), until its turn starts or its save lands. */
@@ -126,6 +147,8 @@ interface TurnStyle {
 }
 const SESSION_TURN: TurnStyle = { resumesSession: true, carriesContext: true, savesSession: true, extraArgs: [] };
 const PRIVATE_TURN: TurnStyle = { resumesSession: false, carriesContext: false, savesSession: false, extraArgs: ["--no-session-persistence"] };
+/** Same as a private turn, but nothing private came in from outside: the thread isn't tainted. */
+const STUDY_TURN: TurnStyle = { resumesSession: false, carriesContext: false, savesSession: false, extraArgs: ["--no-session-persistence"] };
 
 interface QueueState {
   threads: Map<string, string[]>;
@@ -154,7 +177,7 @@ const state: QueueState = {
 
 /** Lines of builtin tools the chat session may use (Bash only when the shell is on). */
 /** Cards in a chat that aren't turns of the conversation. */
-const CARD_SOURCES = new Set(["tethr-agent-report", "tethr-lesson", "tethr-inbox", "tethr-idea"]);
+const CARD_SOURCES = new Set(["tethr-agent-report", "tethr-lesson", "tethr-inbox", "tethr-idea", "tethr-study-card"]);
 
 function builtinTools(shell: "off" | "ask"): string {
   const tools = ["Read", "Glob", "Grep", "Write", "Edit", "MultiEdit", "ToolSearch", "TodoWrite", "WebSearch", "WebFetch", "Skill"];
@@ -181,7 +204,12 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     return enqueue({ companyId: input.companyId, threadId: input.threadId, text: input.summary, kind: "system" }, input.prompt);
   }
 
-  async function enqueue(input: SendInput, privatePrompt: string | null): Promise<{ routeRunId: string; threadId: string }> {
+  /** One step of the learner's study, in its room (see StudyTurnInput). */
+  function sendStudyTurn(input: StudyTurnInput): Promise<{ routeRunId: string; threadId: string }> {
+    return enqueue({ companyId: input.companyId, threadId: input.threadId, text: input.summary, kind: "system", task: true }, null, input);
+  }
+
+  async function enqueue(input: SendInput, privatePrompt: string | null, study: StudyTurnInput | null = null): Promise<{ routeRunId: string; threadId: string }> {
     const router = await org.getRouterProfile(input.companyId);
     const member = input.threadId ? await team.byThread(input.companyId, input.threadId) : null;
     const [row] = await db
@@ -192,7 +220,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
         requestedByUserId: input.requestedByUserId ?? null,
         invocationSource: "chat",
         threadId: input.threadId,
-        sourceKey: input.kind === "system" ? "chat-system" : null,
+        sourceKey: study ? STUDY_TURN_SOURCE : input.kind === "system" ? "chat-system" : null,
         status: "queued",
         hops: [],
         agentId: member?.agentId ?? router?.agent.id ?? null,
@@ -201,11 +229,14 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     const threadId = input.threadId ?? row.id;
     if (input.task) state.taskTurns.add(row.id);
     if (privatePrompt !== null) privatePrompts.set(row.id, privatePrompt);
+    if (study) studyTurns.set(row.id, study);
     if (input.slack && privatePrompt === null) slackTargets.set(row.id, input.slack);
     if (!input.threadId) {
       await db.update(tethrRouteRuns).set({ threadId }).where(eq(tethrRouteRuns.id, row.id));
     }
-    const key = `${input.companyId}:${threadId}`;
+    // A study step queues apart from the learner's chat, so a person talking to it isn't
+    // held behind a long research step (the key's thread part stays the thread id).
+    const key = `${input.companyId}:${threadId}${study ? STUDY_QUEUE_SUFFIX : ""}`;
     if (member) state.agentKeys.add(key);
     state.threads.set(key, [...(state.threads.get(key) ?? []), row.id]);
     void pump(key);
@@ -243,7 +274,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
         .catch(() => {});
     } finally {
       // However the turn ended (answered, failed, stopped, paused), a Slack asker hears.
-      const [companyId, threadId] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)];
+      const [companyId, threadId] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1).replace(STUDY_QUEUE_SUFFIX, "")];
       void answerInSlack(runId, companyId, threadId);
       state.active.delete(key);
       state.running -= 1;
@@ -341,7 +372,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       return;
     }
     // A paused agent does no work tethr starts; a person can still talk to it.
-    if (member?.paused && row.sourceKey === "chat-system") {
+    if (member?.paused && (row.sourceKey === "chat-system" || row.sourceKey === STUDY_TURN_SOURCE)) {
       await finish(runId, { status: "done", resultText: `${member.tag} is paused, so this didn't run.`, llmProvider: "throttle" });
       return;
     }
@@ -388,6 +419,16 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     let memoryEmpty = false;
     let hermesMemory = false;
     const sandboxed = member?.sandbox === true;
+    // The learner's turns run in a room: a study step's own, or the desk for a person's message.
+    const study = studyTurns.get(runId) ?? null;
+    studyTurns.delete(runId);
+    const room: SandboxRoom | null = sandboxed ? (study?.room ?? "desk") : null;
+    const limits = room ? ROOM_SPECS[room].limits[study?.depth ?? "quick"] : { timeoutSec: 900, maxTurns: 40 };
+    // A study step only ever runs in the learner's rooms, never with anyone else's rights.
+    if (study && !room) {
+      await finish(runId, { status: "failed", error: "A study step runs only in the learner's sealed rooms." });
+      return;
+    }
     try {
       cfg = getIntegrations(companyId);
       const goals = goalsContextText(await goalsService(db).list(companyId));
@@ -429,10 +470,10 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
           logFailure("working out the growth map for a chat turn", { companyId })(err);
           return null;
         });
-      // Phase 26.6: a sandboxed agent (the learner) gets its own sealed folder
-      // and none of the above: no memory, no team, no goals beyond their titles.
-      ws = sandboxed
-        ? await ensureSandboxWorkspace(member!.tag, await sandboxClaudeMd(db, companyId))
+      // The learner works in a room: its own folder and CLAUDE.md, none of the above
+      // (learn/rooms.ts). What a plan or apply step needs comes in its prompt.
+      ws = room
+        ? await prepareRoom(db, companyId, member!.tag, room, study?.context ?? {})
         : await ensureWorkspace({
             integrationRules: integrationRulesText(cfg),
             goals,
@@ -442,7 +483,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
             growthMap: growthMapText,
             switches,
             connections: connectionsContextText(companyId),
-            playbooks: playbooksContextText(installedPlaybooks()),
+            playbooks: playbooksContextText(installedPlaybooks(), learnedSkills(snapshot.skills, getMapState(companyId).skillAreas ?? {})),
           });
       ({ personaPath, skillDir } = await ensurePersona());
       const hookScript = await ensureHookScript();
@@ -450,9 +491,13 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       const deny = [
         ...denyRulesFor(cfg),
         ...(member ? agentDenyRules(member.connectors, teamConnectorLabels(companyId), { lead: member.lead, otherTethrTools: NON_TEAM_TETHR_TOOLS }) : []),
-        ...(sandboxed ? [...TETHR_TOOL_DEFS.filter((d) => !SANDBOX_TOOLS.has(d.name)).map((d) => `mcp__tethr__${d.name}`), "Skill", "TodoWrite"] : []),
+        ...(room ? roomDenyRules(room, TETHR_TOOL_DEFS.map((d) => d.name)) : []),
       ];
-      settingsPath = await writeSettingsFile(companyId, buildSettings({ nodePath: process.execPath, hookScript, deny }), member ? `agent-${member.tag}` : undefined);
+      settingsPath = await writeSettingsFile(
+        companyId,
+        buildSettings({ nodePath: process.execPath, hookScript, deny }),
+        member ? `agent-${member.tag}${room ? `-${room}` : ""}` : undefined,
+      );
     } catch (err) {
       await finish(runId, {
         status: "failed",
@@ -476,7 +521,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     // A private turn (see PrivateTurnInput) starts fresh and leaves no session.
     const privatePrompt = privatePrompts.get(runId) ?? null;
     privatePrompts.delete(runId);
-    const style = privatePrompt === null ? SESSION_TURN : PRIVATE_TURN;
+    const style = study ? STUDY_TURN : privatePrompt === null ? SESSION_TURN : PRIVATE_TURN;
     // Session: resume the thread's, unless its context has grown too big.
     let session = style.resumesSession ? chats.getSession(companyId, threadId) : null;
     let rotated = false;
@@ -513,9 +558,10 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     if (context && memoryEmpty && hasMemoryTool && row.sourceKey === null && (await personTurns(threadId)) >= CATCHUP_MIN_TURNS) {
       notes.push(canRecall ? MEMORY_CATCHUP : MEMORY_CATCHUP_NO_RECALL);
     }
-    const ask = privatePrompt ?? row.requestText;
+    const ask = study?.prompt ?? privatePrompt ?? row.requestText;
     // An agent's fresh session learns who it is (a task turn carries that itself).
-    const identity = member && maybeFresh && row.sourceKey !== "chat-system" ? agentIdentityText(member) : "";
+    // A study step's prompt is its whole brief (the research room must see nothing else).
+    const identity = member && maybeFresh && row.sourceKey !== "chat-system" && !study ? agentIdentityText(member) : "";
     const prompt = [
       identity,
       notes.length ? `Notes from Tethr:\n${notes.map((n) => `- ${n}`).join("\n")}` : "",
@@ -533,6 +579,8 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
       runId,
       ...(style === PRIVATE_TURN ? { privateTurn: true } : {}),
       ...(slackTarget ? { slack: slackTarget } : {}),
+      ...(room ? { room } : {}),
+      ...(study ? { studyId: study.studyId } : {}),
     });
     // Tethr's own tools (score_list, keyword_ideas) as the MCP server "tethr".
     // Best-effort: without it the turn still runs, just without those tools.
@@ -604,8 +652,8 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
           instructionsFilePath: personaPath,
           promptTemplate: "{{context.tethrPrompt}}",
           dangerouslySkipPermissions: false,
-          maxTurnsPerRun: 40,
-          timeoutSec: 900,
+          maxTurnsPerRun: limits.maxTurns,
+          timeoutSec: limits.timeoutSec,
           graceSec: 10,
           paperclipRuntimeSkills: [{ key: "tethr", runtimeName: "tethr", source: skillDir, required: true }],
           env: {
@@ -630,7 +678,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
             "dontAsk",
             "--include-partial-messages",
             "--tools",
-            sandboxed ? SANDBOX_BUILTINS.join(",") : builtinTools(member ? "off" : cfg.shell),
+            room ? ROOM_SPECS[room].builtins.join(",") : builtinTools(member ? "off" : cfg.shell),
             // The sealed folder sees nothing else: not the shared Drive, not the user's own CLAUDE.md or skills.
             ...(sandboxed ? ["--setting-sources", "project"] : mirror && !ws.dir.startsWith(mirror) ? ["--add-dir", mirror] : []),
           ],
@@ -666,7 +714,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
           result.errorCode === "claude_auth_required"
             ? "Claude needs you to log in again: open Terminal and run `claude login`."
             : result.timedOut
-              ? "This took longer than 15 minutes and was stopped."
+              ? `This took longer than ${Math.round(limits.timeoutSec / 60)} minutes and was stopped.`
               : result.errorMessage || turn.resultText || "Claude stopped with an error.";
       }
     }
@@ -804,6 +852,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
         queue.splice(idx, 1);
         state.threads.set(key, queue);
         privatePrompts.delete(runId);
+        studyTurns.delete(runId);
         await finish(runId, { status: "stopped", resultText: "Stopped before it started." });
         void answerInSlack(runId, key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1));
         return true;
@@ -826,7 +875,7 @@ export function assistantRunner(db: Db, deps: { execute?: ExecuteFn } = {}) {
     return true;
   }
 
-  return { send, sendPrivate, stop, editQueued, cancelQueued };
+  return { send, sendPrivate, sendStudyTurn, stop, editQueued, cancelQueued };
 }
 
 let singleton: ReturnType<typeof assistantRunner> | null = null;

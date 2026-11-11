@@ -82,6 +82,19 @@ export async function runTaskInAgentChat(
       { post: input.post },
     );
 
+  // The learner's scheduled run starts a study: it looks at what's been happening and
+  // picks what to learn (or nothing). Its study cards report it, not a task report.
+  if (agent.sandbox) {
+    const { startStudy, StudyError } = await import("./learn/study.js");
+    try {
+      const study = await startStudy(db, companyId, { trigger: "observed", by: agent.tag });
+      return { status: "done", text: `${agent.tag} is looking at what's been happening; its card in its chat shows what it picks.`, runId: study.cardRunId, outputs: [] };
+    } catch (err) {
+      if (err instanceof StudyError) return { status: "skipped", text: `Didn't run: ${err.message}`, runId: null, outputs: [] };
+      throw err;
+    }
+  }
+
   // The roll-up closes work already started, so it isn't held back by the cap.
   if (!input.rollup && (await team.runsToday(agent.agentId)) >= agent.maxRunsPerDay) {
     const text = `Didn't run: ${agent.tag} has used its ${agent.maxRunsPerDay} runs for today. Assign it again tomorrow, or raise its limit.`;
@@ -95,8 +108,7 @@ export async function runTaskInAgentChat(
     : agentTaskText(identity, {
         identifier: issue.identifier,
         title: issue.title,
-        // Phase 26.6: the learner's brief is built fresh each run (area, goals behind, what's known, sources).
-        brief: agent.sandbox ? await import("./learn/learner.js").then(async (l) => l.studyBrief(await l.planStudy(db, companyId, agent.tag))) : issue.description,
+        brief: issue.description,
       });
   const { getAssistantRunner } = await import("./assistant/runner.js");
   const turnStart = new Date(Date.now() - 1_000);

@@ -1462,18 +1462,7 @@ New instance-dir stores (all through `company-store.ts` `companyStore`, in the r
   we tried" calls lessons_due + review_lesson; a person keeps or retires (retiring removes the note or
   skill). Sources earn a track record by domain. Learning page `/learning` (`TethrLearning.tsx`), routes
   `routes/tethr-learning.ts`, chat `LessonCard`.
-- **26.6 The learner** (`learn/learner.ts`, `assistant/sandbox.ts`): `@sage`, made only when a person
-  switches it on (Integrations → Learning; off pauses it): weekly Wednesday 10:00, 2 runs/day, $10/mo,
-  owner growth, connectors ["Tethr tools"], `adapterConfig.sandbox = true` (`TeamAgent.sandbox`).
-  **The sealed room:** its own folder `<assistantHome>/sandbox/sage/` (never the Drive) with a CLAUDE.md
-  of the company line + goal titles + its rules only (no memory, team, goals detail, growth map);
-  `--tools` Read/Glob/Grep/Write/Edit/MultiEdit/ToolSearch/WebSearch/WebFetch, `--setting-sources
-  project` (no user CLAUDE.md, skills or settings), no `--add-dir`; deny rules for every other tethr
-  tool + Skill + TodoWrite + Bash + every connector; the hook gate (`sandboxRefusal`, readable roots =
-  its folder) and the tools endpoint (lists and runs only propose_lesson) agree. Each run's brief is
-  built fresh in team-run.ts (`planStudy` + `studyBrief`): the study area (goals behind pace weigh
-  more, turned-down areas less, least recently studied breaks ties), a queued topic first, what's
-  already known, trusted and distrusted sources.
+- **26.6 The learner**: rebuilt 2026-11-10, see "Sage rebuilt" below (it no longer proposes lessons or writes notes files).
 - Tests: `tethr-inbox.test.ts` (13), `tethr-learning.test.ts` (8, incl. the sealed room through a faked
   turn, the gate and the tools endpoint).
 - **Independent review (2026-11-09): 10 findings, all fixed** — keep these:
@@ -1494,6 +1483,66 @@ New instance-dir stores (all through `company-store.ts` `companyStore`, in the r
   - Lessons: retiring removes exactly the note applying added (refuses if it was changed or merged into
     another note) and fails loudly; a note that already existed is marked `existed` and never removed;
     memory errors are 409s.
+
+## Sage rebuilt: watch, study deeply, turn it into skills (2026-11-10)
+
+Mark ran the learner and got a notes file and five lesson cards: "I don't need a bunch of MD files. It should
+be observing running intermittently and applying this information in the form of skills that enhance the
+system. I can ask it to teach itself something and it should do a long dedicated deep research, analysis,
+application and comparison to current knowledge similar to a human would." Then: "run however often I want
+based on how aggressive learning". Plan: `~/.claude/plans/keen-moseying-micali.md`; DECISIONS 70-73.
+- **One study, three sealed rooms** (`assistant/sandbox.ts` `ROOM_SPECS`, `learn/rooms.ts`, `learn/study.ts`).
+  Each is a fresh, unsaved turn (`runner.sendStudyTurn`, style `STUDY_TURN`, sourceKey `tethr-study`, own
+  queue key `…#study` so a person's message to Sage never waits behind research) in its own folder
+  `<assistantHome>/sandbox/sage/<room>/` with its own CLAUDE.md, `--tools`, deny rules (`roomDenyRules`),
+  settings file (`agent-@sage-<room>`) and adapter limits; the hook token carries `room` + `studyId`.
+  **Private data and the web are never in one room:**
+  - **plan** (no web): the digest (`learn/observe.ts observationDigest`) → `plan_study` (topic, why, area,
+    3-8 questions, baseline, depth) or `skip_study`. For an asked study it plans the given topic.
+  - **research** (WebSearch/WebFetch/TodoWrite, nothing private; its folder holds only CLAUDE.md, the
+    company line and rules): `submit_findings` (≤12: claim, detail, evidence, strength, https sources,
+    applies when, counterpoint). Quick = 15 min / 40 steps; deep = 45 min / 150 steps.
+  - **apply** (no web): baseline + findings (marked as data) + `context/skills/*.md` (tethr's skills) +
+    `context/playbooks/*.md` (the area's installed playbooks) → `apply_skill` (≤3) and `finish_study`
+    (summary + a verdict per finding: new / confirms / contradicts / not_for_us).
+  - **desk** (no web): a person's message in Sage's chat; knows its studies and skills (`deskKnowledge`);
+    `start_study`, `skill_view`.
+  - The only thing that crosses from company data to the web is the topic and questions, after
+    `crossingRefusal` (no emails, links, long numbers, masked details, health details, keys, instructions;
+    a refused plan goes back to the model to rephrase). The digest masks emails/phones/numbers/links
+    (`maskPrivate`), drops health lines, and never holds tethr's answers, tool results, the Ideas chat or
+    Sage's own chat. A study step only ever runs in the learner's rooms (the runner fails it otherwise).
+- **Skills, applied by Sage:** `recordSkillChange`. Default saves on its own (`learningStore.applyMode`
+  "auto"; "ask" = a `skill_change` card, sensitivity org, approved by `gating.approveSkillChange` →
+  `approveSkillCard`, re-checked). `skillRefusal`: name, ≤60-char description, area, 200-12,000 chars,
+  injection / health / keys / **medical claims**, links only to the study's sources. It changes on its
+  own only skills it made (`studiesStore.origins`; tethr's `skill_save` clears an origin); someone else's
+  skill → always a card. **Undo** (`undoSkill`) restores the previous version or removes a new skill, and
+  refuses if the skill changed since. Skills go to the growth-map area (`setSkillArea`).
+- **Skills tethr uses:** the "## Playbooks" section lists learned skills next to installed playbooks per area
+  (`playbooksContextText(installed, learnedSkills(...))`; "the learned skill is about this company: it
+  wins"); every agent has `skill_view` (`AGENT_ALWAYS_TOOLS`). **The built-in memory store has skills
+  now** (`<builtin>/skills/<name>/SKILL.md`), so skill_view/skill_save work without Hermes (recall doesn't).
+- **Pace** (`learn/learning-pace.ts`): Light (Mon+Thu 9am, 1/day, quick, picky), Steady (weekdays 9am, 2/day,
+  deep ≤ weekly; default), Aggressive (every 2h 8-18 weekdays, 6/day, deep for big gaps, eager), Custom
+  (every 1-24h, weekdays/every day, 1-10/day, quick/deep, picky/eager). `setLearningPace` updates Sage's
+  routine. Its scheduled run (`team-run.ts`) calls `startStudy({trigger:"observed"})`, never a task turn.
+  Asked studies (Sage's chat `start_study`, tethr's `study` tool, Learning page) skip the pace cap, not the
+  ceiling (`STUDY_CEILING` 10/day). One study at a time per company (in-memory chain); throttle and a
+  paused Sage stop it; `healStudies` closes ones a restart cut short; `healLearner` gives an older @sage
+  the new mission and pace (never switches it on or runs it).
+- **What you see:** one `StudyCard` (`chat/study-card.tsx`, run sourceKey `tethr-study-card`, the chat runs
+  route attaches `study`; phase runs are hidden by `listThreadRuns`): Looking → Researching → Comparing →
+  Done, Stop, "What it found" (why, questions, findings with sources and verdicts), skills with Undo. In
+  tethr's main chat, once and only when a skill changed: "Sage learned …" (Ask-first cards under it), a
+  note for tethr, a bell (kind lesson). Learning page: "What Sage learned" + "Teach Sage something".
+  Integrations → Learning and Sage's settings sheet: on/off, pace, saves on its own / asks first
+  (`settings/LearningPace.tsx`). Store `tethr-studies.json` (in the reset list). Routes in
+  `routes/tethr-learning.ts`: `POST learning/settings|studies|studies/:id/stop|studies/:id/skills/:name/undo`.
+- Tests: `tethr-study.test.ts` (9: rooms, crossing screen, pace, skill checks, playbooks; the full study
+  through a fake Claude that calls the real tools endpoint per room; own-skill updates + Undo, someone
+  else's skill = card, Ask first; skip / pace cap / throttle; tools only in rooms), `tethr-learning`
+  (desk room), UI `tethr-study.test.ts`, `chat/study-card.test.tsx`.
 
 ## The growth map: a galaxy of growth areas (phase 26.9, 2026-11-09)
 
@@ -2108,6 +2157,9 @@ Frosted panels floating over warm ink: the Aina glass card + Oura's calm and big
     - Round icon buttons opt out of the 44px touch height (`tethr-touch-sized` + `pointer-coarse:h-8/10`) so
       they stay circles; pill buttons keep 44px.
     - The theme control is one button (Auto → Day → Night) on phones.
+    - **On a phone, Enter makes a new line** (Mark, 2026-11-10); the arrow sends. `lib/tethr-composer.ts`
+      `enterSends`: a touch screen with no fine pointer → never sends; a computer → Enter sends, Shift+Enter is
+      a new line; never mid-composition. Used by the chat composer, the queued-message editor and card replies.
     - Notifications fit the phone (`min(24rem, 100vw - 1rem)`); long links wrap, nothing scrolls sideways.
   - **The bell asks only while a card is open:** the notifications list carries each Queue item's
     `outputStatus` now (`notify.ts withOutputStatus`), and "needs you" shows only for gated / changes

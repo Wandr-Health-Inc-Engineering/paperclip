@@ -60,9 +60,9 @@ function autonomyLines(a: TeamAutonomy): string[] {
 
 function learnerLine(s: SwitchesState): string {
   const l = s.learner;
-  if (!l) return `- Learner: off (${WHERE.learner}). When on, an agent studies how other companies grow each week and brings back lessons for the team to apply.`;
+  if (!l) return `- Learner (Sage): off (${WHERE.learner}). When on, it watches how you're doing, studies what would help, and saves what it learns as skills you load before that kind of work. Anyone can also ask it to learn something (the study tool).`;
   if (l.paused) return `- Learner ${l.tag}: paused (${WHERE.learner}).`;
-  return `- Learner ${l.tag}: on${l.cron ? `, ${scheduleWords(l.cron, s.setup.timezone)}` : ""}. It studies how other companies grow and proposes lessons.`;
+  return `- Learner ${l.tag}: on${l.cron ? `, watching ${scheduleWords(l.cron, s.setup.timezone)}` : ""}. It studies what would help and saves what it learns as skills (in your skills list). To have it learn something now, use the study tool.`;
 }
 
 function inboxLine(mode: DecisionMode): string {
@@ -87,7 +87,7 @@ export function switchesContextText(s: SwitchesState): string {
     inboxLine(s.inboxFiling),
     "How to use this:",
     "- When one of these would serve your recommendation, name it, say where to switch it on and what it will do for the goal. One or two in a reply at most, and only where they help.",
-    "- Don't make an agent for a job one of these already does: the Friday scorecard keeps the goal numbers current, the daily review checks on the team, the learner studies other companies. Suggest switching it on instead.",
+    "- Don't make an agent for a job one of these already does: the Friday scorecard keeps the goal numbers current, the daily review checks on the team, the learner studies what would help and turns it into skills. Suggest switching it on instead.",
     "- With the daily review and check-ins off, nothing happens until someone writes to you. If the team expects you to come to them, say so and point to the daily review.",
   ].join("\n");
 }

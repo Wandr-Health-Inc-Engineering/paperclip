@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { costEvents, tethrRouteRuns, type TethrRouteHop } from "@paperclipai/db";
 import type { TethrRouteInvocationSource } from "@paperclipai/shared";
@@ -574,7 +574,14 @@ export function routingService(db: Db) {
     const rows = await db
       .select()
       .from(tethrRouteRuns)
-      .where(and(eq(tethrRouteRuns.companyId, companyId), eq(tethrRouteRuns.threadId, threadId)))
+      .where(
+        and(
+          eq(tethrRouteRuns.companyId, companyId),
+          eq(tethrRouteRuns.threadId, threadId),
+          // The learner's study steps aren't shown as turns: its study card is.
+          or(isNull(tethrRouteRuns.sourceKey), ne(tethrRouteRuns.sourceKey, "tethr-study")),
+        ),
+      )
       .orderBy(desc(tethrRouteRuns.createdAt))
       .limit(limit);
     return rows.reverse();

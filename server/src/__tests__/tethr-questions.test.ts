@@ -77,7 +77,7 @@ describe("questions as cards: the pure parts", () => {
     const ctx = { workspaceDir: "/w", readableRoots: ["/w"], internalAddresses: [] };
     expect(classify("mcp__tethr__ask", { question: "Go ahead?" }, ctx)).toMatchObject({ cls: "draft", summary: "Asking you: “Go ahead?”" });
     expect(TETHR_TOOL_DEFS.some((d) => d.name === "ask")).toBe(true);
-    expect(sandboxRefusal("@sage", "mcp__tethr__ask")).toMatch(/blocked/);
+    for (const room of ["desk", "plan", "research", "apply"] as const) expect(sandboxRefusal("@sage", "mcp__tethr__ask", room)).toMatch(/blocked/);
 
     const others = TETHR_TOOL_DEFS.map((d) => d.name).filter((n) => !(TEAM_TOOL_NAMES as readonly string[]).includes(n));
     const noTethrTools = agentDenyRules(["Stripe"], ["Stripe", "Gmail", "Tethr tools"], { otherTethrTools: others });

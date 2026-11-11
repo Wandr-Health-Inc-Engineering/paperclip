@@ -78,6 +78,8 @@ function storeFiles(): string[] {
     pick("TETHR_DECISIONS_FILE", "tethr-decisions.json"),
     pick("TETHR_INBOX_FILE", "tethr-inbox.json"),
     pick("TETHR_LEARNING_FILE", "tethr-learning.json"),
+    // The learner's studies and which skills it made.
+    pick("TETHR_STUDIES_FILE", "tethr-studies.json"),
     // Phase 24: tethr's own check-ins and daily review (pending reports, turns today).
     pick("TETHR_BRAIN_FILE", "tethr-brain.json"),
     // Phase 27: questions asked as cards.

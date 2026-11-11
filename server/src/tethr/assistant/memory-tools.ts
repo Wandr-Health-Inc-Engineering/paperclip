@@ -24,15 +24,17 @@ import type { McpToolDef, TethrToolContext, TethrToolResult } from "./tethr-tool
 // - memory: save, change or remove an entry (Hermes's own tool shape). An agent
 //   can add, and change or remove only what it saved itself.
 // - recall: search past conversations, or open one (Hermes only).
-// - skill_view / skill_save: procedures tethr learned (Hermes only; only tethr's
-//   own chats save them).
+// - skill_view / skill_save: procedures tethr learned (Hermes, or the built-in
+//   store's skills folder; only tethr's own chats save them, and the learner
+//   saves its own through apply_skill).
 // A private turn (the watcher's idea check, whose prompt is other people's Slack
 // words) gets none of them: a recalled answer could end up in a Slack reply, and
 // a Slack message could plant a memory.
 
 export const MEMORY_TOOL_NAMES = ["memory", "recall", "skill_view", "skill_save"] as const;
 export const MEMORY_TOOL_SET = new Set<string>(MEMORY_TOOL_NAMES);
-const HERMES_ONLY = new Set(["recall", "skill_view", "skill_save"]);
+// Skills work on either store (Hermes, or the built-in skills folder); searching past chats needs Hermes.
+const HERMES_ONLY = new Set(["recall"]);
 
 export const MEMORY_TOOL_DEFS: McpToolDef[] = [
   {
@@ -218,6 +220,9 @@ export async function runMemoryTool(name: string, a: Record<string, unknown>, ct
       if (a.area !== undefined && !isAreaId(a.area)) return { text: `skill_save: area must be one of ${AREA_IDS.join(", ")}.`, isError: true };
       await saveSkill(companyId, { name: skillName, description, body });
       if (isAreaId(a.area)) await setSkillArea(companyId, skillName, a.area);
+      // A skill tethr saves is tethr's from now on: the learner no longer changes it on its own.
+      const { setSkillOrigin } = await import("../learn/studies.js");
+      await setSkillOrigin(companyId, skillName, null);
       return { text: `Saved the skill "${skillName}". It's listed in CLAUDE.md from the next turn; load it with skill_view.`, meta: { skill: skillName } };
     }
     return { text: `There's no Tethr tool called ${name}.`, isError: true };

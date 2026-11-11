@@ -30,7 +30,7 @@ describe("what's switched on", () => {
     expect(text).toContain("off until the team saves Setup → Rhythm and ideas");
     expect(text).toContain("It isn't sent to you to read.");
     expect(text).toContain("- Daily review: off (Integrations → Team → Daily review)");
-    expect(text).toContain("- Learner: off (Integrations → Learning)");
+    expect(text).toContain("- Learner (Sage): off (Integrations → Learning)");
     expect(text).toContain("You can't switch these yourself");
     expect(text).toContain("Don't make an agent for a job one of these already does");
   });

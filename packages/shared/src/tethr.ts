@@ -83,6 +83,10 @@ export const TETHR_OUTPUT_KINDS = [
   // Approving it builds or changes the agent; it never publishes or mirrors.
   "team_agent",
   "team_change",
+  // The learner proposing a skill (`meta.studyId`, `meta.skill`) when its skills
+  // ask first, or a change to a skill someone else saved. Approving it saves the
+  // skill; it never publishes or mirrors.
+  "skill_change",
 ] as const;
 export type TethrOutputKind = (typeof TETHR_OUTPUT_KINDS)[number];
 

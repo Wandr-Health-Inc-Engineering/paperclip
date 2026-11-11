@@ -85,12 +85,14 @@ export interface SkillInfo {
   description: string;
 }
 
-/** tethr's skills in Hermes (none with the built-in store). Read from the
- * profile's files, so listing them never starts Hermes. */
+/** Where the built-in store keeps skills (one folder per skill, like Hermes). */
+const builtinSkillsDir = (companyId: string) => path.join(builtinDir(companyId), "skills");
+
+/** tethr's skills: in Hermes, or the built-in store's skills folder. Read from
+ * the files, so listing them never starts Hermes. */
 export function listSkills(companyId: string): SkillInfo[] {
   const profile = activeHermesProfile(companyId);
-  if (!profile) return [];
-  const dir = path.join(profileHome(profile), "skills", SKILL_CATEGORY);
+  const dir = profile ? path.join(profileHome(profile), "skills", SKILL_CATEGORY) : builtinSkillsDir(companyId);
   let names: string[] = [];
   try {
     names = fs.readdirSync(dir).filter((n) => !n.startsWith("."));
@@ -416,13 +418,20 @@ export async function readPast(companyId: string, sessionId: string, opts: { sou
   return (res.turns ?? []).map(toHit);
 }
 
-// ---- skills (Hermes only) -----------------------------------------------------
+// ---- skills (Hermes, or the built-in store's skills folder) --------------------
 
 export const SKILL_NAME_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 /** Hermes keeps skill descriptions this short (they're listed in every prompt). */
 export const SKILL_DESCRIPTION_MAX = 60;
 
 export async function viewSkill(companyId: string, name: string): Promise<{ name: string; description: string; content: string } | null> {
+  if (!SKILL_NAME_RE.test(name)) return null;
+  if (memoryBackend(companyId) === "builtin") {
+    const content = await fsp.readFile(path.join(builtinSkillsDir(companyId), name, "SKILL.md"), "utf8").catch(() => null);
+    if (content === null) return null;
+    const description = content.match(/^---[\s\S]*?^description:\s*(.+)$[\s\S]*?^---/m)?.[1]?.trim() ?? "";
+    return { name, description, content };
+  }
   const res = await runHelper<{ found: boolean; name?: string; description?: string; content?: string }>(requireProfile(companyId), "skills.view", { name });
   return res.found ? { name: res.name ?? name, description: res.description ?? "", content: res.content ?? "" } : null;
 }
@@ -433,6 +442,17 @@ export function skillMarkdown(name: string, description: string, body: string): 
 
 export async function saveSkill(companyId: string, skill: { name: string; description: string; body: string }): Promise<void> {
   if (personalHealthReason(`${skill.description}\n${skill.body}`)) throw new MemoryChangeError(HEALTH_REFUSAL);
+  if (!SKILL_NAME_RE.test(skill.name)) throw new MemoryChangeError("A skill's name is lowercase letters, digits, dots, dashes or underscores.");
+  if (memoryBackend(companyId) === "builtin") {
+    // Hermes scans a skill for instructions aimed at the model; the built-in store does the same here.
+    const injected = injectionReason(`${skill.description}\n${skill.body}`);
+    if (injected) throw new MemoryChangeError(injected);
+    const file = path.join(builtinSkillsDir(companyId), skill.name, "SKILL.md");
+    await fsp.mkdir(path.dirname(file), { recursive: true });
+    await writeAtomic(file, skillMarkdown(skill.name, skill.description, skill.body));
+    await writeMemoryCopy(companyId);
+    return;
+  }
   const res = await runHelper<{ success: boolean; error?: string }>(requireProfile(companyId), "skills.save", {
     name: skill.name,
     content: skillMarkdown(skill.name, skill.description, skill.body),
@@ -442,6 +462,12 @@ export async function saveSkill(companyId: string, skill: { name: string; descri
 }
 
 export async function deleteSkill(companyId: string, name: string): Promise<void> {
+  if (!SKILL_NAME_RE.test(name)) throw new MemoryChangeError("There's no skill by that name.");
+  if (memoryBackend(companyId) === "builtin") {
+    await fsp.rm(path.join(builtinSkillsDir(companyId), name), { recursive: true, force: true });
+    await writeMemoryCopy(companyId);
+    return;
+  }
   const res = await runHelper<{ success: boolean; error?: string }>(requireProfile(companyId), "skills.delete", { name });
   if (!res.success) throw new MemoryChangeError(res.error ?? "Hermes didn't remove that skill.");
   await writeMemoryCopy(companyId);

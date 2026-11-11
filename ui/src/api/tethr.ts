@@ -176,6 +176,8 @@ export interface TethrChatRun extends TethrRouteRun {
   urgency?: { id: string; pick: string; mode: string; outcome: string; correctedTo: string | null; options: string[] } | null;
   /** Phase 26.5: a lesson card's lesson. */
   lesson?: TethrLesson | null;
+  /** The learner's study card (in its chat, and "Sage learned" in the main chat). */
+  study?: TethrStudy | null;
   /** Phase 27: questions this turn asked as cards with buttons. */
   questions?: TethrQuestion[];
   /** Phase 27: on an agent's newest report card, what it (and its sub-team) waits on a person for. */
@@ -308,13 +310,76 @@ export interface TethrLesson {
   createdAt: string;
 }
 
+/** How often the learner watches and how much it studies on its own. */
+export interface TethrLearningPace {
+  preset: "light" | "steady" | "aggressive" | "custom";
+  everyHours?: number;
+  days?: "weekdays" | "every";
+  cap?: number;
+  depth?: "quick" | "deep";
+  eager?: boolean;
+}
+export interface TethrPaceSchedule {
+  cron: string;
+  cap: number;
+  deep: "never" | "weekly" | "big_gap" | "always";
+  eager: boolean;
+  words: string;
+}
+
+/** One of the learner's studies: its plan, findings, verdicts and the skills it saved. */
+export interface TethrStudy {
+  id: string;
+  trigger: "observed" | "asked";
+  by: string;
+  asked: string | null;
+  status: "queued" | "planning" | "researching" | "applying" | "done" | "nothing" | "failed" | "stopped";
+  depth: "quick" | "deep";
+  topic: string | null;
+  why: string | null;
+  area: string | null;
+  questions: string[];
+  baseline: string | null;
+  findings: Array<{
+    claim: string;
+    detail: string;
+    evidence: string;
+    strength: "strong" | "moderate" | "weak";
+    sources: Array<{ url: string; title: string }>;
+    appliesWhen: string | null;
+    counterpoint: string | null;
+  }>;
+  researchSummary: string | null;
+  verdicts: Array<{ finding: number; verdict: "new" | "confirms" | "contradicts" | "not_for_us"; note: string }>;
+  summary: string | null;
+  skills: Array<{
+    name: string;
+    description: string;
+    area: string;
+    change: "new" | "updated";
+    whatChanged: string;
+    body: string;
+    status: "applied" | "pending" | "refused" | "undone";
+    outputId?: string;
+    at: string;
+  }>;
+  reason: string | null;
+  cardRunId: string | null;
+  mainCardRunId: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
 export interface TethrLearning {
   lessons: TethrLesson[];
   learner: {
     enabled: boolean;
     agent: { tag: string; name: string; paused: boolean; threadId: string; maxRunsPerDay: number; budgetMonthlyCents: number; spentMonthlyCents: number } | null;
-    queue: Array<{ topic: string; by: string; at: string }>;
+    pace: TethrLearningPace;
+    schedule: TethrPaceSchedule;
+    applyMode: "auto" | "ask";
   };
+  studies: TethrStudy[];
   sources: Array<{ domain: string; approved: number; rejected: number; kept: number; retired: number }>;
   decisions: TethrDecisionKind[];
   filingRules: string[];
@@ -600,6 +665,8 @@ export interface TethrTeamAgent {
   lead: boolean;
   /** For a sub-agent: its lead. */
   leadTag: string | null;
+  /** The learner (Sage): its chat holds study cards, its settings its pace. */
+  sandbox?: boolean;
   /** A lead's sub-agents. */
   subTeam: string[];
   goal: { id: string; title: string | null } | null;
@@ -1292,8 +1359,11 @@ export const tethrApi = {
   /** Phase 26.5-26.6: learning. */
   learning: (c: string) => api.get<TethrLearning>(`/tethr/${c}/learning`),
   setLearner: (c: string, enabled: boolean) => api.post<{ enabled: boolean }>(`/tethr/${c}/learning/learner`, { enabled }),
-  queueStudy: (c: string, topic: string) => api.post<{ queue: TethrLearning["learner"]["queue"] }>(`/tethr/${c}/learning/queue`, { topic }),
-  dropStudy: (c: string, index: number) => api.delete<{ queue: TethrLearning["learner"]["queue"] }>(`/tethr/${c}/learning/queue/${index}`),
+  learningSettings: (c: string, body: { pace?: TethrLearningPace; applyMode?: "auto" | "ask" }) =>
+    api.post<{ pace: TethrLearningPace; schedule: TethrPaceSchedule; applyMode: "auto" | "ask" }>(`/tethr/${c}/learning/settings`, body),
+  startStudy: (c: string, topic: string, depth: "quick" | "deep" = "deep") => api.post<{ study: TethrStudy }>(`/tethr/${c}/learning/studies`, { topic, depth }),
+  stopStudy: (c: string, id: string) => api.post<{ study: TethrStudy | null }>(`/tethr/${c}/learning/studies/${id}/stop`, {}),
+  undoStudySkill: (c: string, id: string, name: string) => api.post<{ skill: TethrStudy["skills"][number] }>(`/tethr/${c}/learning/studies/${id}/skills/${encodeURIComponent(name)}/undo`, {}),
   applyLesson: (c: string, id: string) => api.post<TethrLesson>(`/tethr/${c}/lessons/${id}/apply`, {}),
   rejectLesson: (c: string, id: string, reason?: string) => api.post<TethrLesson>(`/tethr/${c}/lessons/${id}/reject`, { reason }),
   offerLesson: (c: string, id: string) => api.post<TethrLesson>(`/tethr/${c}/lessons/${id}/offer`, {}),

@@ -480,6 +480,10 @@ export function gatingService(db: Db) {
       if (output.kind === "team_agent" || output.kind === "team_change") {
         return approveTeamCard(output, input.companyId, input.reviewer);
       }
+      // The learner's skill (Ask first, or a change to someone else's skill): approving saves it.
+      if (output.kind === "skill_change") {
+        return approveSkillChange(output, input.companyId);
+      }
       const published = await publishToDrive(output.id, input.companyId, input.reviewer);
       await notify.send({
         companyId: input.companyId,
@@ -497,6 +501,13 @@ export function gatingService(db: Db) {
       .set({ status: nextStatus, updatedAt: new Date() })
       .where(eq(tethrOutputs.id, output.id))
       .returning();
+    if (output.kind === "skill_change") {
+      const meta = (output.meta ?? {}) as Record<string, unknown>;
+      if (typeof meta.studyId === "string" && typeof meta.skill === "string") {
+        const { refuseSkillCard } = await import("./learn/study.js");
+        await refuseSkillCard(input.companyId, meta.studyId, meta.skill).catch(() => {});
+      }
+    }
     if ((output.kind === "team_agent" || output.kind === "team_change") && input.decision === "reject") {
       // The one who asked hears it: a lead (for its sub-team), else tethr's main chat.
       const chats = await import("./chats.js");
@@ -600,6 +611,30 @@ export function gatingService(db: Db) {
   // applies the change. The spec is checked again first (a tag may have been
   // taken since): a card that can't apply closes as rejected with the reason,
   // so the Queue never wedges. The main chat hears either way.
+  async function approveSkillChange(output: typeof tethrOutputs.$inferSelect, companyId: string) {
+    const meta = (output.meta ?? {}) as Record<string, unknown>;
+    const chats = await import("./chats.js");
+    try {
+      if (typeof meta.studyId !== "string" || typeof meta.skill !== "string") throw new Error("This card has no skill on it.");
+      const { approveSkillCard } = await import("./learn/study.js");
+      const k = await approveSkillCard(db, companyId, meta.studyId, meta.skill);
+      await chats
+        .addNote(companyId, chats.mainThreadId(companyId), `Approved: Sage's skill ${k.name} is saved. Load it with skill_view before doing that kind of work.`)
+        .catch(() => {});
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      const [closed] = await db
+        .update(tethrOutputs)
+        .set({ status: "rejected", meta: { ...meta, applyError: reason }, updatedAt: new Date() })
+        .where(eq(tethrOutputs.id, output.id))
+        .returning();
+      await notify.send({ companyId, kind: "approval", title: `Couldn't save: ${output.title}`, body: reason, href: `/queue/${output.id}` });
+      return closed;
+    }
+    const [updated] = await db.update(tethrOutputs).set({ status: "published", updatedAt: new Date() }).where(eq(tethrOutputs.id, output.id)).returning();
+    return updated;
+  }
+
   async function approveTeamCard(output: typeof tethrOutputs.$inferSelect, companyId: string, reviewer: string) {
     const { teamConnectorLabels, teamService } = await import("./team.js");
     const { needResolver } = await import("./connections.js");

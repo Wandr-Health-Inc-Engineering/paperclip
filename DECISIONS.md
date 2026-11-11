@@ -326,6 +326,24 @@ Branch: `mark-sandbox` (local only). Date started: 2026-06-11.
     Approval needed; tethr can propose modes, but anything that lets an agent do more on its own is a
     person's call (a card, or the person's own edit). Agents made before this follow tethr's settings until
     their own are set.
+70. **The learner studies in sealed rooms, and private data never meets the web** (Mark, 2026-11-10: "I don't
+    need a bunch of MD files. It should be observing… and applying this information in the form of skills").
+    One study is three fresh, unsaved turns, each with its own folder, CLAUDE.md and tool list: plan (what's
+    been happening in tethr, goals, skills, memory; no web), research (the web, and only the topic and
+    questions; nothing private), apply (the findings next to what tethr knows; no web). Only the topic and
+    questions cross, after a screen (no emails, links, long numbers, masked details, health details, keys,
+    instructions). The runner, the hook gate and the tools endpoint read one room table (sandbox.ts).
+71. **The learner applies skills itself, under that rule.** Its skills save on their own by default (Ask first is a
+    setting), checked first (no instructions, health details, keys or medical claims; links only to the
+    study's sources), with Undo. It changes on its own only skills it made; a change to one tethr or a person
+    saved is always a card. This replaces "only a person applies" for the learner's work; lessons from tethr,
+    agents and people keep their old flow.
+72. **The learner watches at a pace a person sets** (Light, Steady, Aggressive or Custom: how often, how many a day,
+    whether it may go deep, picky or eager). A study someone asks for skips the pace's cap but not the ceiling
+    of 10 a day. What it watches is a server-built digest of people's own messages (masked), where tethr
+    struggled, goals behind pace and what tethr knows: never tethr's answers, tool results or the Ideas chat.
+73. **Skills work without Hermes.** The built-in memory store has a skills folder, so skill_view, skill_save and
+    the learner's skills work on either store; recall still needs Hermes. Every agent can open a skill.
 
 ## Core changes (keep merge-safe)
 

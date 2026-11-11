@@ -15,6 +15,8 @@ import { MAP_TOOL_DEFS, MAP_TOOL_SET, runMapTool } from "./map-tools.js";
 import { LEARN_TOOL_DEFS, LEARN_TOOL_SET, runLearnTool } from "./learn-tools.js";
 import { PERSON_TOOL_DEFS, PERSON_TOOL_SET, runPersonTool } from "./person-tools.js";
 import { ADS_TOOL_DEFS, ADS_TOOL_SET, runAdsTool } from "./ads-tools.js";
+import { STUDY_TOOL_SET, type SandboxRoom } from "./sandbox.js";
+import { runStudyTool, STUDY_TOOL_DEFS } from "./study-tools.js";
 
 export { parseCsv, toCsv };
 
@@ -78,6 +80,9 @@ export interface TethrToolContext {
   runId?: string;
   /** Phase 25: a one-off private turn (the watcher's idea check) gets no memory tools. */
   privateTurn?: boolean;
+  /** The learner's room for this turn, and the study it belongs to (learn/study.ts). */
+  room?: SandboxRoom;
+  studyId?: string;
   now?: () => Date;
   jev?: JevCallOptions;
   concurrency?: number;
@@ -209,6 +214,8 @@ export const TETHR_TOOL_DEFS: McpToolDef[] = [
   ...MEMORY_TOOL_DEFS,
   ...MAP_TOOL_DEFS,
   ...LEARN_TOOL_DEFS,
+  // The learner's study rooms only (routes/tethr.ts lists each room's own).
+  ...STUDY_TOOL_DEFS,
   ...PERSON_TOOL_DEFS,
   // Google Ads' own connector: listed only while Google Ads can change things (routes/tethr.ts).
   ...ADS_TOOL_DEFS,
@@ -704,6 +711,7 @@ export async function runTethrTool(name: string, args: unknown, ctx: TethrToolCo
     if (MEMORY_TOOL_SET.has(name)) return await runMemoryTool(name, a, ctx);
     if (MAP_TOOL_SET.has(name)) return await runMapTool(name, a, ctx);
     if (LEARN_TOOL_SET.has(name)) return await runLearnTool(name, a, ctx);
+    if (STUDY_TOOL_SET.has(name)) return await runStudyTool(name, a, ctx);
     if (PERSON_TOOL_SET.has(name)) return await runPersonTool(name, a, ctx);
     if (ADS_TOOL_SET.has(name)) return await runAdsTool(name, a, ctx);
     return { text: `There's no Tethr tool called ${name}.`, isError: true };

@@ -15,6 +15,7 @@ export interface CardOutput {
 export function kindLabel(kind: string): string {
   if (kind === "team_agent") return "New agent";
   if (kind === "team_change") return "Agent change";
+  if (kind === "skill_change") return "Skill from Sage";
   const k = kind.replace(/_/g, " ");
   return k.charAt(0).toUpperCase() + k.slice(1);
 }

@@ -590,8 +590,9 @@ export function reportBody(text: string): string {
 export const TEAM_TOOL_NAMES = ["team_list", "create_agent", "assign_task", "update_agent"] as const;
 
 /** Phase 27: tethr tools every agent on the team has, whatever its connectors:
- * they're how it reaches a person (a question as a card, a connection it's missing). */
-export const AGENT_ALWAYS_TOOLS = ["ask", "need_connection", "delete_files", "checklist"] as const;
+ * they're how it reaches a person (a question as a card, a connection it's missing),
+ * plus skill_view, so it can load a skill tethr or the learner saved (read only). */
+export const AGENT_ALWAYS_TOOLS = ["ask", "need_connection", "delete_files", "checklist", "skill_view"] as const;
 const isAlwaysTool = (name: string) => (AGENT_ALWAYS_TOOLS as readonly string[]).includes(name);
 
 /** Claude Code's MCP server name for an Integrations connector label. */

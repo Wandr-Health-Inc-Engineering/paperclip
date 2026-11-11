@@ -94,9 +94,11 @@ import { tethrGrowthMapRoutes } from "./tethr-growth-map.js";
 import { tethrDecisionRoutes } from "./tethr-decisions.js";
 import { tethrInboxRoutes } from "./tethr-inbox.js";
 import { tethrLearningRoutes } from "./tethr-learning.js";
-import { SANDBOX_TOOLS } from "../tethr/assistant/learn-tools.js";
-import { sandboxRefusal } from "../tethr/assistant/sandbox.js";
-import { sandboxDir, sealedThreadTag } from "../tethr/learn/learner.js";
+import { roomTools, sandboxRefusal, STUDY_TOOL_SET } from "../tethr/assistant/sandbox.js";
+import { sealedThreadTag } from "../tethr/learn/learner.js";
+import { roomDir } from "../tethr/learn/rooms.js";
+import { STUDY_CARD_SOURCE } from "../tethr/learn/study.js";
+import { studyCardOf } from "../tethr/learn/studies.js";
 
 const execFileAsync = promisify(execFile);
 let cachedSha: string | null = null;
@@ -198,15 +200,17 @@ export function tethrRoutes(db: Db) {
       };
       const tools = (
         !member
-          ? TETHR_TOOL_DEFS
+          ? TETHR_TOOL_DEFS.filter((d) => !STUDY_TOOL_SET.has(d.name))
           : member.sandbox
-            ? TETHR_TOOL_DEFS.filter((d) => SANDBOX_TOOLS.has(d.name))
-            : TETHR_TOOL_DEFS.filter((d) =>
-                isTeamTool(d.name)
-                  ? member.lead
-                  : nativeConnectorOf(d.name)
-                    ? true
-                    : (AGENT_ALWAYS_TOOLS as readonly string[]).includes(d.name) || member.connectors.includes(TETHR_TOOLS_LABEL),
+            ? TETHR_TOOL_DEFS.filter((d) => roomTools(ctx.room ?? "desk").has(d.name))
+            : TETHR_TOOL_DEFS.filter(
+                (d) =>
+                  !STUDY_TOOL_SET.has(d.name) &&
+                  (isTeamTool(d.name)
+                    ? member.lead
+                    : nativeConnectorOf(d.name)
+                      ? true
+                      : (AGENT_ALWAYS_TOOLS as readonly string[]).includes(d.name) || member.connectors.includes(TETHR_TOOLS_LABEL)),
               )
       )
         .filter((d) => nativeOk(d.name))
@@ -245,8 +249,11 @@ export function tethrRoutes(db: Db) {
     const hash = inputHash(fullName, args);
     // The gate held it for a person and they approved it: the grant it just used lets it run here, once.
     const approved = decision.action === "ask" && connector !== TETHR_TOOLS_LABEL ? !!(await claimApprovedCall(db, ctx.companyId, ctx.threadId, hash)) : false;
+    // The study tools exist only in the learner's rooms; the learner gets only its room's tools.
+    const room = member?.sandbox ? (ctx.room ?? "desk") : null;
     const refusal =
-      (member?.sandbox ? sandboxRefusal(member.tag, fullName) : null) ??
+      (member && room ? sandboxRefusal(member.tag, fullName, room) : null) ??
+      (!room && STUDY_TOOL_SET.has(name) ? `Tethr approval gate: blocked. ${name} is only for the learner's study.` : null) ??
       (member ? agentToolRefusal(member, fullName, connector) : null) ??
       (ctx.privateTurn === true && classified.cls !== "read" ? `Tethr approval gate: blocked. ${name} isn't available in this one-off check.` : null);
     if ((decision.action !== "allow" && !approved) || refusal) {
@@ -255,12 +262,14 @@ export function tethrRoutes(db: Db) {
       return;
     }
     const result = await runTethrTool(name, body.arguments, {
-      workspaceDir: member?.sandbox ? sandboxDir(member.tag) : workspaceDir().dir,
+      workspaceDir: member && room ? roomDir(member.tag, room) : workspaceDir().dir,
       db,
       companyId: ctx.companyId,
       threadId: ctx.threadId,
       runId: ctx.runId,
       privateTurn: ctx.privateTurn === true,
+      ...(room ? { room } : {}),
+      ...(ctx.studyId ? { studyId: ctx.studyId } : {}),
     });
     await logActivity(db, {
       companyId: ctx.companyId,
@@ -744,6 +753,8 @@ export function tethrRoutes(db: Db) {
           inbox: inboxItems.find((i) => i.cardRunId === run.id) ?? null,
           urgency: urgencies.find((u) => u.subjectId === run.id) ?? null,
           lesson: lessonRows.find((l) => l.cardRunId === run.id) ?? null,
+          // The learner's study card (in its chat, and "Sage learned" in the main chat).
+          study: run.sourceKey === STUDY_CARD_SOURCE ? studyCardOf(companyId, run.id) : null,
           outputs: outputs.filter((o) => o.routeRunId === run.id),
           // Phase 27: questions this turn put to the person, as cards with buttons.
           questions: [...(questionsOfRuns.get(run.id) ?? []), ...(waitingOnCreation.get(run.id) ?? [])].map(markAccess),
@@ -1312,7 +1323,7 @@ export function tethrRoutes(db: Db) {
       });
       // Auto-revise: the agent picks the note up and produces v(n+1)
       // (TETHR_AUTO_REVISE=false disables; the Queue also has a manual button).
-      if (decision === "request_changes" && updated?.kind !== "external_action" && process.env.TETHR_AUTO_REVISE !== "false") {
+      if (decision === "request_changes" && updated?.kind !== "external_action" && updated?.kind !== "skill_change" && process.env.TETHR_AUTO_REVISE !== "false") {
         void worker
           .reviseOutput({ companyId, outputId: req.params.id as string })
           .catch((err) => logger.warn({ err }, "tethr auto-revise failed"));

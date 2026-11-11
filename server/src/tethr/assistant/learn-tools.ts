@@ -1,7 +1,6 @@
 import { oneLine } from "../goals.js";
 import { AREA_IDS } from "../growth-map/areas.js";
 import { areaName, EVIDENCE_KINDS, LESSON_APPLY_AS, LESSON_LIMITS, LessonError, lessonsService } from "../learn/lessons.js";
-import { learningStore } from "../learn/store.js";
 import { injectionReason, needsPersonReason } from "../screen.js";
 import { teamService } from "../team.js";
 import type { McpToolDef, TethrToolContext, TethrToolResult } from "./tethr-tools.js";
@@ -10,15 +9,13 @@ import type { McpToolDef, TethrToolContext, TethrToolResult } from "./tethr-tool
 // - propose_lesson: tethr (a correction in chat, with the person's OK) or the
 //   learner brings back a lesson. Checked on the Mac, scored by Jev, offered as
 //   a card; only a person applies it.
-// - study: queue a topic for the learner ("how telehealth companies run referrals").
+// - study: ask the learner to study a topic now (learn/study.ts).
 // - lessons_due: applied lessons whose review date has come, for the Friday review.
 // - review_lesson: tethr suggests keeping or retiring one; a person confirms.
-// The learner (a sandboxed agent) gets propose_lesson and nothing else.
+// The learner itself works through its own study tools (study-tools.ts).
 
 export const LEARN_TOOL_NAMES = ["propose_lesson", "study", "lessons_due", "review_lesson"] as const;
 export const LEARN_TOOL_SET = new Set<string>(LEARN_TOOL_NAMES);
-/** The only tethr tool a sandboxed agent (the learner) has. */
-export const SANDBOX_TOOLS = new Set(["propose_lesson"]);
 
 export const LEARN_TOOL_DEFS: McpToolDef[] = [
   {
@@ -44,8 +41,8 @@ export const LEARN_TOOL_DEFS: McpToolDef[] = [
   },
   {
     name: "study",
-    description: "Queue a topic for the learner to study on one of its next runs (e.g. \"how telehealth companies run referral programs\"). Public sources only; it brings back lessons as cards.",
-    inputSchema: { type: "object", properties: { topic: { type: "string" } }, required: ["topic"] },
+    description: "Ask Sage, the learner, to study a topic now (e.g. \"how small telehealth companies run referral programs\"). It plans, researches deeply on the web (seeing only the topic and its questions, so say it in general terms), compares what it finds with what you already know, and saves what's useful as skills you load before that kind of work. `depth`: deep (default) or quick.",
+    inputSchema: { type: "object", properties: { topic: { type: "string" }, depth: { type: "string", enum: ["deep", "quick"] } }, required: ["topic"] },
   },
   {
     name: "lessons_due",
@@ -84,9 +81,19 @@ export async function runLearnTool(name: string, a: Record<string, unknown>, ctx
       const topic = oneLine(a.topic, 200);
       if (topic.length < 5) return { text: "study: give a topic.", isError: true };
       const refused = injectionReason(topic) ?? needsPersonReason(topic);
-      if (refused) return { text: `study: that topic can't be queued (${refused}).`, isError: true };
-      const s = await learningStore.update(companyId, (st) => ({ ...st, queue: [...(st.queue ?? []), { topic, by: "@tethr", at: new Date().toISOString() }].slice(-20) }));
-      return { text: `Queued for the learner (${s.queue?.length ?? 1} waiting). ${s.enabled ? "It takes the oldest on its next run." : "The learner is off; switch it on in Integrations → Learning."}` };
+      if (refused) return { text: `study: that topic can't be studied (${refused}).`, isError: true };
+      const { startStudy, StudyError } = await import("../learn/study.js");
+      const depth = a.depth === "quick" ? "quick" : "deep";
+      try {
+        const study = await startStudy(db, companyId, { trigger: "asked", topic, depth, by: "@tethr" });
+        return {
+          text: `Sage started a ${depth} study of "${study.asked}". It runs in the background (a deep one can take most of an hour); if it saves a skill, you get a note and it shows in your skills list.`,
+          meta: { studyId: study.id },
+        };
+      } catch (err) {
+        if (err instanceof StudyError) return { text: `study: ${err.message}`, isError: true };
+        throw err;
+      }
     }
     if (name === "lessons_due") {
       const due = await lessons.due(companyId);

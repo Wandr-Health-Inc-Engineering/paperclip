@@ -6,7 +6,8 @@ import { MonoTag, StatusDot, formatRelative } from "@/components/tethr/primitive
 import { useBreadcrumbs } from "../../context/BreadcrumbContext";
 import { useCompany } from "../../context/CompanyContext";
 import { Link } from "../../lib/router";
-import { tethrApi, tethrKeys, type TethrLesson } from "@/api/tethr";
+import { tethrApi, tethrKeys, type TethrLesson, type TethrStudy } from "@/api/tethr";
+import { areaLabel, outcomeWords, SKILL_STATUS_WORDS, studyLine, studyTitle } from "@/lib/tethr-study";
 import { cn } from "@/lib/utils";
 
 // The Learning page (phase 26.5-26.6): everything tethr learned, in one
@@ -125,6 +126,73 @@ function Group({ title, hint, lessons, companyId, collapsed = false }: { title: 
   );
 }
 
+/** What Sage studied, newest first: each one's outcome, and its skills with Undo. */
+function StudiesSection({ studies, companyId }: { studies: TethrStudy[]; companyId: string }) {
+  const queryClient = useQueryClient();
+  const undo = useMutation({
+    mutationFn: (v: { id: string; name: string }) => tethrApi.undoStudySkill(companyId, v.id, v.name),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: tethrKeys.learning(companyId) });
+      void queryClient.invalidateQueries({ queryKey: ["tethr", companyId, "chats"] });
+    },
+  });
+  const [open, setOpen] = useState<string | null>(null);
+  return (
+    <section className="tethr-panel overflow-hidden">
+      <header className="flex items-center gap-2 border-b tethr-rule px-4 py-3">
+        <h2 className="text-[15px] font-medium tracking-[-0.01em]">What Sage learned</h2>
+        <span className="ml-auto font-mono text-[11px] tethr-text-3">{studies.length}</span>
+      </header>
+      {!studies.length ? (
+        <p className="px-4 py-4 text-[13px] text-muted-foreground">Nothing yet. Switch Sage on, or teach it something above.</p>
+      ) : (
+        <div className="divide-y divide-[var(--tethr-rim)]">
+          {studies.map((s) => (
+            <div key={s.id} className="space-y-2 px-4 py-3">
+              <button type="button" onClick={() => setOpen(open === s.id ? null : s.id)} aria-expanded={open === s.id} className="flex w-full items-start gap-2 text-left">
+                <ChevronRight className={cn("mt-1 h-3.5 w-3.5 shrink-0 transition-transform", open === s.id && "rotate-90")} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13.5px]">{studyTitle(s)}</span>
+                  <span className="block text-[12px] text-muted-foreground">{s.status === "done" ? outcomeWords(s) : studyLine(s)}</span>
+                </span>
+                <span className="shrink-0 font-mono text-[10.5px] tethr-text-3">
+                  {s.trigger === "asked" ? "asked" : "on its own"} · {formatRelative(s.startedAt)}
+                </span>
+              </button>
+              {open === s.id ? (
+                <div className="space-y-2 pl-5 text-[12.5px]">
+                  {s.summary ? <p className="text-muted-foreground">{s.summary}</p> : null}
+                  {s.skills.map((k) => (
+                    <div key={k.name} className="tethr-inset flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
+                      <span className="min-w-0 flex-1 truncate">
+                        <span className="font-mono text-[12px]">{k.name}</span>
+                        <span className="tethr-text-3"> · {areaLabel(k.area)} · {k.whatChanged || k.description}</span>
+                      </span>
+                      {k.status === "applied" ? (
+                        <button type="button" disabled={undo.isPending} onClick={() => undo.mutate({ id: s.id, name: k.name })} className="tethr-btn tethr-btn-ghost h-7 px-3 text-[12px]">
+                          Undo
+                        </button>
+                      ) : (
+                        <span className="text-[12px] tethr-text-3">{SKILL_STATUS_WORDS[k.status]}</span>
+                      )}
+                    </div>
+                  ))}
+                  {s.findings.map((f, i) => (
+                    <p key={`${i}-${f.claim}`} className="text-muted-foreground">
+                      {i + 1}. {f.claim} <span className="tethr-text-3">({f.strength}; {f.sources.map((x) => x.title).join(", ")})</span>
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
+      {undo.isError ? <p className="px-4 pb-3 text-[12px] text-[var(--tethr-bad)]">{(undo.error as Error).message}</p> : null}
+    </section>
+  );
+}
+
 export function TethrLearning() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -136,41 +204,61 @@ export function TethrLearning() {
   const c = selectedCompanyId!;
   const { data, isLoading } = useQuery({ queryKey: tethrKeys.learning(c), queryFn: () => tethrApi.learning(c), enabled: !!selectedCompanyId, refetchInterval: 30_000 });
   const refresh = () => queryClient.invalidateQueries({ queryKey: tethrKeys.learning(c) });
-  const queue = useMutation({ mutationFn: () => tethrApi.queueStudy(c, topic), onSuccess: () => setTopic(""), onSettled: refresh });
-  const drop = useMutation({ mutationFn: (i: number) => tethrApi.dropStudy(c, i), onSettled: refresh });
+  const teach = useMutation({ mutationFn: () => tethrApi.startStudy(c, topic), onSuccess: () => setTopic(""), onSettled: refresh });
   if (isLoading || !data) return <PageSkeleton />;
 
   const by = (statuses: string[]) => data.lessons.filter((l) => statuses.includes(l.status));
   const waiting = by(["proposed", "candidate"]).sort((a, b) => (a.status === "proposed" ? -1 : 0) - (b.status === "proposed" ? -1 : 0) || (b.composite ?? 0) - (a.composite ?? 0));
   const applied = by(["applied"]);
+  const agent = data.learner.agent;
   return (
     <div className="space-y-5">
       <p className="max-w-[70ch] text-[13px] text-muted-foreground">
-        What tethr learned, from you, from results and from the world, in one record. Only you apply a lesson: it becomes a note, a skill, a rule or an
-        experiment, and the Friday scorecard checks whether it held.
+        What tethr learned. Sage studies what would help and saves it as skills tethr and its agents use; below that, the lessons tethr and the team
+        proposed, which the Friday scorecard checks.
       </p>
 
-      <section className="tethr-panel flex flex-wrap items-center justify-between gap-3 p-4">
-        <div className="min-w-0">
+      <section className="tethr-panel space-y-3 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
-            <StatusDot tone={data.learner.enabled ? "ok" : "idle"} />
-            The learner is {data.learner.enabled ? "on" : "off"}
-            {data.learner.agent ? <span className="font-mono text-[12px] tethr-text-3">{data.learner.agent.tag}</span> : null}
+            <StatusDot tone={data.learner.enabled && !agent?.paused ? "ok" : "idle"} />
+            {data.learner.enabled ? `Sage is on: ${data.learner.schedule.words}` : "Sage is off"}
+            {agent ? <span className="font-mono text-[12px] tethr-text-3">{agent.tag}</span> : null}
           </p>
-          <p className="mt-1 text-[12.5px] text-muted-foreground">
-            It studies distribution, sales and customer experience from public sources, one area a week, in a sealed folder.{" "}
-            <Link to="/tethr-settings" className="underline-offset-2 hover:underline">
-              Switch it in Integrations
+          <div className="flex items-center gap-2">
+            {agent ? (
+              <Link to={`/chat?chat=${agent.threadId}`} className="tethr-btn tethr-btn-glass h-8 px-3 text-[12.5px]">
+                Its chat
+              </Link>
+            ) : null}
+            <Link to="/tethr-settings" className="tethr-btn tethr-btn-ghost h-8 px-3 text-[12.5px]">
+              Pace and switch
             </Link>
-            .
-          </p>
+          </div>
         </div>
-        {data.learner.agent ? (
-          <Link to={`/chat?chat=${data.learner.agent.threadId}`} className="tethr-btn tethr-btn-glass h-8 px-3 text-[12.5px]">
-            Its chat
-          </Link>
-        ) : null}
+        <form
+          className="flex flex-wrap gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (topic.trim().length >= 5) teach.mutate();
+          }}
+        >
+          <input
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            placeholder="Teach Sage something, e.g. how small telehealth companies get listed by travel insurers"
+            aria-label="Something for Sage to learn"
+            className="tethr-inset h-9 min-w-0 flex-1 rounded-[10px] px-3 text-[13px]"
+          />
+          <button type="submit" disabled={topic.trim().length < 5 || teach.isPending || !data.learner.enabled} className="tethr-btn tethr-btn-primary h-9 px-3.5 text-[12.5px]">
+            {teach.isPending ? "Starting…" : "Learn it"}
+          </button>
+        </form>
+        {teach.isError ? <p className="text-[12px] text-[var(--tethr-bad)]">{(teach.error as Error).message}</p> : null}
+        {teach.isSuccess ? <p className="text-[12px] text-muted-foreground">Started. It shows below and in Sage's chat; a deep study can take most of an hour.</p> : null}
       </section>
+
+      <StudiesSection studies={data.studies} companyId={c} />
 
       <Group title="Waiting for you" hint="Cards in the chat first, then the rest by score." lessons={waiting} companyId={c} />
       <Group title="Applied" hint="Each one is reviewed on its date: tethr reads the number and suggests keeping or retiring it." lessons={applied} companyId={c} />
@@ -178,38 +266,6 @@ export function TethrLearning() {
       <Group title="Retired" lessons={by(["retired"])} companyId={c} collapsed />
       <Group title="Not for us" lessons={by(["rejected"])} companyId={c} collapsed />
       {!data.lessons.length ? <div className="tethr-empty px-6 py-8 text-center text-[13px]">No lessons yet. They come from the learner, and from tethr when you correct it in the chat.</div> : null}
-
-      <section className="tethr-panel space-y-2 p-4">
-        <MonoTag>study next</MonoTag>
-        <form
-          className="flex flex-wrap gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (topic.trim().length >= 5) queue.mutate();
-          }}
-        >
-          <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="e.g. how telehealth companies run referral programs" aria-label="A topic to study" className="tethr-inset h-9 min-w-0 flex-1 rounded-[10px] px-3 text-[13px]" />
-          <button type="submit" disabled={topic.trim().length < 5 || queue.isPending} className="tethr-btn tethr-btn-glass h-9 px-3.5 text-[12.5px]">
-            Queue it
-          </button>
-        </form>
-        {queue.isError ? <p className="text-[12px] text-[var(--tethr-bad)]">{(queue.error as Error).message}</p> : null}
-        {data.learner.queue.length ? (
-          <ul className="space-y-1 text-[13px]">
-            {data.learner.queue.map((q, i) => (
-              <li key={`${q.at}-${i}`} className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate">{q.topic}</span>
-                <span className="font-mono text-[10.5px] tethr-text-3">{q.by}</span>
-                <button type="button" onClick={() => drop.mutate(i)} className="tethr-btn tethr-btn-ghost h-7 px-2.5 text-[11.5px]">
-                  Remove
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-[12.5px] text-muted-foreground">Nothing queued: the learner picks the area that matters most this week.</p>
-        )}
-      </section>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="tethr-panel overflow-hidden">

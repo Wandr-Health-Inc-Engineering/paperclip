@@ -70,6 +70,8 @@ export function tethrTeamRoutes(db: Db): Router {
           threadId: a.threadId,
           lead: a.lead,
           leadTag: a.leadTag,
+          // The learner (its chat and settings show its studies and pace).
+          sandbox: a.sandbox,
           subTeam: agents.filter((s) => s.leadTag === a.tag).map((s) => s.tag),
           goal: a.goalId ? { id: a.goalId, title: a.goalTitle } : null,
           connectors: a.connectors,

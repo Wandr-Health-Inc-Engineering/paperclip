@@ -12,9 +12,9 @@ import { seedTethrCore } from "../tethr/seed/tethr-core.ts";
 import { decisionStore } from "../tethr/decide/decide.ts";
 import { rankConversations, reportUrgency, URGENCY_WAIT } from "../tethr/decide/points.ts";
 import { lessonRefusal, lessonsService, overlap, parseLesson } from "../tethr/learn/lessons.ts";
-import { enableLearner, disableLearner, planStudy, sandboxDir, studyBrief, LEARNER_TAG } from "../tethr/learn/learner.ts";
+import { enableLearner, disableLearner, LEARNER_TAG } from "../tethr/learn/learner.ts";
+import { roomDir } from "../tethr/learn/rooms.ts";
 import { learningStore } from "../tethr/learn/store.ts";
-import { sandboxRefusal } from "../tethr/assistant/sandbox.ts";
 import { parseCriteria, SCORE_TEMPLATES } from "../tethr/assistant/tethr-tools.ts";
 import { assistantRunner, resetAssistantRunnerForTests, setAssistantRunnerForTests, getAssistantRunner } from "../tethr/assistant/runner.ts";
 import { issueHookToken } from "../tethr/assistant/gate.ts";
@@ -27,7 +27,8 @@ import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } fro
 
 // Phase 26.4-26.6: Jev at the other decision points (an agent's report, the
 // idea slots, list templates), the lessons record (propose, check, score,
-// offer, apply, turn down, review), and the learner in its sealed room.
+// offer, apply, turn down, review), and the learner's desk (its studies are in
+// tethr-study.test.ts).
 
 describe("lessons: what's kept and what isn't", () => {
   it("takes one-sentence lessons with https sources, and drops medical claims, instructions and repeats", () => {
@@ -62,13 +63,6 @@ describe("lessons: what's kept and what isn't", () => {
   it("has lead and partner scoring templates that pass the criteria check", () => {
     expect(Array.isArray(parseCriteria(SCORE_TEMPLATES.leads))).toBe(true);
     expect(Array.isArray(parseCriteria(SCORE_TEMPLATES.partners))).toBe(true);
-  });
-
-  it("keeps the learner to web search, public pages, its files and propose_lesson", () => {
-    for (const ok of ["WebSearch", "WebFetch", "Read", "Write", "mcp__tethr__propose_lesson"]) expect(sandboxRefusal("@sage", ok)).toBeNull();
-    for (const no of ["Bash", "Skill", "mcp__tethr__memory", "mcp__tethr__recall", "mcp__tethr__goals_list", "mcp__claude_ai_Gmail__search_threads", "mcp__tethr__create_agent"]) {
-      expect(sandboxRefusal("@sage", no)).toContain("sealed folder");
-    }
   });
 });
 
@@ -237,51 +231,46 @@ describePg("Jev's other decisions, lessons and the learner", () => {
     expect(memorySnapshot(companyId).stores.company.entries.map((e) => e.text)).toContain("Partner clinics like printed referral cards at the counter.");
   });
 
-  it("makes the learner only when switched on, plans each run, and seals its room", async () => {
+  it("makes the learner only when switched on, and seals the room it talks to people in", async () => {
     await goalsService(db).saveGoal(companyId, { title: "New customers" });
-    await learningStore.update(companyId, (s) => ({ ...s, queue: [{ topic: "how telehealth companies run referral programs", by: "a person", at: new Date().toISOString() }] }));
     const sage = await enableLearner(db, companyId, { userId: "mark" });
     expect(sage).toMatchObject({ tag: LEARNER_TAG, sandbox: true, connectors: ["Tethr tools"], paused: false });
     expect((await enableLearner(db, companyId, { userId: "mark" })).agentId).toBe(sage.agentId); // idempotent
 
-    const plan = await planStudy(db, companyId, sage.tag);
-    expect(plan.topic).toBe("how telehealth companies run referral programs");
-    expect(learningStore.get(companyId).queue).toEqual([]);
-    const brief = studyBrief(plan);
-    expect(brief).toContain("queued by the team");
-
-    // Its turn: the sealed folder, its own tools, nothing of the company's beyond a line and the goal titles.
-    const { routeRunId } = await getAssistantRunner(db).send({ companyId, threadId: sage.threadId, text: "Study distribution.", kind: "system" });
+    // A person's message runs the desk: its own folder, no web, no files, only its own tools.
+    const { routeRunId } = await getAssistantRunner(db).send({ companyId, threadId: sage.threadId, text: "Where do your skills go?" });
     for (let i = 0; i < 100 && !calls.length; i++) await new Promise((r) => setTimeout(r, 50));
     const call = calls.at(-1)!;
-    expect(call.cwd).toBe(sandboxDir(sage.tag));
-    expect(call.args[call.args.indexOf("--tools") + 1]).toBe("Read,Glob,Grep,Write,Edit,MultiEdit,ToolSearch,WebSearch,WebFetch");
+    const desk = roomDir(sage.tag, "desk");
+    expect(call.cwd).toBe(desk);
+    expect(call.args[call.args.indexOf("--tools") + 1]).toBe("Read,Glob,Grep,ToolSearch");
     expect(call.args).toContain("--setting-sources");
     expect(call.args).not.toContain("--add-dir");
-    expect(call.deny).toEqual(expect.arrayContaining(["mcp__tethr__memory", "mcp__tethr__recall", "mcp__tethr__goals_list", "mcp__tethr__create_agent", "Bash", "Skill"]));
-    expect(call.deny).not.toContain("mcp__tethr__propose_lesson");
-    const md = fs.readFileSync(path.join(sandboxDir(sage.tag), "CLAUDE.md"), "utf8");
-    expect(md).toContain("New customers");
+    expect(call.deny).toEqual(expect.arrayContaining(["WebSearch", "WebFetch", "Write", "mcp__tethr__memory", "mcp__tethr__recall", "mcp__tethr__goals_list", "mcp__tethr__create_agent", "mcp__tethr__propose_lesson", "Bash", "Skill"]));
+    expect(call.deny).not.toContain("mcp__tethr__start_study");
+    const md = fs.readFileSync(path.join(desk, "CLAUDE.md"), "utf8");
+    expect(md).toContain("Your recent studies");
     expect(md).not.toMatch(/## Memory|Your team|Growth map/);
     expect(routeRunId).toBeTruthy();
 
-    // The gate: nothing outside its folder, no connectors, no memory.
+    // The gate: nothing outside its folder, no connectors, no memory, no web at the desk.
     const token = { companyId, threadId: sage.threadId, runId: routeRunId };
     const decide = async (tool: string, input: Record<string, unknown>) =>
-      (JSON.parse((await handlePreToolUse(db, token, { tool_name: tool, tool_input: input, cwd: sandboxDir(sage.tag) })).stdout) as { hookSpecificOutput: { permissionDecision: string } }).hookSpecificOutput.permissionDecision;
-    expect(await decide("Read", { file_path: path.join(sandboxDir(sage.tag), "CLAUDE.md") })).toBe("allow");
+      (JSON.parse((await handlePreToolUse(db, token, { tool_name: tool, tool_input: input, cwd: desk })).stdout) as { hookSpecificOutput: { permissionDecision: string } }).hookSpecificOutput.permissionDecision;
+    expect(await decide("Read", { file_path: path.join(desk, "CLAUDE.md") })).toBe("allow");
     expect(await decide("Read", { file_path: path.join(dir, "workspace", "CLAUDE.md") })).toBe("deny");
     expect(await decide("mcp__claude_ai_Gmail__search_threads", {})).toBe("deny");
     expect(await decide("mcp__tethr__recall", { query: "x" })).toBe("deny");
+    expect(await decide("WebSearch", { query: "x" })).toBe("deny");
 
-    // The tools endpoint lists and runs only propose_lesson for it.
+    // The tools endpoint lists and runs only the desk's tools.
     const { tethrRoutes } = await import("../routes/tethr.ts");
     const app = express();
     app.use(express.json());
     app.use("/api", tethrRoutes(db));
     const bearer = `Bearer ${issueHookToken(token)}`;
     const list = await request(app).post("/api/tethr/assistant/tools/list").set("authorization", bearer).expect(200);
-    expect(list.body.tools.map((t: { name: string }) => t.name)).toEqual(["propose_lesson"]);
+    expect(list.body.tools.map((t: { name: string }) => t.name).sort()).toEqual(["skill_view", "start_study"]);
     const call2 = await request(app).post("/api/tethr/assistant/tools/call").set("authorization", bearer).send({ name: "goals_list", arguments: {} }).expect(200);
     expect(call2.body.isError).toBe(true);
 
@@ -300,7 +289,7 @@ describePg("Jev's other decisions, lessons and the learner", () => {
     // If its agent is deleted, its chat runs with nobody's rights.
     const { agents } = await import("@paperclipai/db");
     await db.update(agents).set({ status: "terminated" }).where(eq(agents.id, sage.agentId));
-    expect(await decide("WebSearch", { query: "x" })).toBe("deny");
+    expect(await decide("Read", { file_path: path.join(desk, "CLAUDE.md") })).toBe("deny");
     await db.update(agents).set({ status: "idle" }).where(eq(agents.id, sage.agentId));
 
     await disableLearner(db, companyId, { userId: "mark" });

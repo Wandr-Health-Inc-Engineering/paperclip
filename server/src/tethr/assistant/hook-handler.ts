@@ -10,7 +10,8 @@ import type { HookTokenContext } from "./gate.js";
 import { canonicalJson, consumeGrant, createPendingAction, findPending, inputHash, MAX_APPROVAL_INPUT_CHARS, recordFailure, recordOutcome, shortId } from "./grants.js";
 import { classify, decide, resolvesToPrivateHost } from "./policy.js";
 import { agentToolRefusal } from "../team-spec.js";
-import { sandboxDir, sealedThreadTag } from "../learn/learner.js";
+import { sealedThreadTag } from "../learn/learner.js";
+import { roomDir } from "../learn/rooms.js";
 import { sandboxRefusal } from "./sandbox.js";
 import { teamService } from "../team.js";
 import { readableRoots, workspaceDir } from "./workspace.js";
@@ -53,9 +54,11 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
   if (!member && sealedThreadTag(ctx.companyId, ctx.threadId)) {
     return preDecision("deny", "Tethr approval gate: blocked. The learner isn't on the team any more, so nothing runs in its chat.");
   }
-  const sealed = member?.sandbox ? sandboxDir(member.tag) : null;
-  if (member && sealed) {
-    const refusal = sandboxRefusal(member.tag, toolName);
+  // The learner works in one room per turn (desk for a person's message): only that room's tools and folder.
+  const room = member?.sandbox ? (ctx.room ?? "desk") : null;
+  const sealed = member && room ? roomDir(member.tag, room) : null;
+  if (member && room) {
+    const refusal = sandboxRefusal(member.tag, toolName, room);
     if (refusal) return preDecision("deny", refusal);
   }
   let c = classify(toolName, toolInput, {
@@ -91,7 +94,9 @@ export async function handlePreToolUse(db: Db, ctx: HookTokenContext, payload: R
     spend = await checkSpend(ctx.companyId, c, toolInput, autonomy);
     c = spend.classified;
   }
-  const d = decide(c, { mode, shell: cfg.shell, tainted: isTainted(ctx.companyId, ctx.threadId), autonomy, withinCap: spend?.withinCap, spendNote: spend?.spendNote });
+  // The learner's research room holds nothing private, so a taint on its chat doesn't hold back its pages.
+  const tainted = room === "research" ? false : isTainted(ctx.companyId, ctx.threadId);
+  const d = decide(c, { mode, shell: cfg.shell, tainted, autonomy, withinCap: spend?.withinCap, spendNote: spend?.spendNote });
   // What a connector did is logged here; tethr's own tools are logged where they run (the tools endpoint).
   const logsHere = !!c.connector && c.server !== "tethr" && c.cls !== "read" && c.cls !== "draft";
 
