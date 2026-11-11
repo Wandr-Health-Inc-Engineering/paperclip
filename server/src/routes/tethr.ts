@@ -1323,7 +1323,7 @@ export function tethrRoutes(db: Db) {
       });
       // Auto-revise: the agent picks the note up and produces v(n+1)
       // (TETHR_AUTO_REVISE=false disables; the Queue also has a manual button).
-      if (decision === "request_changes" && updated?.kind !== "external_action" && updated?.kind !== "skill_change" && process.env.TETHR_AUTO_REVISE !== "false") {
+      if (decision === "request_changes" && updated?.kind !== "external_action" && updated?.kind !== "skill_change" && updated?.kind !== "memory_change" && process.env.TETHR_AUTO_REVISE !== "false") {
         void worker
           .reviseOutput({ companyId, outputId: req.params.id as string })
           .catch((err) => logger.warn({ err }, "tethr auto-revise failed"));

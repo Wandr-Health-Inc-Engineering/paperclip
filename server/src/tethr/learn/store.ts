@@ -26,6 +26,8 @@ export interface LearningState {
   applyMode?: "auto" | "ask";
   /** When it last looked at what's been happening (the next digest starts there). */
   watchedAt?: string;
+  /** When it last tidied memory (a weekly tidy). */
+  tidiedAt?: string;
   /** Topics a person or tethr queued for the learner, oldest first. */
   queue?: Array<{ topic: string; by: string; at: string }>;
   /** By web domain. */

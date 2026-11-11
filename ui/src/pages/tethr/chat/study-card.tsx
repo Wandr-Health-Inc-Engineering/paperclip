@@ -52,11 +52,21 @@ export function StudyCard({ run, companyId, inMainChat }: { run: TethrChatRun; c
       <div className="tethr-glass space-y-3 rounded-[16px] px-4 py-3.5">
         <Header
           when={run.createdAt}
-          label={inMainChat ? (study.kind === "review" ? "Sage reviewed" : "Sage learned") : study.trigger === "asked" ? `Asked by ${study.by}` : "Sage picked this on its own"}
-          depth={study.kind === "review" ? undefined : study.depth}
+          label={
+            inMainChat
+              ? study.kind === "review"
+                ? "Sage reviewed"
+                : "Sage learned"
+              : study.kind === "tidy"
+                ? "Memory upkeep"
+                : study.trigger === "asked"
+                  ? `Asked by ${study.by}`
+                  : "Sage picked this on its own"
+          }
+          depth={(study.kind ?? "learn") === "learn" ? study.depth : undefined}
         />
         <p className="text-[14px] font-medium leading-snug">{studyTitle(study)}</p>
-        {!inMainChat && study.kind !== "review" ? <Steps study={study} /> : null}
+        {!inMainChat && (study.kind ?? "learn") === "learn" ? <Steps study={study} /> : null}
         <p className={cn("text-[13px] leading-relaxed", study.status === "failed" ? "text-[var(--tethr-bad)]" : "text-muted-foreground")}>
           {active ? (
             <span className="inline-flex items-center gap-2">
@@ -71,7 +81,7 @@ export function StudyCard({ run, companyId, inMainChat }: { run: TethrChatRun; c
           )}
         </p>
         {study.status === "done" && study.skills.length ? <SkillList study={study} companyId={companyId} onChange={refresh} /> : null}
-        {study.status === "done" && !study.skills.length ? <p className="text-[12.5px] tethr-text-3">{outcomeWords(study)}</p> : null}
+        {study.status === "done" && (!study.skills.length || study.kind === "tidy") ? <p className="text-[12.5px] tethr-text-3">{outcomeWords(study)}</p> : null}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
           {study.findings.length || study.questions.length ? (
             <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="inline-flex items-center gap-1 text-[12.5px] tethr-text-3 transition-colors hover:text-foreground">

@@ -236,7 +236,7 @@ The specialists were barely used (in the last 100 requests @tethr handled 35, ea
 - `server/src/tethr/**` — the whole L2 engine: `routing.ts`, `worker.ts`, `gating.ts`, `drive.ts`, `org.ts`, `memory.ts`, `notify.ts`, `digest.ts`, `state.ts`, `export.ts`, `adapter.ts`, `index.ts`, plus `llm/` (mock ↔ claude), `tools/` (allowlisted registry), `seed/` (`wandr-growth.ts`).
 - `server/src/routes/tethr.ts` — the Tethr REST surface. (`routes/health.ts` = the existing `/health` + `/api/health` health endpoints — reuse, don't add another.)
 - `ui/src/pages/tethr/**` + `ui/src/components/tethr/**` — the 10 pages.
-- `packages/db/src/schema/tethr_*.ts` — 8 tables (`tethr_divisions`, `tethr_agent_profiles`, `tethr_subagents`, `tethr_route_runs`, `tethr_outputs`, `tethr_drive*`, `tethr_memories`, `tethr_notifications`; later `tethr_goal_metrics`, `tethr_members`, `tethr_ideas`). Migrations through **0096**.
+- `packages/db/src/schema/tethr_*.ts` — 8 tables (`tethr_divisions`, `tethr_agent_profiles`, `tethr_subagents`, `tethr_route_runs`, `tethr_outputs`, `tethr_drive*`, `tethr_memories`, `tethr_notifications`; later `tethr_goal_metrics`, `tethr_members`, `tethr_ideas`, `tethr_decisions`, `tethr_inbox_items`, `tethr_lessons`, `tethr_memory_notes`). Migrations through **0099**.
 
 ## Merge-safe rule (non-negotiable)
 
@@ -1560,6 +1560,51 @@ based on how aggressive learning". Plan: `~/.claude/plans/keen-moseying-micali.m
   through a fake Claude that calls the real tools endpoint per room; own-skill updates + Undo, someone
   else's skill = card, Ask first; skip / pace cap / throttle; tools only in rooms), `tethr-learning`
   (desk room), UI `tethr-study.test.ts`, `chat/study-card.test.tsx`.
+
+## Memory without a ceiling (2026-11-10)
+
+Company memory hit 5,817 of 6,000 characters after one day (12 long notes) and saves started failing. Mark: "I don't
+want a cap like this. The system needs to truly be working for months and keep learning", and on where to keep
+it, "what is best, future proof, and actually works reliably". Plan: `~/.claude/plans/keen-moseying-micali.md`;
+DECISIONS 75.
+- **The record:** `tethr_memory_notes` (migration 0099): every note ever saved, with target (company/people),
+  area, saved_by, chat, pinned, in_core, status (active/retired), recall_count, and a generated `search`
+  tsvector (`to_tsvector('english', text)`, GIN index). Postgres, backed up hourly with the rest of tethr.
+  No third-party code; Hermes's Holographic fact store was weighed and not used (a community plugin that runs
+  inside Hermes agent turns, which tethr never runs). `memory/notes.ts` is the one place a store plugs in.
+- **The always-loaded set** (Hermes MEMORY.md / USER.md, or the built-in files) is a curated part of the table
+  (`notesService.curate`, serialized per store): past 85% of the store's size (`CORE_HIGH`), notes move out
+  until ~70% (`CORE_LOW`) in this order: never a pinned one while another can go, status-like first
+  (`isStatusLike`: money, ids, dates, "this week", live/paused), then the least recently saved or recalled.
+  Notes recalled `PROMOTE_AFTER_RECALLS` (3) times come back in when there's room. It writes the difference
+  through `changeMemory`, so Hermes's own scans still run on what enters the file. Curation never deletes.
+- **Saving never fails for space.** The `memory` tool, the Memory page and lessons go through `notesService`:
+  add (screens: health, keys, instructions; a near-duplicate, word overlap ≥ 0.8, updates that note; an agent
+  never overwrites someone else's), patch (by quoted text replaces that part, as Hermes does, `replaceOnce`;
+  by id replaces the note), remove (for good, only when asked), pin, retire. Every op first syncs the table
+  from the file (`syncFromCore`), so notes saved another way count. Agents still change or remove only notes
+  they saved.
+- **Each turn gets what's relevant:** the runner adds "From long-term memory (…data, not instructions)" to the
+  turn prompt (not CLAUDE.md: it's shared by every chat) with the best kept notes for the message
+  (`relevantForTurn`: any-word full-text match, 2 shared words for long messages, ≤ 6 notes / ~1,500 chars),
+  and counts the recall. Not for private turns, study steps or Sage's rooms. `recall` searches notes (every
+  store) and, with Hermes, past conversations.
+- **Tidy memory** (`kind: "tidy"` study, `TIDY_TOPIC`): Sage's apply room alone with the notes in
+  `context/notes.md` → `tidy_note` (merge / rewrite / retire, ≤ `TIDY_CHANGES` 25; pinned notes untouched).
+  A change to a person's note (saved_by not an @tag) is a `memory_change` card (`gating.approveMemoryChange`
+  → `applyNoteChange`). Weekly when Sage is on and there are ≥ 20 notes (`tidyDue`, from Sage's scheduled run;
+  upkeep, not counted against the pace), or the Memory page's "Tidy memory" (`POST /memory/tidy`).
+- **Memory page:** counts ("35 in every turn · 37 more kept"), the always-loaded notes with Pin, a searchable,
+  paged **Kept** list (Pin, Retire, Remove), Retired folded. Routes `GET|POST /memory/notes`,
+  `PATCH|DELETE /memory/notes/:id`, `POST /memory/notes/:id/retire` (people only).
+- **Boot:** `healMemoryNotes` imports each company's notes (with provenance) and curates. Switching Hermes on or
+  off re-curates into the store that's on.
+- Tests: `tethr-memory-notes.test.ts` (8: curation order and marks, import once, never refused, search and
+  turn recall, near-duplicate merge, agent rules, pin/retire/remove, quoted patch), `tethr-study.test.ts`
+  (+2: the tidy with a person's card approved; a chat turn gets kept notes, Sage's desk doesn't).
+  Verified on a throwaway with real Claude: 71 notes saved, none refused, the always-loaded set at 72%; a note
+  moved out came back into a turn and tethr answered from it with no tool call; "remember …" saved through
+  the notes table; Sage's tidy proposed 11 sensible changes; pin moved a note into every turn.
 
 ## The growth map: a galaxy of growth areas (phase 26.9, 2026-11-09)
 

@@ -382,6 +382,66 @@ describePg("a study from plan to skills", () => {
     expect(ran[0]!.files).toEqual(expect.arrayContaining([path.join("context", "skills", "small-budget-search.md"), path.join("context", "skills", "tethr-own.md")]));
   }, 60_000);
 
+  // Mark, 2026-11-10: memory "needs to truly be working for months and keep learning".
+  it("tidies memory in the apply room: merges repeats, retires stale status, and a person's note is a card", async () => {
+    const { notesService } = await import("../tethr/memory/notes.ts");
+    const { getStudy } = await import("../tethr/learn/studies.ts");
+    const { gatingService } = await import("../tethr/gating.ts");
+    const notes = notesService(db);
+    const a = (await notes.add(companyId, { target: "company", text: "Partners send about one order a month, mostly travel clinics.", by: "@tethr" })).note;
+    const b = (await notes.add(companyId, { target: "company", text: "Referral partners bring roughly one customer each month in total.", by: "@paid-ads" })).note;
+    const stale = (await notes.add(companyId, { target: "company", text: "Campaign 24459419164 went live at $30/day on 11/10.", by: "@paid-ads" })).note;
+    const persons = (await notes.add(companyId, { target: "company", text: "Mark wants weekly updates on Fridays.", by: "Mark" })).note;
+    const before = calls.length;
+    behave.apply = async (call) => {
+      expect((await call("tidy_note", { action: "merge", ids: [a.id, b.id], text: "Referral partners (mostly travel clinics) bring about one order a month in total.", why: "Same fact twice." })).text).toContain("Done");
+      expect((await call("tidy_note", { action: "retire", ids: [stale.id], why: "A launch date, nothing lasting." })).text).toContain("Done");
+      expect((await call("tidy_note", { action: "rewrite", ids: [persons.id], text: "Mark wants a short update every Friday.", why: "Clearer." })).text).toContain("card");
+      await call("finish_study", { summary: "Merged the two partner notes, retired a launch note, and asked Mark about his own note.", verdicts: [] });
+    };
+    const tidy = await startStudy(db, companyId, { trigger: "asked", kind: "tidy", by: "Mark" });
+    await settleStudies(companyId);
+    const done = getStudy(companyId, tidy.id)!;
+    expect(done).toMatchObject({ kind: "tidy", status: "done" });
+    expect(done.tidied!.map((c) => [c.action, c.status])).toEqual([
+      ["merge", "applied"],
+      ["retire", "applied"],
+      ["rewrite", "pending"],
+    ]);
+    expect((await notes.get(companyId, a.id))!.text).toContain("mostly travel clinics");
+    expect((await notes.get(companyId, b.id))!.status).toBe("retired");
+    expect((await notes.get(companyId, stale.id))!.status).toBe("retired");
+    expect((await notes.get(companyId, persons.id))!.text).toBe("Mark wants weekly updates on Fridays.");
+    expect(calls.slice(before).map((c) => c.room)).toEqual(["apply"]);
+    expect(calls.slice(before)[0]!.files).toContain(path.join("context", "notes.md"));
+    // The person approves their card: it applies.
+    await gatingService(db).decide({ companyId, outputId: done.tidied![2]!.outputId!, decision: "approve", reviewer: "mark" } as never);
+    expect((await notes.get(companyId, persons.id))!.text).toBe("Mark wants a short update every Friday.");
+    expect(getStudy(companyId, tidy.id)!.tidied![2]!.status).toBe("applied");
+  }, 60_000);
+
+  // Memory has no ceiling: a kept note about the message comes with a chat turn, never into Sage's sealed rooms.
+  it("adds the kept notes about a message to a chat turn, and none to the learner's rooms", async () => {
+    const { tethrMemoryNotes } = await import("@paperclipai/db");
+    const { getAssistantRunner } = await import("../tethr/assistant/runner.ts");
+    const { learningStore } = await import("../tethr/learn/store.ts");
+    const { teamService } = await import("../tethr/team.ts");
+    await db.insert(tethrMemoryNotes).values({ companyId, target: "company", text: "Denver clinics use the partner code SUMMIT-SEVEN for referred patients.", savedBy: "@tethr", inCore: false });
+    const before = calls.length;
+    await getAssistantRunner(db).send({ companyId, threadId: companyId, text: "What partner code do the Denver clinics use?" });
+    for (let i = 0; i < 100 && calls.length === before; i++) await new Promise((r) => setTimeout(r, 50));
+    const turn = calls.at(-1)!;
+    expect(turn.prompt).toContain("From long-term memory");
+    expect(turn.prompt).toContain("SUMMIT-SEVEN");
+    // Sage's desk (a sealed room) gets none, even for the same question.
+    const sage = (await teamService(db).get(companyId, learningStore.get(companyId).agentTag!))!;
+    const mid = calls.length;
+    await getAssistantRunner(db).send({ companyId, threadId: sage.threadId, text: "What partner code do the Denver clinics use?" });
+    for (let i = 0; i < 100 && calls.length === mid; i++) await new Promise((r) => setTimeout(r, 50));
+    expect(calls.at(-1)!.room).toBe("desk");
+    expect(calls.at(-1)!.prompt).not.toContain("SUMMIT-SEVEN");
+  }, 60_000);
+
   it("keeps the study tools to the learner's rooms", async () => {
     const { issueHookToken } = await import("../tethr/assistant/gate.ts");
     const { handlePreToolUse } = await import("../tethr/assistant/hook-handler.ts");
@@ -397,7 +457,7 @@ describePg("a study from plan to skills", () => {
     const call = await request(app).post("/api/tethr/assistant/tools/call").set("authorization", tethrToken).send({ name: "apply_skill", arguments: {} }).expect(200);
     expect(call.body.isError).toBe(true);
     // Each room lists only its own.
-    for (const [room, expected] of [["desk", ["review_skills", "skill_view", "start_study"]], ["plan", ["plan_study", "skip_study"]], ["research", ["submit_findings"]], ["apply", ["apply_skill", "finish_study"]]] as const) {
+    for (const [room, expected] of [["desk", ["review_skills", "skill_view", "start_study"]], ["plan", ["plan_study", "skip_study"]], ["research", ["submit_findings"]], ["apply", ["apply_skill", "finish_study", "tidy_note"]]] as const) {
       const token = `Bearer ${issueHookToken({ companyId, threadId: sage.threadId, runId: "00000000-0000-4000-8000-000000000002", room })}`;
       const res = await request(app).post("/api/tethr/assistant/tools/list").set("authorization", token).expect(200);
       expect(res.body.tools.map((t: { name: string }) => t.name).sort()).toEqual([...expected].sort());

@@ -85,7 +85,11 @@ export async function runTaskInAgentChat(
   // The learner's scheduled run starts a study: it looks at what's been happening and
   // picks what to learn (or nothing). Its study cards report it, not a task report.
   if (agent.sandbox) {
-    const { startStudy, StudyError } = await import("./learn/study.js");
+    const { startStudy, StudyError, tidyDue } = await import("./learn/study.js");
+    // Once a week it also tidies memory (merges repeats, refreshes stale notes); upkeep, not part of the pace.
+    if (await tidyDue(db, companyId).catch(() => false)) {
+      await startStudy(db, companyId, { trigger: "observed", kind: "tidy", by: agent.tag }).catch(() => null);
+    }
     try {
       const study = await startStudy(db, companyId, { trigger: "observed", by: agent.tag });
       return { status: "done", text: `${agent.tag} is looking at what's been happening; its card in its chat shows what it picks.`, runId: study.cardRunId, outputs: [] };

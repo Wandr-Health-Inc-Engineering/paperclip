@@ -694,6 +694,13 @@
       "when": 1794283178222,
       "tag": "0098_complete_scourge",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1794366142260,
+      "tag": "0099_amusing_masque",
+      "breakpoints": true
     }
   ]
 }

@@ -347,6 +347,11 @@ Branch: `mark-sandbox` (local only). Date started: 2026-06-11.
 74. **A budget is a setting; skills are foundations.** tethr says where a figure came from, sizes plans to it and
     names the next step up; skills put numbers in tiers or ratios and never hold company figures. A "review the
     skills" job (no web) checks every skill holds as the company grows and rewrites the narrow ones.
+75. **Memory has no ceiling; the notes table is the record** (Mark: "I don't want a cap like this… working for months
+    and keep learning"). Every note lives in `tethr_memory_notes` (Postgres full-text search). Hermes's MEMORY.md /
+    USER.md (or the built-in files) hold a curated always-loaded part; saving never fails for space, curation never
+    deletes, and the notes about a message are added to its turn. Hermes still holds past conversations and skills.
+    Hermes Holographic was not used: a community plugin made for Hermes agent turns, which tethr never runs.
 
 ## Core changes (keep merge-safe)
 

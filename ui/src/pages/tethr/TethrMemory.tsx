@@ -14,15 +14,19 @@ import {
   tethrApi,
   tethrKeys,
   type TethrMemoryEntry,
+  type TethrMemoryNote,
   type TethrMemoryOp,
   type TethrMemoryState,
   type TethrMemoryTarget,
+  type TethrNoteCounts,
   type TethrRecallHit,
 } from "@/api/tethr";
 
-// Memory (phase 25). What tethr remembers between conversations: short entries
+// Memory (phase 25; no ceiling since 2026-11-10). Every note tethr saves is kept
+// in the notes table and searchable; the ones in every turn are a curated part,
 // in two stores, "Company notes" and "People", held in Hermes (tethr's profile)
-// or, without Hermes, in tethr's built-in store. The chat reads them every turn
+// or, without Hermes, in tethr's built-in store. "Kept" lists the rest (search,
+// pin, retire, remove), and "Tidy memory" has Sage merge and refresh notes. The chat reads them every turn
 // and saves to them with its memory tool; here you see who saved what, edit,
 // remove and add. With Hermes, every past conversation is searchable (what the
 // chat's recall finds) and the skills tethr learned are listed.
@@ -92,16 +96,20 @@ function MemoryStores({ companyId: c }: { companyId: string }) {
           )}
         </p>
         <p className="text-[12px] tethr-text-3">
-          Loaded into every chat. Tell tethr "remember …" or "forget …" in the chat, or change it here. It never saves passwords or anyone's
-          health information.
+          Every note tethr saves is kept and searchable; memory has no ceiling. The most useful ones are in front of tethr every turn, and the rest come
+          back when a message is about them. Tell tethr "remember …" or "forget …" in the chat, or change it here. It never saves passwords or
+          anyone's health information.
         </p>
+        {data.noteCounts ? <MemoryCounts companyId={c} counts={data.noteCounts} /> : null}
       </header>
 
       {data.notMoved.length ? <NotMoved companyId={c} notes={data.notMoved} /> : null}
 
       {TARGETS.map((t) => (
-        <StoreSection key={t.id} companyId={c} target={t.id} label={t.label} hint={t.hint} store={data.stores[t.id]} />
+        <StoreSection key={t.id} companyId={c} target={t.id} label={t.label} hint={t.hint} store={data.stores[t.id]} coreNotes={data.coreNotes ?? []} />
       ))}
+
+      <KeptNotes companyId={c} counts={data.noteCounts} />
 
       {hermes ? <PastConversations companyId={c} state={data} /> : null}
       {hermes ? <Skills companyId={c} skills={data.skills} /> : null}
@@ -170,12 +178,14 @@ function StoreSection({
   label,
   hint,
   store,
+  coreNotes,
 }: {
   companyId: string;
   target: TethrMemoryTarget;
   label: string;
   hint: string;
   store: TethrMemoryState["stores"][TethrMemoryTarget];
+  coreNotes: TethrMemoryNote[];
 }) {
   const change = useMemoryChange(c);
   const [adding, setAdding] = useState("");
@@ -191,12 +201,12 @@ function StoreSection({
     <section className="space-y-2.5">
       <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
         <div className="min-w-0 flex-1">
-          <h3 className="text-[13.5px] font-medium">{label}</h3>
+          <h3 className="text-[13.5px] font-medium">{label} · in every turn</h3>
           <p className="text-[12px] tethr-text-3">{hint}</p>
         </div>
         <div className="w-44 space-y-1">
-          <p className="text-right font-mono text-[10.5px] tethr-text-3">
-            {pct}% · {store.used.toLocaleString()}/{store.limit.toLocaleString()}
+          <p className="text-right font-mono text-[10.5px] tethr-text-3" title="When this passes 85%, the least useful notes move to the kept list (never deleted).">
+            every-turn space {pct}%
           </p>
           <BudgetBar spentCents={store.used} capCents={store.limit} warnPercent={85} />
         </div>
@@ -204,7 +214,15 @@ function StoreSection({
       <div className="tethr-panel overflow-hidden">
         {store.entries.length ? (
           store.entries.map((entry, i) => (
-            <EntryRow key={entry.text} companyId={c} target={target} entry={entry} last={i === store.entries.length - 1} change={change} />
+            <EntryRow
+              key={entry.text}
+              companyId={c}
+              target={target}
+              entry={entry}
+              note={coreNotes.find((n) => n.text === entry.text) ?? null}
+              last={i === store.entries.length - 1}
+              change={change}
+            />
           ))
         ) : (
           <p className="px-4 py-5 text-[13px] tethr-text-3">Nothing saved yet.</p>
@@ -256,12 +274,14 @@ function EntryRow({
   companyId: c,
   target,
   entry,
+  note,
   last,
   change,
 }: {
   companyId: string;
   target: TethrMemoryTarget;
   entry: TethrMemoryEntry;
+  note: TethrMemoryNote | null;
   last: boolean;
   change: ReturnType<typeof useMemoryChange>;
 }) {
@@ -322,6 +342,7 @@ function EntryRow({
             </div>
           ) : (
             <div className="flex shrink-0 gap-1 opacity-100 transition-opacity md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100">
+              {note ? <PinButton companyId={c} note={note} /> : null}
               <button
                 type="button"
                 onClick={() => {
@@ -337,6 +358,163 @@ function EntryRow({
               </button>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- every note kept -------------------------------------------------------------
+
+/** "12 in every turn · 340 more kept · 3 retired", and Sage's tidy. */
+function MemoryCounts({ companyId: c, counts }: { companyId: string; counts: TethrNoteCounts }) {
+  const queryClient = useQueryClient();
+  const tidy = useMutation({
+    mutationFn: () => tethrApi.tidyMemory(c),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: tethrKeys.memory(c) }),
+  });
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1">
+      <p className="font-mono text-[11px] tethr-text-3">
+        {counts.core} in every turn · {counts.kept} more kept{counts.retired ? ` · ${counts.retired} retired` : ""}
+      </p>
+      <button type="button" disabled={tidy.isPending} onClick={() => tidy.mutate()} className="tethr-btn tethr-btn-ghost h-7 px-2.5 text-[12px]">
+        {tidy.isPending ? "Starting…" : "Tidy memory"}
+      </button>
+      {tidy.isSuccess ? <span className="text-[12px] tethr-text-3">Sage is tidying: it merges repeats and refreshes stale notes. Its card is in Sage's chat.</span> : null}
+      {tidy.isError ? <span className="text-[12px] text-[var(--tethr-bad)]">{(tidy.error as Error).message}</span> : null}
+    </div>
+  );
+}
+
+function refreshMemory(queryClient: ReturnType<typeof useQueryClient>, c: string) {
+  void queryClient.invalidateQueries({ queryKey: tethrKeys.memory(c) });
+}
+
+/** Keep a note in every turn, or let tethr decide again. */
+function PinButton({ companyId: c, note }: { companyId: string; note: TethrMemoryNote }) {
+  const queryClient = useQueryClient();
+  const pin = useMutation({ mutationFn: () => tethrApi.editMemoryNote(c, note.id, { pinned: !note.pinned }), onSettled: () => refreshMemory(queryClient, c) });
+  return (
+    <button
+      type="button"
+      disabled={pin.isPending}
+      onClick={() => pin.mutate()}
+      aria-pressed={note.pinned}
+      title={note.pinned ? "Pinned: always in every turn. Click to let tethr decide." : "Keep this in every turn"}
+      className={cn("tethr-btn h-7 px-2.5 text-[12px]", note.pinned ? "tethr-btn-glass" : "tethr-btn-ghost")}
+    >
+      {note.pinned ? "Pinned" : "Pin"}
+    </button>
+  );
+}
+
+const PAGE = 30;
+
+/** Everything else tethr keeps: searchable, paged, with pin, retire and remove. Retired notes fold underneath. */
+function KeptNotes({ companyId: c, counts }: { companyId: string; counts?: TethrNoteCounts }) {
+  const [query, setQuery] = useState("");
+  const [submitted, setSubmitted] = useState("");
+  const [shown, setShown] = useState(PAGE);
+  const [showRetired, setShowRetired] = useState(false);
+  const { data } = useQuery({
+    queryKey: [...tethrKeys.memoryNotes(c, "kept", submitted), shown],
+    queryFn: () => tethrApi.memoryNotes(c, { where: "kept", q: submitted || undefined, limit: shown }),
+  });
+  const { data: retired } = useQuery({
+    queryKey: tethrKeys.memoryNotes(c, "retired", ""),
+    queryFn: () => tethrApi.memoryNotes(c, { where: "retired", limit: 50 }),
+    enabled: showRetired,
+  });
+  const kept = data?.notes ?? [];
+  return (
+    <section className="space-y-2.5">
+      <div>
+        <h3 className="text-[13.5px] font-medium">Kept · {counts?.kept ?? kept.length}</h3>
+        <p className="text-[12px] tethr-text-3">Notes not in every turn. tethr adds the ones about a message to it, and finds any of them with recall.</p>
+      </div>
+      <form
+        className="flex items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setSubmitted(query.trim());
+          setShown(PAGE);
+        }}
+      >
+        <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search what tethr keeps" aria-label="Search kept notes" className="h-9 min-w-0 flex-1 text-[13px]" />
+        <button type="submit" className="tethr-btn tethr-btn-glass h-9 px-4 text-[12.5px]">
+          <Search className="h-3.5 w-3.5" />
+          Search
+        </button>
+      </form>
+      <div className="tethr-panel overflow-hidden">
+        {kept.length ? (
+          kept.map((n, i) => <KeptRow key={n.id} companyId={c} note={n} last={i === kept.length - 1} />)
+        ) : (
+          <p className="px-4 py-5 text-[13px] tethr-text-3">{submitted ? "Nothing kept matches that." : "Nothing beyond the notes in every turn yet."}</p>
+        )}
+      </div>
+      {!submitted && counts && kept.length < counts.kept ? (
+        <button type="button" onClick={() => setShown((v) => v + PAGE)} className="tethr-btn tethr-btn-ghost h-8 px-3 text-[12.5px]">
+          Show more
+        </button>
+      ) : null}
+      {counts?.retired ? (
+        <div className="space-y-2">
+          <button type="button" onClick={() => setShowRetired((v) => !v)} aria-expanded={showRetired} className="inline-flex items-center gap-1 text-[12.5px] tethr-text-3 hover:text-foreground">
+            {showRetired ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            Retired · {counts.retired}
+          </button>
+          {showRetired ? (
+            <div className="tethr-panel overflow-hidden">
+              {(retired?.notes ?? []).map((n, i, all) => (
+                <div key={n.id} className={cn("px-4 py-3 text-[13px] tethr-text-3", i < all.length - 1 && "tethr-rule border-b")}>
+                  {n.text}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function KeptRow({ companyId: c, note, last }: { companyId: string; note: TethrMemoryNote; last: boolean }) {
+  const queryClient = useQueryClient();
+  const [confirm, setConfirm] = useState(false);
+  const act = useMutation({
+    mutationFn: (fn: () => Promise<unknown>) => fn(),
+    onSettled: () => refreshMemory(queryClient, c),
+  });
+  return (
+    <div className={cn("group flex items-start gap-3 px-4 py-3", !last && "tethr-rule border-b")}>
+      <div className="min-w-0 flex-1 space-y-1">
+        <p className="whitespace-pre-wrap text-[13px] leading-relaxed">{note.text}</p>
+        <span className="font-mono text-[10.5px] tethr-text-3">
+          {note.savedBy} · {formatRelative(note.updatedAt)}
+          {note.recallCount ? ` · recalled ${note.recallCount}×` : ""}
+        </span>
+      </div>
+      {confirm ? (
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className="text-[12px] tethr-text-3">Remove for good?</span>
+          <button type="button" onClick={() => setConfirm(false)} className="tethr-btn tethr-btn-ghost h-7 px-2.5 text-[12px]">
+            Keep
+          </button>
+          <button type="button" disabled={act.isPending} onClick={() => act.mutate(() => tethrApi.removeMemoryNote(c, note.id))} className="tethr-btn tethr-btn-danger h-7 px-2.5 text-[12px]">
+            Remove
+          </button>
+        </div>
+      ) : (
+        <div className="flex shrink-0 gap-1 opacity-100 transition-opacity md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100">
+          <PinButton companyId={c} note={note} />
+          <button type="button" disabled={act.isPending} onClick={() => act.mutate(() => tethrApi.retireMemoryNote(c, note.id))} className="tethr-btn tethr-btn-ghost h-7 px-2.5 text-[12px]">
+            Retire
+          </button>
+          <button type="button" onClick={() => setConfirm(true)} className="tethr-btn tethr-btn-ghost h-7 px-2.5 text-[12px]">
+            Remove
+          </button>
         </div>
       )}
     </div>

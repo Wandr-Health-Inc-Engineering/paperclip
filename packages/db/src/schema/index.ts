@@ -99,4 +99,5 @@ export { tethrDecisions } from "./tethr_decisions.js";
 export { tethrInboxItems } from "./tethr_inbox_items.js";
 export type { InboxSuggestion } from "./tethr_inbox_items.js";
 export { tethrLessons } from "./tethr_lessons.js";
+export { tethrMemoryNotes } from "./tethr_memory_notes.js";
 export type { LessonApplied, LessonScores, LessonSource } from "./tethr_lessons.js";

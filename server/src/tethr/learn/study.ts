@@ -20,6 +20,7 @@ import { paceSchedule, STUDY_CEILING } from "./learning-pace.js";
 import { applyContext, observationDigest } from "./observe.js";
 import { studyTitle } from "./rooms.js";
 import { learningStore } from "./store.js";
+import type { NoteChange } from "./studies.js";
 import {
   ACTIVE_STUDY,
   getStudy,
@@ -86,8 +87,8 @@ function deepAllowed(companyId: string, now: Date): boolean {
 
 export interface StartInput {
   trigger: Study["trigger"];
-  /** review: check tethr's skills hold as the company grows (no web, no topic). */
-  kind?: "learn" | "review";
+  /** review: check tethr's skills hold as the company grows. tidy: merge and refresh memory notes. Neither uses the web. */
+  kind?: "learn" | "review" | "tidy";
   /** Asked: what to learn. */
   topic?: string;
   depth?: StudyDepth;
@@ -110,24 +111,26 @@ export async function startStudy(db: Db, companyId: string, input: StartInput, d
   if (!sage) throw new StudyError("Sage is off or paused. Switch it on in Integrations → Learning.");
   if (isAgentsPaused(companyId)) throw new StudyError("Agents are paused (the usage throttle), so Sage can't study now.");
   const review = input.kind === "review";
-  const asked = review ? REVIEW_TOPIC : input.trigger === "asked" ? oneLine(input.topic ?? "", 200) : null;
-  if (input.trigger === "asked" && !review) {
+  const tidy = input.kind === "tidy";
+  const asked = tidy ? TIDY_TOPIC : review ? REVIEW_TOPIC : input.trigger === "asked" ? oneLine(input.topic ?? "", 200) : null;
+  if (input.trigger === "asked" && !review && !tidy) {
     if (!asked || asked.length < 5) throw new StudyError("Say what Sage should learn.");
     const refused = crossingRefusal(asked);
     if (refused) throw new StudyError(`That topic can't go to the web: ${refused}. Say it in general terms.`);
   }
-  const limit = studyAllowed(companyId, input.trigger, now);
+  // A tidy is upkeep, not learning: it doesn't count against the pace.
+  const limit = tidy ? null : studyAllowed(companyId, input.trigger, now);
   if (limit) throw new StudyError(limit);
 
   const study: Study = {
     id: crypto.randomUUID(),
-    kind: review ? "review" : "learn",
+    kind: tidy ? "tidy" : review ? "review" : "learn",
     trigger: input.trigger,
     by: input.by,
     asked,
     status: "queued",
     depth: input.trigger === "asked" ? (input.depth ?? "deep") : "quick",
-    topic: review ? REVIEW_TOPIC : null,
+    topic: tidy ? TIDY_TOPIC : review ? REVIEW_TOPIC : null,
     why: null,
     area: null,
     questions: [],
@@ -151,7 +154,7 @@ export async function startStudy(db: Db, companyId: string, input: StartInput, d
       threadId: sage.threadId,
       invocationSource: "chat",
       sourceKey: STUDY_CARD_SOURCE,
-      requestText: review ? REVIEW_TOPIC : asked ? `Learn: ${asked}` : "Looking at what's been happening",
+      requestText: tidy ? TIDY_TOPIC : review ? REVIEW_TOPIC : asked ? `Learn: ${asked}` : "Looking at what's been happening",
       status: "running",
       hops: [],
       agentId: sage.agentId,
@@ -197,6 +200,7 @@ async function runStudy(db: Db, companyId: string, id: string, deps: StudyDeps):
   if (!sage) return void (await finishStudy(db, companyId, id, "stopped", "Sage was switched off before it started."));
   if (isAgentsPaused(companyId)) return void (await finishStudy(db, companyId, id, "stopped", "Agents were paused before it started."));
   if (study.kind === "review") return void (await runReview(db, companyId, sage, study));
+  if (study.kind === "tidy") return void (await runTidy(db, companyId, sage, study));
 
   // 1. Plan (the company's own data, no web).
   const digest = await observationDigest(db, companyId, now());
@@ -244,6 +248,54 @@ async function runReview(db: Db, companyId: string, sage: TeamAgent, study: Stud
   if (applied.stopped) return void (await finishStudy(db, companyId, study.id, "stopped", applied.reason));
   if (applied.reason && !after.skills.length && !after.summary) return void (await finishStudy(db, companyId, study.id, "failed", applied.reason));
   await finishStudy(db, companyId, study.id, "done", null);
+}
+
+/** A tidy: the apply room alone with tethr's notes, merging, refreshing and retiring them. */
+async function runTidy(db: Db, companyId: string, sage: TeamAgent, study: Study): Promise<void> {
+  const { notesService } = await import("../memory/notes.js");
+  const notes = [...(await notesService(db).list(companyId, { where: "core", limit: 200 })), ...(await notesService(db).list(companyId, { where: "kept", limit: TIDY_NOTES }))];
+  if (notes.length < 2) return void (await finishStudy(db, companyId, study.id, "nothing", "There's too little in memory to tidy yet."));
+  const listing = notes.map(
+    (n) => `[${n.id}] (${n.pinned ? "pinned, " : ""}${n.inCore ? "in every turn" : "kept"}; ${n.target}; saved by ${n.savedBy} on ${n.updatedAt.toISOString().slice(0, 10)}) ${n.text}`,
+  );
+  await setStatus(companyId, study.id, "applying");
+  const applied = await step(db, companyId, sage, study.id, "apply", study.depth, tidyPrompt(notes.length), STEP_WAIT.apply, { "notes.md": listing.join("\n") });
+  const after = getStudy(companyId, study.id);
+  if (!after || !ACTIVE_STUDY.has(after.status)) return;
+  if (applied.stopped) return void (await finishStudy(db, companyId, study.id, "stopped", applied.reason));
+  if (applied.reason && !(after.tidied ?? []).length && !after.summary) return void (await finishStudy(db, companyId, study.id, "failed", applied.reason));
+  await updateMemoryTidiedAt(companyId);
+  await finishStudy(db, companyId, study.id, "done", null);
+}
+
+async function updateMemoryTidiedAt(companyId: string): Promise<void> {
+  await learningStore.update(companyId, (s) => ({ ...s, tidiedAt: new Date().toISOString() }));
+}
+
+/** Is a weekly tidy due (Sage on, a week since the last, enough notes to be worth it)? */
+export async function tidyDue(db: Db, companyId: string, now = new Date()): Promise<boolean> {
+  const last = learningStore.get(companyId).tidiedAt;
+  if (last && now.getTime() - Date.parse(last) < 7 * DAY) return false;
+  if (listStudies(companyId).some((s) => s.kind === "tidy" && ACTIVE_STUDY.has(s.status))) return false;
+  const { notesService } = await import("../memory/notes.js");
+  const counts = await notesService(db).counts(companyId);
+  return counts.core + counts.kept >= TIDY_MIN_NOTES;
+}
+
+/** Apply one tidy change (on approval of a card too): merge, rewrite or retire, through the notes table. */
+export async function applyNoteChange(db: Db, companyId: string, change: Pick<NoteChange, "action" | "ids" | "text">): Promise<void> {
+  const { notesService } = await import("../memory/notes.js");
+  const notes = notesService(db);
+  const [first, ...rest] = change.ids;
+  if (!first) throw new StudyError("That change names no note.");
+  if (change.action === "retire") {
+    for (const id of change.ids) await notes.retire(companyId, id);
+    return;
+  }
+  const note = await notes.get(companyId, first);
+  if (!note || note.status !== "active") throw new StudyError("That note isn't there any more.");
+  await notes.patch(companyId, { target: note.target as "company" | "people", id: first, text: change.text ?? note.text, by: "@sage" });
+  if (change.action === "merge") for (const id of rest) await notes.retire(companyId, id);
 }
 
 /** Every skill tethr has, in full, for a review (context/skills/<name>.md). */
@@ -351,6 +403,24 @@ async function reportStudy(db: Db, companyId: string, study: Study): Promise<voi
 // ---- the briefs ---------------------------------------------------------------
 
 export const REVIEW_TOPIC = "Review tethr's skills";
+export const TIDY_TOPIC = "Tidy memory";
+/** The kept notes a tidy looks at (newest first), besides every note in every turn. */
+const TIDY_NOTES = 300;
+const TIDY_MIN_NOTES = 20;
+/** Changes per tidy. */
+export const TIDY_CHANGES = 25;
+
+function tidyPrompt(count: number): string {
+  return [
+    `Tidy tethr's memory: ${count} notes are in ./context/notes.md, each with its id, where it is (in every turn, or kept and searchable), who saved it and when.`,
+    "Memory has no ceiling, so this isn't about making room. It's about keeping it true and easy to use:",
+    "- merge notes that say the same thing into one (tidy_note action merge: the ids, the first keeps the merged text);",
+    "- rewrite a stale status note (a campaign's id or daily spend, what's paused this week) into the lasting fact behind it, or retire it if nothing lasting is left (tidy_note rewrite or retire);",
+    "- leave everything else alone. Pinned notes stay as they are.",
+    `At most ${TIDY_CHANGES} changes. A note a person saved (saved by a name, not an @tag) goes to them as a card. One fact per note, in a sentence or two; never a person's health details or a key.`,
+    "Then call finish_study with a summary in 2 or 3 short sentences. No verdicts are needed.",
+  ].join("\n");
+}
 
 function reviewPrompt(companyId: string, count: number): string {
   const mode = learningStore.get(companyId).applyMode ?? "auto";

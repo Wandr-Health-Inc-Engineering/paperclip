@@ -36,7 +36,9 @@ export function studyLine(s: TethrStudy): string {
     case "researching":
       return `Researching ${plural(s.questions.length, "question")} on the web${s.depth === "deep" ? ", in depth" : ""}.`;
     case "applying":
-      return s.kind === "review"
+      return s.kind === "tidy"
+        ? "Tidying memory: merging repeats and refreshing stale notes."
+        : s.kind === "review"
         ? "Checking each of tethr's skills: does it hold as the company grows?"
         : `Comparing ${plural(s.findings.length, "finding")} with what tethr knows, and saving what's worth keeping.`;
     case "nothing":
@@ -50,8 +52,20 @@ export function studyLine(s: TethrStudy): string {
   }
 }
 
-/** "1 new skill, 1 updated · 4 findings from 9 sources". */
+/** "1 new skill, 1 updated · 4 findings from 9 sources" (a tidy: "Merged 2, retired 1"). */
 export function outcomeWords(s: TethrStudy): string {
+  if (s.kind === "tidy") {
+    const done = (s.tidied ?? []).filter((c) => c.status === "applied");
+    const count = (action: string) => done.filter((c) => c.action === action).length;
+    const waiting = (s.tidied ?? []).filter((c) => c.status === "pending").length;
+    const parts = [
+      count("merge") ? `merged ${count("merge")}` : "",
+      count("rewrite") ? `rewrote ${count("rewrite")}` : "",
+      count("retire") ? `retired ${count("retire")}` : "",
+      waiting ? `${waiting} waiting for your OK` : "",
+    ].filter(Boolean);
+    return parts.length ? parts.join(", ").replace(/^./, (c) => c.toUpperCase()) : "Memory was already tidy";
+  }
   const kept = s.skills.filter((k) => k.status === "applied");
   const made = kept.filter((k) => k.change === "new").length;
   const updated = kept.filter((k) => k.change === "updated").length;

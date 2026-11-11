@@ -87,6 +87,9 @@ export const TETHR_OUTPUT_KINDS = [
   // ask first, or a change to a skill someone else saved. Approving it saves the
   // skill; it never publishes or mirrors.
   "skill_change",
+  // The learner's memory tidy proposing a change to a note a person saved
+  // (`meta.studyId`, `meta.change`): approving applies it through the notes table.
+  "memory_change",
 ] as const;
 export type TethrOutputKind = (typeof TETHR_OUTPUT_KINDS)[number];
 

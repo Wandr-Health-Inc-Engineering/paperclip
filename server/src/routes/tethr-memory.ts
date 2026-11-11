@@ -37,6 +37,7 @@ import {
 import { getMemoryState, updateMemoryState } from "../tethr/hermes/state.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { isInstanceAdmin, requirePerson } from "./tethr-people.js";
+import { NoteError, notesService } from "../tethr/memory/notes.js";
 
 // Phase 25: tethr's memory for the UI (Company → Settings → Memory and the
 // Integrations Memory card). What's saved, with who saved it; edits by people;
@@ -44,7 +45,7 @@ import { isInstanceAdmin, requirePerson } from "./tethr-people.js";
 // or off (instance admins). Mounted by tethrRoutes (routes/tethr.ts).
 
 function sendError(res: import("express").Response, err: unknown) {
-  if (err instanceof MemoryOpError || err instanceof MemoryChangeError) return res.status(409).json({ error: err.message });
+  if (err instanceof MemoryOpError || err instanceof MemoryChangeError || err instanceof NoteError) return res.status(409).json({ error: err.message });
   if (err instanceof HermesError) return res.status(503).json({ error: err.message });
   throw err;
 }
@@ -75,8 +76,84 @@ export function tethrMemoryRoutes(db: Db): Router {
         wakeGateway: state.wakeGateway !== false,
       },
       notMoved: notMovedNotes(companyId),
+      // Memory has no ceiling: how many notes are in every turn, kept, and retired, and the
+      // ones in every turn as table rows (ids for pin, edit, remove).
+      noteCounts: await notesService(db).counts(companyId),
+      coreNotes: await notesService(db).list(companyId, { where: "core", limit: 200 }),
     });
   });
+
+  // Every note tethr keeps: a page of them, or a search.
+  router.get("/tethr/:companyId/memory/notes", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const where = ["core", "kept", "retired", "all"].includes(String(req.query.where)) ? (String(req.query.where) as "core" | "kept" | "retired" | "all") : "kept";
+    const q = String(req.query.q ?? "").trim().slice(0, 200);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 100);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const svc = notesService(db);
+    const notes = q
+      ? (await svc.search(companyId, q, { limit, includeRetired: where === "retired" || where === "all" })).filter((n) =>
+          where === "all" ? true : where === "retired" ? n.status === "retired" : where === "core" ? n.inCore : !n.inCore && n.status === "active",
+        )
+      : await svc.list(companyId, { where, limit, offset });
+    res.json({ notes, counts: await svc.counts(companyId) });
+  });
+
+  /** A person adds, edits, pins, retires or removes a note. */
+  const personNote =
+    (work: (companyId: string, id: string, body: Record<string, unknown>) => Promise<unknown>, action: string) =>
+    async (req: import("express").Request, res: import("express").Response) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      if (!requirePerson(req, res)) return;
+      try {
+        const out = await work(companyId, String(req.params.id ?? ""), (req.body ?? {}) as Record<string, unknown>);
+        await logActivity(db, {
+          companyId,
+          actorType: "user",
+          actorId: getActorInfo(req).actorId,
+          action,
+          entityType: "company",
+          entityId: companyId,
+          details: { note: req.params.id ?? null },
+        }).catch(() => {});
+        res.json({ note: out, counts: await notesService(db).counts(companyId) });
+      } catch (err) {
+        sendError(res, err);
+      }
+    };
+  const targetOf = (b: Record<string, unknown>): MemoryTarget => (b.target === "people" ? "people" : "company");
+  router.post(
+    "/tethr/:companyId/memory/notes",
+    personNote(async (c, _id, b) => (await notesService(db).add(c, { target: targetOf(b), text: String(b.text ?? ""), by: "Memory page" })).note, "tethr_memory_note_added"),
+  );
+  router.patch(
+    "/tethr/:companyId/memory/notes/:id",
+    personNote(async (c, id, b) => {
+      const svc = notesService(db);
+      if (typeof b.pinned === "boolean") return svc.pin(c, id, b.pinned);
+      return svc.patch(c, { target: targetOf(b), id, text: String(b.text ?? ""), by: "Memory page" });
+    }, "tethr_memory_note_edited"),
+  );
+  // Sage tidies memory now: merges repeats, refreshes stale status notes (a person's note becomes a card).
+  router.post("/tethr/:companyId/memory/tidy", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!requirePerson(req, res)) return;
+    const { startStudy, StudyError } = await import("../tethr/learn/study.js");
+    try {
+      res.json({ study: await startStudy(db, companyId, { trigger: "asked", kind: "tidy", by: "you" }) });
+    } catch (err) {
+      if (err instanceof StudyError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+  });
+  router.post("/tethr/:companyId/memory/notes/:id/retire", personNote((c, id) => notesService(db).retire(c, id), "tethr_memory_note_retired"));
+  router.delete("/tethr/:companyId/memory/notes/:id", personNote((c, id) => notesService(db).remove(c, { target: "company", id }), "tethr_memory_note_removed"));
 
   /** Dismiss notes that couldn't be moved (after re-adding them by hand, or to drop them). */
   router.post("/tethr/:companyId/memory/not-moved/dismiss", async (req, res) => {
@@ -113,7 +190,14 @@ export function tethrMemoryRoutes(db: Db): Router {
     }
     try {
       const ops = validateOps(req.body?.operations);
-      const usage = await changeMemory(companyId, target, ops, { by: "Memory page" });
+      // Through the notes table: kept for good, curated into every turn (memory/notes.ts).
+      const svc = notesService(db);
+      for (const op of ops) {
+        if (op.action === "add") await svc.add(companyId, { target, text: op.content!, by: "Memory page" });
+        else if (op.action === "patch") await svc.patch(companyId, { target, oldText: op.old_text, text: op.content!, by: "Memory page" });
+        else await svc.remove(companyId, { target, oldText: op.old_text });
+      }
+      const usage = "";
       await logActivity(db, {
         companyId,
         actorType: "user",
@@ -230,6 +314,8 @@ export function tethrMemoryRoutes(db: Db): Router {
       await updateMemoryState(companyId, (s) => ({ ...s, hermesOff: true }));
       await writeMemoryCopy(companyId);
     }
+    // The always-loaded set follows the notes table into whichever store is on now.
+    await notesService(db).importAndCurate(companyId).catch(logFailure("curating memory after switching stores", { companyId }));
     await logActivity(db, {
       companyId,
       actorType: "user",

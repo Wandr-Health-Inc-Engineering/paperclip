@@ -7,7 +7,7 @@ import { resolveDecision, scoreWithJev, type DecideDeps } from "../decide/decide
 import { oneLine } from "../goals.js";
 import { areaById, isAreaId } from "../growth-map/areas.js";
 import { setSkillArea } from "../growth-map/store.js";
-import { changeMemory, deleteSkill, memoryBackend, memorySnapshot, saveSkill, SKILL_DESCRIPTION_MAX } from "../hermes/memory-layer.js";
+import { deleteSkill, memoryBackend, saveSkill, SKILL_DESCRIPTION_MAX } from "../hermes/memory-layer.js";
 import { canSpend, getPace, spend, updatePace } from "../pace.js";
 import { injectionReason, medicalClaimReason, needsPersonReason } from "../screen.js";
 import { getSetup } from "../setup.js";
@@ -250,9 +250,11 @@ export function lessonsService(db: Db, deps: DecideDeps = {}) {
             : l.applyAs === "procedure"
               ? `How we do it: ${l.lesson}${l.howToApply ? ` ${l.howToApply.slice(0, 200)}` : ""}`
               : l.lesson;
-      // A note that's already there (someone saved it) isn't added again, and retiring the lesson leaves it.
-      const existed = memorySnapshot(companyId).stores.company.entries.some((e) => e.text === text);
-      if (!existed) await changeMemory(companyId, "company", [{ action: "add", content: text }], { by: actor, ...area });
+      // A note that's already there (someone saved it, or one saying the same) isn't added
+      // again, and retiring the lesson leaves it. Memory has no ceiling (memory/notes.ts).
+      const { notesService } = await import("../memory/notes.js");
+      const saved = await notesService(db).add(companyId, { target: "company", text, by: actor, area: area.area ?? null });
+      const existed = saved.duplicate;
       applied = { as: l.applyAs === "experiment" ? "experiment" : l.applyAs === "rule" ? "rule" : "memory", ref: text, ...(existed ? { existed: true } : {}) };
     }
     await scoreSources(companyId, l.sources.map((s) => s.url), "approved");
@@ -267,7 +269,8 @@ export function lessonsService(db: Db, deps: DecideDeps = {}) {
     if (!["candidate", "proposed"].includes(l.status)) throw new LessonError(`It's already ${l.status}.`);
     const why = oneLine(reason, 300);
     if (why) {
-      await changeMemory(companyId, "company", [{ action: "add", content: `Not for us: ${why}` }], { by: actor, ...(isAreaId(l.area) ? { area: l.area } : {}) });
+      const { notesService } = await import("../memory/notes.js");
+      await notesService(db).add(companyId, { target: "company", text: `Not for us: ${why}`, by: actor, area: isAreaId(l.area) ? l.area : null });
     }
     await scoreSources(companyId, l.sources.map((s) => s.url), "rejected");
     const decision = await scoreDecision(companyId, l.id);
@@ -293,14 +296,13 @@ export function lessonsService(db: Db, deps: DecideDeps = {}) {
     if (!keep && l.applied && !l.applied.existed) {
       if (l.applied.as === "skill") await deleteSkill(companyId, l.applied.ref);
       else {
-        const entries = memorySnapshot(companyId).stores.company.entries;
-        if (!entries.some((e) => e.text === l.applied!.ref)) {
+        const { notesService } = await import("../memory/notes.js");
+        const notes = notesService(db);
+        const same = (await notes.search(companyId, l.applied.ref, { target: "company", limit: 20 })).filter((n) => n.text === l.applied!.ref);
+        if (same.length !== 1) {
           throw new LessonError("Its note was changed or removed since it was applied. Edit it on the Memory page, then retire the lesson.");
         }
-        if (entries.filter((e) => e.text.includes(l.applied!.ref)).length > 1) {
-          throw new LessonError("Its note is part of another note now. Remove it on the Memory page, then retire the lesson.");
-        }
-        await changeMemory(companyId, "company", [{ action: "remove", old_text: l.applied.ref }], { by: actor });
+        await notes.remove(companyId, { target: "company", id: same[0]!.id });
       }
     }
     await scoreSources(companyId, l.sources.map((s) => s.url), keep ? "kept" : "retired");

@@ -2,7 +2,7 @@ import { oneLine } from "../goals.js";
 import { AREA_IDS, isAreaId } from "../growth-map/areas.js";
 import { SKILL_DESCRIPTION_MAX, SKILL_NAME_RE, viewSkill } from "../hermes/memory-layer.js";
 import { learningStore } from "../learn/store.js";
-import { FINDING_EVIDENCE, FINDING_STRENGTHS, getStudy, updateStudy, VERDICTS, type Finding, type Study, type Verdict } from "../learn/studies.js";
+import { FINDING_EVIDENCE, FINDING_STRENGTHS, getStudy, updateStudy, VERDICTS, type Finding, type NoteChange, type Study, type Verdict } from "../learn/studies.js";
 import {
   crossingRefusal,
   finishStudy,
@@ -13,7 +13,10 @@ import {
   SKILLS_PER_STUDY,
   startStudy,
   StudyError,
+  TIDY_CHANGES,
+  applyNoteChange,
 } from "../learn/study.js";
+import { noteRefusal, notesService } from "../memory/notes.js";
 import { injectionReason, medicalClaimReason, needsPersonReason } from "../screen.js";
 import { teamService } from "../team.js";
 import type { SandboxRoom } from "./sandbox.js";
@@ -110,6 +113,21 @@ export const STUDY_TOOL_DEFS: McpToolDef[] = [
     },
   },
   {
+    name: "tidy_note",
+    description:
+      "While tidying memory: merge notes that say the same thing (action merge, ids, text: the merged note), rewrite a stale status note into the lasting fact behind it (rewrite, one id, text), or retire notes nothing lasting is left in (retire, ids). Say `why` in a line. A note a person saved goes to them as a card.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["merge", "rewrite", "retire"] },
+        ids: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 10 },
+        text: { type: "string" },
+        why: { type: "string" },
+      },
+      required: ["action", "ids", "why"],
+    },
+  },
+  {
     name: "finish_study",
     description: "Close the study: a summary in 2 or 3 short sentences, under 70 words (what you learned, what changed, what tethr does differently now), and a verdict for every finding (by its number).",
     inputSchema: {
@@ -137,6 +155,7 @@ const ROOM_OF: Record<string, SandboxRoom> = {
   skip_study: "plan",
   submit_findings: "research",
   apply_skill: "apply",
+  tidy_note: "apply",
   finish_study: "apply",
 };
 const STEP_OF: Partial<Record<string, Study["status"]>> = {
@@ -144,6 +163,7 @@ const STEP_OF: Partial<Record<string, Study["status"]>> = {
   skip_study: "planning",
   submit_findings: "researching",
   apply_skill: "applying",
+  tidy_note: "applying",
   finish_study: "applying",
 };
 
@@ -280,6 +300,50 @@ export async function runStudyTool(name: string, a: Record<string, unknown>, ctx
             : `Saved ${record.change === "new" ? "the new skill" : "the update to"} ${record.name}. tethr lists it from its next turn.`,
         meta: { skill: record.name, status: record.status },
       };
+    }
+
+    if (name === "tidy_note") {
+      if (study.kind !== "tidy") return err(name, "only while tidying memory.");
+      const action = a.action === "merge" || a.action === "rewrite" || a.action === "retire" ? a.action : null;
+      const ids = (Array.isArray(a.ids) ? a.ids : []).map((x) => String(x)).filter(Boolean).slice(0, 10);
+      if (!action) return err(name, "action must be merge, rewrite or retire.");
+      if (action === "merge" && ids.length < 2) return err(name, "a merge needs two or more ids.");
+      if (action === "rewrite" && ids.length !== 1) return err(name, "a rewrite takes one id.");
+      if (!ids.length) return err(name, "give the ids of the notes.");
+      const text = action === "retire" ? null : oneLine(a.text, 600);
+      if (action !== "retire") {
+        const refused = noteRefusal(text ?? "");
+        if (refused) return err(name, refused);
+      }
+      if ((study.tidied ?? []).length >= TIDY_CHANGES) return err(name, `at most ${TIDY_CHANGES} changes per tidy.`);
+      const notes = notesService(db);
+      const found = await Promise.all(ids.map((id) => notes.get(companyId, id)));
+      if (found.some((n) => !n || n.status !== "active")) return err(name, "one of those notes isn't there any more (check the ids).");
+      if (found.some((n) => n!.pinned)) return err(name, "pinned notes stay as they are.");
+      if (action === "merge" && new Set(found.map((n) => n!.target)).size > 1) return err(name, "merge notes of one kind (company or people).");
+      const person = found.some((n) => !n!.savedBy.startsWith("@"));
+      const change: NoteChange = { action, ids, before: found.map((n) => n!.text), text, why: oneLine(a.why, 300), status: person ? "pending" : "applied" };
+      if (person) {
+        const member = ctx.threadId ? await teamService(db).byThread(companyId, ctx.threadId) : null;
+        if (!member?.sandbox) return err(name, "only Sage tidies memory.");
+        const { gatingService } = await import("../gating.js");
+        const output = await gatingService(db).createOutput({
+          companyId,
+          agentId: member.agentId,
+          agentTag: member.tag,
+          kind: "memory_change",
+          title: `Memory: ${action} "${found[0]!.text.slice(0, 60)}${found[0]!.text.length > 60 ? "…" : ""}"`,
+          body: [`${change.why}`, "", "Now:", ...change.before.map((b) => `- ${b}`), "", action === "retire" ? "After: retired (kept and searchable)." : `After: ${text}`].join("\n"),
+          sensitivity: "org",
+          routeRunId: study.runs.apply ?? null,
+          meta: { studyId: study.id, change: { action, ids, text } },
+        } as Parameters<ReturnType<typeof gatingService>["createOutput"]>[0]);
+        change.outputId = output.id;
+      } else {
+        await applyNoteChange(db, companyId, change);
+      }
+      await updateStudy(companyId, study.id, (st) => ({ ...st, tidied: [...(st.tidied ?? []), change] }));
+      return { text: person ? "That note is a person's: it goes to them as a card." : `Done (${action}).` };
     }
 
     if (name === "finish_study") {

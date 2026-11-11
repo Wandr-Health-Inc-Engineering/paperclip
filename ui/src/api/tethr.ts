@@ -330,8 +330,9 @@ export interface TethrPaceSchedule {
 /** One of the learner's studies: its plan, findings, verdicts and the skills it saved. */
 export interface TethrStudy {
   id: string;
-  /** review: checking tethr's skills hold as the company grows (no research). */
-  kind?: "learn" | "review";
+  /** review: checking tethr's skills hold as the company grows; tidy: merging and refreshing memory notes (no research). */
+  kind?: "learn" | "review" | "tidy";
+  tidied?: Array<{ action: "merge" | "rewrite" | "retire"; ids: string[]; before: string[]; text: string | null; why: string; status: "applied" | "pending" | "refused" }>;
   trigger: "observed" | "asked";
   by: string;
   asked: string | null;
@@ -1030,6 +1031,33 @@ export interface TethrMemoryState extends TethrMemorySnapshot {
   };
   /** Notes that couldn't be moved into the active store, with why. */
   notMoved: Array<{ target: TethrMemoryTarget; text: string; reason: string; at: string }>;
+  /** Memory has no ceiling: notes in every turn, kept (searchable), retired. */
+  noteCounts?: TethrNoteCounts;
+  /** The notes in every turn, as rows (ids for pin, edit, remove). */
+  coreNotes?: TethrMemoryNote[];
+}
+
+export interface TethrNoteCounts {
+  core: number;
+  kept: number;
+  retired: number;
+}
+
+/** One note tethr keeps (server tethr_memory_notes). */
+export interface TethrMemoryNote {
+  id: string;
+  target: TethrMemoryTarget;
+  text: string;
+  area: string | null;
+  savedBy: string;
+  threadId: string | null;
+  pinned: boolean;
+  inCore: boolean;
+  status: "active" | "retired";
+  recallCount: number;
+  lastRecalledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 /** Phase 26.9: the growth map (server growth-map/map.ts GrowthMapView). */
 export type TethrAreaId =
@@ -1129,6 +1157,7 @@ export const tethrKeys = {
   goals: (c: string) => ["tethr", c, "goals"] as const,
   setup: (c: string) => ["tethr", c, "setup"] as const,
   memory: (c: string) => ["tethr", c, "memory"] as const,
+  memoryNotes: (c: string, where: string, q: string) => ["tethr", c, "memory", "notes", where, q] as const,
   memorySearch: (c: string, q: string) => ["tethr", c, "memory", "search", q] as const,
   memorySkill: (c: string, name: string) => ["tethr", c, "memory", "skill", name] as const,
   chatRuns: (c: string, threadId: string) => ["tethr", c, "chats", threadId, "runs"] as const,
@@ -1335,6 +1364,19 @@ export const tethrApi = {
   setHermesMemory: (c: string, on: boolean) =>
     api.post<TethrMemorySnapshot & { on: boolean; moved: number; notMoved: number }>(`/tethr/${c}/memory/hermes`, { on }),
   setHermesWakeGateway: (c: string, allowed: boolean) => api.post<{ wakeGateway: boolean }>(`/tethr/${c}/memory/wake-gateway`, { allowed }),
+  memoryNotes: (c: string, opts: { where?: "core" | "kept" | "retired" | "all"; q?: string; offset?: number; limit?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.where) params.set("where", opts.where);
+    if (opts.q) params.set("q", opts.q);
+    if (opts.offset) params.set("offset", String(opts.offset));
+    if (opts.limit) params.set("limit", String(opts.limit));
+    return api.get<{ notes: TethrMemoryNote[]; counts: TethrNoteCounts }>(`/tethr/${c}/memory/notes?${params.toString()}`);
+  },
+  addMemoryNote: (c: string, target: TethrMemoryTarget, text: string) => api.post<{ note: TethrMemoryNote }>(`/tethr/${c}/memory/notes`, { target, text }),
+  editMemoryNote: (c: string, id: string, patch: { text?: string; pinned?: boolean }) => api.patch<{ note: TethrMemoryNote }>(`/tethr/${c}/memory/notes/${id}`, patch),
+  retireMemoryNote: (c: string, id: string) => api.post<{ note: TethrMemoryNote }>(`/tethr/${c}/memory/notes/${id}/retire`, {}),
+  removeMemoryNote: (c: string, id: string) => api.delete<{ note: TethrMemoryNote }>(`/tethr/${c}/memory/notes/${id}`),
+  tidyMemory: (c: string) => api.post<{ study: TethrStudy }>(`/tethr/${c}/memory/tidy`, {}),
   dismissNotMoved: (c: string, index: number | "all") =>
     api.post<{ notMoved: TethrMemoryState["notMoved"] }>(`/tethr/${c}/memory/not-moved/dismiss`, index === "all" ? {} : { index }),
   /** Phase 23: tethr's team of agents. */

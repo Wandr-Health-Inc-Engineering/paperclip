@@ -98,12 +98,12 @@ describe("Hermes bridge: no model calls by construction", () => {
     }
   });
 
-  it("memory tools: none in a private turn, recall/skills need Hermes, only tethr saves skills", () => {
+  it("memory tools: none in a private turn, recall works on either store (notes), only tethr saves skills", () => {
     const tethr = { private: false, member: null };
     expect(memoryToolRefusal("memory", { private: true, member: null }, "hermes")).toMatch(/blocked/);
     expect(memoryToolRefusal("recall", { private: true, member: null }, "hermes")).toMatch(/blocked/);
     expect(memoryToolRefusal("memory", tethr, "builtin")).toBeNull();
-    expect(memoryToolRefusal("recall", tethr, "builtin")).toMatch(/needs Hermes/);
+    expect(memoryToolRefusal("recall", tethr, "builtin")).toBeNull();
     expect(memoryToolRefusal("recall", tethr, "hermes")).toBeNull();
     const agent = { private: false, member: { tag: "@rank", lead: false, agentId: "a" } };
     expect(memoryToolRefusal("skill_save", agent, "hermes")).toMatch(/Only tethr/);

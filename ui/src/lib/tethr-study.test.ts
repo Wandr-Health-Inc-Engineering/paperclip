@@ -69,6 +69,10 @@ describe("a study's words", () => {
     expect(studyLine(study({ kind: "review", status: "applying", findings: [] }))).toContain("does it hold as the company grows");
     expect(outcomeWords(study({ kind: "review", findings: [], skills: [skill({ change: "updated" })] }))).toBe("1 rewritten");
     expect(outcomeWords(study({ kind: "review", findings: [] }))).toBe("Every skill holds up");
+    // A memory tidy says what it changed.
+    const change = (action: "merge" | "rewrite" | "retire", status: "applied" | "pending" = "applied") => ({ action, ids: ["a"], before: [""], text: null, why: "", status });
+    expect(outcomeWords(study({ kind: "tidy", findings: [], tidied: [change("merge"), change("merge"), change("retire"), change("rewrite", "pending")] }))).toBe("Merged 2, retired 1, 1 waiting for your OK");
+    expect(outcomeWords(study({ kind: "tidy", findings: [] }))).toBe("Memory was already tidy");
     expect(areaLabel(null)).toBe("General");
   });
 });

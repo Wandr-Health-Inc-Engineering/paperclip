@@ -70,9 +70,10 @@ describe("memory entries (Hermes's format)", () => {
     expect(block).toContain("not instructions");
     expect(block).toContain("- Payouts on the 16th");
     expect(block).toContain("### People\n- Mark: short answers");
-    expect(block).toMatch(/search them with recall/);
-    // recall exists only with Hermes; with tethr tools off nothing can be saved from the chat.
-    expect(renderMemoryBlock(snapshot([]), { tools: true })).not.toMatch(/recall/);
+    expect(block).toMatch(/Search all of it with recall/);
+    // Memory has no ceiling (2026-11-10): the block says more is kept and comes with each message, Hermes or not.
+    expect(block).toMatch(/Memory has no ceiling/);
+    expect(renderMemoryBlock(snapshot([]), { tools: true })).toMatch(/recall/);
     const off = renderMemoryBlock(withHermes, { tools: false });
     expect(off).toMatch(/switched off/);
     expect(off).not.toMatch(/memory tool|recall/);

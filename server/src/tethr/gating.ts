@@ -484,6 +484,10 @@ export function gatingService(db: Db) {
       if (output.kind === "skill_change") {
         return approveSkillChange(output, input.companyId);
       }
+      // The memory tidy's change to a person's note: approving applies it.
+      if (output.kind === "memory_change") {
+        return approveMemoryChange(output, input.companyId);
+      }
       const published = await publishToDrive(output.id, input.companyId, input.reviewer);
       await notify.send({
         companyId: input.companyId,
@@ -501,6 +505,16 @@ export function gatingService(db: Db) {
       .set({ status: nextStatus, updatedAt: new Date() })
       .where(eq(tethrOutputs.id, output.id))
       .returning();
+    if (output.kind === "memory_change") {
+      const meta = (output.meta ?? {}) as Record<string, unknown>;
+      if (typeof meta.studyId === "string") {
+        const { updateStudy } = await import("./learn/studies.js");
+        await updateStudy(input.companyId, meta.studyId, (st) => ({
+          ...st,
+          tidied: (st.tidied ?? []).map((c) => (c.outputId === output.id ? { ...c, status: "refused" as const } : c)),
+        })).catch(() => null);
+      }
+    }
     if (output.kind === "skill_change") {
       const meta = (output.meta ?? {}) as Record<string, unknown>;
       if (typeof meta.studyId === "string" && typeof meta.skill === "string") {
@@ -611,6 +625,39 @@ export function gatingService(db: Db) {
   // applies the change. The spec is checked again first (a tag may have been
   // taken since): a card that can't apply closes as rejected with the reason,
   // so the Queue never wedges. The main chat hears either way.
+  async function approveMemoryChange(output: typeof tethrOutputs.$inferSelect, companyId: string) {
+    const meta = (output.meta ?? {}) as Record<string, unknown>;
+    const change = meta.change as { action: "merge" | "rewrite" | "retire"; ids: string[]; text: string | null } | undefined;
+    try {
+      if (!change || !Array.isArray(change.ids)) throw new Error("This card has no change on it.");
+      if (change.text) {
+        const { noteRefusal } = await import("./memory/notes.js");
+        const refused = noteRefusal(change.text);
+        if (refused) throw new Error(refused);
+      }
+      const { applyNoteChange } = await import("./learn/study.js");
+      await applyNoteChange(db, companyId, change);
+      if (typeof meta.studyId === "string") {
+        const { updateStudy } = await import("./learn/studies.js");
+        await updateStudy(companyId, meta.studyId, (st) => ({
+          ...st,
+          tidied: (st.tidied ?? []).map((c) => (c.outputId === output.id ? { ...c, status: "applied" as const } : c)),
+        }));
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      const [closed] = await db
+        .update(tethrOutputs)
+        .set({ status: "rejected", meta: { ...meta, applyError: reason }, updatedAt: new Date() })
+        .where(eq(tethrOutputs.id, output.id))
+        .returning();
+      await notify.send({ companyId, kind: "approval", title: `Couldn't change memory: ${output.title}`, body: reason, href: `/queue/${output.id}` });
+      return closed;
+    }
+    const [updated] = await db.update(tethrOutputs).set({ status: "published", updatedAt: new Date() }).where(eq(tethrOutputs.id, output.id)).returning();
+    return updated;
+  }
+
   async function approveSkillChange(output: typeof tethrOutputs.$inferSelect, companyId: string) {
     const meta = (output.meta ?? {}) as Record<string, unknown>;
     const chats = await import("./chats.js");

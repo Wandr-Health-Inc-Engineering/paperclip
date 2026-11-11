@@ -50,10 +50,26 @@ export interface SkillChange {
   at: string;
 }
 
+export interface NoteChange {
+  action: "merge" | "rewrite" | "retire";
+  /** The notes it touches (the first keeps the new text on a merge). */
+  ids: string[];
+  /** What they said before (for the card and the record). */
+  before: string[];
+  text: string | null;
+  why: string;
+  /** applied, or pending (a person's note: a card), or refused (the card was turned down). */
+  status: "applied" | "pending" | "refused";
+  outputId?: string;
+}
+
 export interface Study {
   id: string;
-  /** learn: plan → research → apply. review: the apply room alone, checking that tethr's skills hold as the company grows. */
-  kind?: "learn" | "review";
+  /** learn: plan → research → apply. review: the apply room alone, checking that tethr's skills hold as the
+   * company grows. tidy: the apply room alone, merging and refreshing memory notes. */
+  kind?: "learn" | "review" | "tidy";
+  /** A tidy's changes to notes. */
+  tidied?: NoteChange[];
   trigger: "observed" | "asked";
   /** Who asked (a person's name, "@tethr"), or "@sage" when it chose on its own. */
   by: string;

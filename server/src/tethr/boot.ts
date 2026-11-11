@@ -29,6 +29,9 @@ export async function maybeAutoSeed(db: Db): Promise<void> {
   await healLearner(db).catch(() => 0);
   const { healStudies } = await import("./learn/study.js");
   await healStudies(db).catch(() => 0);
+  // Memory without a ceiling: today's notes into the notes table, then the always-loaded set curated.
+  const { healMemoryNotes } = await import("./memory/notes.js");
+  await healMemoryNotes(db).catch(() => 0);
   // The goals interview now runs in the main chat; fold an older side-chat one in.
   const { foldInterviewsIntoMainChats } = await import("./main-chat.js");
   await foldInterviewsIntoMainChats(db).catch(() => {});
