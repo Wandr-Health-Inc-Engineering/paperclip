@@ -76,3 +76,28 @@ export { pluginDatabaseNamespaces, pluginMigrations } from "./plugin_database.js
 export { pluginJobs, pluginJobRuns } from "./plugin_jobs.js";
 export { pluginWebhookDeliveries } from "./plugin_webhooks.js";
 export { pluginLogs } from "./plugin_logs.js";
+
+// Tethr add-on tables (see DECISIONS.md "Core changes")
+export { tethrDivisions } from "./tethr_divisions.js";
+export { tethrAgentProfiles } from "./tethr_agent_profiles.js";
+export { tethrSubagents } from "./tethr_subagents.js";
+export { tethrRouteRuns } from "./tethr_route_runs.js";
+export type { TethrRouteHop } from "./tethr_route_runs.js";
+export type { TethrRoutingEntry } from "./tethr_agent_profiles.js";
+export type { TethrSubagentNotHereEntry } from "./tethr_subagents.js";
+export type { TethrDrivePermissions } from "./tethr_drive.js";
+export { tethrDriveNodes, tethrDriveVersions } from "./tethr_drive.js";
+export { tethrOutputs } from "./tethr_outputs.js";
+export { tethrMemories } from "./tethr_memories.js";
+export { tethrNotifications } from "./tethr_notifications.js";
+export { tethrOrgChanges } from "./tethr_org_changes.js";
+export { tethrGoalMetrics } from "./tethr_goal_metrics.js";
+export type { TethrMetricAdjustment, TethrMetricPoint } from "./tethr_goal_metrics.js";
+export { tethrMembers } from "./tethr_members.js";
+export { tethrIdeas } from "./tethr_ideas.js";
+export { tethrDecisions } from "./tethr_decisions.js";
+export { tethrInboxItems } from "./tethr_inbox_items.js";
+export type { InboxSuggestion } from "./tethr_inbox_items.js";
+export { tethrLessons } from "./tethr_lessons.js";
+export { tethrMemoryNotes } from "./tethr_memory_notes.js";
+export type { LessonApplied, LessonScores, LessonSource } from "./tethr_lessons.js";

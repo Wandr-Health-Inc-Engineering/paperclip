@@ -14,19 +14,13 @@ export function IssuesQuicklook({ issue, children }: IssuesQuicklookProps) {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        asChild
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
-      >
+      <PopoverTrigger asChild onClick={() => setOpen((prev) => !prev)}>
         {children}
       </PopoverTrigger>
       <PopoverContent
         className="w-72 p-3"
         side="top"
         align="start"
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <IssueQuicklookCard

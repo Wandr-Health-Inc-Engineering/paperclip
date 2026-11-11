@@ -1,17 +1,15 @@
 import { useMemo } from "react";
 import { NavLink, useLocation } from "@/lib/router";
 import {
-  House,
   CircleDot,
+  HardDrive,
+  MessagesSquare,
+  ShieldCheck,
   SquarePen,
-  Users,
-  Inbox,
+  TrendingUp,
 } from "lucide-react";
-import { useCompany } from "../context/CompanyContext";
-import { useDialogActions } from "../context/DialogContext";
 import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
 import { cn } from "../lib/utils";
-import { useInboxBadge } from "../hooks/useInboxBadge";
 
 interface MobileBottomNavProps {
   visible: boolean;
@@ -21,7 +19,7 @@ interface MobileNavLinkItem {
   type: "link";
   to: string;
   label: string;
-  icon: typeof House;
+  icon: typeof MessagesSquare;
   badge?: number;
 }
 
@@ -36,25 +34,19 @@ type MobileNavItem = MobileNavLinkItem | MobileNavActionItem;
 
 export function MobileBottomNav({ visible }: MobileBottomNavProps) {
   const location = useLocation();
-  const { selectedCompanyId } = useCompany();
-  const { openNewIssue } = useDialogActions();
-  const inboxBadge = useInboxBadge(selectedCompanyId);
 
   const items = useMemo<MobileNavItem[]>(
     () => [
-      { type: "link", to: "/dashboard", label: "Home", icon: House },
+      // Tethr (see DECISIONS.md): the phone bar leads with tethr's own screens.
+      // The chat is the main one; Home, Create and Agents stay in the drawer.
+      { type: "link", to: "/chat", label: "Chat", icon: MessagesSquare },
+      { type: "link", to: "/growth", label: "Growth", icon: TrendingUp },
+      // Inbox removed (see DECISIONS.md): the Queue is the single approval surface.
+      { type: "link", to: "/queue", label: "Needs you", icon: ShieldCheck },
+      { type: "link", to: "/drive", label: "Drive", icon: HardDrive },
       { type: "link", to: "/issues", label: "Issues", icon: CircleDot },
-      { type: "action", label: "Create", icon: SquarePen, onClick: () => openNewIssue() },
-      { type: "link", to: "/agents/all", label: "Agents", icon: Users },
-      {
-        type: "link",
-        to: "/inbox",
-        label: "Inbox",
-        icon: Inbox,
-        badge: inboxBadge.inbox,
-      },
     ],
-    [openNewIssue, inboxBadge.inbox],
+    [],
   );
 
   return (

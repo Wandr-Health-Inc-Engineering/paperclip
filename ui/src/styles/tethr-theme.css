@@ -1,0 +1,2487 @@
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@200;300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap");
+
+/*
+ * tethr brand theme — "Smoked Glass" (2026-11 reskin).
+ *
+ * Frosted panels floating over warm ink. Calm like Oura, exact like Vercel,
+ * with the Aina glass card as the signature object. Still monochrome at heart:
+ * light, depth and small status dots do the work the old 2px black frames did.
+ *
+ * Imported AFTER index.css in main.tsx, and unlayered, so it wins the cascade
+ * over Tailwind utilities for anything it targets. Upstream index.css and
+ * components/ui/* are never edited — the brand rides on CSS variables and
+ * [data-slot] selectors from out here.
+ *
+ * Layers (see BRANDING.md):
+ *   L0 ground  — warm ink/fog + soft overhead light + grain (body::before/after)
+ *   L1 frost   — page panels, cards, tables: translucent fill + hairline, NO blur
+ *   L2 glass   — sidebar, menus, popovers, toasts, approval cards: blur 24px
+ *   L3 modal   — dialogs, command palette: blur 40px, deeper shadow
+ *
+ * See BRANDING.md for the post-upstream-merge checklist.
+ */
+
+:root {
+  --font-sans:
+    "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  --radius: 0.75rem;
+  --tethr-r-sm: 10px;
+  --tethr-r-md: 14px;
+  --tethr-r-lg: 20px;
+  --tethr-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ===== Day (light): fog ground, milk glass, ink text ===== */
+:root {
+  --background: #e9e7e3;
+  --foreground: #161412;
+
+  --card: #f4f3f0;
+  --card-foreground: #161412;
+  --popover: #f6f5f3;
+  --popover-foreground: #161412;
+
+  --primary: #161412;
+  --primary-foreground: #f4f2ee;
+
+  --secondary: #dedbd6;
+  --secondary-foreground: #161412;
+
+  --muted: #e0ddd8;
+  --muted-foreground: #5c5750;
+
+  --accent: rgba(22, 20, 18, 0.06);
+  --accent-foreground: #161412;
+
+  --destructive: #a3422b;
+  --destructive-foreground: #a3422b;
+
+  --border: rgba(22, 20, 18, 0.11);
+  --input: rgba(22, 20, 18, 0.16);
+  --ring: #6a655e;
+
+  --sidebar: transparent;
+  --sidebar-foreground: #161412;
+  --sidebar-primary: #161412;
+  --sidebar-primary-foreground: #f4f2ee;
+  --sidebar-accent: rgba(255, 255, 255, 0.6);
+  --sidebar-accent-foreground: #161412;
+  --sidebar-border: rgba(22, 20, 18, 0.11);
+  --sidebar-ring: #6a655e;
+
+  /* Tethr surface tokens */
+  --tethr-glass: rgba(255, 255, 255, 0.55);
+  --tethr-glass-solid: #f6f5f3;
+  /* The page ground: the reference's app stage, a shade under --background. */
+  --tethr-ground: #d9d6d1;
+  /* Windows you work and read in (the Drive Finder, Quick Look): opaque. */
+  --tethr-window: #f4f3f0;
+  --tethr-window-bar: #eeece8;
+  --tethr-window-side: #ebe9e5;
+  --tethr-select: #2a2724;
+  --tethr-select-fg: #f6f5f3;
+  --tethr-select-blur: rgba(22, 20, 18, 0.1);
+  --tethr-stripe: rgba(22, 20, 18, 0.022);
+  --tethr-frost: rgba(255, 255, 255, 0.42);
+  --tethr-frost-strong: rgba(255, 255, 255, 0.72);
+  --tethr-inset: rgba(22, 20, 18, 0.035);
+  --tethr-rim: rgba(22, 20, 18, 0.09);
+  --tethr-rim-strong: rgba(22, 20, 18, 0.17);
+  --tethr-rim-hi: rgba(255, 255, 255, 0.85);
+  --tethr-text-3: #6a655e;
+  --tethr-shadow-float: 0 24px 50px -24px rgba(60, 48, 36, 0.35), 0 2px 6px -2px rgba(60, 48, 36, 0.12);
+  --tethr-shadow-modal: 0 40px 90px -30px rgba(60, 48, 36, 0.45), 0 4px 12px -4px rgba(60, 48, 36, 0.16);
+  --tethr-glow: rgba(255, 255, 255, 0.85);
+  --tethr-glow-2: rgba(255, 255, 255, 0.45);
+  --tethr-reed: rgba(255, 255, 255, 0.4);
+  --tethr-grain-opacity: 0.05;
+  --tethr-overlay: rgba(40, 34, 28, 0.28);
+
+  /* Status dots — one meaning each, used as 6px dots + text, never as fills */
+  --tethr-ok: #2f6b45;
+  --tethr-warn: #8a5a12;
+  --tethr-bad: #a3422b;
+  --tethr-live: #2d63b5;
+  --tethr-idle: #8c867e;
+}
+
+/* ===== Night (dark): warm ink ground, smoked glass, bone text ===== */
+.dark {
+  --background: #0b0a09;
+  --foreground: #eee9e2;
+
+  --card: #151311;
+  --card-foreground: #eee9e2;
+  --popover: #1a1715;
+  --popover-foreground: #eee9e2;
+
+  --primary: #ece6dc;
+  --primary-foreground: #12100e;
+
+  --secondary: #1e1b18;
+  --secondary-foreground: #eee9e2;
+
+  --muted: #1a1816;
+  --muted-foreground: #a39c92;
+
+  --accent: rgba(255, 244, 230, 0.07);
+  --accent-foreground: #eee9e2;
+
+  --destructive: #d98a73;
+  --destructive-foreground: #f4ece4;
+
+  --border: rgba(255, 244, 230, 0.1);
+  --input: rgba(255, 244, 230, 0.16);
+  --ring: #a8a197;
+
+  --sidebar: transparent;
+  --sidebar-foreground: #eee9e2;
+  --sidebar-primary: #ece6dc;
+  --sidebar-primary-foreground: #12100e;
+  --sidebar-accent: rgba(255, 244, 230, 0.075);
+  --sidebar-accent-foreground: #eee9e2;
+  --sidebar-border: rgba(255, 244, 230, 0.1);
+  --sidebar-ring: #a8a197;
+
+  --tethr-glass: rgba(40, 36, 32, 0.55);
+  --tethr-glass-solid: #1d1a17;
+  --tethr-ground: #0f0d0b;
+  --tethr-window: #171513;
+  --tethr-window-bar: #1c1a17;
+  --tethr-window-side: #141210;
+  --tethr-select: #e4ded4;
+  --tethr-select-fg: #12100e;
+  --tethr-select-blur: rgba(255, 244, 230, 0.1);
+  --tethr-stripe: rgba(255, 244, 230, 0.02);
+  --tethr-frost: rgba(255, 244, 230, 0.035);
+  --tethr-frost-strong: rgba(255, 244, 230, 0.075);
+  --tethr-inset: rgba(0, 0, 0, 0.28);
+  --tethr-rim: rgba(255, 244, 230, 0.1);
+  --tethr-rim-strong: rgba(255, 244, 230, 0.18);
+  --tethr-rim-hi: rgba(255, 244, 230, 0.08);
+  --tethr-text-3: #857e75;
+  --tethr-shadow-float: 0 24px 60px -20px rgba(0, 0, 0, 0.7), 0 2px 8px -2px rgba(0, 0, 0, 0.4);
+  --tethr-shadow-modal: 0 40px 100px -24px rgba(0, 0, 0, 0.8), 0 4px 14px -4px rgba(0, 0, 0, 0.5);
+  --tethr-glow: rgba(226, 196, 158, 0.13);
+  --tethr-glow-2: rgba(226, 196, 158, 0.06);
+  --tethr-reed: rgba(235, 214, 186, 0.05);
+  --tethr-grain-opacity: 0.07;
+  --tethr-overlay: rgba(5, 4, 3, 0.55);
+
+  --tethr-ok: #8fb59a;
+  --tethr-warn: #d9ae6a;
+  --tethr-bad: #d98a73;
+  --tethr-live: #8fb0e3;
+  --tethr-idle: #7a746c;
+}
+
+/* ===== L0 — the ground. The page light and grain live on fixed pseudo-
+   elements behind everything; the app shell root is made transparent so they
+   show through. Pages without the shell (auth, onboarding) keep a plain
+   ground. ===== */
+html,
+body {
+  font-family: var(--font-sans);
+}
+
+body {
+  font-weight: 400;
+  font-feature-settings: "ss01" on, "cv11" on;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 42% at 62% -10%, var(--tethr-glow), transparent 70%),
+    radial-gradient(ellipse 42% 46% at 104% 104%, var(--tethr-glow-2), transparent 70%),
+    radial-gradient(ellipse 36% 40% at -4% 104%, var(--tethr-glow-2), transparent 70%);
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--tethr-grain-opacity);
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* The shell root (the element that holds #main-content) lets the ground through. */
+div.bg-background:has(#main-content) {
+  background-color: transparent;
+}
+
+/* ===== Typography — Geist, set light. Headlines thin and large, body at a
+   normal reading weight, Geist Mono for labels, paths and figures. ===== */
+/* In the base layer so tethr-display and Tailwind weight utilities win. */
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-sans);
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+}
+
+code,
+pre,
+kbd,
+samp,
+[class*="font-mono"] {
+  font-family: var(--font-mono);
+}
+
+/* ===== L2 — the app shell on glass ===== */
+
+/* The page ground is a shade darker than component fills (--background), as in
+   the reference's app stage, so frost panels and glass read as surfaces. */
+body {
+  background-color: var(--tethr-ground);
+}
+
+/* Sidebar column (company sidebar + account menu below it). The column itself
+   is the panel (below); the aside and account row inside it are see-through,
+   and the only divider inside is the hairline above the account row. */
+aside.border-r,
+div.border-t.border-r.bg-background {
+  background-color: transparent;
+  border-color: var(--tethr-rim);
+  border-right-width: 0;
+}
+
+/* Mobile: the sidebar is a drawer over a dimmed page, so it needs a solid fill. */
+@media (max-width: 767px) {
+  aside.border-r,
+  div.border-t.border-r.bg-background {
+    background-color: var(--tethr-glass-solid);
+  }
+}
+
+/* Desktop: the floating shell from the Smoked Glass reference. A 12px gutter
+   runs around and between a rounded glass sidebar panel and the page, and the
+   top bar is its own rounded glass bar. Nothing touches the window edge. */
+@media (min-width: 768px) {
+  div.min-h-0.flex-1.flex.overflow-hidden:has(> div.flex.h-full.flex-col.shrink-0) {
+    gap: 12px;
+    padding: 12px;
+  }
+
+  div.min-h-0.flex-1.flex.overflow-hidden > div.flex.h-full.flex-col.shrink-0 {
+    overflow: hidden;
+    border: 1px solid var(--tethr-rim);
+    border-radius: 16px;
+    background-color: var(--tethr-glass);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    backdrop-filter: blur(24px) saturate(140%);
+    box-shadow: inset 0 1px 0 var(--tethr-rim-hi), var(--tethr-shadow-float);
+  }
+
+  /* Top bar: a floating glass bar, sentence-case title like the reference crumb. */
+  div.flex.min-w-0.flex-col.h-full.flex-1 > div:first-child > div.border-b.h-12 {
+    border: 1px solid var(--tethr-rim);
+    border-radius: 14px;
+    padding-inline: 16px 8px;
+    background-color: var(--tethr-glass);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    backdrop-filter: blur(24px) saturate(140%);
+    box-shadow: inset 0 1px 0 var(--tethr-rim-hi), var(--tethr-shadow-float);
+  }
+  /* Page content lines up with the top bar's edges, 12px below it. */
+  #main-content {
+    padding: 12px 4px 4px;
+  }
+}
+
+/* Top-bar page title: sentence case like the reference crumb, at every width. */
+div.border-b.h-12 h1.uppercase.tracking-wider {
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  text-transform: none;
+}
+
+/* Reduced transparency: the floating shell panels go solid. */
+@media (min-width: 768px) and (prefers-reduced-transparency: reduce) {
+  div.min-h-0.flex-1.flex.overflow-hidden > div.flex.h-full.flex-col.shrink-0,
+  div.flex.min-w-0.flex-col.h-full.flex-1 > div:first-child > div.border-b.h-12 {
+    background-color: var(--tethr-glass-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* The workspace switcher reads as the reference's org card. */
+aside.border-r > div.h-12:first-child {
+  height: auto;
+  padding: 12px 10px 4px;
+}
+aside.border-r > div.h-12:first-child > [data-slot="dropdown-menu-trigger"] {
+  height: 40px;
+  border-radius: 12px;
+  padding-inline: 8px 10px;
+  background-color: var(--tethr-frost);
+  box-shadow: inset 0 0 0 1px var(--tethr-rim);
+}
+aside.border-r > div.h-12:first-child > [data-slot="dropdown-menu-trigger"]:hover {
+  background-color: var(--tethr-frost-strong);
+}
+
+/* Sidebar nav items: soft rounded rows; the active row is a frosted pill. */
+aside nav a.flex.items-center,
+aside nav button.flex.items-center {
+  border-radius: 10px;
+}
+
+aside nav a.bg-accent {
+  background-color: var(--tethr-frost-strong);
+  box-shadow: inset 0 0 0 1px var(--tethr-rim);
+}
+
+/* The account row at the foot of the sidebar panel. */
+div.border-t.border-r.bg-background button {
+  border-radius: 10px;
+}
+
+#main-content {
+  scrollbar-gutter: stable;
+}
+
+/* Mobile sticky header + bottom nav: glass. */
+nav[aria-label="Mobile navigation"],
+.sticky.top-0.z-20.backdrop-blur {
+  background-color: var(--tethr-glass) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
+}
+
+/* ===== shadcn slots ===== */
+
+/* L1 frost cards. */
+[data-slot="card"] {
+  background-color: var(--tethr-frost);
+  border: 1px solid var(--tethr-rim);
+  border-radius: var(--tethr-r-md);
+  box-shadow: inset 0 1px 0 var(--tethr-rim-hi);
+}
+
+/* L2 floating layers. */
+[data-slot="popover-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="dropdown-menu-sub-content"],
+[data-slot="select-content"],
+[data-slot="tooltip-content"],
+[data-slot="hover-card-content"] {
+  background-color: var(--tethr-glass);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid var(--tethr-rim);
+  border-radius: var(--tethr-r-md);
+  box-shadow: inset 0 1px 0 var(--tethr-rim-hi), var(--tethr-shadow-float);
+}
+
+[data-slot="tooltip-content"] {
+  border-radius: 8px;
+  color: var(--foreground);
+}
+
+[data-slot="dropdown-menu-item"],
+[data-slot="select-item"],
+[data-slot="command-item"] {
+  border-radius: 8px;
+}
+
+/* L3 modal layers. */
+[data-slot="dialog-content"],
+[data-slot="alert-dialog-content"],
+[data-slot="sheet-content"] {
+  background-color: var(--tethr-glass);
+  -webkit-backdrop-filter: blur(40px) saturate(150%);
+  backdrop-filter: blur(40px) saturate(150%);
+  border: 1px solid var(--tethr-rim-strong);
+  box-shadow: inset 0 1px 0 var(--tethr-rim-hi), var(--tethr-shadow-modal);
+}
+
+[data-slot="dialog-content"],
+[data-slot="alert-dialog-content"] {
+  border-radius: var(--tethr-r-lg);
+}
+
+[data-slot="dialog-overlay"],
+[data-slot="alert-dialog-overlay"],
+[data-slot="sheet-overlay"] {
+  background-color: var(--tethr-overlay);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+/* Buttons: pills. Joined button groups keep their squared edges. */
+[data-slot="button"]:not([class*="rounded-none"]):not([class*="rounded-l-none"]):not([class*="rounded-r-none"]):not([class*="rounded-t-none"]):not([class*="rounded-b-none"]) {
+  border-radius: 999px;
+}
+
+[data-slot="button"][data-variant="outline"] {
+  background-color: var(--tethr-frost-strong);
+  border-color: var(--tethr-rim-strong);
+  box-shadow: none;
+}
+
+[data-slot="button"][data-variant="outline"]:hover {
+  background-color: var(--accent);
+}
+
+/* Fields: frosted wells with a hairline. */
+[data-slot="input"],
+[data-slot="textarea"],
+[data-slot="select-trigger"] {
+  background-color: var(--tethr-frost);
+  border-color: var(--tethr-rim-strong);
+  box-shadow: none;
+}
+
+/* Default field radius, unless the element asks for a pill. */
+[data-slot="input"]:not([class*="rounded-full"]),
+[data-slot="textarea"]:not([class*="rounded-full"]),
+[data-slot="select-trigger"]:not([class*="rounded-full"]) {
+  border-radius: var(--tethr-r-sm);
+}
+
+[data-slot="badge"] {
+  border-radius: 999px;
+}
+
+[data-slot="tabs-list"] {
+  background-color: var(--tethr-frost);
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--tethr-rim);
+}
+
+[data-slot="tabs-trigger"] {
+  border-radius: 999px;
+}
+
+/* Fallbacks: no backdrop blur, or the viewer asked for less transparency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  [data-slot="popover-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="select-content"],
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"],
+  [data-slot="sheet-content"],
+  .tethr-glass,
+  .tethr-glass-heavy {
+    background-color: var(--tethr-glass-solid);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  [data-slot="popover-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="select-content"],
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"],
+  [data-slot="sheet-content"],
+  .tethr-glass,
+  .tethr-glass-heavy {
+    background-color: var(--tethr-glass-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* Radius scale. Upstream index.css pins --radius-lg/--radius-xl to 0px inside
+   `@theme inline`, which bakes a literal 0 into .rounded-lg/.rounded-xl, so
+   ~240 core cards and boxes rendered square. A variable can't reach an inlined
+   value, so the utilities themselves are restated here, in the same
+   `utilities` layer (later in order, same specificity) so `!` overrides and
+   other utilities still behave. Values follow the reference: 12 / 14px. */
+@layer utilities {
+  .rounded-lg {
+    border-radius: 12px;
+  }
+  .rounded-xl {
+    border-radius: var(--tethr-r-md);
+  }
+  .rounded-b-xl {
+    border-bottom-left-radius: var(--tethr-r-md);
+    border-bottom-right-radius: var(--tethr-r-md);
+  }
+
+  /* Core list boxes that ship with a border and no radius at all (Dashboard
+     recent activity, the Agents list). Clip so row hovers follow the corner. */
+  #main-content .border.border-border.divide-y.overflow-hidden,
+  #main-content .border.border-border.py-1 {
+    border-radius: 12px;
+    overflow: hidden;
+  }
+}
+
+/* Layered as `components` so a Tailwind utility on the same element (text-xs,
+   bg-transparent, …) still wins — these are defaults, not overrides. */
+@layer components {
+/* ===== Tethr vocabulary — utility classes the Tethr pages compose. Visual
+   properties only (fill, rim, radius, shadow, type); spacing stays in
+   Tailwind so these never fight a p-4 or gap-3. ===== */
+
+/* L1: page panels, cards, list rows, tables. */
+.tethr-panel {
+  background-color: var(--tethr-frost);
+  border: 1px solid var(--tethr-rim);
+  border-radius: var(--tethr-r-md);
+  box-shadow: inset 0 1px 0 var(--tethr-rim-hi);
+}
+
+/* An L1 panel that responds to hover/focus (clickable rows and cards). */
+.tethr-panel-hover {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease;
+}
+.tethr-panel-hover:hover,
+.tethr-panel-hover:focus-visible {
+  background-color: var(--tethr-frost-strong);
+  border-color: var(--tethr-rim-strong);
+}
+
+/* A selected/active L1 panel. */
+.tethr-panel-active {
+  background-color: var(--tethr-frost-strong);
+  border-color: var(--tethr-rim-strong);
+  box-shadow:
+    inset 0 1px 0 var(--tethr-rim-hi),
+    inset 0 0 0 1px var(--tethr-rim-strong);
+}
+
+/* L2: things that float and ask for attention (approval cards, composer). */
+.tethr-glass {
+  background-color: var(--tethr-glass);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid var(--tethr-rim);
+  border-radius: var(--tethr-r-md);
+  box-shadow: inset 0 1px 0 var(--tethr-rim-hi), var(--tethr-shadow-float);
+}
+
+/* Windows you work and read in (the Drive's Finder, Quick Look). Opaque on
+   purpose: a reading surface never shows the page through it. Bars and the
+   sidebar are slightly different solid tones, like a real Finder window. */
+.tethr-window {
+  background-color: var(--tethr-window);
+  border: 1px solid var(--tethr-rim-strong);
+  border-radius: var(--tethr-r-lg);
+  box-shadow: inset 0 1px 0 var(--tethr-rim-hi), var(--tethr-shadow-float);
+}
+.tethr-window-lifted {
+  box-shadow: inset 0 1px 0 var(--tethr-rim-hi), var(--tethr-shadow-modal);
+}
+.tethr-window-bar {
+  background-color: var(--tethr-window-bar);
+}
+.tethr-window-side {
+  background-color: var(--tethr-window-side);
+}
+/* Finder rows: faint zebra stripes; the selection inverts (ink on Day, bone
+   on Night) and drops to a soft grey when the window loses focus. */
+.tethr-stripe {
+  background-color: var(--tethr-stripe);
+}
+.tethr-selected {
+  background-color: var(--tethr-select-blur);
+  color: var(--foreground);
+}
+.tethr-finder:focus-within .tethr-selected {
+  background-color: var(--tethr-select);
+  color: var(--tethr-select-fg);
+}
+.tethr-finder:focus-within .tethr-selected .tethr-text-3,
+.tethr-finder:focus-within .tethr-selected .text-muted-foreground {
+  color: var(--tethr-select-fg);
+  opacity: 0.75;
+}
+
+/* Scrims under modal surfaces: a dim only. Never put backdrop-filter on a
+   scrim whose child is glass — a blurred parent cuts off the child's own blur
+   and the sheet turns see-through. The child glass does the blurring. */
+.tethr-scrim {
+  background-color: var(--tethr-overlay);
+}
+
+/* L3: full-screen viewers and modal-weight panels. */
+.tethr-glass-heavy {
+  background-color: var(--tethr-glass);
+  -webkit-backdrop-filter: blur(40px) saturate(150%);
+  backdrop-filter: blur(40px) saturate(150%);
+  border: 1px solid var(--tethr-rim-strong);
+  border-radius: var(--tethr-r-lg);
+  box-shadow: inset 0 1px 0 var(--tethr-rim-hi), var(--tethr-shadow-modal);
+}
+
+/* Sunken wells: code, logs, transcripts, previews. */
+.tethr-inset {
+  background-color: var(--tethr-inset);
+  border: 1px solid var(--tethr-rim);
+  border-radius: var(--tethr-r-sm);
+}
+
+/* Empty states: dashed rim, no fill. */
+.tethr-empty {
+  border: 1px dashed var(--tethr-rim-strong);
+  border-radius: var(--tethr-r-md);
+  color: var(--muted-foreground);
+}
+
+/* Hairline divider color for border-b / divide-y inside Tethr panels. */
+.tethr-rule {
+  border-color: var(--tethr-rim) !important;
+}
+
+/* Mono micro label — the "AWAITING REVIEW · SPEND" voice. */
+.tethr-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--tethr-text-3);
+}
+
+/* Thin display headline for page titles. */
+.tethr-display {
+  font-family: var(--font-sans);
+  font-weight: 300;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+
+/* Big light numerals (Oura). */
+.tethr-figure {
+  font-family: var(--font-sans);
+  font-weight: 200;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.tethr-text-3 {
+  color: var(--tethr-text-3);
+}
+
+/* Pills: outline tag, and the inverted "gated" pill. */
+.tethr-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  box-shadow: inset 0 0 0 1px var(--tethr-rim-strong);
+}
+
+.tethr-pill-solid {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: none;
+}
+
+/* Buttons for Tethr pages that use plain <button>s. */
+.tethr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease,
+    opacity 180ms ease;
+}
+.tethr-btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.tethr-btn:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--background),
+    0 0 0 4px var(--ring);
+}
+.tethr-btn-primary {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+.tethr-btn-primary:hover {
+  background-color: color-mix(in srgb, var(--primary) 88%, transparent);
+}
+.tethr-btn-glass {
+  background-color: var(--tethr-frost-strong);
+  color: var(--foreground);
+  box-shadow: inset 0 0 0 1px var(--tethr-rim-strong);
+}
+.tethr-btn-glass:hover {
+  background-color: var(--accent);
+}
+.tethr-btn-ghost {
+  background-color: transparent;
+  color: var(--muted-foreground);
+}
+.tethr-btn-ghost:hover {
+  background-color: var(--accent);
+  color: var(--foreground);
+}
+.tethr-btn-danger {
+  background-color: transparent;
+  color: var(--tethr-bad);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tethr-bad) 45%, transparent);
+}
+.tethr-btn-danger:hover {
+  background-color: color-mix(in srgb, var(--tethr-bad) 12%, transparent);
+}
+
+/* Fields on Tethr pages (plain <input>/<textarea>/<select>). */
+.tethr-field {
+  background-color: var(--tethr-frost);
+  border: 1px solid var(--tethr-rim-strong);
+  border-radius: var(--tethr-r-sm);
+  color: var(--foreground);
+  outline: none;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+.tethr-field::placeholder {
+  color: var(--tethr-text-3);
+}
+.tethr-field:focus,
+.tethr-field:focus-visible {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 4px var(--tethr-frost-strong);
+}
+
+/* Status dots — one meaning per tone:
+     ok    published · approved · done · succeeded
+     warn  awaiting review · near a cap
+     amber-ring  changes requested
+     bad   rejected · failed · error
+     live  running now (pulses)
+     idle  queued · draft · on request
+     paused  paused · disabled · archived (hollow ring) */
+.tethr-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background-color: var(--tethr-idle);
+}
+.tethr-dot-ok { background-color: var(--tethr-ok); }
+.tethr-dot-warn { background-color: var(--tethr-warn); }
+.tethr-dot-changes { background-color: transparent; box-shadow: inset 0 0 0 1.5px var(--tethr-warn); }
+.tethr-dot-bad { background-color: var(--tethr-bad); }
+.tethr-dot-live { background-color: var(--tethr-live); animation: tethr-dot-pulse 2.2s var(--tethr-ease) infinite; }
+.tethr-dot-idle { background-color: var(--tethr-idle); }
+.tethr-dot-paused { background-color: transparent; box-shadow: inset 0 0 0 1.5px var(--tethr-idle); }
+
+@keyframes tethr-dot-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tethr-live) 60%, transparent); }
+  100% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--tethr-live) 0%, transparent); }
+}
+
+.tethr-tone-ok { color: var(--tethr-ok); }
+.tethr-tone-warn { color: var(--tethr-warn); }
+.tethr-tone-bad { color: var(--tethr-bad); }
+.tethr-tone-live { color: var(--tethr-live); }
+
+/* Thin progress rings (Oura) — an SVG with .tethr-ring-track + .tethr-ring-value
+   circles; the value circle uses pathLength="100" + stroke-dasharray. */
+.tethr-ring circle {
+  fill: none;
+}
+.tethr-ring-track {
+  stroke: var(--tethr-rim-strong);
+}
+.tethr-ring-value {
+  stroke: var(--foreground);
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  transition: stroke-dasharray 700ms var(--tethr-ease);
+}
+.tethr-ring-value.tethr-ring-warn { stroke: var(--tethr-warn); }
+.tethr-ring-value.tethr-ring-bad { stroke: var(--tethr-bad); }
+
+/* Thin progress bar. */
+.tethr-meter {
+  height: 3px;
+  border-radius: 3px;
+  background-color: var(--tethr-rim);
+  overflow: hidden;
+}
+.tethr-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background-color: var(--foreground);
+  transition: width 700ms var(--tethr-ease);
+}
+.tethr-meter > span.tethr-ring-warn { background-color: var(--tethr-warn); }
+.tethr-meter > span.tethr-ring-bad { background-color: var(--tethr-bad); }
+
+/* Reeded light — the Aina texture. Console hero and empty states only. */
+.tethr-reeds {
+  position: relative;
+  isolation: isolate;
+}
+.tethr-reeds::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background: repeating-linear-gradient(90deg, transparent 0 9px, var(--tethr-reed) 9px 11px, transparent 11px 19px);
+  filter: blur(1.2px);
+  -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 30%, #000 15%, transparent 75%);
+  mask-image: radial-gradient(ellipse 70% 70% at 50% 30%, #000 15%, transparent 75%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tethr-dot-live,
+  .tethr-ring-value,
+  .tethr-meter > span {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+}
+
+/* ===== Motion — framer-style entrance for the app shell on first load.
+   No JS dep needed; pure CSS keyframes with reduced-motion respect.
+   Animations target the major regions independently so the eye picks up
+   layered movement instead of one block sliding. ===== */
+
+/* Entrances that animate `filter` fill `backwards`, not `both`: in Chromium an
+   element whose finished animation is still held (fill `both`/`forwards`) on
+   `filter` stays a backdrop root, so every glass surface inside <main> stopped
+   blurring what's behind it (the chat drawer read as clear glass over text).
+   `backwards` keeps the first frame during the delay and lets go at the end. */
+@keyframes tethr-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(6px);
+  }
+  60% {
+    opacity: 1;
+    filter: none;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: none;
+  }
+}
+
+@keyframes tethr-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes tethr-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+aside {
+  animation: tethr-slide-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+main,
+[role="main"] {
+  animation: tethr-rise 620ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: 80ms;
+}
+
+[data-slot="card"],
+[data-slot="dialog-content"],
+[data-slot="popover-content"] {
+  animation: tethr-rise 480ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+/* Stagger card entries when a list of them mounts together. */
+[data-slot="card"]:nth-child(1) { animation-delay: 60ms; }
+[data-slot="card"]:nth-child(2) { animation-delay: 120ms; }
+[data-slot="card"]:nth-child(3) { animation-delay: 180ms; }
+[data-slot="card"]:nth-child(4) { animation-delay: 240ms; }
+[data-slot="card"]:nth-child(5) { animation-delay: 300ms; }
+
+button,
+a[role="button"] {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    transform 120ms ease;
+}
+
+button:active,
+a[role="button"]:active {
+  transform: translateY(1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  aside,
+  main,
+  [role="main"],
+  [data-slot="card"],
+  [data-slot="dialog-content"],
+  [data-slot="popover-content"],
+  button,
+  a[role="button"] {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ===== Brand accent — remap upstream cyan "live / running" colour to
+   wandr blue (#2D63B5 from travelwithwandr.com). Override Tailwind v4's
+   --color-cyan-* theme tokens directly so every utility — including
+   arbitrary-opacity variants like bg-cyan-500/[0.04] — picks up the new
+   colour via color-mix(). Far more robust than overriding individual
+   utility classes. ===== */
+
+:root {
+  /* Wandr blue, full saturation -> graded lighter, mirroring how tailwind
+     palettes step. The 500 step is the canonical wandr blue. */
+  --color-cyan-50:  oklch(96.5% 0.02 250);
+  --color-cyan-100: oklch(93%   0.04 250);
+  --color-cyan-200: oklch(86%   0.07 250);
+  --color-cyan-300: oklch(78%   0.10 250);
+  --color-cyan-400: oklch(66%   0.13 250);
+  --color-cyan-500: oklch(50%   0.15 256);  /* ≈ #2D63B5 */
+  --color-cyan-600: oklch(44%   0.15 256);
+  --color-cyan-700: oklch(38%   0.14 256);
+  --color-cyan-800: oklch(32%   0.12 256);
+  --color-cyan-900: oklch(26%   0.10 256);
+  --color-cyan-950: oklch(20%   0.07 256);
+}
+
+.dark {
+  /* In dark mode we want the accent to read as light-blue / near-white,
+     so the gradient runs inverted — 500 is a pale wandr blue. */
+  --color-cyan-50:  oklch(96.5% 0.02 250);
+  --color-cyan-100: oklch(93%   0.03 250);
+  --color-cyan-200: oklch(88%   0.05 250);
+  --color-cyan-300: oklch(83%   0.07 250);
+  --color-cyan-400: oklch(80%   0.08 250);
+  --color-cyan-500: oklch(82%   0.07 250);  /* pale wandr blue */
+  --color-cyan-600: oklch(75%   0.09 250);
+  --color-cyan-700: oklch(68%   0.10 250);
+  --color-cyan-800: oklch(60%   0.11 250);
+  --color-cyan-900: oklch(52%   0.12 256);
+  --color-cyan-950: oklch(44%   0.13 256);
+}
+
+/* The "Live now" card in ActiveAgentsPanel uses a literal rgba shadow
+   (rgba(6,182,212,…)) baked into a Tailwind arbitrary-value utility —
+   the token override above can't reach it. Target the card by the
+   classes that mark it active and replace the shadow with a wandr-blue
+   glow. The shadow utility itself stays in the class list (harmless),
+   our rule wins via specificity + !important. */
+.shadow-\[0_16px_40px_rgba\(6\,182\,212\,0\.08\)\] {
+  box-shadow: 0 16px 40px rgba(45, 99, 181, 0.12) !important;
+}
+
+.dark .shadow-\[0_16px_40px_rgba\(6\,182\,212\,0\.08\)\] {
+  box-shadow: 0 16px 40px rgba(176, 204, 236, 0.18) !important;
+}
+
+/* LiveRunWidget uses a slightly heavier shadow with the same RGB. */
+.shadow-\[0_18px_50px_rgba\(6\,182\,212\,0\.08\)\] {
+  box-shadow: 0 18px 50px rgba(45, 99, 181, 0.14) !important;
+}
+
+.dark .shadow-\[0_18px_50px_rgba\(6\,182\,212\,0\.08\)\] {
+  box-shadow: 0 18px 50px rgba(176, 204, 236, 0.20) !important;
+}
+
+/* ===== Chart bars (Dashboard cards). The bars are plain divs marked
+   with data-tethr-chart-bar; round the top, animate on first paint. ===== */
+
+@keyframes tethr-bar-rise {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+[data-tethr-chart-bar] {
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+  transform-origin: bottom;
+  animation: tethr-bar-rise 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Stagger the day columns left → right so the chart "draws in". */
+.flex.items-end > div:nth-child(1)  [data-tethr-chart-bar] { animation-delay: 20ms; }
+.flex.items-end > div:nth-child(2)  [data-tethr-chart-bar] { animation-delay: 60ms; }
+.flex.items-end > div:nth-child(3)  [data-tethr-chart-bar] { animation-delay: 100ms; }
+.flex.items-end > div:nth-child(4)  [data-tethr-chart-bar] { animation-delay: 140ms; }
+.flex.items-end > div:nth-child(5)  [data-tethr-chart-bar] { animation-delay: 180ms; }
+.flex.items-end > div:nth-child(6)  [data-tethr-chart-bar] { animation-delay: 220ms; }
+.flex.items-end > div:nth-child(7)  [data-tethr-chart-bar] { animation-delay: 260ms; }
+.flex.items-end > div:nth-child(8)  [data-tethr-chart-bar] { animation-delay: 300ms; }
+.flex.items-end > div:nth-child(9)  [data-tethr-chart-bar] { animation-delay: 340ms; }
+.flex.items-end > div:nth-child(10) [data-tethr-chart-bar] { animation-delay: 380ms; }
+.flex.items-end > div:nth-child(11) [data-tethr-chart-bar] { animation-delay: 420ms; }
+.flex.items-end > div:nth-child(12) [data-tethr-chart-bar] { animation-delay: 460ms; }
+.flex.items-end > div:nth-child(13) [data-tethr-chart-bar] { animation-delay: 500ms; }
+.flex.items-end > div:nth-child(14) [data-tethr-chart-bar] { animation-delay: 540ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-tethr-chart-bar] {
+    animation: none !important;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Tethr operate screens: routing flow + console choreography          */
+/* ------------------------------------------------------------------ */
+
+@keyframes tethr-hop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.tethr-hop-animate {
+  opacity: 0;
+  animation: tethr-hop-in 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes tethr-connector-grow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+.tethr-connector-animate {
+  transform-origin: top;
+  animation: tethr-connector-grow 260ms cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+
+/* Result panel lands after the chain finishes drawing. */
+@keyframes tethr-result-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+.tethr-result-animate {
+  opacity: 0;
+  animation: tethr-result-in 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Division / stat cards: rise in with a subtle stagger on operate pages. */
+@keyframes tethr-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+[data-tethr-stagger] > * {
+  opacity: 0;
+  animation: tethr-card-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+[data-tethr-stagger] > *:nth-child(1) { animation-delay: 40ms; }
+[data-tethr-stagger] > *:nth-child(2) { animation-delay: 100ms; }
+[data-tethr-stagger] > *:nth-child(3) { animation-delay: 160ms; }
+[data-tethr-stagger] > *:nth-child(4) { animation-delay: 220ms; }
+[data-tethr-stagger] > *:nth-child(5) { animation-delay: 280ms; }
+[data-tethr-stagger] > *:nth-child(6) { animation-delay: 340ms; }
+[data-tethr-stagger] > *:nth-child(7) { animation-delay: 400ms; }
+[data-tethr-stagger] > *:nth-child(8) { animation-delay: 460ms; }
+[data-tethr-stagger] > *:nth-child(9) { animation-delay: 520ms; }
+[data-tethr-stagger] > *:nth-child(n + 10) { animation-delay: 580ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tethr-hop-animate,
+  .tethr-connector-animate,
+  .tethr-result-animate,
+  [data-tethr-stagger] > * {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+}
+
+/* ===== Working cogs (phase 15) — the machinery-at-work indicator. Monochrome
+   line-art only (lucide Cog via currentColor); slow steady spin, meshed pair
+   counter-rotates. Used at the Console/RouteFlow processing states. ===== */
+@keyframes tethr-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.tethr-cog-spin {
+  animation: tethr-spin 3.5s linear infinite;
+}
+.tethr-cog-spin-reverse {
+  animation: tethr-spin 3.5s linear infinite reverse;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tethr-cog-spin,
+  .tethr-cog-spin-reverse {
+    animation: none !important;
+  }
+}
+
+/* ===== Nebula (phase 22): the chat's "working" mark, looping until a turn
+   ends. Two soft spiral arms (blurred conic gradients, faded at the edge) swirl
+   and breathe at different speeds around a pulsing core, and three motes ride
+   tilted, flattened orbits. All currentColor, so it stays monochrome in Day and
+   Night. Sized by font-size (1em square, everything inside in em), so
+   text-[24px] or a bigger font-size scales the whole thing. ===== */
+@keyframes tethr-nebula-swirl {
+  to { transform: rotate(360deg); }
+}
+@keyframes tethr-nebula-breathe {
+  from { scale: 0.86; opacity: 0.7; }
+  to { scale: 1.04; opacity: 1; }
+}
+@keyframes tethr-nebula-pulse {
+  from { scale: 0.75; opacity: 0.65; }
+  to { scale: 1.15; opacity: 1; }
+}
+
+@layer components {
+  .tethr-nebula {
+    position: relative;
+    display: inline-block;
+    flex: none;
+    font-size: 22px;
+    width: 1em;
+    height: 1em;
+  }
+  .tethr-nebula > span {
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+  }
+  .tethr-nebula-cloud {
+    background: conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      color-mix(in oklab, currentColor 90%, transparent) 40deg,
+      transparent 110deg,
+      transparent 180deg,
+      color-mix(in oklab, currentColor 70%, transparent) 220deg,
+      transparent 290deg
+    );
+    -webkit-mask: radial-gradient(circle, #000 24%, rgb(0 0 0 / 0.6) 46%, transparent 71%);
+    mask: radial-gradient(circle, #000 24%, rgb(0 0 0 / 0.6) 46%, transparent 71%);
+    filter: blur(0.041em);
+    animation:
+      tethr-nebula-swirl 3.2s linear infinite,
+      tethr-nebula-breathe 2.4s ease-in-out infinite alternate;
+  }
+  .tethr-nebula > .tethr-nebula-cloud-inner {
+    inset: 10%;
+    opacity: 0.75;
+    background: conic-gradient(
+      from 90deg,
+      transparent 0deg,
+      color-mix(in oklab, currentColor 60%, transparent) 70deg,
+      transparent 150deg,
+      color-mix(in oklab, currentColor 45%, transparent) 250deg,
+      transparent 330deg
+    );
+    animation:
+      tethr-nebula-swirl 2.1s linear infinite reverse,
+      tethr-nebula-breathe 1.7s ease-in-out -0.6s infinite alternate;
+  }
+  .tethr-nebula > .tethr-nebula-core {
+    inset: 34%;
+    background: radial-gradient(circle, currentColor 0 34%, color-mix(in oklab, currentColor 45%, transparent) 60%, transparent 78%);
+    animation: tethr-nebula-pulse 1.3s ease-in-out infinite alternate;
+  }
+  /* The spin runs in `transform`; the flatten and tilt are the separate scale
+     and rotate properties, applied after it, so each mote traces a tilted ellipse. */
+  .tethr-nebula-orbit {
+    scale: 1 0.5;
+    rotate: -24deg;
+    animation: tethr-nebula-swirl 2.4s linear infinite;
+  }
+  .tethr-nebula > .tethr-nebula-orbit-tight {
+    inset: 16%;
+    scale: 1 0.6;
+    rotate: 40deg;
+    animation: tethr-nebula-swirl 1.6s linear -0.6s infinite reverse;
+  }
+  .tethr-nebula > .tethr-nebula-orbit-wide {
+    inset: -6%;
+    scale: 1 0.42;
+    rotate: 72deg;
+    animation: tethr-nebula-swirl 3.4s linear -1.9s infinite;
+  }
+  .tethr-nebula-orbit > i {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 0.1em;
+    height: 0.1em;
+    margin-left: -0.05em;
+    border-radius: 9999px;
+    background: currentColor;
+    box-shadow: 0 0 0.115em currentColor;
+  }
+  .tethr-nebula-orbit-wide > i {
+    width: 0.082em;
+    height: 0.082em;
+    margin-left: -0.041em;
+    opacity: 0.65;
+  }
+}
+
+/* The mark at rest (the chat's avatar while tethr isn't working): the same pose
+   reduced motion shows. */
+.tethr-nebula-still,
+.tethr-nebula-still * {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tethr-nebula,
+  .tethr-nebula * {
+    animation: none !important;
+  }
+}
+
+/* The chat's avatar: who you're talking to, top centre. A halo breathes while a
+   turn runs; the mark inside does the rest. */
+@layer components {
+  .tethr-avatar {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    color: var(--foreground);
+    transition: transform 240ms var(--tethr-ease);
+  }
+  @media (hover: hover) {
+    .tethr-avatar:hover {
+      transform: scale(1.04);
+    }
+  }
+  .tethr-avatar::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: inherit;
+    box-shadow: 0 0 0 1px var(--tethr-rim-strong);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .tethr-avatar.is-working::after {
+    animation: tethr-avatar-halo 2400ms ease-in-out infinite;
+  }
+}
+@keyframes tethr-avatar-halo {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.06);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tethr-avatar,
+  .tethr-avatar.is-working::after {
+    animation: none !important;
+    transition: none;
+  }
+}
+
+/* Branded selection: ink-on-paper inversion in both themes. */
+::selection {
+  background: var(--foreground);
+  color: var(--background);
+}
+
+/* ---- Chat answers: one calm type scale (phase 19.1) -----------------------
+   Unlayered on purpose: upstream's `.paperclip-markdown` (unlayered, 15px,
+   600-weight headings) otherwise beats Tailwind's text-[14px] utility, which
+   left answers a size up from the bubble and composer and inline code larger
+   still. Everything in a chat answer now reads at the bubble's 14px; headings
+   only step up a little; weights stay within the brand's 200-500. */
+.paperclip-markdown.tethr-chat-md {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.paperclip-markdown.tethr-chat-md :where(p, ul, ol, blockquote, pre, .paperclip-markdown-table-scroll) {
+  margin-top: 0.6em;
+  margin-bottom: 0.6em;
+}
+.paperclip-markdown.tethr-chat-md li {
+  margin: 0.2em 0;
+}
+.paperclip-markdown.tethr-chat-md :where(h1, h2, h3, h4) {
+  margin-top: 1.1em;
+  margin-bottom: 0.35em;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  line-height: 1.35;
+}
+.paperclip-markdown.tethr-chat-md h1 {
+  font-size: 17px;
+}
+.paperclip-markdown.tethr-chat-md h2 {
+  font-size: 15.5px;
+}
+.paperclip-markdown.tethr-chat-md :where(h3, h4) {
+  font-size: 14px;
+}
+.paperclip-markdown.tethr-chat-md :where(strong, b, th) {
+  font-weight: 500;
+}
+/* Inline code: a hair smaller than the text, regular weight, so a file name
+   sits in the sentence instead of shouting over it. */
+.paperclip-markdown.tethr-chat-md :not(pre) > code {
+  font-size: 0.86em;
+  font-weight: 400;
+  padding: 0.12em 0.36em;
+  border-radius: 5px;
+}
+.paperclip-markdown.tethr-chat-md :where(code)::before,
+.paperclip-markdown.tethr-chat-md :where(code)::after {
+  content: none;
+}
+.paperclip-markdown.tethr-chat-md pre {
+  font-size: 12.5px !important;
+}
+.paperclip-markdown.tethr-chat-md :where(table) {
+  font-size: 13px;
+}
+
+/* ---- Touch sizing ------------------------------------------------------------
+   index.css gives every button a 44px min-height on touch screens, unlayered, so
+   no Tailwind utility can undo it; compact controls stretch into tall ovals.
+   Controls that size themselves for touch (pointer-coarse:h-9 …) opt out here. */
+@media (pointer: coarse) {
+  .tethr-touch-sized {
+    min-height: 0;
+  }
+}
+
+/* ---- Phones: typing never zooms the page ----------------------------------
+   iPhone Safari zooms into any text field under 16px when it's tapped, and stays
+   zoomed: the top bar and tabs end up off screen and the chat looks broken
+   (Mark's phone, 2026-11-09). On touch screens up to tablet width, fields are 16px.
+   Unlayered, so it wins over the 13-14px utilities fields use on desktop. */
+@media (pointer: coarse) and (max-width: 1023px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+  textarea,
+  select,
+  [contenteditable="true"] {
+    font-size: 16px;
+  }
+}
+
+/* ---- Documents (Queue preview, Memory, Drive reader) -----------------------
+   Same reasoning as chat answers: upstream's unlayered `.paperclip-markdown`
+   sets 15px text and 600-700 headings over any Tailwind size. Documents read a
+   step larger than chat; headings stay within the brand's 200-500. */
+.paperclip-markdown.tethr-doc-md {
+  font-size: 14px;
+  line-height: 1.65;
+}
+.paperclip-markdown.tethr-doc-md.tethr-doc-lg {
+  font-size: 15px;
+}
+.paperclip-markdown.tethr-doc-md.tethr-doc-sm {
+  font-size: 13px;
+}
+.paperclip-markdown.tethr-doc-md :where(h1, h2, h3, h4) {
+  margin-top: 1.2em;
+  margin-bottom: 0.4em;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+.paperclip-markdown.tethr-doc-md > :first-child {
+  margin-top: 0;
+}
+.paperclip-markdown.tethr-doc-md h1 {
+  font-size: 1.45em;
+  font-weight: 400;
+}
+.paperclip-markdown.tethr-doc-md h2 {
+  font-size: 1.2em;
+}
+.paperclip-markdown.tethr-doc-md :where(h3, h4) {
+  font-size: 1.05em;
+}
+.paperclip-markdown.tethr-doc-md :where(strong, b, th) {
+  font-weight: 500;
+}
+
+/* ===== Startup intro (2026-11-08) ------------------------------------------
+   Plays when the desktop app starts and right after signing in
+   (components/tethr/StartupIntro.tsx). Same ground as the app, so it leaves
+   without a color change: tethr's nebula swirls in out of a blur and settles,
+   its core flares once, the wordmark rises under it, light passes over the
+   reeds, and the shell's own entrance plays as the overlay lifts. Monochrome;
+   the only color is the status dot. */
+:root {
+  --tethr-intro-reed: rgba(255, 255, 255, 0.42);
+}
+.dark {
+  --tethr-intro-reed: rgba(235, 214, 186, 0.09);
+}
+
+/* The shell's entrance waits while the intro covers it. */
+html.tethr-intro-hold aside,
+html.tethr-intro-hold main,
+html.tethr-intro-hold [role="main"],
+html.tethr-intro-hold [data-slot="card"] {
+  animation-play-state: paused !important;
+}
+
+.tethr-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: grid;
+  place-items: center;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+.tethr-intro.is-leaving {
+  pointer-events: none;
+}
+
+.tethr-intro-ground {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 38% 30% at 50% 47%, var(--tethr-glow-2), transparent 70%),
+    radial-gradient(ellipse 60% 42% at 62% -10%, var(--tethr-glow), transparent 70%),
+    radial-gradient(ellipse 42% 46% at 104% 104%, var(--tethr-glow-2), transparent 70%),
+    radial-gradient(ellipse 36% 40% at -4% 104%, var(--tethr-glow-2), transparent 70%),
+    var(--tethr-ground);
+}
+.tethr-intro-ground::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: var(--tethr-grain-opacity);
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Light passing over fluted glass: the reeds show only where a soft band
+   sweeps across, and only around the middle of the screen. */
+.tethr-intro-reeds-wrap {
+  position: absolute;
+  inset: 0;
+  -webkit-mask-image: radial-gradient(ellipse 62% 48% at 50% 50%, #000 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse 62% 48% at 50% 50%, #000 20%, transparent 75%);
+}
+.tethr-intro-reeds {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 9px, var(--tethr-intro-reed) 9px 11px, transparent 11px 19px);
+  filter: blur(1.2px);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 50%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 50%, transparent);
+  -webkit-mask-size: 55% 100%;
+  mask-size: 55% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: -150% 0;
+  mask-position: -150% 0;
+  animation: tethr-intro-sweep 2400ms cubic-bezier(0.45, 0, 0.2, 1) 150ms both;
+}
+@keyframes tethr-intro-sweep {
+  from {
+    -webkit-mask-position: -150% 0;
+    mask-position: -150% 0;
+  }
+  to {
+    -webkit-mask-position: 250% 0;
+    mask-position: 250% 0;
+  }
+}
+
+.tethr-intro-stage {
+  --w: min(420px, calc(100vw - 32px));
+  position: relative;
+  width: var(--w);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* sit a touch above center, like a title */
+  margin-top: -4vh;
+}
+
+.tethr-intro-word {
+  display: flex;
+  font-family: var(--font-sans);
+  font-weight: 200;
+  font-size: calc(var(--w) * 0.18);
+  line-height: 1;
+  letter-spacing: -0.035em;
+  color: var(--foreground);
+  animation: tethr-intro-track 900ms var(--tethr-ease) 1000ms both;
+}
+.tethr-intro-word > span {
+  display: inline-block;
+  animation: tethr-intro-letter 620ms var(--tethr-ease) both;
+  animation-delay: calc(1060ms + var(--i, 0) * 60ms);
+}
+@keyframes tethr-intro-letter {
+  from {
+    opacity: 0;
+    transform: translateY(0.22em);
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+@keyframes tethr-intro-track {
+  from { letter-spacing: 0.1em; }
+  to { letter-spacing: -0.035em; }
+}
+
+/* The nebula forms: it swirls in out of a blur and settles, then keeps turning
+   (its own loop) until the intro leaves. Sized from the stage width. */
+.tethr-intro-nebula {
+  position: relative;
+  display: grid;
+  place-items: center;
+  margin-bottom: calc(var(--w) * 0.05);
+  color: var(--foreground);
+  animation: tethr-intro-form 1300ms cubic-bezier(0.2, 0.7, 0.2, 1) 60ms both;
+}
+.tethr-intro-nebula > .tethr-nebula {
+  font-size: calc(var(--w) * 0.34);
+}
+@keyframes tethr-intro-form {
+  0% {
+    opacity: 0;
+    scale: 0.3;
+    rotate: -150deg;
+    filter: blur(16px);
+  }
+  55% {
+    opacity: 1;
+    filter: blur(3px);
+  }
+  100% {
+    opacity: 1;
+    scale: 1;
+    rotate: 0deg;
+    filter: none;
+  }
+}
+/* As it settles, the core flares once. */
+.tethr-intro-flare {
+  position: absolute;
+  inset: 34%;
+  border-radius: 9999px;
+  border: 1px solid currentColor;
+  opacity: 0;
+  pointer-events: none;
+  animation: tethr-intro-flare 900ms cubic-bezier(0.2, 0.7, 0.2, 1) 1050ms both;
+}
+@keyframes tethr-intro-flare {
+  0% {
+    opacity: 0.55;
+    scale: 0.5;
+  }
+  100% {
+    opacity: 0;
+    scale: 3;
+  }
+}
+
+/* The terminal: a black square in both themes that types itself
+   (lib/tethr-intro.ts terminalFrame; StartupIntro writes each frame). */
+.tethr-intro-term {
+  width: min(400px, calc(100vw - 32px));
+  margin-top: calc(var(--w) * 0.08);
+  border-radius: 14px;
+  overflow: hidden;
+  text-align: left;
+  color: #e9e4dc;
+  background: #0b0a09;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 244, 230, 0.08),
+    inset 0 1px 0 rgba(255, 244, 230, 0.06),
+    0 26px 60px -30px rgba(11, 10, 9, 0.7);
+  animation: tethr-intro-term-in 760ms var(--tethr-ease) 280ms both;
+}
+.dark .tethr-intro-term {
+  background: #050403;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 244, 230, 0.1),
+    inset 0 1px 0 rgba(255, 244, 230, 0.07),
+    0 30px 70px -30px rgba(0, 0, 0, 0.9);
+}
+.tethr-intro-term-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 14px;
+  border-bottom: 1px solid rgba(255, 244, 230, 0.07);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(233, 228, 220, 0.55);
+  white-space: nowrap;
+}
+.tethr-intro-term-body {
+  padding: 12px 14px 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre;
+  overflow: hidden;
+}
+.tethr-intro-term-line {
+  min-height: 1.7em;
+  color: rgba(233, 228, 220, 0.62);
+}
+.tethr-intro-term-line:first-child,
+.tethr-intro-term-line.is-active {
+  color: #f3efe9;
+}
+.tethr-intro-term-line[data-text="ready."] {
+  color: #8fb59a;
+}
+/* The block cursor on the line being written. */
+.tethr-intro-term-line.is-active::after {
+  content: "";
+  display: inline-block;
+  width: 0.6em;
+  height: 1.15em;
+  margin-left: 3px;
+  vertical-align: -0.2em;
+  background: currentColor;
+  animation: tethr-intro-caret 1s steps(1) infinite;
+}
+@keyframes tethr-intro-caret {
+  50% {
+    opacity: 0;
+  }
+}
+@keyframes tethr-intro-term-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+/* Leaving: the stage lifts and blurs away, then the ground clears. */
+.tethr-intro.is-leaving .tethr-intro-stage {
+  animation: tethr-intro-stage-out 380ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+.tethr-intro.is-leaving .tethr-intro-ground {
+  animation: tethr-intro-clear 560ms ease 60ms both;
+}
+@keyframes tethr-intro-stage-out {
+  to {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.985);
+    filter: blur(6px);
+  }
+}
+@keyframes tethr-intro-clear {
+  to { opacity: 0; }
+}
+
+/* Reduced motion: a still card that fades in and out. */
+.tethr-intro.is-reduced .tethr-intro-word,
+.tethr-intro.is-reduced .tethr-intro-word > span,
+.tethr-intro.is-reduced .tethr-intro-term,
+.tethr-intro.is-reduced .tethr-intro-term-line::after,
+.tethr-intro.is-reduced .tethr-intro-reeds,
+.tethr-intro.is-reduced .tethr-intro-nebula {
+  animation: none;
+}
+.tethr-intro.is-reduced .tethr-intro-flare {
+  display: none;
+}
+.tethr-intro.is-reduced .tethr-intro-stage {
+  animation: tethr-fade 250ms ease both;
+}
+.tethr-intro.is-reduced.is-leaving .tethr-intro-stage,
+.tethr-intro.is-reduced.is-leaving .tethr-intro-ground {
+  animation: tethr-intro-clear 300ms ease both;
+}
+.tethr-intro.is-reduced .tethr-intro-reeds {
+  -webkit-mask-position: 50% 0;
+  mask-position: 50% 0;
+}
+
+/* ===== Onboarding (2026-11-08): the welcome and the guided setup ------------
+   pages/tethr/TethrSetup.tsx + setup/Welcome.tsx. Display type at monument
+   scale against intimate body copy, an off-center hero, and a choreographed
+   entrance (the nebula settles, the headline rises word by word, the rest
+   follows). The guided steps: a rail on desktop, a segmented bar on phones,
+   the form beside its guidance. */
+@layer components {
+  /* One calm screen: the hero sits a little above the middle of what's visible. */
+  .tethr-welcome {
+    max-width: 1120px;
+    margin: 0 auto;
+    min-height: calc(100dvh - 11rem);
+    display: grid;
+    align-content: center;
+    padding: clamp(8px, 3vh, 32px) 0 clamp(32px, 10vh, 112px);
+  }
+  .tethr-welcome-hero {
+    max-width: 880px;
+    padding-left: clamp(0px, 4vw, 56px);
+  }
+  .tethr-welcome-mark {
+    color: var(--foreground);
+    margin-bottom: clamp(18px, 3vh, 32px);
+    animation: tethr-welcome-form 1200ms var(--tethr-ease) both;
+  }
+  .tethr-welcome-mark .tethr-nebula {
+    font-size: clamp(76px, 9vw, 116px);
+  }
+  .tethr-welcome-title {
+    font-weight: 200;
+    font-size: clamp(64px, 12vw, 168px);
+    line-height: 0.9;
+    letter-spacing: -0.055em;
+  }
+  .tethr-welcome-word {
+    display: inline-block;
+    white-space: pre;
+    animation: tethr-welcome-word 950ms var(--tethr-ease) both;
+    animation-delay: calc(220ms + var(--i, 0) * 80ms);
+  }
+  .tethr-welcome-note {
+    margin-top: clamp(28px, 5vh, 48px);
+    max-width: 52ch;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--tethr-text-3);
+    text-wrap: pretty;
+  }
+  .tethr-welcome-lede {
+    margin-top: clamp(18px, 3vh, 28px);
+    max-width: 44ch;
+    font-size: clamp(15px, 1.3vw, 17.5px);
+    line-height: 1.6;
+    color: var(--muted-foreground);
+    text-wrap: pretty;
+  }
+  .tethr-welcome-actions {
+    margin-top: clamp(24px, 4vh, 36px);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .tethr-welcome-rise {
+    animation: tethr-welcome-rise 900ms var(--tethr-ease) both;
+    animation-delay: var(--d, 0ms);
+  }
+  .tethr-onboard {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 48px;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 8px 0 48px;
+  }
+  .tethr-onboard-rail {
+    position: sticky;
+    top: 8px;
+    align-self: start;
+    padding-top: 6px;
+  }
+  .tethr-onboard-meter {
+    height: 2px;
+    border-radius: 2px;
+    background: var(--tethr-rim);
+    overflow: hidden;
+  }
+  .tethr-onboard-meter > i {
+    display: block;
+    height: 100%;
+    background: var(--foreground);
+    transition: width 700ms var(--tethr-ease);
+  }
+  .tethr-onboard-main {
+    min-width: 0;
+    animation: tethr-welcome-rise 700ms var(--tethr-ease) both;
+  }
+  .tethr-onboard-progress {
+    display: none;
+    gap: 4px;
+    margin-bottom: 20px;
+  }
+  .tethr-onboard-progress > i {
+    flex: 1;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--tethr-rim-strong);
+    transition: background 500ms var(--tethr-ease);
+  }
+  .tethr-onboard-progress > i.is-done {
+    background: var(--foreground);
+  }
+  .tethr-onboard-progress > i.is-current {
+    background: color-mix(in oklab, var(--foreground) 45%, transparent);
+  }
+  .tethr-onboard-head {
+    max-width: 760px;
+  }
+  .tethr-onboard-title {
+    margin-top: 12px;
+    font-weight: 200;
+    font-size: clamp(36px, 4.6vw, 60px);
+    line-height: 0.98;
+    letter-spacing: -0.042em;
+  }
+  .tethr-onboard-lede {
+    margin-top: 12px;
+    font-size: clamp(15px, 1.2vw, 17px);
+    color: var(--muted-foreground);
+  }
+  .tethr-onboard-body {
+    margin-top: clamp(24px, 4vh, 36px);
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(240px, 1fr);
+    gap: 36px;
+    align-items: start;
+  }
+  .tethr-onboard-form {
+    padding: 22px;
+  }
+  .tethr-onboard-guide {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    padding-top: 4px;
+  }
+  .tethr-onboard-foot {
+    margin-top: 28px;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+}
+@media (max-width: 1100px) {
+  .tethr-onboard-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 900px) {
+  .tethr-onboard {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .tethr-onboard-rail {
+    display: none;
+  }
+  .tethr-onboard-progress {
+    display: flex;
+  }
+  .tethr-onboard-form {
+    padding: 16px;
+  }
+}
+@keyframes tethr-welcome-word {
+  from {
+    opacity: 0;
+    transform: translateY(0.32em);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+@keyframes tethr-welcome-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes tethr-welcome-form {
+  from {
+    opacity: 0;
+    scale: 0.5;
+    rotate: -120deg;
+    filter: blur(12px);
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+    rotate: 0deg;
+    filter: none;
+  }
+}
+/* On a first launch the welcome sits under the intro: its entrance waits and
+   plays as the intro lifts. */
+html.tethr-intro-hold .tethr-welcome,
+html.tethr-intro-hold .tethr-welcome * {
+  animation-play-state: paused !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tethr-welcome-word,
+  .tethr-welcome-rise,
+  .tethr-welcome-mark,
+  .tethr-onboard-main {
+    animation: none !important;
+  }
+}
+
+/* Setup, Connections: a row's fix opens in place (no trip to another page). */
+@layer components {
+  .tethr-fix-panel {
+    animation: tethr-fix-open 320ms var(--tethr-ease, cubic-bezier(0.16, 1, 0.3, 1)) backwards;
+  }
+}
+@keyframes tethr-fix-open {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tethr-fix-panel {
+    animation: none;
+  }
+}
+
+/* Chat: a running turn's status as one "background task" pill at the foot of
+   the turn (nebula, what it's doing, time, steps, Stop). Fixed height, so the
+   answer above it never moves while tethr works. */
+@layer components {
+  .tethr-task-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 100%;
+    min-height: 40px;
+    padding: 4px 8px 4px 10px;
+    border-radius: 999px;
+    font-size: 13px;
+    background: var(--tethr-frost);
+    box-shadow: inset 0 0 0 1px var(--tethr-rim);
+    animation: tethr-fix-open 320ms var(--tethr-ease) backwards;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tethr-task-pill {
+    animation: none;
+  }
+}
+
+/* Chat: while an answer streams, each new word (StreamingMarkdown wraps them)
+   comes up out of a soft blur. Words already on screen keep their elements, so
+   only the newest ones play it. */
+.tethr-stream .tethr-w {
+  animation: tethr-word-in 420ms var(--tethr-ease) backwards;
+}
+@keyframes tethr-word-in {
+  from {
+    opacity: 0;
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tethr-stream .tethr-w {
+    animation: none;
+  }
+}
+
+/* ===== Growth map (phase 26.9): a galaxy of growth areas. All ink
+   (currentColor) at different strengths; the one color is the live dot of an
+   agent at work. Slow orbits and swirls; still under reduced motion. A new
+   unlock blooms once (TethrGrowthMap tracks what's new since the last visit). */
+.tethr-galaxy {
+  color: var(--foreground);
+}
+.tethr-galaxy-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+}
+.tethr-galaxy-dust circle {
+  fill: currentColor;
+}
+.tethr-galaxy-link {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 0.8;
+  stroke-dasharray: 2 5;
+  opacity: 0.12;
+}
+.tethr-galaxy-link.is-lit {
+  stroke-width: 1.1;
+  stroke-dasharray: none;
+  opacity: 0.36;
+}
+.tethr-galaxy-center ellipse {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 0.7;
+  opacity: 0.22;
+}
+.tethr-galaxy-heart {
+  fill: currentColor;
+}
+.tethr-galaxy-company {
+  fill: currentColor;
+  font-family: var(--font-sans);
+  font-weight: 500;
+}
+.tethr-galaxy-sub {
+  fill: var(--tethr-text-3);
+  font-family: var(--font-mono);
+  letter-spacing: 0.14em;
+}
+.tethr-galaxy-star {
+  cursor: pointer;
+  outline: none;
+}
+.tethr-galaxy-hit {
+  fill: transparent;
+}
+.tethr-galaxy-orbit-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 0.6;
+  opacity: 0.1;
+}
+.tethr-galaxy-planet {
+  fill: currentColor;
+  opacity: 0.8;
+}
+.tethr-galaxy-seg {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  opacity: 0.16;
+  transition: opacity 300ms var(--tethr-ease);
+}
+.tethr-galaxy-seg.is-on {
+  opacity: 0.92;
+}
+.tethr-galaxy-core {
+  fill: currentColor;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 420ms var(--tethr-ease);
+}
+.tethr-galaxy-core-empty {
+  fill: none;
+  stroke: currentColor;
+  stroke-dasharray: 2 2.5;
+  opacity: 0.5;
+}
+.tethr-galaxy-star:hover .tethr-galaxy-core,
+.tethr-galaxy-star:focus-visible .tethr-galaxy-core,
+.tethr-galaxy-star.is-selected .tethr-galaxy-core {
+  transform: scale(1.2);
+}
+.tethr-galaxy-label {
+  fill: currentColor;
+  pointer-events: none;
+}
+.tethr-galaxy-name {
+  font-family: var(--font-sans);
+  font-weight: 450;
+}
+.tethr-galaxy-star.is-unexplored .tethr-galaxy-name {
+  fill: var(--tethr-text-3);
+}
+.tethr-galaxy-star:hover .tethr-galaxy-name,
+.tethr-galaxy-star:focus-visible .tethr-galaxy-name {
+  fill: currentColor;
+}
+.tethr-galaxy-selected,
+.tethr-galaxy-focusring {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+.tethr-galaxy-selected {
+  opacity: 0.55;
+}
+.tethr-galaxy-focusring {
+  opacity: 0;
+  stroke-dasharray: 3 3;
+  transition: opacity 200ms var(--tethr-ease);
+}
+.tethr-galaxy-star:focus-visible .tethr-galaxy-focusring {
+  opacity: 0.8;
+}
+.tethr-galaxy-halo {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 0.9;
+  stroke-dasharray: 1.5 4;
+  opacity: 0.5;
+  transform-box: view-box;
+  animation: tethr-galaxy-spin 48s linear infinite;
+}
+.tethr-galaxy-orbit,
+.tethr-galaxy-swirl {
+  transform-box: view-box;
+  animation: tethr-galaxy-spin 110s linear infinite;
+}
+.tethr-galaxy-orbit-outer {
+  animation-duration: 170s;
+  animation-direction: reverse;
+}
+.tethr-galaxy-swirl {
+  animation-duration: 140s;
+}
+@keyframes tethr-galaxy-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.tethr-galaxy-live {
+  fill: var(--tethr-live);
+  animation: tethr-galaxy-beat 2.2s var(--tethr-ease) infinite;
+}
+@keyframes tethr-galaxy-beat {
+  50% {
+    opacity: 0.35;
+  }
+}
+/* A new unlock: its segment flares, and a ripple leaves the ring. */
+.tethr-galaxy-seg.is-new {
+  animation: tethr-galaxy-bloom 1500ms var(--tethr-ease) backwards;
+}
+@keyframes tethr-galaxy-bloom {
+  0% {
+    opacity: 0.16;
+  }
+  45% {
+    opacity: 1;
+    stroke-width: 6px;
+  }
+}
+.tethr-galaxy-bloom {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: tethr-galaxy-ripple 1800ms var(--tethr-ease) 300ms forwards;
+  pointer-events: none;
+}
+@keyframes tethr-galaxy-ripple {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.7);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.9);
+  }
+}
+/* "new" next to an unlock in the panel and the list (also what reduced motion shows). */
+.tethr-galaxy-new {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 1px 7px;
+  box-shadow: inset 0 0 0 1px var(--tethr-rim-strong);
+}
+.tethr-galaxy-mini {
+  color: var(--foreground);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tethr-galaxy-halo,
+  .tethr-galaxy-orbit,
+  .tethr-galaxy-swirl,
+  .tethr-galaxy-live,
+  .tethr-galaxy-seg.is-new {
+    animation: none;
+  }
+  .tethr-galaxy-bloom {
+    display: none;
+  }
+  .tethr-galaxy-core {
+    transition: none;
+  }
+}
+
+/* The chats drawer is glass: it blurs whatever is behind it, and WebKit (iPhone, the
+   desktop app) redraws that blur on every frame something under it moves. The avatar's
+   glow and nebula and the working pill run under it while tethr works, which made the
+   drawer stutter (2026-11-10). They hold still while it's open. */
+.tethr-chat:has(.tethr-chats-drawer[data-state="open"]) :is(.tethr-avatar, .tethr-nebula, .tethr-nebula *, .shimmer-text, .tethr-task-pill) {
+  animation-play-state: paused !important;
+}
+.tethr-chat:has(.tethr-chats-drawer[data-state="open"]) .tethr-avatar.is-working::after {
+  animation-play-state: paused !important;
+}
+
+/* A card a notification opened the chat on (?focus=): clear of the floating
+   header when scrolled to, and marked for a moment. */
+[data-run-id] {
+  scroll-margin-top: 16px;
+}
+@media (min-width: 768px) {
+  [data-run-id] {
+    scroll-margin-top: 84px;
+  }
+}
+@keyframes tethr-focus-flash {
+  0%,
+  40% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--foreground) 7%, transparent);
+    background-color: color-mix(in srgb, var(--foreground) 7%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 8px transparent;
+    background-color: transparent;
+  }
+}
+.tethr-focus {
+  border-radius: 10px;
+  animation: tethr-focus-flash 2.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tethr-focus {
+    animation: none;
+  }
+}
+
+/* The working pill's loop (components/tethr/Orbit.tsx): a body circling a
+   centre point on a hairline tether, with a fading trail. It eases round so it
+   reads as alive, not as a spinner. */
+.tethr-orbit {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 1em;
+  height: 1em;
+  font-size: 18px;
+}
+.tethr-orbit > span {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+}
+.tethr-orbit-track {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 14%, transparent);
+}
+.tethr-orbit-arm {
+  animation: tethr-orbit-turn 1.6s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+}
+.tethr-orbit-trail {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: conic-gradient(from 0turn, transparent 0turn 0.62turn, color-mix(in srgb, currentColor 55%, transparent) 1turn);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 1.75px), #000 calc(100% - 1.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 1.75px), #000 calc(100% - 1.5px));
+}
+.tethr-orbit-line {
+  position: absolute;
+  left: calc(50% - 0.5px);
+  top: 2px;
+  width: 1px;
+  height: calc(50% - 2px);
+  background: linear-gradient(to top, color-mix(in srgb, currentColor 10%, transparent), color-mix(in srgb, currentColor 45%, transparent));
+}
+.tethr-orbit-arm > i {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  margin-top: -0.5px;
+  border-radius: 9999px;
+  background: currentColor;
+  box-shadow: 0 0 5px color-mix(in srgb, currentColor 55%, transparent);
+}
+.tethr-orbit-core {
+  inset: calc(50% - 1.5px) !important;
+  background: currentColor;
+  opacity: 0.55;
+  animation: tethr-orbit-breathe 1.6s ease-in-out infinite;
+}
+@keyframes tethr-orbit-turn {
+  to {
+    transform: rotate(1turn);
+  }
+}
+@keyframes tethr-orbit-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tethr-orbit-arm,
+  .tethr-orbit-core {
+    animation: none;
+  }
+  .tethr-orbit-arm {
+    transform: rotate(0.3turn);
+  }
+}
+/* Paused with the rest while the chats drawer is open (smooth drawer). */
+.tethr-chat:has(.tethr-chats-drawer[data-state="open"]) .tethr-orbit * {
+  animation-play-state: paused !important;
+}
+
+/* A card that has just been answered (chat/decision-cards.tsx DoneCard): the ring
+   draws, then the tick, while the card settles. It stays a moment, then the
+   lists refresh and the card leaves or folds to its one-line record. */
+.tethr-done-check {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tethr-done-ring {
+  stroke-width: 1.5;
+  opacity: 0.45;
+  stroke-dasharray: 77;
+  stroke-dashoffset: 77;
+  transform-origin: center;
+  transform: rotate(-90deg);
+  animation: tethr-done-draw 520ms cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+.tethr-done-tick {
+  stroke-width: 2.25;
+  stroke-dasharray: 17;
+  stroke-dashoffset: 17;
+  animation: tethr-done-draw 340ms cubic-bezier(0.16, 1, 0.3, 1) 360ms forwards;
+}
+.tethr-done-card {
+  animation: tethr-done-settle 460ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+@keyframes tethr-done-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes tethr-done-settle {
+  from {
+    transform: scale(0.97);
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tethr-done-ring,
+  .tethr-done-tick {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+  .tethr-done-card {
+    animation: none;
+  }
+}
+
+/* A turn's cards arrive last, once its answer is all on screen, and rise in.
+ * Fill backwards (never both): the cards are glass, and a held animation would
+ * keep this wrapper a backdrop root. */
+.tethr-cards-in {
+  animation: tethr-card-in 420ms cubic-bezier(0.16, 1, 0.3, 1) 120ms backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tethr-cards-in {
+    animation: none;
+  }
+}

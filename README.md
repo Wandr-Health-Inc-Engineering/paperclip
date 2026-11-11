@@ -1,3 +1,9 @@
+> **This is Wandr's fork.** Tethr is built inside Paperclip the way Chrome is built on
+> Chromium — everything we added is additive and lives behind `tethr` paths. Engineers start
+> at **[TETHR-ENGINEERING.md](TETHR-ENGINEERING.md)** (what it is, how a request flows, where
+> the guardrails are), then **[CLAUDE.md](CLAUDE.md)** (the operating contract). Upstream
+> Paperclip's own README follows unchanged.
+
 <p align="center">
   <img src="doc/assets/header.png" alt="Paperclip — runs your business" width="720" />
 </p>

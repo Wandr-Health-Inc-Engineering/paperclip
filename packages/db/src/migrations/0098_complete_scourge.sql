@@ -1,0 +1,1 @@
+ALTER TABLE "tethr_lessons" ADD COLUMN "verdict" text;

@@ -19,12 +19,20 @@ import { initPluginBridge } from "./plugins/bridge-init";
 import { PluginLauncherProvider } from "./plugins/launchers";
 import "@mdxeditor/editor/style.css";
 import "./index.css";
+import "./styles/tethr-theme.css";
 
 initPluginBridge(React, ReactDOM);
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js");
+    if (import.meta.env.PROD) {
+      navigator.serviceWorker.register("/sw.js");
+      return;
+    }
+    // Tethr (see DECISIONS.md): in dev, a request that fails while the dev server
+    // restarts made the worker serve hours-old source modules. Never in dev.
+    void navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => void r.unregister()));
+    if ("caches" in window) void caches.keys().then((keys) => keys.forEach((k) => void caches.delete(k)));
   });
 }
 

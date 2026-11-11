@@ -1,0 +1,2 @@
+ALTER TABLE "tethr_agent_profiles" ADD COLUMN "overseer_role" text DEFAULT 'growth' NOT NULL;--> statement-breakpoint
+ALTER TABLE "tethr_agent_profiles" ADD COLUMN "auto_approve" boolean DEFAULT false NOT NULL;

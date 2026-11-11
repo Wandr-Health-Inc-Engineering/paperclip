@@ -1,0 +1,195 @@
+// Tethr add-on constants. Kept in one module so the Tethr layer's vocabulary
+// is additive to core and easy to diff against upstream.
+
+export const TETHR_DIVISION_STATUSES = ["active", "shell"] as const;
+export type TethrDivisionStatus = (typeof TETHR_DIVISION_STATUSES)[number];
+
+export const TETHR_SENSITIVITIES = [
+  "medical",
+  "public",
+  "spend",
+  "pr",
+  // Phase 12: a change to the org itself (e.g. the CEO proposing a new agent) —
+  // gated so a human approves before anything is created.
+  "org",
+  // Phase 15: an action that removes/moves user-visible content (file archive).
+  // Gated AND structurally excluded from auto-approve (which fires only for
+  // "org"), so a deletion can never happen without an explicit human yes.
+  "destructive",
+  // Phase 18: an outward action from the Chat's Claude session (send an email,
+  // post to Slack, change a calendar…) held by the approval gate. Gated; never
+  // auto-approved (auto-approve fires only for "org").
+  "external",
+  "internal",
+  "safe",
+] as const;
+export type TethrSensitivity = (typeof TETHR_SENSITIVITIES)[number];
+
+/** Sensitivities that hard-block publish behind a human approval. */
+export const TETHR_GATED_SENSITIVITIES: readonly TethrSensitivity[] = [
+  "medical",
+  "public",
+  "spend",
+  "pr",
+  "org",
+  "destructive",
+  "external",
+];
+
+export const TETHR_OUTPUT_STATUSES = [
+  "draft",
+  "gated",
+  "changes_requested",
+  "approved",
+  "published",
+  "rejected",
+] as const;
+export type TethrOutputStatus = (typeof TETHR_OUTPUT_STATUSES)[number];
+
+export const TETHR_OUTPUT_KINDS = [
+  "lead_digest",
+  "reply_draft",
+  "news_digest",
+  "blog_draft",
+  "brief",
+  "itinerary",
+  "press_release",
+  "ads_recommendation",
+  "analytics_report",
+  "icp_profile",
+  "messaging",
+  "document",
+  // Phase 12: a direct chat answer from the coordinator — inlined into the
+  // conversation, logged to /tethr/chat-log, never treated as published content.
+  "answer",
+  // Phase 12: the CEO proposing a new agent. Carries a structured agent spec in
+  // the output's `meta`; approving it instantiates the agent (seeded paused).
+  "agent_proposal",
+  // Phase 12: Tinkr staging a modification to an existing agent (rename,
+  // mission/budget/subagent/status/schedule). Carries the change spec in
+  // `meta.change`; approving it applies the change and logs it revertibly.
+  "org_change",
+  // Phase 15: Filer staging a file archive (soft delete). Carries the target in
+  // `meta.driveChange`; approving it moves the file to the archive folder —
+  // never a hard delete. Never mirrors (not in MIRROR_FOLDERS).
+  "drive_change",
+  // Phase 18: a connector call the Chat's Claude session wants to make, held by
+  // the approval gate. `meta` carries {threadId, toolName, toolInput, inputHash,
+  // connector, cls, grant}. Approving grants ONE matching call; it never
+  // publishes or mirrors.
+  "external_action",
+  // Phase 23: tethr asking to add an agent to its team (`meta.spec`, a
+  // TeamAgentSpec) or to change one (`meta.tag`, `meta.patch`, `meta.resume`).
+  // Approving it builds or changes the agent; it never publishes or mirrors.
+  "team_agent",
+  "team_change",
+  // The learner proposing a skill (`meta.studyId`, `meta.skill`) when its skills
+  // ask first, or a change to a skill someone else saved. Approving it saves the
+  // skill; it never publishes or mirrors.
+  "skill_change",
+  // The learner's memory tidy proposing a change to a note a person saved
+  // (`meta.studyId`, `meta.change`): approving applies it through the notes table.
+  "memory_change",
+] as const;
+export type TethrOutputKind = (typeof TETHR_OUTPUT_KINDS)[number];
+
+// A structured agent spec — what the CEO proposes and what an approval
+// instantiates. Rides in a `agent_proposal` output's `meta.spec`.
+export interface TethrProposedSubagent {
+  key: string;
+  name: string;
+  job: string;
+  routeWhen: string[];
+  steps: string[];
+  output: string;
+  guardrails: string[];
+  sensitivity: TethrSensitivity;
+}
+
+export interface TethrAgentSpec {
+  codename: string;
+  role: string;
+  mission: string;
+  /** Why the CEO thinks this agent is worth building — shown in the proposal. */
+  rationale: string;
+  /** Tool names, validated against the proposable read-only registry. */
+  tools: string[];
+  budgetMonthlyCents: number;
+  /** Cron for the agent's heartbeat, or null for on-request only. Always seeded paused. */
+  heartbeatCron: string | null;
+  heartbeatNote?: string;
+  subagents: TethrProposedSubagent[];
+}
+
+export const TETHR_ROUTE_RUN_STATUSES = [
+  "routing",
+  "working",
+  "gated",
+  "done",
+  "failed",
+  // Phase 18: chat turns driven by a Claude Code session (assistant runner).
+  "queued",
+  "running",
+  "stopped",
+] as const;
+export type TethrRouteRunStatus = (typeof TETHR_ROUTE_RUN_STATUSES)[number];
+
+export const TETHR_ROUTE_INVOCATION_SOURCES = [
+  "console",
+  "heartbeat",
+  "api",
+  // Phase 16a: an agent working a Paperclip task (assignment / roll-up wake).
+  "task",
+  // Phase 18: a Chat turn run by one Claude Code session per thread.
+  "chat",
+] as const;
+export type TethrRouteInvocationSource =
+  (typeof TETHR_ROUTE_INVOCATION_SOURCES)[number];
+
+export const TETHR_DRIVE_NODE_KINDS = ["folder", "file"] as const;
+export type TethrDriveNodeKind = (typeof TETHR_DRIVE_NODE_KINDS)[number];
+
+export const TETHR_MEMORY_KINDS = [
+  "fact",
+  "preference",
+  "history",
+  "rule",
+  // Phase 6: fingerprint records of everything published (dedupe layer).
+  "published-content",
+] as const;
+export type TethrMemoryKind = (typeof TETHR_MEMORY_KINDS)[number];
+
+export const TETHR_NOTIFICATION_KINDS = [
+  "approval",
+  "run",
+  "lead",
+  "budget",
+  "system",
+  // phase 21: an idea tethr offered on its own, and a goal target it adjusted
+  "idea",
+  "goal",
+  // phase 26: a file in tethr's Inbox, a lesson, and a change Jev decisions made on their own
+  "inbox",
+  "lesson",
+  "decision",
+] as const;
+export type TethrNotificationKind = (typeof TETHR_NOTIFICATION_KINDS)[number];
+
+export const TETHR_NOTIFICATION_CHANNELS = [
+  "in_app",
+  "slack",
+  "sms",
+  "email",
+] as const;
+export type TethrNotificationChannel =
+  (typeof TETHR_NOTIFICATION_CHANNELS)[number];
+
+/** The name of the company tethr creates on first boot, before anyone has set
+ * it up. Setup step 1 treats it as blank and renames the company. */
+export const TETHR_STARTER_COMPANY_NAME = "Your company";
+
+/** Core approvals.type used for Tethr gated outputs. */
+export const TETHR_OUTPUT_APPROVAL_TYPE = "tethr_output" as const;
+
+/** Agent adapter type for Tethr LLM-routed agents. */
+export const TETHR_ADAPTER_TYPE = "tethr_llm" as const;

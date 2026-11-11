@@ -1,0 +1,20 @@
+# The single run-everything prompt
+
+Paste the block below into Claude Code inside the paperclip repo. It is resumable — if the session ends, paste it again and it picks up where it left off.
+
+---
+
+You are executing the full Tethr buildout end to end. Ground truth lives in docs/tethr-buildout/ — read 00-current-state-and-gap-analysis.md, ROADMAP.md, and every phase-N.md file now, plus CLAUDE.md if it exists. If docs/tethr-buildout/MANUAL-STEPS.md or tasks/phase-*.md already exist, you are RESUMING: read them, determine what's done, and continue from there instead of starting over.
+
+MISSION: work through Phases 0–9 in this priority order: 0 → 1 → 2 → 3 (this gets agents talking to Mark in Slack — the whole point — so nothing delays it) → 4 → 5 → 6 → 7 → 8 → 9. Phase 10 is excluded (needs a month of steady-state data). For each phase, follow its phase file: still write the plan to tasks/phase-N.md first, then execute it yourself without waiting for approval, EXCEPT at the hard gates listed below.
+
+FIRST ACTION, before anything else: `git fetch --all`, then compare mark-sandbox against every origin/* branch. If any commits exist on origin after 2026-06-12 that aren't in mark-sandbox (especially from Frank or Saloni), STOP and report them to me before building anything. Also audit the sibling repo at ../scout per phase-0 (if ../scout does not exist at that path, record it as manual step #1 and continue — Phase 2's inbound half builds fresh on the notify.ts seam instead, per the phase file's fallback). Then create branch tethr-buildout off mark-sandbox and do all work there.
+
+HARD GATES — the only places you stop and wait for me in-session:
+1. Any command that needs my accounts (railway login/init, Slack app creation, setting ANTHROPIC_API_KEY / SLACK_BOT_TOKEN / POSTHOG_API_KEY / CC_PASSWORD on Railway). Print the exact commands/dashboard steps, add them to MANUAL-STEPS.md, and if I'm not responding, SKIP FORWARD to everything not blocked by that credential and come back.
+2. The first real Slack post to #scout, the first live-LLM spend, and enabling any heartbeat — each needs one explicit "go" from me in-session, or gets queued as a manual step with the exact command to run.
+3. Phase 5 parity judgments (only I can judge output parity) and pausing laptop crons (only I touch the laptop). Build each migration fully, run the manual comparison run if credentials allow, queue the judgment for me, move on.
+
+NON-NEGOTIABLES, every phase, no exceptions: never delete anything anywhere; never modify the Drive live engine at "05 Marketing /Claude Marketing/" or the Azure terraform/; Paperclip core stays merge-safe (additive files only; any core touch gets one line in DECISIONS.md); UI work only via ui/src/lib/brand.ts + ui/src/styles/tethr-theme.css (Urbanist + JetBrains Mono, pure black/white, 2px borders, no gradients, no color); nothing auto-merges, nothing auto-publishes, no medical content decisions ever; every autonomous agent keeps its stated budget cap; secrets never committed. Run `pnpm test` after every phase's changes and fix regressions before moving on; commit per phase on tethr-buildout with message "phase N: <summary>". Update CLAUDE.md continuously with anything a future session needs. Delegate read-heavy exploration (Scout audit, server.py/app.js reads, log analysis) to subagents to protect your context window.
+
+FINAL OUTPUT — this is the deliverable I care about most. Maintain docs/tethr-buildout/MANUAL-STEPS.md from the very start and finish the session by regenerating it cleanly and printing it in full. Format: a status table (phase | built | verified | blocked-on) followed by a numbered, priority-ordered list of every remaining human action, each with: what to do, exactly where (URL/dashboard path/CLI command), how long it takes, and which phase it unblocks. Group them: (A) unlocks Slack-with-my-employees fastest, (B) unlocks money/live runs, (C) everything else. If EVERYTHING buildable is built, the list should be short enough that I can clear group A from my phone in one evening.

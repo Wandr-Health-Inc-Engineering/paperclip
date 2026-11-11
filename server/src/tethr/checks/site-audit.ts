@@ -1,0 +1,294 @@
+// Sentry site auditor (Phase 4) — deterministic, explainable technical checks
+// on the PUBLIC surface of travelwithwandr.com. Structural/technical only:
+// meta tags, JSON-LD presence, broken internal links, analytics-tag presence.
+//
+// HARD boundary: nothing here inspects medical/medication *content* correctness
+// (a licensed-human domain) — only page structure. Everything is read-only.
+//
+// The check functions are pure (HTML string in, findings out) so they unit-test
+// against fixtures with no network. `runSiteAudit` injects fetch, so it too is
+// testable. Findings reuse the Phase 2 recommendation format when posted.
+
+export type CheckType =
+  | "meta_title"
+  | "meta_description"
+  | "duplicate_title"
+  | "json_ld"
+  | "broken_link"
+  | "tracking_tag";
+
+export type Severity = "high" | "medium" | "low";
+
+export interface SiteFinding {
+  checkType: CheckType;
+  url: string;
+  severity: Severity;
+  title: string;
+  why: string;
+  detail?: string[];
+  /** Stable id for 14-day dedupe: `${checkType}:${url}:${discriminator}`. */
+  fingerprint: string;
+}
+
+/** Real Wandr analytics IDs (from the phase spec); env-overridable. */
+export function ga4Id(): string {
+  return process.env.TETHR_SENTRY_GA4_ID?.trim() || "G-WP11MQFLQ5";
+}
+export function gtmId(): string {
+  return process.env.TETHR_SENTRY_GTM_ID?.trim() || "GTM-N7K829F8";
+}
+
+const TITLE_MAX = 60;
+const DESC_MIN = 50;
+const DESC_MAX = 160;
+
+// ---- Pure extractors ------------------------------------------------------
+
+export function extractTitle(html: string): string | null {
+  const m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+  return m ? decodeEntities(m[1].trim()) : null;
+}
+
+export function extractMetaDescription(html: string): string | null {
+  // name/property="description" in any attribute order
+  const tag = /<meta\b[^>]*>/gi;
+  for (const m of html.matchAll(tag)) {
+    const t = m[0];
+    if (/\bname\s*=\s*["']description["']/i.test(t)) {
+      const c = /\bcontent\s*=\s*["']([\s\S]*?)["']/i.exec(t);
+      if (c) return decodeEntities(c[1].trim());
+    }
+  }
+  return null;
+}
+
+export function extractJsonLdTypes(html: string): {
+  types: string[];
+  blocks: number;
+  malformed: number;
+} {
+  const re = /<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  const types: string[] = [];
+  let blocks = 0;
+  let malformed = 0;
+  for (const m of html.matchAll(re)) {
+    blocks++;
+    try {
+      const parsed = JSON.parse(m[1].trim());
+      collectTypes(parsed, types);
+    } catch {
+      malformed++;
+    }
+  }
+  return { types: Array.from(new Set(types)), blocks, malformed };
+}
+
+/** Same-origin (absolute or root-relative) links, normalized to absolute. */
+export function extractInternalLinks(html: string, baseUrl: string): string[] {
+  const origin = safeOrigin(baseUrl);
+  const out = new Set<string>();
+  for (const m of html.matchAll(/<a\b[^>]*\bhref\s*=\s*["']([^"'#]+)["']/gi)) {
+    const raw = m[1].trim();
+    if (!raw || raw.startsWith("mailto:") || raw.startsWith("tel:") || raw.startsWith("javascript:")) {
+      continue;
+    }
+    let abs: string | null = null;
+    if (raw.startsWith("/")) abs = origin ? origin + raw : null;
+    else if (raw.startsWith(origin ?? "\u0000")) abs = raw;
+    if (abs) out.add(abs.replace(/\/$/, "") || abs);
+  }
+  return Array.from(out);
+}
+
+// ---- Pure checks ----------------------------------------------------------
+
+export function checkMeta(html: string, url: string): SiteFinding[] {
+  const findings: SiteFinding[] = [];
+  const title = extractTitle(html);
+  if (!title) {
+    findings.push(mk("meta_title", url, "high", "missing", "Page has no <title> tag", "Search results and browser tabs fall back to a URL or heading, hurting click-through."));
+  } else if (title.length > TITLE_MAX) {
+    findings.push(mk("meta_title", url, "medium", "too_long", `<title> is ${title.length} characters (target ≤ ${TITLE_MAX})`, "Long titles get truncated in Google results, weakening the click-through.", [`Current: ${title.length} chars`, `Target: ≤ ${TITLE_MAX} chars`]));
+  }
+  const desc = extractMetaDescription(html);
+  if (!desc) {
+    findings.push(mk("meta_description", url, "medium", "missing", "Page has no meta description", "Search engines auto-generate a snippet from page text, which usually converts worse than a written one."));
+  } else if (desc.length > DESC_MAX) {
+    findings.push(mk("meta_description", url, "low", "too_long", `Meta description is ${desc.length} characters (target ≤ ${DESC_MAX})`, "Descriptions over ~160 chars are truncated in results.", [`Current: ${desc.length} chars`, `Target: ≤ ${DESC_MAX} chars`]));
+  } else if (desc.length < DESC_MIN) {
+    findings.push(mk("meta_description", url, "low", "too_short", `Meta description is only ${desc.length} characters`, "Very short descriptions waste the SERP snippet.", [`Current: ${desc.length} chars`, `Target: ${DESC_MIN}–${DESC_MAX} chars`]));
+  }
+  return findings;
+}
+
+export function checkJsonLd(html: string, url: string, expectedTypes: string[] = []): SiteFinding[] {
+  const findings: SiteFinding[] = [];
+  const { types, blocks, malformed } = extractJsonLdTypes(html);
+  if (malformed > 0) {
+    findings.push(mk("json_ld", url, "medium", "malformed", `${malformed} JSON-LD block(s) failed to parse`, "Malformed structured data is ignored by search engines and can suppress rich results."));
+  }
+  if (blocks === 0 && expectedTypes.length > 0) {
+    findings.push(mk("json_ld", url, "medium", "missing", `No JSON-LD found (expected ${expectedTypes.join("/")})`, "Structured data drives rich results (FAQ, Article, breadcrumbs); its absence forfeits them.", [`Expected: ${expectedTypes.join(", ")}`]));
+    return findings;
+  }
+  for (const t of expectedTypes) {
+    if (!types.some((x) => x.toLowerCase() === t.toLowerCase())) {
+      findings.push(mk("json_ld", url, "low", `missing_${t}`, `JSON-LD is present but missing @type "${t}"`, `${t} structured data is expected on this page type for rich results.`, [`Found: ${types.join(", ") || "none"}`, `Expected: ${t}`]));
+    }
+  }
+  return findings;
+}
+
+export function checkTrackingTags(html: string, url: string): SiteFinding[] {
+  const findings: SiteFinding[] = [];
+  const ga = ga4Id();
+  const gtm = gtmId();
+  if (!html.includes(ga)) {
+    findings.push(mk("tracking_tag", url, "high", `ga4_${ga}`, `GA4 tag ${ga} not found in page source`, "Missing GA4 means this page's traffic and conversions aren't measured.", [`Looked for: ${ga}`]));
+  }
+  if (!html.includes(gtm)) {
+    findings.push(mk("tracking_tag", url, "high", `gtm_${gtm}`, `GTM container ${gtm} not found in page source`, "Missing GTM means tags managed through it (ads, events) don't fire here.", [`Looked for: ${gtm}`]));
+  }
+  return findings;
+}
+
+/** Given internal links and their fetched statuses, flag 4xx/5xx as broken. */
+export function checkBrokenLinks(url: string, statusByLink: Record<string, number>): SiteFinding[] {
+  const findings: SiteFinding[] = [];
+  for (const [link, status] of Object.entries(statusByLink)) {
+    if (status >= 400) {
+      findings.push(mk("broken_link", url, status === 404 ? "high" : "medium", link, `Broken internal link (${status}): ${link}`, "Broken links waste crawl budget, leak link equity, and dead-end users.", [`Link: ${link}`, `Status: ${status}`]));
+    }
+  }
+  return findings;
+}
+
+/** Cross-page: same <title> reused on 2+ pages. */
+export function checkDuplicateTitles(pageTitles: Array<{ url: string; title: string | null }>): SiteFinding[] {
+  const byTitle = new Map<string, string[]>();
+  for (const p of pageTitles) {
+    if (!p.title) continue;
+    const key = p.title.trim().toLowerCase();
+    byTitle.set(key, [...(byTitle.get(key) ?? []), p.url]);
+  }
+  const findings: SiteFinding[] = [];
+  for (const [, urls] of byTitle) {
+    if (urls.length > 1) {
+      for (const u of urls) {
+        findings.push(mk("duplicate_title", u, "medium", "dup", `<title> is duplicated across ${urls.length} pages`, "Duplicate titles confuse search engines about which page to rank.", [`Also on: ${urls.filter((x) => x !== u).join(", ")}`]));
+      }
+    }
+  }
+  return findings;
+}
+
+// ---- Orchestration --------------------------------------------------------
+
+export interface AuditPage {
+  url: string;
+  expectJsonLdTypes?: string[];
+}
+
+export interface AuditDeps {
+  /** Fetch a page; return null on network failure. */
+  fetchPage(url: string): Promise<{ status: number; html: string } | null>;
+  /** Status code for a link (HEAD/GET); used for broken-link checks. */
+  linkStatus(url: string): Promise<number>;
+  /** Cap on internal links probed per page (politeness). */
+  maxLinksPerPage?: number;
+}
+
+export async function runSiteAudit(pages: AuditPage[], deps: AuditDeps): Promise<SiteFinding[]> {
+  const findings: SiteFinding[] = [];
+  const titles: Array<{ url: string; title: string | null }> = [];
+  const maxLinks = deps.maxLinksPerPage ?? 25;
+
+  for (const page of pages) {
+    const res = await deps.fetchPage(page.url);
+    if (!res) {
+      findings.push(mk("broken_link", page.url, "high", "self", `Page did not load: ${page.url}`, "The audited page itself failed to fetch."));
+      titles.push({ url: page.url, title: null });
+      continue;
+    }
+    if (res.status >= 400) {
+      findings.push(mk("broken_link", page.url, "high", "self", `Page returned ${res.status}: ${page.url}`, "The audited page itself is erroring.", [`Status: ${res.status}`]));
+      titles.push({ url: page.url, title: null });
+      continue;
+    }
+    findings.push(...checkMeta(res.html, page.url));
+    findings.push(...checkJsonLd(res.html, page.url, page.expectJsonLdTypes ?? []));
+    findings.push(...checkTrackingTags(res.html, page.url));
+    titles.push({ url: page.url, title: extractTitle(res.html) });
+
+    const links = extractInternalLinks(res.html, page.url).slice(0, maxLinks);
+    const statusByLink: Record<string, number> = {};
+    for (const link of links) {
+      statusByLink[link] = await deps.linkStatus(link);
+    }
+    findings.push(...checkBrokenLinks(page.url, statusByLink));
+  }
+  findings.push(...checkDuplicateTitles(titles));
+  return findings;
+}
+
+const SEVERITY_RANK: Record<Severity, number> = { high: 0, medium: 1, low: 2 };
+
+/**
+ * Dedupe against already-seen fingerprints (14-day memory window) and cap the
+ * batch, highest-severity first, so #scout stays reviewable on a phone.
+ */
+export function selectFindingsToPost(
+  findings: SiteFinding[],
+  opts: { seenFingerprints: Set<string>; maxPerRun?: number },
+): SiteFinding[] {
+  const fresh = findings.filter((f) => !opts.seenFingerprints.has(f.fingerprint));
+  fresh.sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
+  return fresh.slice(0, opts.maxPerRun ?? 3);
+}
+
+// ---- helpers --------------------------------------------------------------
+
+function mk(
+  checkType: CheckType,
+  url: string,
+  severity: Severity,
+  discriminator: string,
+  title: string,
+  why: string,
+  detail?: string[],
+): SiteFinding {
+  return { checkType, url, severity, title, why, detail, fingerprint: `${checkType}:${url}:${discriminator}` };
+}
+
+function collectTypes(node: unknown, out: string[]): void {
+  if (Array.isArray(node)) {
+    for (const n of node) collectTypes(n, out);
+    return;
+  }
+  if (node && typeof node === "object") {
+    const t = (node as Record<string, unknown>)["@type"];
+    if (typeof t === "string") out.push(t);
+    else if (Array.isArray(t)) for (const x of t) if (typeof x === "string") out.push(x);
+    const graph = (node as Record<string, unknown>)["@graph"];
+    if (graph) collectTypes(graph, out);
+  }
+}
+
+function safeOrigin(url: string): string | null {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}

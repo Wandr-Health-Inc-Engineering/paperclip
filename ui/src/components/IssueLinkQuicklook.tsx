@@ -119,19 +119,16 @@ export const IssueLinkQuicklook = React.forwardRef<
       state={prefetchedState}
       className={className}
       onMouseEnter={(event) => {
+        // Just warm the cache so the quicklook (and detail page) feels instant
+        // once the user actually clicks. No popover opens on hover.
         handlePrefetch();
         onMouseEnter?.(event);
       }}
       onFocus={(event) => {
         handlePrefetch();
-        setOpen(true);
         onFocus?.(event);
       }}
-      onBlur={(event) => {
-        // Let clicks inside the portaled quicklook content finish before closing.
-        setTimeout(() => setOpen(false), 0);
-        onBlur?.(event);
-      }}
+      onBlur={onBlur}
       onTouchStart={(event) => {
         handlePrefetch();
         onTouchStart?.(event);
@@ -141,6 +138,15 @@ export const IssueLinkQuicklook = React.forwardRef<
         onClickCapture?.(event);
       }}
       onClick={(event) => {
+        // First click opens the quicklook (suppress navigation). The link
+        // inside the quicklook content is the explicit second-click target
+        // that actually navigates to the detail page.
+        if (!disableIssueQuicklook && !open) {
+          event.preventDefault();
+          setOpen(true);
+          onClick?.(event);
+          return;
+        }
         setOpen(false);
         onClick?.(event);
       }}
@@ -156,22 +162,11 @@ export const IssueLinkQuicklook = React.forwardRef<
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        asChild
-        onMouseEnter={() => {
-          handlePrefetch();
-          setOpen(true);
-        }}
-        onMouseLeave={() => setOpen(false)}
-      >
-        {link}
-      </PopoverTrigger>
+      <PopoverTrigger asChild>{link}</PopoverTrigger>
       <PopoverContent
         className="w-72 p-3"
         side={issueQuicklookSide}
         align={issueQuicklookAlign}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         {data ? (

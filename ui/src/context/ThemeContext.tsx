@@ -9,21 +9,38 @@ import {
 } from "react";
 
 type Theme = "light" | "dark";
+/** What the user picked. "system" follows the OS / phone setting live. */
+export type ThemePreference = "system" | Theme;
 
 interface ThemeContextValue {
+  /** The resolved theme actually applied to the document. */
   theme: Theme;
+  /** The user's choice: follow the system, or force light/dark. */
+  preference: ThemePreference;
+  setPreference: (preference: ThemePreference) => void;
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
 }
 
 const THEME_STORAGE_KEY = "paperclip.theme";
-const DARK_THEME_COLOR = "#18181b";
-const LIGHT_THEME_COLOR = "#ffffff";
+const DARK_THEME_COLOR = "#0b0a09";
+const LIGHT_THEME_COLOR = "#e9e7e3";
+const SYSTEM_DARK_QUERY = "(prefers-color-scheme: dark)";
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
-function resolveThemeFromDocument(): Theme {
-  if (typeof document === "undefined") return "dark";
-  return document.documentElement.classList.contains("dark") ? "dark" : "light";
+function systemTheme(): Theme {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "dark";
+  return window.matchMedia(SYSTEM_DARK_QUERY).matches ? "dark" : "light";
+}
+
+function readStoredPreference(): ThemePreference {
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === "light" || stored === "dark") return stored;
+  } catch {
+    // Ignore local storage read failures in restricted environments.
+  }
+  return "system";
 }
 
 function applyTheme(theme: Theme) {
@@ -39,32 +56,53 @@ function applyTheme(theme: Theme) {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => resolveThemeFromDocument());
+  const [preference, setPreferenceState] = useState<ThemePreference>(() => readStoredPreference());
+  const [system, setSystem] = useState<Theme>(() => systemTheme());
+  const theme: Theme = preference === "system" ? system : preference;
+
+  // Follow the OS / phone setting live while the preference is "system".
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia(SYSTEM_DARK_QUERY);
+    const onChange = () => setSystem(query.matches ? "dark" : "light");
+    onChange();
+    query.addEventListener?.("change", onChange);
+    return () => query.removeEventListener?.("change", onChange);
+  }, []);
+
+  const setPreference = useCallback((next: ThemePreference) => {
+    setPreferenceState(next);
+  }, []);
 
   const setTheme = useCallback((nextTheme: Theme) => {
-    setThemeState(nextTheme);
+    setPreferenceState(nextTheme);
   }, []);
 
   const toggleTheme = useCallback(() => {
-    setThemeState((current) => (current === "dark" ? "light" : "dark"));
-  }, []);
+    setPreferenceState(theme === "dark" ? "light" : "dark");
+  }, [theme]);
 
   useEffect(() => {
     applyTheme(theme);
+  }, [theme]);
+
+  useEffect(() => {
     try {
-      localStorage.setItem(THEME_STORAGE_KEY, theme);
+      localStorage.setItem(THEME_STORAGE_KEY, preference);
     } catch {
       // Ignore local storage write failures in restricted environments.
     }
-  }, [theme]);
+  }, [preference]);
 
   const value = useMemo(
     () => ({
       theme,
+      preference,
+      setPreference,
       setTheme,
       toggleTheme,
     }),
-    [theme, setTheme, toggleTheme],
+    [theme, preference, setPreference, setTheme, toggleTheme],
   );
 
   return (

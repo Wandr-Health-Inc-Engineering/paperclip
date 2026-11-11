@@ -1,0 +1,1 @@
+ALTER TABLE "tethr_subagents" ADD COLUMN "tools" jsonb;

@@ -23,12 +23,24 @@ import {
   Hexagon,
   Target,
   LayoutDashboard,
-  Inbox,
   DollarSign,
   History,
   SquarePen,
   Plus,
   Search,
+  Send,
+  Network,
+  ShieldCheck,
+  HardDrive,
+  Timer,
+  Wallet,
+  ScrollText,
+  Plug,
+  KeyRound,
+  Compass,
+  Brain,
+  Orbit,
+  Sprout,
 } from "lucide-react";
 import { Identity } from "./Identity";
 import { agentUrl, projectUrl } from "../lib/utils";
@@ -199,9 +211,57 @@ export function CommandPalette() {
             <LayoutDashboard className="mr-2 h-4 w-4" />
             Dashboard
           </CommandItem>
-          <CommandItem onSelect={() => go("/inbox")}>
-            <Inbox className="mr-2 h-4 w-4" />
-            Inbox
+          <CommandItem onSelect={() => go("/chat")}>
+            <Send className="mr-2 h-4 w-4" />
+            Chat
+          </CommandItem>
+          <CommandItem onSelect={() => go("/growth-map")}>
+            <Orbit className="mr-2 h-4 w-4" />
+            Growth map
+          </CommandItem>
+          <CommandItem onSelect={() => go("/learning")}>
+            <Sprout className="mr-2 h-4 w-4" />
+            Learning
+          </CommandItem>
+          <CommandItem onSelect={() => go("/company-view")}>
+            <Network className="mr-2 h-4 w-4" />
+            Company
+          </CommandItem>
+          <CommandItem onSelect={() => go("/queue")}>
+            <ShieldCheck className="mr-2 h-4 w-4" />
+            Needs you
+          </CommandItem>
+          <CommandItem onSelect={() => go("/drive")}>
+            <HardDrive className="mr-2 h-4 w-4" />
+            Drive
+          </CommandItem>
+          <CommandItem onSelect={() => go("/runs")}>
+            <Timer className="mr-2 h-4 w-4" />
+            Runs
+          </CommandItem>
+          <CommandItem onSelect={() => go("/budgets")}>
+            <Wallet className="mr-2 h-4 w-4" />
+            Budgets
+          </CommandItem>
+          <CommandItem onSelect={() => go("/audit")}>
+            <ScrollText className="mr-2 h-4 w-4" />
+            Audit
+          </CommandItem>
+          <CommandItem onSelect={() => go("/tethr-settings")}>
+            <Plug className="mr-2 h-4 w-4" />
+            Integrations
+          </CommandItem>
+          <CommandItem onSelect={() => go("/setup")}>
+            <Compass className="mr-2 h-4 w-4" />
+            Set up tethr
+          </CommandItem>
+          <CommandItem onSelect={() => go("/environment")}>
+            <KeyRound className="mr-2 h-4 w-4" />
+            Environment
+          </CommandItem>
+          <CommandItem onSelect={() => go("/company/settings/memory")}>
+            <Brain className="mr-2 h-4 w-4" />
+            Memory
           </CommandItem>
           <CommandItem onSelect={() => go("/issues")}>
             <CircleDot className="mr-2 h-4 w-4" />

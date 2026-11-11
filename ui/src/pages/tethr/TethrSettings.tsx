@@ -1,0 +1,853 @@
+import { useEffect, useState } from "react";
+import { JevDecisionsCard } from "./settings/JevDecisionsCard";
+import { LearnerCard } from "./settings/LearnerCard";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronDown, ChevronRight, Cog, GitCommitHorizontal, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/EmptyState";
+import { PageSkeleton } from "@/components/PageSkeleton";
+import { MonoTag, StatusDot, formatRelative } from "@/components/tethr/primitives";
+import { Link } from "../../lib/router";
+import { useBreadcrumbs } from "../../context/BreadcrumbContext";
+import { useCompany } from "../../context/CompanyContext";
+import { cn } from "@/lib/utils";
+import { ConnectorAutonomy } from "./settings/ConnectorAutonomy";
+import {
+  tethrApi,
+  tethrKeys,
+  type TethrConnectorMode,
+  type TethrIntegrationConnector,
+  type TethrConnectorAutonomy,
+  type TethrIntegrations,
+  type TethrIntegrationsPatch,
+  type TethrTeamSettings,
+  type TethrOverseerRole,
+  type TethrOverseerRoster,
+  type TethrStatus,
+} from "@/api/tethr";
+
+// Integrations (phase 18, formerly "Providers"): what Tethr's chat may do with
+// each of Mark's connectors (Off / Read / Ask = approval required / Auto), the
+// rules around it (who counts as inside Wandr, the shell, the default for new
+// connectors), the chat's model and engine, and the usage throttle. The old
+// provider/infrastructure cards sit folded at the bottom.
+
+const MODES: TethrConnectorMode[] = ["off", "read", "ask", "auto"];
+const MODE_LABEL: Record<TethrConnectorMode, string> = { off: "Off", read: "Read", ask: "Ask", auto: "Auto" };
+const MODE_HELP: Record<TethrConnectorMode, string> = {
+  off: "Tethr can't use it.",
+  read: "Tethr can look, but can't change anything.",
+  ask: "Changes wait for your OK in the chat.",
+  auto: "Changes just happen. Spending, outside people and deletes follow the settings below; anything medical asks.",
+};
+const MODE_TONE: Record<TethrConnectorMode, "paused" | "idle" | "warn" | "ok"> = {
+  off: "paused",
+  read: "idle",
+  ask: "warn",
+  auto: "ok",
+};
+const MODELS = [
+  { id: "sonnet", label: "Sonnet", hint: "balanced (default)" },
+  { id: "opus", label: "Opus", hint: "smartest, slower" },
+  { id: "haiku", label: "Haiku", hint: "fastest, lightest" },
+];
+
+export function TethrSettings() {
+  const { selectedCompanyId } = useCompany();
+  const { setBreadcrumbs } = useBreadcrumbs();
+  const queryClient = useQueryClient();
+  const [classicOpen, setClassicOpen] = useState(false);
+
+  useEffect(() => {
+    setBreadcrumbs([{ label: "Integrations" }]);
+  }, [setBreadcrumbs]);
+
+  const { data, isLoading } = useQuery({
+    queryKey: tethrKeys.status(selectedCompanyId!),
+    queryFn: () => tethrApi.status(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  const { data: integrations } = useQuery({
+    queryKey: tethrKeys.integrations(selectedCompanyId!),
+    queryFn: () => tethrApi.integrations(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  const update = useMutation({
+    mutationFn: (patch: TethrIntegrationsPatch) => tethrApi.updateIntegrations(selectedCompanyId!, patch),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: tethrKeys.integrations(selectedCompanyId!) });
+      void queryClient.invalidateQueries({ queryKey: tethrKeys.setup(selectedCompanyId!) });
+    },
+  });
+
+  if (!selectedCompanyId) {
+    return <EmptyState icon={Cog} message="Select a company first." />;
+  }
+  if (isLoading || !integrations) return <PageSkeleton variant="detail" />;
+  if (!data) return null;
+
+  const setAutonomy = (label: string, autonomy: TethrConnectorAutonomy) => {
+    queryClient.setQueryData<TethrIntegrations>(tethrKeys.integrations(selectedCompanyId), (prev) =>
+      prev ? { ...prev, connectors: prev.connectors.map((c) => (c.label === label ? { ...c, autonomy } : c)) } : prev,
+    );
+    update.mutate({ connectors: { [label]: { autonomy } } });
+  };
+
+  const setConnector = (label: string, mode: TethrConnectorMode, scope?: string) => {
+    queryClient.setQueryData<TethrIntegrations>(tethrKeys.integrations(selectedCompanyId), (prev) =>
+      prev
+        ? { ...prev, connectors: prev.connectors.map((c) => (c.label === label ? { ...c, mode, explicit: true, ...(scope !== undefined ? { scope } : {}) } : c)) }
+        : prev,
+    );
+    update.mutate({ connectors: { [label]: { mode, ...(scope !== undefined ? { scope } : {}) } } });
+  };
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-6">
+      <ThrottleCard companyId={selectedCompanyId} />
+
+      <section className="space-y-2">
+        <div className="flex items-baseline justify-between gap-3 px-1">
+          <MonoTag>connectors</MonoTag>
+          <span className="text-[11.5px] tethr-text-3">From your Claude account on this Mac</span>
+        </div>
+        <p className="px-1 text-[12px] leading-snug tethr-text-3">
+          These are tethr's own settings, for your chats with it. Each agent has its own in its chat (tap its avatar, then Settings); a lead's cover its team. Off here turns a connector off for everyone.
+        </p>
+        <div className="tethr-panel divide-y divide-[var(--tethr-rim)] overflow-hidden">
+          {integrations.connectors.map((c) => (
+            <ConnectorRow
+              key={c.label}
+              companyId={selectedCompanyId}
+              connector={c}
+              onMode={(mode) => setConnector(c.label, mode)}
+              onScope={(scope) => setConnector(c.label, c.mode, scope)}
+              onAutonomy={(autonomy) => setAutonomy(c.label, autonomy)}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="space-y-2">
+        <div className="px-1">
+          <MonoTag>rules</MonoTag>
+        </div>
+        <div className="tethr-panel divide-y divide-[var(--tethr-rim)] overflow-hidden">
+          <SettingRow title="Connectors not listed above" help={MODE_HELP[integrations.defaultMode]}>
+            <ModeControl value={integrations.defaultMode} onChange={(m) => update.mutate({ defaultMode: m })} />
+          </SettingRow>
+          <SettingRow
+            title="Inside your company"
+            help="Email addresses or domains that count as inside the company. Sending to anyone else asks, unless that connector lets outside people run on their own. Ads only point at these domains."
+          >
+            <AddressesField
+              value={integrations.internalAddresses}
+              onSave={(list) => update.mutate({ internalAddresses: list })}
+            />
+          </SettingRow>
+          <SettingRow title="Shell commands on this Mac" help="Off by default. Ask lets Tethr run a command after you approve it.">
+            <PillChoice
+              value={integrations.shell}
+              options={[
+                { value: "off", label: "Off" },
+                { value: "ask", label: "Ask" },
+              ]}
+              onChange={(v) => update.mutate({ shell: v as "off" | "ask" })}
+            />
+          </SettingRow>
+        </div>
+      </section>
+
+      <section className="space-y-2">
+        <div className="px-1">
+          <MonoTag>chat</MonoTag>
+        </div>
+        <div className="tethr-panel divide-y divide-[var(--tethr-rim)] overflow-hidden">
+          <SettingRow title="Model" help={MODELS.find((m) => m.id === integrations.assistant.model)?.hint ?? integrations.assistant.model}>
+            <PillChoice
+              value={integrations.assistant.model}
+              options={MODELS.map((m) => ({ value: m.id, label: m.label }))}
+              onChange={(v) => update.mutate({ assistant: { model: v } })}
+            />
+          </SettingRow>
+          <SettingRow
+            title="Engine"
+            help={
+              integrations.assistant.engine === "session"
+                ? "One Claude session per chat, with your connectors (new)."
+                : "The older multi-agent routing engine (rollback)."
+            }
+          >
+            <PillChoice
+              value={integrations.assistant.engine}
+              options={[
+                { value: "session", label: "Claude session" },
+                { value: "routing", label: "Classic" },
+              ]}
+              onChange={(v) => update.mutate({ assistant: { engine: v as "session" | "routing" } })}
+            />
+          </SettingRow>
+          <SettingRow title="Workspace" help={integrations.workspace.inDrive ? "Inside 00 Tethr, so its files and memory sync to Google Drive." : "Not in Google Drive (00 Tethr isn't connected)."}>
+            <span className="max-w-[260px] truncate font-mono text-[11px] tethr-text-3" title={integrations.workspace.dir}>
+              {integrations.workspace.dir.split("/").slice(-2).join("/")}
+            </span>
+          </SettingRow>
+        </div>
+      </section>
+
+      <TeamSettingsCard settings={integrations.team} onChange={(team) => update.mutate({ team })} />
+
+      <MemoryCard companyId={selectedCompanyId} />
+
+      <JevDecisionsCard companyId={selectedCompanyId} />
+
+      <LearnerCard companyId={selectedCompanyId} />
+
+      <OverseerRosterCard companyId={selectedCompanyId} />
+
+      <section className="space-y-3">
+        <button
+          type="button"
+          onClick={() => setClassicOpen((v) => !v)}
+          className="flex items-center gap-1.5 px-1 text-[12px] tethr-text-3 transition-colors hover:text-foreground"
+        >
+          {classicOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          Classic engine and infrastructure
+        </button>
+        {classicOpen ? (
+          <div className="space-y-3">
+            <LlmModeCard companyId={selectedCompanyId} llm={data.llm} />
+            <ProviderCard
+              name="Drive storage"
+              state={data.storage.provider === "local_disk" ? "local" : "cloud"}
+              detail={
+                data.storage.provider === "local_disk"
+                  ? `Local disk · ${data.storage.localDir ?? ""}`
+                  : "S3-compatible object storage"
+              }
+              swap="StorageProvider → S3 / GCS (env: PAPERCLIP_STORAGE_PROVIDER)"
+            />
+            <ProviderCard
+              name="Database"
+              state={data.database.external ? "external postgres" : "embedded postgres"}
+              detail={
+                data.database.external
+                  ? "External Postgres via DATABASE_URL"
+                  : "Embedded Postgres (dev). Cloud swap is a DATABASE_URL change."
+              }
+              swap="Drizzle + versioned migrations"
+            />
+            <ProviderCard
+              name="Notifications"
+              state="in-app live"
+              detail={data.notifications.channels.join(" · ")}
+              swap="Notifier interface → Slack / SMS / email implementations"
+            />
+            <ProviderCard
+              name="Shared workspace"
+              state={data.mirror.enabled ? "mirroring" : "off"}
+              detail={
+                data.mirror.enabled
+                  ? `Published deliverables project into ${data.mirror.dir} (Google Drive desktop sync uploads them)`
+                  : "TETHR_MIRROR_DIR not set — approved deliverables stay in the in-app Drive only."
+              }
+              swap="v2 (cloud): Google Drive API via service account"
+            />
+            <ProviderCard
+              name="Spec bundle"
+              state={data.bundle.path ? "linked" : "vendored"}
+              detail={
+                data.bundle.path
+                  ? `Reading agent specs from ${data.bundle.path}`
+                  : "TETHR_BUNDLE_PATH not set — seeds from the vendored org spec."
+              }
+              swap="TETHR_BUNDLE_PATH (read-only)"
+            />
+            <div className="tethr-panel flex items-center justify-between px-4 py-3">
+              <div className="flex items-center gap-2">
+                <GitCommitHorizontal className="h-4 w-4 text-muted-foreground" />
+                <MonoTag>paperclip engine</MonoTag>
+              </div>
+              <span className="font-mono text-xs text-muted-foreground">{data.paperclipSha.slice(0, 12)}</span>
+            </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Secrets never appear here. Keys live in env files outside version control; see .env.example for every knob.
+            </p>
+          </div>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
+function ConnectorRow({
+  companyId,
+  connector,
+  onMode,
+  onScope,
+  onAutonomy,
+}: {
+  companyId: string;
+  connector: TethrIntegrationConnector;
+  onMode: (mode: TethrConnectorMode) => void;
+  onScope: (scope: string) => void;
+  onAutonomy: (autonomy: TethrConnectorAutonomy) => void;
+}) {
+  const [scope, setScope] = useState(connector.scope);
+  useEffect(() => setScope(connector.scope), [connector.scope]);
+  const showScope = connector.mode !== "off" && (connector.scopeHint || connector.scope);
+  return (
+    <div className="flex flex-col gap-2.5 px-4 py-3.5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <StatusDot tone={MODE_TONE[connector.mode]} />
+            <span className="text-[14px] font-medium">{connector.label}</span>
+            {!connector.explicit ? <span className="tethr-eyebrow text-[10px]">default</span> : null}
+          </div>
+          <p className="mt-0.5 text-[12.5px] text-muted-foreground">{connector.blurb}</p>
+          <p className="mt-0.5 text-[11.5px] tethr-text-3">{MODE_HELP[connector.mode]}</p>
+        </div>
+        <ModeControl value={connector.mode} onChange={onMode} />
+      </div>
+      {/* What it may do on its own, and what it did lately. tethr's own tools only have deletes to set, on Automatic. */}
+      {(connector.mode === "auto" || connector.mode === "ask") && (connector.label !== "Tethr tools" || connector.mode === "auto") ? (
+        <ConnectorAutonomy companyId={companyId} connector={connector} onSave={onAutonomy} />
+      ) : null}
+      {showScope ? (
+        <Input
+          value={scope}
+          onChange={(e) => setScope(e.target.value)}
+          onBlur={() => scope !== connector.scope && onScope(scope)}
+          placeholder={connector.scopeHint ?? "Limit what Tethr reads here"}
+          aria-label={`${connector.label} scope`}
+          className="h-8 text-[12.5px]"
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ModeControl({
+  value,
+  onChange,
+  noAuto,
+}: {
+  value: TethrConnectorMode;
+  onChange: (m: TethrConnectorMode) => void;
+  noAuto?: boolean;
+}) {
+  return (
+    <PillChoice
+      value={value}
+      options={MODES.map((m) => ({ value: m, label: MODE_LABEL[m], disabled: noAuto && m === "auto" }))}
+      onChange={(v) => onChange(v as TethrConnectorMode)}
+    />
+  );
+}
+
+function PillChoice({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: Array<{ value: string; label: string; disabled?: boolean }>;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="inline-flex shrink-0 items-center gap-0.5 self-start rounded-full bg-[var(--tethr-frost)] p-0.5 shadow-[inset_0_0_0_1px_var(--tethr-rim)] sm:self-auto">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          aria-pressed={value === o.value}
+          disabled={o.disabled}
+          title={o.disabled ? "Money always needs you" : undefined}
+          onClick={() => value !== o.value && onChange(o.value)}
+          className={cn(
+            "h-7 rounded-full px-3 text-[12px] transition-colors disabled:pointer-events-none disabled:opacity-30",
+            value === o.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Phase 23: how tethr may grow its team (Mark: "can be set to autonomous or manual approval"). */
+function TeamSettingsCard({
+  settings,
+  onChange,
+}: {
+  settings: TethrTeamSettings;
+  onChange: (patch: NonNullable<TethrIntegrationsPatch["team"]>) => void;
+}) {
+  const choices = (preset: number[], current: number) => [...new Set([...preset, current])].sort((a, b) => a - b);
+  const autonomy = settings.autonomy;
+  return (
+    <section className="space-y-2">
+      <div className="flex items-baseline justify-between gap-3 px-1">
+        <MonoTag>team</MonoTag>
+        <span className="text-[11.5px] tethr-text-3">Agents tethr runs for you</span>
+      </div>
+      <div className="tethr-panel divide-y divide-[var(--tethr-rim)] overflow-hidden">
+        <SettingRow
+          title="New agents"
+          help={
+            settings.newAgents === "auto"
+              ? "tethr adds agents on its own within the limits below, and tells you. Raising an agent's budget or runs still asks."
+              : "Every new agent, and every change to one, waits for your OK in a card. Pausing one never does."
+          }
+        >
+          <PillChoice
+            value={settings.newAgents}
+            options={[
+              { value: "ask", label: "Ask me" },
+              { value: "auto", label: "Automatic" },
+            ]}
+            onChange={(v) => onChange({ newAgents: v as "ask" | "auto" })}
+          />
+        </SettingRow>
+        <SettingRow title="Agents at once" help="The most active agents tethr may run.">
+          <PillChoice
+            value={String(settings.maxAgents)}
+            options={choices([3, 6, 9, 12], settings.maxAgents).map((n) => ({ value: String(n), label: String(n) }))}
+            onChange={(v) => onChange({ maxAgents: Number(v) })}
+          />
+        </SettingRow>
+        <SettingRow title="Team budget" help="What all active agents may spend together each month. Each agent also has its own hard cap.">
+          <PillChoice
+            value={String(settings.monthlyBudgetUsd)}
+            options={choices([50, 100, 200, 500], settings.monthlyBudgetUsd).map((n) => ({ value: String(n), label: "$" + n }))}
+            onChange={(v) => onChange({ monthlyBudgetUsd: Number(v) })}
+          />
+        </SettingRow>
+      </div>
+      <div className="flex items-baseline justify-between gap-3 px-1 pt-2">
+        <MonoTag>on its own</MonoTag>
+        <span className="text-[11.5px] tethr-text-3">What tethr does without being asked, in your chat</span>
+      </div>
+      <div className="tethr-panel divide-y divide-[var(--tethr-rim)] overflow-hidden">
+        <SettingRow
+          title="Act on reports"
+          help={
+            autonomy.actOnReports
+              ? "When agents report back, tethr checks in a few minutes later and decides what's next: follow-ups, changes, new agents (as cards)."
+              : "Off: reports wait for you, and tethr picks them up the next time you talk."
+          }
+        >
+          <PillChoice
+            value={autonomy.actOnReports ? "on" : "off"}
+            options={[
+              { value: "off", label: "Off" },
+              { value: "on", label: "On" },
+            ]}
+            onChange={(v) => onChange({ autonomy: { actOnReports: v === "on" } })}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Daily review"
+          help={
+            autonomy.dailyReview.enabled
+              ? `Each weekday at ${autonomy.dailyReview.time}, tethr checks the goals and the team and decides the day's moves.`
+              : "Off: tethr reviews the goals and the team when you ask."
+          }
+        >
+          <PillChoice
+            value={autonomy.dailyReview.enabled ? autonomy.dailyReview.time : "off"}
+            options={[
+              { value: "off", label: "Off" },
+              ...["07:30", "08:30", "09:30"].map((t) => ({ value: t, label: t.replace(/^0/, "") })),
+            ]}
+            onChange={(v) =>
+              onChange({ autonomy: { dailyReview: v === "off" ? { enabled: false } : { enabled: true, time: v, weekdaysOnly: true } } })
+            }
+          />
+        </SettingRow>
+        <SettingRow title="Turns on its own a day" help="The most check-ins and reviews tethr starts by itself in a day.">
+          <PillChoice
+            value={String(autonomy.maxSelfTurnsPerDay)}
+            options={choices([4, 8, 12], autonomy.maxSelfTurnsPerDay).map((n) => ({ value: String(n), label: String(n) }))}
+            onChange={(v) => onChange({ autonomy: { maxSelfTurnsPerDay: Number(v) } })}
+          />
+        </SettingRow>
+      </div>
+    </section>
+  );
+}
+
+function SettingRow({ title, help, children }: { title: string; help?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:gap-4">
+      <div className="min-w-0 flex-1">
+        <p className="text-[14px] font-medium">{title}</p>
+        {help ? <p className="mt-0.5 text-[12px] text-muted-foreground">{help}</p> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function AddressesField({ value, onSave }: { value: string[]; onSave: (list: string[]) => void }) {
+  const [text, setText] = useState(value.join(", "));
+  useEffect(() => setText(value.join(", ")), [value]);
+  const save = () => {
+    const list = text
+      .split(/[,\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (list.join(",") !== value.join(",")) onSave(list);
+  };
+  return (
+    <Input
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={save}
+      onKeyDown={(e) => e.key === "Enter" && save()}
+      placeholder="travelwithwandr.com"
+      aria-label="Inside Wandr"
+      className="h-8 w-full text-[12.5px] sm:w-64"
+    />
+  );
+}
+
+// The usage throttle: one switch that pauses EVERY agent — heartbeats and
+// requests both stop doing LLM work until resumed. The kill switch for
+// subscription usage. Paused gets the active-panel treatment + a warn dot so
+// it can't be missed (calm, not alarming).
+// Phase 25: where tethr's memory lives. With Hermes on, tethr's notes, every
+// past conversation (searchable with recall) and the skills it learns are kept
+// in Hermes, in tethr's own profile. Hermes only stores and searches there; the
+// thinking stays on Claude (your subscription), so Hermes never calls a model.
+function MemoryCard({ companyId }: { companyId: string }) {
+  const queryClient = useQueryClient();
+  const { data } = useQuery({ queryKey: tethrKeys.memory(companyId), queryFn: () => tethrApi.memory(companyId) });
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: tethrKeys.memory(companyId) });
+  const toggle = useMutation({ mutationFn: (on: boolean) => tethrApi.setHermesMemory(companyId, on), onSettled: refresh });
+  const wake = useMutation({ mutationFn: (allowed: boolean) => tethrApi.setHermesWakeGateway(companyId, allowed), onSettled: refresh });
+  if (!data) return null;
+  const h = data.hermes;
+  // "On" is only healthy when the profile folder is really there and still locked down.
+  const missing = h.on && !h.ready;
+  const locked = h.ready && h.lockdownGaps.length === 0;
+  const waiting = data.notMoved.length;
+  return (
+    <section className="tethr-panel p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
+            <StatusDot tone={!h.on ? "idle" : missing ? "bad" : locked && !h.lastImportError ? "ok" : "warn"} />
+            Memory · {h.on ? "Hermes" : "built-in"}
+          </p>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            {missing
+              ? `tethr's Hermes profile (${h.profile}) is missing, so memory can't be read or saved. Switch Hermes off and on again to set it up, or restore the folder.`
+              : h.on
+                ? "tethr's notes, every past conversation (it searches them with recall) and the skills it learns live in Hermes. Hermes only stores and searches; the thinking stays on Claude, so Hermes never calls a model."
+                : h.installed
+                  ? "Hermes is installed. Switch it on to keep tethr's memory there: past conversations become searchable and tethr can keep skills. What's saved now moves over."
+                  : "tethr keeps its notes itself. Install Hermes to also search past conversations and keep skills."}
+          </p>
+        </div>
+        {h.installed || h.on ? (
+          <div className="flex shrink-0 flex-col items-center gap-1.5">
+            <Switch on={h.on} disabled={toggle.isPending} onToggle={() => toggle.mutate(!h.on)} label={h.on ? "Hermes on" : "Hermes off"} />
+            <span className="tethr-eyebrow text-[10px]">{h.on ? "hermes" : "built-in"}</span>
+          </div>
+        ) : null}
+      </div>
+      {h.on && h.ready ? (
+        <div className="mt-3 space-y-1 font-mono text-[11px] tethr-text-3">
+          <p>
+            profile {h.profile} · {h.indexed.toLocaleString()} conversation{h.indexed === 1 ? "" : "s"} searchable
+            {h.lastImportAt ? ` · last added ${formatRelative(h.lastImportAt)}` : ""}
+          </p>
+          <p className={cn(!locked && "text-[var(--tethr-warn)]")}>
+            {locked ? "locked down: no model provider, no borrowed logins, no background review" : `check the profile's config: ${h.lockdownGaps.join(", ")} missing`}
+          </p>
+          {h.lastImportError ? <p className="text-[var(--tethr-warn)]">saving conversations: {h.lastImportError}</p> : null}
+        </div>
+      ) : null}
+      {h.on && h.ready ? (
+        <div className="tethr-rule mt-3 flex items-center justify-between gap-3 border-t pt-3">
+          <p className="min-w-0 text-[12.5px] text-muted-foreground">
+            <span className="text-foreground">Start Hermes when it isn't running.</span> Saving a conversation needs Hermes's background service. If it's
+            stopped, tethr starts it for a few minutes, and it then also runs whatever you've set up in Hermes yourself. Off: conversations wait until you
+            start Hermes.
+          </p>
+          <div className="shrink-0">
+            <Switch on={h.wakeGateway} disabled={wake.isPending} onToggle={() => wake.mutate(!h.wakeGateway)} label="Start Hermes when needed" />
+          </div>
+        </div>
+      ) : null}
+      {waiting ? (
+        <p className="mt-3 text-[12.5px] text-[var(--tethr-warn)]">
+          {waiting} note{waiting === 1 ? "" : "s"} couldn't be moved and {waiting === 1 ? "is" : "are"} waiting on the Memory page.
+        </p>
+      ) : null}
+      {toggle.error ? <p className="mt-2 text-[12.5px] text-[var(--tethr-bad)]">{toggle.error.message}</p> : null}
+      {wake.error ? <p className="mt-2 text-[12.5px] text-[var(--tethr-bad)]">{wake.error.message}</p> : null}
+      <p className="tethr-eyebrow mt-3 text-[10px]">
+        <Link to="/company/settings/memory" className="hover:text-foreground">
+          see what tethr remembers →
+        </Link>
+      </p>
+    </section>
+  );
+}
+
+function ThrottleCard({ companyId }: { companyId: string }) {
+  const queryClient = useQueryClient();
+  const { data } = useQuery({
+    queryKey: tethrKeys.throttle(companyId),
+    queryFn: () => tethrApi.throttle(companyId),
+  });
+  const mutation = useMutation({
+    mutationFn: (paused: boolean) => tethrApi.setThrottle(companyId, paused),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: tethrKeys.throttle(companyId) });
+    },
+  });
+  const paused = data?.paused === true;
+
+  return (
+    <div className={cn("tethr-panel p-4", paused && "tethr-panel-active")}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
+            <StatusDot tone={paused ? "warn" : "ok"} />
+            {paused ? "Agents paused" : "Agents active"}
+          </p>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            {paused
+              ? "Every agent is paused — no heartbeats, no requests, no LLM usage. Resume when you're ready."
+              : "Pause every agent instantly (usage throttle) when you're near your Claude limits. Heartbeats + requests both stop."}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-col items-center gap-1.5">
+          <Switch
+            on={!paused}
+            disabled={mutation.isPending}
+            onToggle={() => mutation.mutate(!paused)}
+            label={paused ? "Paused" : "Active"}
+          />
+          <span className="tethr-eyebrow text-[10px]">
+            {paused ? "paused" : "active"}
+          </span>
+        </div>
+      </div>
+      <p className="tethr-eyebrow mt-3 text-[10px]">
+        also toggle from Slack — say “pause agents” / “resume agents”
+      </p>
+    </div>
+  );
+}
+
+// The one card that's a real switch, not a status badge: flip the whole
+// instance between live Claude and the free deterministic mock at runtime.
+function LlmModeCard({
+  companyId,
+  llm,
+}: {
+  companyId: string;
+  llm: TethrStatus["llm"];
+}) {
+  const queryClient = useQueryClient();
+  const isLive = llm.mode === "live";
+
+  const mutation = useMutation({
+    mutationFn: (mode: "live" | "mock") => tethrApi.setLlmMode(companyId, mode),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: tethrKeys.status(companyId) });
+    },
+  });
+
+  const canGoLive = llm.liveKeyPresent;
+  const disabled = mutation.isPending || (!isLive && !canGoLive);
+
+  return (
+    <div className="tethr-panel p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
+            <StatusDot tone={isLive ? "live" : "idle"} />
+            Agent intelligence
+          </p>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            {isLive
+              ? `Live Claude · ${llm.model}. Every agent reply is a real API call — it spends.`
+              : "Deterministic mock — free, offline, no spend. Answers are canned, for testing."}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-col items-center gap-1.5">
+          <Switch
+            on={isLive}
+            disabled={disabled}
+            onToggle={() => mutation.mutate(isLive ? "mock" : "live")}
+            label={isLive ? "Live Claude" : "Mock"}
+          />
+          <span className="tethr-eyebrow text-[10px]">
+            {isLive ? "live" : "mock"}
+          </span>
+        </div>
+      </div>
+      <p className="tethr-eyebrow mt-3 text-[10px]">
+        {!canGoLive
+          ? "set ANTHROPIC_API_KEY to enable live · resets to env default on restart"
+          : "instance-wide · takes effect on the next request · resets to env default on restart"}
+      </p>
+      {mutation.isError ? (
+        <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+          <StatusDot tone="bad" />
+          {mutation.error instanceof Error ? mutation.error.message : "Could not switch."}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function Switch({
+  on,
+  disabled,
+  onToggle,
+  label,
+}: {
+  on: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      // Opts out of index.css's 44px touch-target min-height, which would stretch the pill into a circle on phones.
+      data-slot="toggle"
+      aria-checked={on}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onToggle}
+      className={cn(
+        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        on
+          ? "bg-primary"
+          : "bg-[var(--tethr-frost-strong)] shadow-[inset_0_0_0_1px_var(--tethr-rim-strong)]",
+        disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
+      )}
+    >
+      <span
+        className={cn(
+          "inline-block h-[18px] w-[18px] rounded-full shadow-[0_1px_3px_rgba(0,0,0,0.25)] transition-transform duration-200",
+          on ? "translate-x-[1.4rem] bg-primary-foreground" : "translate-x-[3px] bg-[var(--tethr-text-3)]",
+        )}
+      />
+    </button>
+  );
+}
+
+function ProviderCard({
+  name,
+  state,
+  detail,
+  swap,
+}: {
+  name: string;
+  state: string;
+  detail: string;
+  swap: string;
+}) {
+  const live = state === "live" || state === "linked" || state === "external postgres";
+  return (
+    <div className="tethr-panel p-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[15px] font-medium tracking-[-0.01em]">{name}</p>
+        <span className={cn("tethr-pill px-2 py-0.5 text-[10px] leading-4", live && "text-foreground")}>
+          <StatusDot tone={live ? "ok" : "idle"} />
+          {state}
+        </span>
+      </div>
+      <p className="mt-1.5 break-words text-sm text-muted-foreground">{detail}</p>
+      <p className="tethr-eyebrow mt-2 text-[10px]">
+        cloud swap: {swap}
+      </p>
+    </div>
+  );
+}
+
+const ROSTER_ROLES: { role: TethrOverseerRole; label: string; hint: string }[] = [
+  { role: "tech", label: "Tech", hint: "Engineering, debugging, reliability" },
+  { role: "exec", label: "Exec", hint: "CEO / strategic decisions" },
+  { role: "growth", label: "Growth & Ops", hint: "Marketing, operations, content" },
+];
+
+// Who gets buzzed on Slack for each kind of work. Each agent routes to one of
+// these three roles; a new tech agent alerts the Tech person automatically.
+function OverseerRosterCard({ companyId }: { companyId: string }) {
+  const queryClient = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ["tethr", companyId, "overseers"],
+    queryFn: () => tethrApi.overseers(companyId),
+  });
+  const [draft, setDraft] = useState<Partial<TethrOverseerRoster>>({});
+  const save = useMutation({
+    mutationFn: (roster: Partial<TethrOverseerRoster>) => tethrApi.setOverseers(companyId, roster),
+    onSuccess: () => {
+      setDraft({});
+      queryClient.invalidateQueries({ queryKey: ["tethr", companyId, "overseers"] });
+    },
+  });
+  const roster = data?.roster;
+  const val = (role: TethrOverseerRole, field: "name" | "slackId") =>
+    draft[role]?.[field] ?? roster?.[role]?.[field] ?? "";
+  const set = (role: TethrOverseerRole, field: "name" | "slackId", v: string) =>
+    setDraft((d) => ({
+      ...d,
+      [role]: {
+        name: field === "name" ? v : (d[role]?.name ?? roster?.[role]?.name ?? ""),
+        slackId: field === "slackId" ? v : (d[role]?.slackId ?? roster?.[role]?.slackId ?? ""),
+      },
+    }));
+
+  return (
+    <div className="tethr-panel">
+      <div className="flex items-center gap-2 border-b tethr-rule px-4 py-3">
+        <Users className="h-4 w-4 text-muted-foreground" />
+        <MonoTag>overseer roster · who gets buzzed</MonoTag>
+      </div>
+      <div className="space-y-3 p-4">
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Slack alerts route by an agent's role. Set the person + their Slack member ID
+          (Slack profile → ⋯ → Copy member ID) for each. New agents auto-route by domain.
+        </p>
+        {ROSTER_ROLES.map(({ role, label, hint }) => (
+          <div
+            key={role}
+            className="grid gap-2 border-t tethr-rule pt-3 first-of-type:border-t-0 first-of-type:pt-0 sm:grid-cols-[7rem_minmax(0,1fr)_10rem] sm:items-center"
+          >
+            <div>
+              <p className="text-sm font-medium">{label}</p>
+              <p className="tethr-eyebrow text-[10px] tracking-[0.12em]">{hint}</p>
+            </div>
+            <Input value={val(role, "name")} onChange={(e) => set(role, "name", e.target.value)} placeholder="Name" />
+            <Input
+              value={val(role, "slackId")}
+              onChange={(e) => set(role, "slackId", e.target.value)}
+              placeholder="Slack ID (U…)"
+              className="font-mono text-xs"
+            />
+          </div>
+        ))}
+        <div className="flex justify-end">
+          <Button size="sm" disabled={save.isPending || Object.keys(draft).length === 0} onClick={() => save.mutate(draft)}>
+            {save.isPending ? "Saving…" : "Save roster"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
